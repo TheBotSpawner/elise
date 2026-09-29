@@ -1,10 +1,12 @@
 # infrastructure/supabase
 
-- `client.ts`: browser client (Client Components). Publishable key only.
-- `server.ts`: server client (Server Components, Server Actions, Route Handlers). `server-only`.
+- `client.ts` — browser client (publishable key + session; RLS applies). Used for Realtime.
+- `server.ts` — server client for Server Components, Actions and Route Handlers (`server-only`).
+- `proxy.ts` — session refresh + optimistic auth redirect, used by `src/proxy.ts`.
+- `database.types.ts` — hand-written types matching `supabase/migrations`. Once the project is
+  linked, regenerate: `npx supabase gen types typescript --linked > src/infrastructure/supabase/database.types.ts`.
+- `repositories/` — persistence for bindings and the action log (actions, approvals, traces, audit).
 
-Credentials are read lazily, so the app builds without them. A client throws only when used without env vars.
-
-Not yet implemented (added with Auth): the session-refresh `proxy.ts` (Next.js 16 replacement for `middleware.ts`), and an admin client using `SUPABASE_SECRET_KEY`, which must be `server-only` and never imported from the browser.
-
-Pending manual setup: create the Supabase project and fill `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.env.local`. Migrations live in `/supabase/migrations`.
+All clients act as the signed-in user; RLS is the second line of defense and every repository also
+filters by `workspace_id`. No service-role client exists yet; when background jobs need one it
+must be `server-only` and apply explicit ownership checks.

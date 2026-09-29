@@ -1,16 +1,49 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
+import { Toaster } from "sonner";
+
+import { I18nProvider } from "@/lib/i18n/client";
+import { getLocale } from "@/lib/i18n/server";
+import { isTheme, SYSTEM_THEME_SCRIPT, THEME_COOKIE } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 
 import "./globals.css";
 
+const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+
 export const metadata: Metadata = {
-  title: "ELISE",
-  description: "ELISE: foundation phase.",
+  title: { default: "ELISE", template: "%s · ELISE" },
+  description: "One intelligence. Everything under control.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#04070c" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f7fb" },
+  ],
+};
+
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const [locale, cookieStore] = await Promise.all([getLocale(), cookies()]);
+  const stored = cookieStore.get(THEME_COOKIE)?.value;
+  const theme = isTheme(stored) ? stored : "system";
+
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="flex min-h-full flex-col">{children}</body>
+    <html
+      lang={locale}
+      data-theme={theme}
+      className={cn(geistSans.variable, geistMono.variable, "h-full", theme === "dark" && "dark")}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: SYSTEM_THEME_SCRIPT }} />
+      </head>
+      <body className="min-h-full">
+        <I18nProvider locale={locale}>{children}</I18nProvider>
+        <Toaster position="top-center" theme="system" richColors closeButton />
+      </body>
     </html>
   );
 }

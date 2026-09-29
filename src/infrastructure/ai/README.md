@@ -1,9 +1,11 @@
 # infrastructure/ai
 
-The only place where model SDKs (currently `@openai/agents`) may be imported.
+The only place where model SDKs (currently `openai`) may be imported. ESLint enforces this.
 
-- ELISE's core must never import model SDKs directly. It depends on the `AIProvider` port in `src/core/agents/ai-provider.ts`.
-- Each provider (OpenAI today, others later) is an adapter here that implements that port.
-- Server-only: API keys (`OPENAI_API_KEY`) must never reach client code.
-
-No agents are implemented yet. See `docs/architecture/12-agent-runtime.md`.
+- ELISE Core depends on the `AIProvider` port in `src/core/agents/ai-provider.ts`. A provider
+  performs one streamed model turn; ELISE Core owns the tool loop, validation, policy,
+  approvals and persistence (see `docs/decisions/ADR-001-elise-owned-agent-loop.md`).
+- `openai/provider.ts` implements the port with the Responses API (`store: false`).
+- `index.ts` picks the configured provider. Model names come from `OPENAI_MODEL` /
+  `OPENAI_MODEL_FAST`, never from feature code.
+- Server-only: `OPENAI_API_KEY` must never reach client code or model context.
