@@ -5,8 +5,11 @@ import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { ConnectionView } from "@/application/connections-service";
+import { GoogleCalendarIcon, GoogleMark, GoogleTasksIcon } from "@/components/elise/brand-icons";
+import { CheckIcon } from "@/components/elise/icons";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import type { ErrorCode } from "@/core/errors";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -21,6 +24,9 @@ import {
 } from "./actions";
 
 const GOOGLE_CAPS = ["calendar", "tasks"] as const;
+const CAP_LOGOS = { calendar: GoogleCalendarIcon, tasks: GoogleTasksIcon } as const;
+// Product names are brands: never translated.
+const CAP_PRODUCT = { calendar: "Google Calendar", tasks: "Google Tasks" } as const;
 
 export function ConnectionsView({
   connections,
@@ -124,28 +130,57 @@ function ConnectGooglePanel({ title }: { title: string }) {
   return (
     <form
       action={connectGoogle}
-      className="flex flex-col gap-4 rounded-2xl border border-border bg-surface px-5 py-4"
+      className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-5"
     >
-      <p className="text-[13.5px] text-muted">{t.connections.choose}</p>
-      <div className="flex flex-wrap gap-2">
-        {GOOGLE_CAPS.map((cap) => (
-          <label
-            key={cap}
-            className="flex h-10 cursor-pointer items-center gap-2.5 rounded-full border border-border-strong px-4 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent-soft"
-          >
-            <input
-              type="checkbox"
-              name="capability"
-              value={cap}
-              defaultChecked
-              className="accent-[var(--accent)]"
-            />
-            {t.capabilities[cap]}
-          </label>
-        ))}
+      <div className="flex items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-full border border-border bg-bg">
+          <GoogleMark size={20} />
+        </span>
+        <div>
+          <p className="font-medium">{title}</p>
+          <p className="text-[13.5px] text-muted">{t.connections.choose}</p>
+        </div>
       </div>
-      <div>
-        <Button type="submit">{title}</Button>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {GOOGLE_CAPS.map((cap) => {
+          const Logo = CAP_LOGOS[cap];
+          return (
+            <label
+              key={cap}
+              className="group relative flex cursor-pointer items-start gap-3.5 rounded-xl border border-border-strong bg-bg p-4 transition-colors duration-[var(--dur-xs)] hover:border-fg/30 has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent"
+            >
+              <input
+                type="checkbox"
+                name="capability"
+                value={cap}
+                defaultChecked
+                className="peer sr-only"
+              />
+              <Logo size={36} className="shrink-0" />
+              <span className="min-w-0 pr-6">
+                <span className="block text-sm font-medium">{CAP_PRODUCT[cap]}</span>
+                <span className="block text-[13px] text-muted">
+                  {t.connections.capabilityBody[cap]}
+                </span>
+              </span>
+              <span
+                aria-hidden
+                className="absolute top-3.5 right-3.5 grid size-5 place-items-center rounded-full border border-border-strong text-accent-fg transition-colors peer-checked:border-accent peer-checked:bg-accent [&>svg]:opacity-0 peer-checked:[&>svg]:opacity-100"
+              >
+                <CheckIcon size={12} strokeWidth={2.4} />
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[13px] text-faint">{t.connections.chooseHint}</p>
+        <Button type="submit">
+          <GoogleMark size={16} />
+          {t.connections.continueWithGoogle}
+        </Button>
       </div>
     </form>
   );
@@ -214,9 +249,13 @@ function GoogleConnectionCard({
         {GOOGLE_CAPS.map((key) => {
           const cap = c.capabilities.find((x) => x.key === key);
           const granted = Boolean(cap?.granted);
+          const Logo = CAP_LOGOS[key];
           return (
             <li key={key} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-              <span className="text-sm">{t.capabilities[key]}</span>
+              <span className="flex items-center gap-3 text-sm">
+                <Logo size={24} className={cn(!cap?.enabled && "opacity-50 grayscale")} />
+                {t.capabilities[key]}
+              </span>
               <div className="flex items-center gap-2">
                 {!granted ? (
                   <form action={connectGoogle}>
@@ -245,27 +284,12 @@ function GoogleConnectionCard({
                         </Button>
                       )
                     )}
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={Boolean(cap?.enabled)}
+                    <Switch
+                      checked={Boolean(cap?.enabled)}
                       aria-label={t.capabilities[key]}
                       disabled={pending}
-                      onClick={() => act(() => toggleCapabilityAction(c.id, key, !cap?.enabled))}
-                      className={cn(
-                        "relative h-6 w-10 rounded-full border transition-colors duration-[var(--dur-xs)]",
-                        cap?.enabled
-                          ? "border-accent bg-accent"
-                          : "border-border-strong bg-surface-2",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "absolute top-0.5 size-4.5 rounded-full bg-bg transition-transform duration-[var(--dur-xs)]",
-                          cap?.enabled ? "translate-x-[18px]" : "translate-x-0.5",
-                        )}
-                      />
-                    </button>
+                      onCheckedChange={(on) => act(() => toggleCapabilityAction(c.id, key, on))}
+                    />
                   </>
                 )}
               </div>
@@ -279,7 +303,7 @@ function GoogleConnectionCard({
           e.preventDefault();
           act(() => renameConnectionAction(c.id, name, context), t.connections.saved);
         }}
-        className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+        className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-start"
       >
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={`name-${c.id}`}>{t.connections.name}</Label>
@@ -288,8 +312,13 @@ function GoogleConnectionCard({
             value={name}
             maxLength={120}
             required
+            placeholder={t.connections.namePlaceholder}
+            aria-describedby={`name-hint-${c.id}`}
             onChange={(e) => setName(e.target.value)}
           />
+          <p id={`name-hint-${c.id}`} className="text-[12.5px] text-faint">
+            {t.connections.nameHint}
+          </p>
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={`ctx-${c.id}`}>{t.connections.context}</Label>
@@ -297,11 +326,20 @@ function GoogleConnectionCard({
             id={`ctx-${c.id}`}
             value={context}
             maxLength={80}
-            placeholder={t.connections.contextHint}
+            placeholder={t.connections.contextPlaceholder}
+            aria-describedby={`ctx-hint-${c.id}`}
             onChange={(e) => setContext(e.target.value)}
           />
+          <p id={`ctx-hint-${c.id}`} className="text-[12.5px] text-faint">
+            {t.connections.contextHint}
+          </p>
         </div>
-        <Button type="submit" variant="secondary" disabled={!dirty || pending}>
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={!dirty || pending}
+          className="sm:mt-[26px]"
+        >
           {t.connections.save}
         </Button>
       </form>
