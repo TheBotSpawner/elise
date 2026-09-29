@@ -1,9 +1,10 @@
 import { z } from "zod";
 
 import type { AIToolSpec } from "./ai-provider";
-import type { TaskProvider, Task } from "../capabilities/tasks";
-import type { CapabilityKey } from "../capabilities/types";
-import type { CapabilityBinding } from "../providers/types";
+import type { CalendarEvent, CalendarInfo, CalendarProvider } from "../capabilities/calendar";
+import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
+import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
+import type { CapabilityBinding, ProviderKey } from "../providers/types";
 
 export type ActionOrigin = "ai" | "user_ui" | "schedule" | "system";
 
@@ -20,6 +21,7 @@ export interface ToolContext {
 /** Capability → provider contract. Grows as capabilities are implemented. */
 export interface CapabilityProviders {
   tasks: TaskProvider;
+  calendar: CalendarProvider;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -38,12 +40,29 @@ export type ToolDisplay =
       task: Task;
       change: "created" | "updated" | "completed" | "reopened" | "deleted";
     }
-  | { kind: "task_list"; tasks: Task[] };
+  | { kind: "task_list"; tasks: Task[] }
+  | { kind: "task_lists"; lists: TaskList[] }
+  | {
+      kind: "event";
+      event: CalendarEvent;
+      change: "created" | "updated" | "deleted";
+    }
+  | { kind: "event_list"; events: CalendarEvent[]; from: string; to: string }
+  | { kind: "calendars"; calendars: CalendarInfo[] }
+  | {
+      kind: "availability";
+      from: string;
+      to: string;
+      free: { start: string; end: string }[];
+      busy: { start: string; end: string; source: string }[];
+    };
 
 export interface ToolRunEnv {
   ctx: ToolContext;
   binding: CapabilityBinding;
   providers: ProviderFactory;
+  /** The recorded action for writes (stable across retries); null for reads. */
+  actionId?: string | null;
 }
 
 export interface ToolRunResult<TOutput> {
@@ -66,6 +85,22 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
     env: ToolRunEnv,
   ): Promise<{ summary: string; target?: { type: string; id: string } }>;
   run(input: TInput, env: ToolRunEnv): Promise<ToolRunResult<TOutput>>;
+  /**
+   * Existing items name the account they live in (see providers/refs.ts). Routing is still
+   * validated against the workspace's bindings; an unknown connection fails closed.
+   */
+  route?(input: TInput): { connectionId?: string; providerKey?: ProviderKey } | null;
+  /**
+   * Deterministic, content-aware risk (e.g. an event with attendees is external
+   * communication). Can only escalate; the model never lowers it.
+   */
+  assess?(input: TInput, env: ToolRunEnv): Promise<Partial<OperationDefinition> | null>;
+  /** Combines a read across several accounts, preserving provenance. */
+  merge?(
+    results: { binding: CapabilityBinding; result: ToolRunResult<TOutput> }[],
+    input: TInput,
+    ctx: ToolContext,
+  ): ToolRunResult<TOutput>;
 }
 
 // Registry entries are heterogeneous; `any` here is the standard variance escape for

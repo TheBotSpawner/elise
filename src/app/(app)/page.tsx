@@ -8,7 +8,7 @@ import { ChatSurface } from "@/features/chat/chat-surface";
 export default async function HomePage() {
   const auth = await requireAuthContext();
   const [tasks, approvals] = await Promise.all([
-    listTasks(auth, "open"),
+    listTasks(auth, "open").catch(() => []) /* ambient context never blocks Home */,
     listPendingApprovals(auth),
   ]);
   const today = todayIn(auth.profile.timezone);

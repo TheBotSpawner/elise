@@ -13,6 +13,8 @@ export interface WorkspaceBindings {
   bindings: CapabilityBinding[];
   /** connectionId:capability → permission level */
   permissions: Map<string, "understand" | "read" | "write">;
+  /** bindingId → provider-specific settings (e.g. default calendar). */
+  configuration: Map<string, Record<string, unknown>>;
 }
 
 /** Loads the workspace's bindings with their connection status and permission levels. */
@@ -24,7 +26,7 @@ export async function loadWorkspaceBindings(
     db.from("capability_bindings").select("*").eq("workspace_id", workspaceId),
     db
       .from("provider_connections")
-      .select("id, provider_key, status")
+      .select("id, provider_key, status, display_name, account_label, context_label")
       .eq("workspace_id", workspaceId),
     db
       .from("connection_capabilities")
@@ -60,9 +62,15 @@ export async function loadWorkspaceBindings(
         isDefault: b.is_default,
         // A binding is only usable if the capability is also enabled on its connection.
         enabled: b.enabled && enabledCaps.has(`${b.connection_id}:${b.capability_key}`),
+        label: connection.display_name,
+        accountLabel: connection.account_label,
+        contextLabel: connection.context_label,
       },
     ];
   });
 
-  return { bindings, permissions };
+  const configuration = new Map(
+    (bindingsRes.data ?? []).map((b) => [b.id, (b.configuration ?? {}) as Record<string, unknown>]),
+  );
+  return { bindings, permissions, configuration };
 }

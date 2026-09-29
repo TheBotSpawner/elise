@@ -1,9 +1,11 @@
 import type { AIProvider, AIStreamEvent, AITurnRequest } from "@/core/agents/ai-provider";
 import type { ActionLog, ExecutorPorts, StoredAction } from "@/core/agents/executor";
-import { ToolRegistry, type ToolContext } from "@/core/agents/tools";
+import { ToolRegistry, type ProviderFactory, type ToolContext } from "@/core/agents/tools";
 import type { Task, TaskProvider, TaskQuery } from "@/core/capabilities/tasks";
 import { AppError } from "@/core/errors";
+import { makeExternalRef } from "@/core/providers/refs";
 import type { CapabilityBinding } from "@/core/providers/types";
+import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 
 export const NATIVE_BINDING: CapabilityBinding = {
@@ -17,10 +19,33 @@ export const NATIVE_BINDING: CapabilityBinding = {
   priority: 100,
   isDefault: true,
   enabled: true,
+  label: "ELISE",
+  accountLabel: null,
+  contextLabel: null,
 };
 
 export class InMemoryTaskProvider implements TaskProvider {
   tasks = new Map<string, Task>();
+
+  constructor(
+    private readonly connectionId = "conn-native",
+    private readonly source = "ELISE",
+    private readonly providerKey: "elise_native" | "google" = "elise_native",
+  ) {}
+
+  async listLists() {
+    return [
+      {
+        id: "default",
+        name: "Tasks",
+        provenance: {
+          providerKey: this.providerKey,
+          connectionId: this.connectionId,
+          source: this.source,
+        },
+      },
+    ];
+  }
 
   async list(query: TaskQuery): Promise<Task[]> {
     return [...this.tasks.values()].filter((t) => {
@@ -38,8 +63,13 @@ export class InMemoryTaskProvider implements TaskProvider {
   }
   async create(input: { title: string; dueDate?: string }): Promise<Task> {
     const now = new Date().toISOString();
+    const uuid = crypto.randomUUID();
     const task: Task = {
-      id: crypto.randomUUID(),
+      // External providers use connection-scoped refs; ELISE uses UUIDs (like production).
+      id:
+        this.providerKey === "elise_native"
+          ? uuid
+          : makeExternalRef(this.connectionId, "task", "default", uuid),
       title: input.title,
       description: null,
       notes: null,
@@ -50,7 +80,12 @@ export class InMemoryTaskProvider implements TaskProvider {
       completedAt: null,
       createdAt: now,
       updatedAt: now,
-      provenance: { providerKey: "elise_native", connectionId: "conn-native", externalId: "" },
+      provenance: {
+        providerKey: this.providerKey,
+        connectionId: this.connectionId,
+        externalId: "",
+        source: this.source,
+      },
     };
     task.provenance.externalId = task.id;
     this.tasks.set(task.id, task);
@@ -133,12 +168,29 @@ export class InMemoryActionLog implements ActionLog {
   }
 }
 
-export function makePorts(bindings: CapabilityBinding[] = [NATIVE_BINDING]) {
+/** A binding for another account (e.g. a Google connection) with its own id and labels. */
+export function binding(
+  over: Partial<CapabilityBinding> & Pick<CapabilityBinding, "connectionId">,
+): CapabilityBinding {
+  return { ...NATIVE_BINDING, id: `b-${over.connectionId}`, isDefault: false, ...over };
+}
+
+/**
+ * Executor ports over in-memory providers. `providers` maps connectionId → provider so tests can
+ * run several accounts side by side; the default is a single ELISE Tasks provider.
+ */
+export function makePorts(
+  bindings: CapabilityBinding[] = [NATIVE_BINDING],
+  providers: Record<string, unknown> = {},
+) {
   const tasks = new InMemoryTaskProvider();
   const log = new InMemoryActionLog();
   const ports: ExecutorPorts = {
-    registry: new ToolRegistry().register(...TASK_TOOLS),
-    providers: { get: () => tasks },
+    registry: new ToolRegistry().register(...TASK_TOOLS, ...CALENDAR_TOOLS),
+    providers: {
+      get: ((_capability: string, b: CapabilityBinding) =>
+        providers[b.connectionId] ?? tasks) as ProviderFactory["get"],
+    },
     log,
     loadBindings: async () => bindings,
     permissionFor: async () => "write",

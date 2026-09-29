@@ -110,6 +110,11 @@ function TraceRow({ step, index }: { step: ClientToolTrace; index: number }) {
     detail = t.errors.codes.PERMISSION_DENIED;
   else if (o.display?.kind === "task") detail = o.display.task.title;
   else if (o.display?.kind === "task_list") detail = t.home.pending(o.display.tasks.length);
+  else if (o.display?.kind === "event") detail = o.display.event.title;
+  else if (o.display?.kind === "event_list")
+    detail = `${t.calendar.agenda} · ${o.display.events.length}`;
+  else if (o.display?.kind === "availability")
+    detail = `${t.calendar.free} · ${o.display.free.length}`;
 
   return (
     <motion.li

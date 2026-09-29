@@ -279,6 +279,30 @@ export type AuditEventRow = {
   created_at: Ts;
 };
 
+export type OAuthStateRow = {
+  id: string;
+  state_hash: string;
+  workspace_id: string;
+  user_id: string;
+  provider_key: string;
+  capabilities: string[];
+  connection_id: string | null;
+  code_verifier_ciphertext: string;
+  return_path: string;
+  created_at: Ts;
+  expires_at: Ts;
+};
+
+export type ConnectionSecretRow = {
+  connection_id: string;
+  workspace_id: string;
+  provider_key: string;
+  ciphertext: string;
+  access_token_expires_at: Ts | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -334,6 +358,19 @@ export type Database = {
       notifications: Table<
         NotificationRow,
         "workspace_id" | "user_id" | "notification_type" | "title"
+      >;
+      oauth_states: Table<
+        OAuthStateRow,
+        | "state_hash"
+        | "workspace_id"
+        | "user_id"
+        | "provider_key"
+        | "capabilities"
+        | "code_verifier_ciphertext"
+      >;
+      connection_secrets: Table<
+        ConnectionSecretRow,
+        "connection_id" | "workspace_id" | "provider_key" | "ciphertext"
       >;
       audit_events: Table<AuditEventRow, "workspace_id" | "event_type" | "origin" | "result">;
     };

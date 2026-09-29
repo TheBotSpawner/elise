@@ -1,8 +1,22 @@
 import { decidePolicy, type ApprovalReason } from "./policy";
-import type { ProviderFactory, ToolContext, ToolDisplay, ToolRegistry } from "./tools";
+import type {
+  AnyToolDefinition,
+  ProviderFactory,
+  ToolContext,
+  ToolDisplay,
+  ToolRegistry,
+  ToolRunEnv,
+  ToolRunResult,
+} from "./tools";
 import { getOperation } from "../capabilities/registry";
-import type { RiskLevel } from "../capabilities/types";
+import type {
+  ApprovalMode,
+  OperationDefinition,
+  OperationKind,
+  RiskLevel,
+} from "../capabilities/types";
 import { AppError, toPublicError, type PublicError } from "../errors";
+import { readDestination } from "../providers/destination";
 import { resolveBindings } from "../providers/resolver";
 import type { CapabilityBinding } from "../providers/types";
 
@@ -113,7 +127,12 @@ export type ToolCallOutcome =
   | {
       status: "clarification_required";
       question: "which_account";
-      options: { connectionId: string; providerKey: string }[];
+      options: {
+        connectionId: string;
+        providerKey: string;
+        label: string;
+        account: string | null;
+      }[];
     }
   | { status: "rejected"; reason: "not_permitted" }
   | { status: "failed"; error: PublicError };
@@ -142,9 +161,10 @@ export async function executeToolCall(
     // Hallucinated tool names are rejected and traced as an evaluation signal.
     return trace(null, null, fail(new AppError("VALIDATION_ERROR", `Unknown tool "${call.name}"`)));
   }
-  const operation = getOperation(tool.capability, tool.operation);
-  if (!operation)
+  const baseOperation = getOperation(tool.capability, tool.operation);
+  if (!baseOperation)
     return fail(new AppError("INTERNAL_ERROR", `Tool ${tool.name} has no operation definition`));
+  let operation = baseOperation;
 
   const parsed = tool.input.safeParse(call.args);
   if (!parsed.success) {
@@ -159,34 +179,50 @@ export async function executeToolCall(
   }
   const input: unknown = parsed.data;
 
-  const resolution = resolveBindings(await ports.loadBindings(), {
+  const allBindings = await ports.loadBindings();
+  let route: ReturnType<NonNullable<AnyToolDefinition["route"]>> = null;
+  try {
+    route = tool.route?.(input) ?? null;
+  } catch (error) {
+    return trace(null, null, fail(error));
+  }
+  const resolution = resolveBindings(allBindings, {
     capability: tool.capability,
     operationKind: operation.kind,
-    connectionId: call.connectionId,
+    connectionId: call.connectionId ?? route?.connectionId ?? null,
+    providerKey: route?.providerKey ?? null,
+    // An existing item already names its account; a named destination only picks new ones.
+    destination: route ? null : readDestination(input),
   });
   if (resolution.kind === "unavailable") {
-    const code =
-      resolution.reason === "connection_unhealthy" ? "AUTH_EXPIRED" : "CAPABILITY_UNAVAILABLE";
     return trace(
       null,
       null,
-      fail(new AppError(code, `${tool.capability} is not available`, { recovery: "reconnect" })),
+      fail(unavailableError(tool.capability, resolution.reason, allBindings)),
     );
   }
   if (resolution.kind === "clarify") {
     return trace(null, null, {
       status: "clarification_required",
       question: "which_account",
-      options: resolution.candidates.map((b) => ({
-        connectionId: b.connectionId,
-        providerKey: b.providerKey,
+      options: resolution.candidates.map((c) => ({
+        connectionId: c.connectionId,
+        providerKey: c.providerKey,
+        label: c.label,
+        account: c.accountLabel,
       })),
     });
   }
-  // ponytail: reads use the first resolved binding; aggregate multi-account reads arrive with
-  // the first multi-account provider (Google), where results are merged preserving provenance.
   const binding = resolution.bindings[0]!;
-  const env = { ctx, binding, providers: ports.providers };
+  const env: ToolRunEnv = { ctx, binding, providers: ports.providers };
+
+  if (operation.kind !== "read" && tool.assess) {
+    try {
+      operation = escalate(operation, await tool.assess(input, env));
+    } catch (error) {
+      return trace(binding, null, fail(error));
+    }
+  }
 
   const decision = decidePolicy({
     operation,
@@ -198,7 +234,10 @@ export async function executeToolCall(
 
   if (operation.kind === "read") {
     try {
-      const result = await tool.run(input, env);
+      const result =
+        resolution.bindings.length > 1 && tool.merge
+          ? await aggregateRead(tool, input, ctx, resolution.bindings, ports.providers)
+          : await tool.run(input, env);
       return trace(binding, null, {
         status: "succeeded",
         output: result.output,
@@ -211,7 +250,14 @@ export async function executeToolCall(
     }
   }
 
-  const { summary, target } = await tool.describe(input, env);
+  let described: Awaited<ReturnType<AnyToolDefinition["describe"]>>;
+  try {
+    described = await tool.describe(input, env);
+  } catch (error) {
+    // e.g. the item no longer exists or the times are impossible: a fixable error, not a crash.
+    return trace(binding, null, fail(error));
+  }
+  const { summary, target } = described;
   const inputHash = await sha256(
     stableStringify({ tool: tool.name, input, connectionId: binding.connectionId }),
   );
@@ -276,7 +322,7 @@ export async function executeToolCall(
     });
   }
 
-  return runWrite(ports, ctx, actionId, tool.name, input, env, trace);
+  return runWrite(ports, ctx, actionId, tool.name, input, { ...env, actionId }, trace);
 
   async function trace(
     b: CapabilityBinding | null,
@@ -295,6 +341,92 @@ export async function executeToolCall(
     });
     return outcome;
   }
+}
+
+/**
+ * Safe multi-account read: every resolved account is queried in parallel and merged with
+ * provenance. Accounts that fail are reported (not hidden); if all fail, the read fails.
+ */
+async function aggregateRead(
+  tool: AnyToolDefinition,
+  input: unknown,
+  ctx: ToolContext,
+  bindings: CapabilityBinding[],
+  providers: ProviderFactory,
+): Promise<ToolRunResult<unknown>> {
+  const settled = await Promise.allSettled(
+    bindings.map((b) => tool.run(input, { ctx, binding: b, providers })),
+  );
+  const ok: { binding: CapabilityBinding; result: ToolRunResult<unknown> }[] = [];
+  const unavailable: { account: string; error: string }[] = [];
+  let firstError: unknown = null;
+  settled.forEach((r, i) => {
+    if (r.status === "fulfilled") ok.push({ binding: bindings[i]!, result: r.value });
+    else {
+      firstError ??= r.reason;
+      unavailable.push({ account: bindings[i]!.label, error: toPublicError(r.reason).code });
+    }
+  });
+  if (ok.length === 0) throw firstError;
+  const merged = tool.merge!(ok, input, ctx);
+  if (unavailable.length === 0) return merged;
+  return { ...merged, output: { ...(merged.output as object), unavailable } };
+}
+
+const RISK_ORDER: RiskLevel[] = ["low", "medium", "high", "critical"];
+const KIND_ORDER: OperationKind[] = [
+  "read",
+  "write",
+  "destructive",
+  "sensitive",
+  "external_communication",
+];
+const APPROVAL_ORDER: ApprovalMode[] = ["allow_automatically", "ask_when_uncertain", "always_ask"];
+
+/** Content-aware risk can only make an operation stricter, never looser. */
+export function escalate(
+  base: OperationDefinition,
+  extra: Partial<OperationDefinition> | null,
+): OperationDefinition {
+  if (!extra) return base;
+  const max = <T>(order: T[], current: T, candidate: T | undefined) =>
+    candidate !== undefined && order.indexOf(candidate) > order.indexOf(current)
+      ? candidate
+      : current;
+  return {
+    kind: max(KIND_ORDER, base.kind, extra.kind),
+    risk: max(RISK_ORDER, base.risk, extra.risk),
+    defaultApproval: max(APPROVAL_ORDER, base.defaultApproval, extra.defaultApproval),
+  };
+}
+
+function unavailableError(
+  capability: string,
+  reason: string,
+  bindings: CapabilityBinding[],
+): AppError {
+  if (reason === "connection_unhealthy") {
+    return new AppError("AUTH_EXPIRED", `The ${capability} account needs to be reconnected`, {
+      recovery: "reconnect",
+    });
+  }
+  if (reason === "destination_not_found" || reason === "connection_not_found") {
+    const names = [
+      ...new Set(
+        bindings.filter((b) => b.capability === capability && b.enabled).map((b) => b.label),
+      ),
+    ];
+    return new AppError(
+      "NOT_FOUND",
+      names.length
+        ? `No ${capability} account matches. Available: ${names.join(", ")}`
+        : `No ${capability} account is connected`,
+      { recovery: "review" },
+    );
+  }
+  return new AppError("CAPABILITY_UNAVAILABLE", `${capability} is not connected`, {
+    recovery: "configure",
+  });
 }
 
 /**
@@ -347,7 +479,7 @@ export async function executeApprovedAction(
     );
   }
   const binding = resolution.bindings[0]!;
-  const env = { ctx, binding, providers: ports.providers };
+  const env: ToolRunEnv = { ctx, binding, providers: ports.providers, actionId: approved.actionId };
 
   return runWrite(
     ports,
@@ -378,7 +510,7 @@ async function runWrite(
   actionId: string,
   toolName: string,
   input: unknown,
-  env: { ctx: ToolContext; binding: CapabilityBinding; providers: ProviderFactory },
+  env: ToolRunEnv,
   trace: (
     b: CapabilityBinding | null,
     actionId: string | null,

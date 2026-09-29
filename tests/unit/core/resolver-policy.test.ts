@@ -16,6 +16,9 @@ const binding = (over: Partial<CapabilityBinding>): CapabilityBinding => ({
   priority: 100,
   isDefault: false,
   enabled: true,
+  label: "Account",
+  accountLabel: null,
+  contextLabel: null,
   ...over,
 });
 

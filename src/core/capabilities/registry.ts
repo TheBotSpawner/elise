@@ -10,6 +10,7 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     status: "available",
     operations: {
       list: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      listLists: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
       create: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
       update: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
       complete: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
@@ -18,7 +19,20 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     },
   },
   email: { key: "email", status: "planned", operations: {} },
-  calendar: { key: "calendar", status: "planned", operations: {} },
+  calendar: {
+    key: "calendar",
+    status: "available",
+    operations: {
+      listCalendars: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      listEvents: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      findAvailability: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      // Simple personal events proceed; tools escalate to external_communication when an
+      // event involves other people (docs/architecture/15 §18, 08 §16).
+      createEvent: { kind: "write", risk: "medium", defaultApproval: "ask_when_uncertain" },
+      updateEvent: { kind: "write", risk: "medium", defaultApproval: "ask_when_uncertain" },
+      deleteEvent: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
+    },
+  },
   knowledge: { key: "knowledge", status: "planned", operations: {} },
   habits: { key: "habits", status: "planned", operations: {} },
   lists: { key: "lists", status: "planned", operations: {} },

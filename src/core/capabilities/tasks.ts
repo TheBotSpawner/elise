@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { destinationField } from "../providers/destination";
 import type { ProviderKey } from "../providers/types";
 import { addDays, isIsoDate, todayIn } from "../time";
 
@@ -24,8 +25,31 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   /** Where this task lives. Needed to write back to the right account. */
-  provenance: { providerKey: ProviderKey; connectionId: string; externalId: string };
+  provenance: {
+    providerKey: ProviderKey;
+    connectionId: string;
+    externalId: string;
+    /** User-facing account name ("ELISE", "Personal", "Firbot"). */
+    source: string;
+    /** Task list at the provider, when the provider has lists. */
+    listId?: string;
+    listName?: string;
+    url?: string;
+  };
 }
+
+export interface TaskList {
+  /** Canonical id to pass back as `list` when creating tasks. */
+  id: string;
+  name: string;
+  provenance: { providerKey: ProviderKey; connectionId: string; source: string };
+}
+
+/**
+ * Task ids are opaque: ELISE Native uses UUIDs, external providers use connection-scoped refs
+ * (see providers/refs.ts). Always pass back an id exactly as returned by tasks.list.
+ */
+const taskId = z.string().trim().min(1).max(600);
 
 const isoDate = z.string().refine(isIsoDate, "Expected a valid date as YYYY-MM-DD");
 const optionalText = (max: number) => z.string().trim().max(max).optional();
@@ -38,12 +62,20 @@ export const createTaskInput = z
     priority: z.enum(TASK_PRIORITIES).optional(),
     category: optionalText(80),
     dueDate: isoDate.optional(),
+    list: z
+      .string()
+      .trim()
+      .min(1)
+      .max(600)
+      .optional()
+      .describe("Task list id from tasks.listLists, if not the default list."),
+    destination: destinationField,
   })
   .strict();
 
 export const updateTaskInput = z
   .object({
-    taskId: z.uuid(),
+    taskId,
     title: z.string().trim().min(1).max(500).optional(),
     description: z.string().trim().max(5000).nullable().optional(),
     notes: z.string().trim().max(5000).nullable().optional(),
@@ -54,7 +86,9 @@ export const updateTaskInput = z
   })
   .strict();
 
-export const taskIdInput = z.object({ taskId: z.uuid() }).strict();
+export const taskIdInput = z.object({ taskId }).strict();
+
+export const listTaskListsInput = z.object({ destination: destinationField }).strict();
 
 export const listTasksInput = z
   .object({
@@ -62,6 +96,7 @@ export const listTasksInput = z
     due: z.enum(["any", "today", "overdue", "this_week", "no_date"]).default("any"),
     search: z.string().trim().min(1).max(200).optional(),
     limit: z.number().int().min(1).max(50).default(20),
+    destination: destinationField,
   })
   .strict();
 
@@ -107,6 +142,7 @@ export interface TaskWriteMeta {
 
 /** Contract every Tasks provider implements (ELISE Native today, Google Tasks next). */
 export interface TaskProvider {
+  listLists(): Promise<TaskList[]>;
   list(query: TaskQuery): Promise<Task[]>;
   get(taskId: string): Promise<Task | null>;
   create(input: CreateTaskInput, meta: TaskWriteMeta): Promise<Task>;

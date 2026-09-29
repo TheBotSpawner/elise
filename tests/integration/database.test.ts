@@ -214,3 +214,90 @@ describe("row level security", () => {
     expect(bobAudit.rows).toHaveLength(0);
   });
 });
+
+describe("google connections", () => {
+  async function googleConnection(workspaceId: string, sub: string) {
+    const res = await db.query<{ id: string }>(
+      `insert into public.provider_connections (workspace_id, provider_key, external_account_id, display_name, account_label)
+       values ($1, 'google', $2, 'Personal', 'leo@gmail.com') returning id`,
+      [workspaceId, sub],
+    );
+    return res.rows[0]!.id;
+  }
+
+  it("keeps encrypted credentials out of reach of every API user, owners included", async () => {
+    const connectionId = await googleConnection(alice.workspaceId, "google-sub-a");
+    await db.query(
+      "insert into public.connection_secrets (connection_id, workspace_id, provider_key, ciphertext) values ($1, $2, 'google', 'v1.x')",
+      [connectionId, alice.workspaceId],
+    );
+    await expect(
+      asUser(db, alice.userId, () => db.query("select * from public.connection_secrets")),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(db, alice.userId, () =>
+        db.query("update public.connection_secrets set ciphertext = 'x' where connection_id = $1", [
+          connectionId,
+        ]),
+      ),
+    ).rejects.toThrow(/permission denied/);
+
+    // The server-side credential store (service role) can read it.
+    await db.exec("set role service_role");
+    const asService = await db.query("select ciphertext from public.connection_secrets");
+    await db.exec("reset role");
+    expect(asService.rows).toHaveLength(1);
+  });
+
+  it("supports several Google accounts per workspace but not the same account twice", async () => {
+    await googleConnection(alice.workspaceId, "google-sub-b");
+    await expect(googleConnection(alice.workspaceId, "google-sub-b")).rejects.toThrow(
+      /duplicate key/,
+    );
+    // The same Google account may be connected in another user's workspace.
+    await expect(googleConnection(bob.workspaceId, "google-sub-b")).resolves.toBeTruthy();
+  });
+
+  it("isolates pending authorizations per user and consumes them once", async () => {
+    const insert = (userId: string, workspaceId: string, hash: string) =>
+      asUser(db, userId, () =>
+        db.query(
+          `insert into public.oauth_states (state_hash, workspace_id, user_id, provider_key, capabilities, code_verifier_ciphertext)
+           values ($1, $2, $3, 'google', '{calendar}', 'v1.x')`,
+          [hash, workspaceId, userId],
+        ),
+      );
+    await insert(alice.userId, alice.workspaceId, "hash-alice");
+    await expect(insert(bob.userId, alice.workspaceId, "hash-forged")).rejects.toThrow(
+      /row-level security/,
+    );
+
+    const bobConsumes = await asUser(db, bob.userId, () =>
+      db.query("delete from public.oauth_states where state_hash = 'hash-alice' returning id"),
+    );
+    expect(bobConsumes.rows).toHaveLength(0);
+
+    const consume = () =>
+      asUser(db, alice.userId, () =>
+        db.query("delete from public.oauth_states where state_hash = 'hash-alice' returning id"),
+      );
+    expect((await consume()).rows).toHaveLength(1);
+    expect((await consume()).rows).toHaveLength(0);
+  });
+
+  it("does not let a user bind or read another workspace's Google connection", async () => {
+    const aliceGoogle = await googleConnection(alice.workspaceId, "google-sub-c");
+    const bobReads = await asUser(db, bob.userId, () =>
+      db.query("select id from public.provider_connections where id = $1", [aliceGoogle]),
+    );
+    expect(bobReads.rows).toHaveLength(0);
+    await expect(
+      asUser(db, bob.userId, () =>
+        db.query(
+          "insert into public.connection_capabilities (workspace_id, connection_id, capability_key) values ($1, $2, 'calendar')",
+          [bob.workspaceId, aliceGoogle],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/);
+  });
+});

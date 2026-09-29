@@ -1,13 +1,16 @@
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import {
   createTaskInput,
+  listTaskListsInput,
   listTasksInput,
   taskIdInput,
   toTaskQuery,
   updateTaskInput,
   type Task,
+  type TaskList,
 } from "../capabilities/tasks";
 import { AppError } from "../errors";
+import { parseExternalRef } from "../providers/refs";
 
 /** Compact task view for the model: enough to reason and reference, nothing more. */
 function forModel(task: Task) {
@@ -18,6 +21,8 @@ function forModel(task: Task) {
     priority: task.priority,
     dueDate: task.dueDate,
     category: task.category,
+    source: task.provenance.source,
+    ...(task.provenance.listName ? { list: task.provenance.listName } : {}),
     ...(task.description ? { description: task.description } : {}),
   };
 }
@@ -32,14 +37,36 @@ async function existingTask(env: ToolRunEnv, taskId: string): Promise<Task> {
   return task;
 }
 
+/** Existing tasks live where their id says: external refs name their connection, UUIDs are ELISE. */
+function routeTask(input: unknown) {
+  const { taskId } = taskIdInput.parse({ taskId: (input as { taskId?: unknown }).taskId });
+  const external = parseExternalRef(taskId);
+  return external
+    ? { connectionId: external.connectionId }
+    : { providerKey: "elise_native" as const };
+}
+
 const target = (id: string) => ({ type: "task", id });
+
+function sortTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+    return b.createdAt.localeCompare(a.createdAt);
+  });
+}
+
+function listsOutput(lists: TaskList[]) {
+  return { lists: lists.map((l) => ({ id: l.id, name: l.name, source: l.provenance.source })) };
+}
 
 export const listTasksTool: ToolDefinition = {
   name: "tasks.list",
   capability: "tasks",
   operation: "list",
   description:
-    "List the user's tasks. Use to answer questions about pending/overdue/today's tasks or to find a task's id before updating, completing or deleting it (use `search` with a few words of the title).",
+    "List the user's tasks across their connected task accounts (ELISE and others). Use to answer questions about pending/overdue/today's tasks or to find a task's id before updating, completing or deleting it (use `search` with a few words of the title).",
   input: listTasksInput,
   async describe() {
     return { summary: "List tasks" };
@@ -52,6 +79,40 @@ export const listTasksTool: ToolDefinition = {
       display: { kind: "task_list", tasks },
     };
   },
+  merge(results, input) {
+    const { limit } = listTasksInput.parse(input);
+    const tasks = sortTasks(
+      results.flatMap(({ result }) =>
+        result.display?.kind === "task_list" ? result.display.tasks : [],
+      ),
+    ).slice(0, limit);
+    return {
+      output: { count: tasks.length, tasks: tasks.map(forModel) },
+      display: { kind: "task_list", tasks },
+    };
+  },
+};
+
+export const listTaskListsTool: ToolDefinition = {
+  name: "tasks.listLists",
+  capability: "tasks",
+  operation: "listLists",
+  description:
+    "List task lists in the user's task accounts. Use only when the user mentions a specific list.",
+  input: listTaskListsInput,
+  async describe() {
+    return { summary: "List task lists" };
+  },
+  async run(_input, env) {
+    const lists = await provider(env).listLists();
+    return { output: listsOutput(lists), display: { kind: "task_lists", lists } };
+  },
+  merge(results) {
+    const lists = results.flatMap(({ result }) =>
+      result.display?.kind === "task_lists" ? result.display.lists : [],
+    );
+    return { output: listsOutput(lists), display: { kind: "task_lists", lists } };
+  },
 };
 
 export const createTaskTool: ToolDefinition = {
@@ -59,10 +120,12 @@ export const createTaskTool: ToolDefinition = {
   capability: "tasks",
   operation: "create",
   description:
-    "Create a task. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user's timezone. Only set priority/category when the user implies them.",
+    'Create a task. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user\'s timezone. Only set priority/category when the user implies them. Set `destination` only when the user says where (e.g. "in Google Tasks", "in my Firbot tasks").',
   input: createTaskInput,
-  async describe(input) {
-    return { summary: `Create task “${createTaskInput.parse(input).title}”` };
+  async describe(input, env) {
+    return {
+      summary: `Create task “${createTaskInput.parse(input).title}” in ${env.binding.label}`,
+    };
   },
   async run(input, env) {
     const task = await provider(env).create(createTaskInput.parse(input), {
@@ -84,6 +147,7 @@ export const updateTaskTool: ToolDefinition = {
   description:
     "Edit an existing task (title, description, notes, status pending/in_progress/cancelled, priority, category, dueDate). Pass null to clear a field. Use tasks.complete to mark it done.",
   input: updateTaskInput,
+  route: routeTask,
   async describe(input, env) {
     const { taskId } = updateTaskInput.parse(input);
     const task = await existingTask(env, taskId);
@@ -106,6 +170,7 @@ export const completeTaskTool: ToolDefinition = {
   description:
     "Mark a task as completed. If the user refers to a task by name, find its id with tasks.list first; if several tasks match, ask which one.",
   input: taskIdInput,
+  route: routeTask,
   async describe(input, env) {
     const { taskId } = taskIdInput.parse(input);
     return {
@@ -129,6 +194,7 @@ export const reopenTaskTool: ToolDefinition = {
   operation: "reopen",
   description: "Reopen a completed or cancelled task (sets it back to pending).",
   input: taskIdInput,
+  route: routeTask,
   async describe(input, env) {
     const { taskId } = taskIdInput.parse(input);
     return {
@@ -153,10 +219,12 @@ export const deleteTaskTool: ToolDefinition = {
   description:
     "Delete a task. This may require the user's approval; if so, tell the user it is waiting for their approval and do not claim it was deleted.",
   input: taskIdInput,
+  route: routeTask,
   async describe(input, env) {
     const { taskId } = taskIdInput.parse(input);
+    const task = await existingTask(env, taskId);
     return {
-      summary: `Delete task “${(await existingTask(env, taskId)).title}”`,
+      summary: `Delete task “${task.title}” (${task.provenance.source})`,
       target: target(taskId),
     };
   },
@@ -172,6 +240,7 @@ export const deleteTaskTool: ToolDefinition = {
 
 export const TASK_TOOLS = [
   listTasksTool,
+  listTaskListsTool,
   createTaskTool,
   updateTaskTool,
   completeTaskTool,

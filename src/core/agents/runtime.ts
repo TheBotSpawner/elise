@@ -139,8 +139,9 @@ function forModel(outcome: ToolCallOutcome): unknown {
     case "clarification_required":
       return {
         ok: false,
-        needsClarification: "Ask the user which account to use",
-        options: outcome.options.length,
+        needsClarification:
+          "Several accounts could receive this. Ask the user which one, then call the tool again with destination set to their choice.",
+        options: outcome.options.map((o) => (o.account ? `${o.label} (${o.account})` : o.label)),
       };
     case "rejected":
       return { ok: false, error: "This action is not permitted with the current permissions." };
@@ -157,6 +158,13 @@ export function toolNotes(traces: readonly ToolTrace[]): string[] {
     }
     if (outcome.status === "succeeded" && outcome.display?.kind === "task_list") {
       return `${name} ✓ ${outcome.display.tasks.length} tasks`;
+    }
+    if (outcome.status === "succeeded" && outcome.display?.kind === "event") {
+      const e = outcome.display.event;
+      return `${name} ✓ ${outcome.display.change} "${e.title}" ${e.start} (id ${e.id})`;
+    }
+    if (outcome.status === "succeeded" && outcome.display?.kind === "event_list") {
+      return `${name} ✓ ${outcome.display.events.length} events`;
     }
     return `${name} ${outcome.status}`;
   });

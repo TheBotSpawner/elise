@@ -1,6 +1,7 @@
 import type {
   CreateTaskInput,
   Task,
+  TaskList,
   TaskProvider,
   TaskQuery,
   TaskWriteMeta,
@@ -9,6 +10,8 @@ import type {
 import { AppError } from "@/core/errors";
 import type { TaskRow } from "@/infrastructure/supabase/database.types";
 import type { ServerSupabase } from "@/infrastructure/supabase/server";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const COLUMNS =
   "id, workspace_id, task_list_id, title, description, notes, status, priority, category, due_date, completed_at, created_by_user_id, source, metadata, created_at, updated_at, archived_at";
@@ -23,6 +26,21 @@ export class EliseTasksProvider implements TaskProvider {
     private readonly workspaceId: string,
     private readonly connectionId: string,
   ) {}
+
+  /** ELISE Tasks has a single list today; the schema is ready for more. */
+  async listLists(): Promise<TaskList[]> {
+    return [
+      {
+        id: "elise-default",
+        name: "ELISE Tasks",
+        provenance: {
+          providerKey: "elise_native",
+          connectionId: this.connectionId,
+          source: "ELISE",
+        },
+      },
+    ];
+  }
 
   async list(query: TaskQuery): Promise<Task[]> {
     let q = this.db
@@ -47,6 +65,7 @@ export class EliseTasksProvider implements TaskProvider {
   }
 
   async get(taskId: string): Promise<Task | null> {
+    if (!UUID.test(taskId)) return null;
     const { data, error } = await this.db
       .from("tasks")
       .select(COLUMNS)
@@ -59,6 +78,11 @@ export class EliseTasksProvider implements TaskProvider {
   }
 
   async create(input: CreateTaskInput, meta: TaskWriteMeta): Promise<Task> {
+    if (input.list && input.list !== "elise-default") {
+      throw new AppError("VALIDATION_ERROR", "ELISE Tasks has a single list", {
+        recovery: "review",
+      });
+    }
     const { data, error } = await this.db
       .from("tasks")
       .insert({
@@ -106,6 +130,8 @@ export class EliseTasksProvider implements TaskProvider {
   }
 
   private async patch(taskId: string, patch: Partial<TaskRow>): Promise<Task> {
+    if (!UUID.test(taskId))
+      throw new AppError("NOT_FOUND", "Task not found", { recovery: "review" });
     const { data, error } = await this.db
       .from("tasks")
       .update(patch)
@@ -136,6 +162,8 @@ export class EliseTasksProvider implements TaskProvider {
         providerKey: "elise_native",
         connectionId: this.connectionId,
         externalId: row.id,
+        source: "ELISE",
+        listId: "elise-default",
       },
     };
   }

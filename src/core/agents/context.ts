@@ -17,7 +17,26 @@ export interface ContextInput {
   userMessage: string;
   /** Explicit, enabled user rules relevant to this request (free-text part). */
   rules?: readonly string[];
+  /** Connected accounts per capability, by user-facing name (never ids or credentials). */
+  accounts?: readonly AccountSummary[];
 }
+
+export interface AccountSummary {
+  capability: CapabilityKey;
+  label: string;
+  provider: string;
+  account: string | null;
+  context: string | null;
+  isDefault: boolean;
+}
+
+const CALENDAR_TASKS_GUIDANCE = `Calendar and tasks:
+- Times you send and receive are local wall-clock times in the user's timezone (YYYY-MM-DDTHH:mm). Never convert timezones yourself.
+- The calendar is authoritative for occupied time. Use calendar.findAvailability to answer "am I free…" instead of reasoning over events.
+- Tasks are work to do; events are reserved time. Never turn tasks into calendar events unless the user asks. You may propose time blocks and create them only after the user agrees.
+- Only invite attendees the user explicitly named. Inviting people or deleting events needs the user's approval; say so plainly.
+- Task and event ids are opaque: pass them back exactly as returned. They already point to the right account.
+- Reads can cover every connected account; results carry the account name in "source". Mention it when it helps the user tell accounts apart.`;
 
 export interface ContextPackage {
   instructions: string;
@@ -61,6 +80,19 @@ export function buildContextPackage(input: ContextInput): ContextPackage {
 - ${input.user.displayName ? `The user's name is ${input.user.displayName}.` : "The user's name is unknown."}
 - Capabilities available right now: ${capabilities}.`,
   ];
+  const accountLines = summarizeAccounts(input.accounts ?? []);
+  if (accountLines) {
+    sections.push(
+      "Connected accounts (pass one of these names as `destination` only when the user names where something should go; otherwise omit it and the default is used):\n" +
+        accountLines,
+    );
+  }
+  if (
+    input.availableCapabilities.includes("calendar") ||
+    input.availableCapabilities.includes("tasks")
+  ) {
+    sections.push(CALENDAR_TASKS_GUIDANCE);
+  }
   if (input.rules && input.rules.length > 0) {
     sections.push(
       `User rules (explicit preferences, always respect them):\n${input.rules.map((r) => `- ${r}`).join("\n")}`,
@@ -79,4 +111,22 @@ export function buildContextPackage(input: ContextInput): ContextPackage {
     instructions: sections.join("\n\n"),
     input: [...history, { type: "message", role: "user", content: input.userMessage }],
   };
+}
+
+function summarizeAccounts(accounts: readonly AccountSummary[]): string {
+  const byCapability = new Map<string, string[]>();
+  for (const a of accounts) {
+    const name =
+      a.provider === "elise_native" ? "ELISE" : a.account ? `${a.label} (${a.account})` : a.label;
+    const detail = [a.isDefault ? "default" : null, a.context ? `context: ${a.context}` : null]
+      .filter(Boolean)
+      .join(", ");
+    byCapability.set(a.capability, [
+      ...(byCapability.get(a.capability) ?? []),
+      detail ? `${name} [${detail}]` : name,
+    ]);
+  }
+  return [...byCapability.entries()]
+    .map(([cap, names]) => `- ${cap}: ${names.join("; ")}`)
+    .join("\n");
 }

@@ -11,6 +11,11 @@ const serverEnvSchema = z.object({
   OPENAI_MODEL_FAST: z.string().min(1).default("gpt-5-nano"),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),
   TRIGGER_SECRET_KEY: z.string().min(1).optional(),
+  GOOGLE_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  /** 32 random bytes, base64. Encrypts OAuth credentials at rest. */
+  ELISE_ENCRYPTION_KEY: z.string().min(1).optional(),
+  ELISE_ENCRYPTION_KEY_PREVIOUS: z.string().min(1).optional(),
   CHAT_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(20),
 });
 

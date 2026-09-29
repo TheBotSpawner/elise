@@ -189,6 +189,9 @@ function TaskList({
               <div className="min-w-0 flex-1">
                 <p className={cn("text-sm", completed && "text-muted line-through")}>
                   {task.title}
+                  {task.provenance.providerKey !== "elise_native" && (
+                    <span className="ml-2 text-[12px] text-faint">{task.provenance.source}</span>
+                  )}
                 </p>
                 {task.description && (
                   <p className="mt-0.5 text-xs text-muted">{task.description}</p>

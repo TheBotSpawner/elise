@@ -3,7 +3,7 @@
 One persistent intelligence that coordinates your digital world through chat, capabilities and
 replaceable providers.
 
-**Status:** pre-MVP — Slice 1 (Foundation) implemented. See [What works today](#what-works-today).
+**Status:** pre-MVP — Slice 1 (Foundation) and Slice 2 (Google Calendar + Tasks) implemented. See [What works today](#what-works-today).
 
 ## Stack
 
@@ -39,6 +39,31 @@ In the Supabase dashboard:
 - **Authentication → Providers → Google (optional):** enable it with your Google OAuth client to
   make "Continue with Google" work. Email/password and magic links work without it.
 
+### Google Calendar + Google Tasks (optional)
+
+Connections to Google are separate from signing in to ELISE. To enable them:
+
+1. **Google Cloud Console** → create (or pick) a project.
+2. **APIs & Services → Library:** enable **Google Calendar API** and **Google Tasks API**.
+3. **Google Auth Platform → Branding / Audience:** app name, support email; User type
+   _External_; while in _Testing_, add your Google accounts as **test users**.
+4. **Data Access (scopes):** add `openid`, `…/auth/userinfo.email`, `…/auth/userinfo.profile`,
+   `https://www.googleapis.com/auth/calendar.events`,
+   `https://www.googleapis.com/auth/calendar.readonly`, `https://www.googleapis.com/auth/tasks`.
+5. **Clients → Create client → Web application:**
+   - Authorized JavaScript origin: `http://localhost:3000`
+   - Authorized redirect URI: `http://localhost:3000/api/connections/google/callback`
+6. Put the client ID/secret in `.env.local` (`GOOGLE_OAUTH_CLIENT_ID`,
+   `GOOGLE_OAUTH_CLIENT_SECRET`), plus `SUPABASE_SECRET_KEY`, `NEXT_PUBLIC_APP_URL` and an
+   encryption key:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # → ELISE_ENCRYPTION_KEY
+```
+
+Calendar and Tasks are _sensitive_ scopes: publishing the app for other users requires Google's
+verification. Testing mode works for the listed test users.
+
 Then:
 
 ```bash
@@ -58,7 +83,10 @@ Without `OPENAI_API_KEY`, everything works except chat, which reports that AI is
 | `NEXT_PUBLIC_APP_URL`                                              | prod     | Base URL for auth redirects                        |
 | `ELISE_ENV`                                                        | no       | `development` / `staging` / `production` log tag   |
 | `CHAT_RATE_LIMIT_PER_MINUTE`                                       | no       | Per-user chat rate limit (default 20)              |
-| `SUPABASE_SECRET_KEY`, `TRIGGER_SECRET_KEY`                        | not yet  | Reserved for background execution                  |
+| `SUPABASE_SECRET_KEY`                                              | Google   | Server-only: encrypted credential store            |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`             | Google   | OAuth client for Calendar/Tasks connections        |
+| `ELISE_ENCRYPTION_KEY` (+ optional `_PREVIOUS`)                    | Google   | AES-256-GCM key for OAuth credentials at rest      |
+| `TRIGGER_SECRET_KEY`                                               | not yet  | Reserved for background execution                  |
 
 ## Scripts
 
@@ -88,6 +116,11 @@ database is needed.
   `tasks.create` → ELISE validates the input, resolves the ELISE Tasks binding, checks
   permission and policy → Supabase persists → the Tasks screen updates in realtime → Elise
   confirms from the actual result. The same path serves the Tasks UI.
+- **Google Calendar + Google Tasks** through Connections: several Google accounts, each with an
+  alias and context; Calendar and Tasks granted separately (progressive scopes); reconnect and
+  disconnect. Elise reads across all calendars/task accounts (with the account shown), writes to
+  the default or the account you name ("en mis tareas de Firbot"), and asks when it's ambiguous.
+  Inviting people or deleting events waits for your approval.
 - Deletions requested through chat wait for approval (inline card or Approvals page); approvals
   resolve once, verify the payload hash, and revalidate before executing.
 - Actions, tool executions, AI runs and audit events are recorded; logs are structured and
@@ -99,7 +132,7 @@ database is needed.
 - `docs/` — product, architecture and engineering docs (source of truth); ADRs in `docs/decisions/`.
 - `src/core/` — ELISE domain: capabilities, providers + resolver, agent runtime, policy, tools. No SDKs.
 - `src/application/` — use cases (chat, tasks, approvals) and wiring of Core ports to infrastructure.
-- `src/infrastructure/` — Supabase, OpenAI, provider adapters (ELISE Native), observability.
+- `src/infrastructure/` — Supabase, OpenAI, provider adapters (ELISE Native, Google), encryption, observability.
 - `src/features/` — user-facing experiences (chat, tasks, auth, onboarding, settings, approvals).
 - `src/components/` — UI primitives, shared layout pieces and ELISE identity (Orb, shell).
 - `supabase/migrations/` — schema, RLS policies, provisioning triggers.

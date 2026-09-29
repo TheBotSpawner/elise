@@ -65,7 +65,7 @@ describe("executeToolCall", () => {
     });
     expect(outcome).toMatchObject({
       status: "approval_required",
-      summary: "Delete task “Old task”",
+      summary: "Delete task “Old task” (ELISE)",
     });
     expect(tasks.tasks.has(task.id)).toBe(true);
 

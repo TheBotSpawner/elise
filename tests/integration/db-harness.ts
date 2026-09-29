@@ -23,6 +23,11 @@ const SUPABASE_STUB = `
   $$;
   grant usage on schema auth to authenticated, anon;
   create publication supabase_realtime;
+  -- Supabase's default privileges: API roles get table access, RLS restricts rows.
+  -- Migrations can still revoke (e.g. connection_secrets).
+  grant usage on schema public to authenticated, anon, service_role;
+  alter default privileges in schema public grant all on tables to authenticated, anon, service_role;
+  alter default privileges in schema public grant execute on functions to authenticated, anon, service_role;
 `;
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
@@ -35,12 +40,6 @@ export async function createTestDatabase(): Promise<PGlite> {
     .sort()) {
     await db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
   }
-  // Supabase grants table privileges to API roles by default; RLS is what restricts rows.
-  await db.exec(`
-    grant usage on schema public to authenticated, anon;
-    grant all on all tables in schema public to authenticated;
-    grant execute on all functions in schema public to authenticated;
-  `);
   return db;
 }
 

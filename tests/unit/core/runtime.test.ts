@@ -83,7 +83,7 @@ describe("runElise (vertical slice with a scripted model)", () => {
         expect(output).toEqual({
           ok: false,
           waitingForUserApproval: true,
-          summary: "Delete task “Borrar esto”",
+          summary: "Delete task “Borrar esto” (ELISE)",
         });
         return [
           { type: "text_delta", delta: "Necesito tu aprobación." },

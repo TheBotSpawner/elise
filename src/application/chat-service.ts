@@ -20,7 +20,13 @@ import type {
   ClientToolOutcome,
   ClientToolTrace,
 } from "./chat-protocol";
-import { availableCapabilities, createExecutorPorts, toolContext, toolRegistry } from "./elise";
+import {
+  accountSummaries,
+  availableCapabilities,
+  createExecutorPorts,
+  toolContext,
+  toolRegistry,
+} from "./elise";
 
 export interface ChatTurnInput {
   conversationId?: string;
@@ -74,6 +80,7 @@ export async function startChatTurn(
     user: auth.profile,
     now: new Date(),
     availableCapabilities: [...capabilities],
+    accounts: accountSummaries(bindings),
     history,
     userMessage: input.message,
   });

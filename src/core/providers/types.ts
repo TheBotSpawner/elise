@@ -40,4 +40,10 @@ export interface CapabilityBinding {
   priority: number;
   isDefault: boolean;
   enabled: boolean;
+  /** User-facing name of the connection ("Personal", "Firbot", "ELISE"). */
+  label: string;
+  /** Account identity at the provider (e.g. the Google email). Never a secret. */
+  accountLabel: string | null;
+  /** Free-text context the user attached to the connection ("Firbot", "RSFA"). */
+  contextLabel: string | null;
 }
