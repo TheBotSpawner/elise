@@ -3,7 +3,7 @@
 One persistent intelligence that coordinates your digital world through chat, capabilities and
 replaceable providers.
 
-**Status:** pre-MVP — Slice 1 (Foundation), Slice 2 (Google Calendar + Tasks), Gmail + Email Copilot, and Schedules + Morning Brief (Trigger.dev) implemented. See [What works today](#what-works-today).
+**Status:** pre-MVP — Slice 1 (Foundation), Slice 2 (Google Calendar + Tasks), Gmail + Email Copilot, Schedules + Morning Brief (Trigger.dev) and Knowledge (uploads, Google Drive, Notion) implemented. See [What works today](#what-works-today).
 
 ## Stack
 
@@ -44,14 +44,14 @@ In the Supabase dashboard:
 Connections to Google are separate from signing in to ELISE. To enable them:
 
 1. **Google Cloud Console** → create (or pick) a project.
-2. **APIs & Services → Library:** enable **Google Calendar API**, **Google Tasks API** and
-   **Gmail API**.
+2. **APIs & Services → Library:** enable **Google Calendar API**, **Google Tasks API**,
+   **Gmail API** and **Google Drive API**.
 3. **Google Auth Platform → Branding / Audience:** app name, support email; User type
    _External_; while in _Testing_, add your Google accounts as **test users**.
 4. **Data Access (scopes):** add `openid`, `…/auth/userinfo.email`, `…/auth/userinfo.profile`,
    `https://www.googleapis.com/auth/calendar.events`,
    `https://www.googleapis.com/auth/calendar.readonly`, `https://www.googleapis.com/auth/tasks`,
-   `https://www.googleapis.com/auth/gmail.modify`.
+   `https://www.googleapis.com/auth/gmail.modify`, `https://www.googleapis.com/auth/drive.readonly`.
 5. **Clients → Create client → Web application:**
    - Authorized JavaScript origin: `http://localhost:3000`
    - Authorized redirect URI: `http://localhost:3000/api/connections/google/callback`
@@ -71,6 +71,26 @@ Gmail is enabled per account and incrementally: on `/connections`, press **Enabl
 Gmail row of an already connected Google account. Calendar and Tasks keep working; no reconnect
 is needed. See [ADR-005](docs/decisions/ADR-005-gmail-email-capability.md).
 
+### Knowledge (uploads, Google Drive, Notion)
+
+Knowledge is stored in Supabase (Postgres + pgvector, private Storage bucket
+`knowledge-originals`, both created by migration `20260929000009`) and processed by the
+Trigger.dev tasks in `src/trigger/knowledge.ts`. See
+[ADR-007](docs/decisions/ADR-007-knowledge-system.md).
+
+- **Uploads:** PDF, DOCX, TXT, Markdown, CSV · up to 25 MB each, 20 per batch.
+- **Google Drive:** on `/connections`, press **Enable** on the Google Drive row of a Google
+  account (scope `drive.readonly`, incremental — Calendar/Tasks/Gmail keep working). Then in a
+  Space: **Add from Google Drive** → pick folders/files.
+- **Notion:** create a _public_ integration at notion.so/profile/integrations (capability: Read
+  content), set the redirect URI `{NEXT_PUBLIC_APP_URL}/api/connections/notion/callback`, and
+  put `NOTION_OAUTH_CLIENT_ID` / `NOTION_OAUTH_CLIENT_SECRET` in `.env.local` (and in the
+  Trigger.dev environment). Then **Connect Notion** on `/connections` (choose pages in Notion)
+  and, in a Space, **Add from Notion**.
+- Embeddings use `OPENAI_EMBEDDING_MODEL` (default `text-embedding-3-small`).
+- Internal reindex (after changing the embedding model or chunking): trigger the
+  `knowledge-reindex` task from the Trigger.dev dashboard with `{}` or `{ "workspaceId": "…" }`.
+
 ### Schedules and Morning Brief (Trigger.dev)
 
 Background work (Schedules, Morning Brief) runs on Trigger.dev. The project ref is in
@@ -83,7 +103,8 @@ Background work (Schedules, Morning Brief) runs on Trigger.dev. The project ref 
 3. Dashboard → **Environment variables** (Development, later Production): add what the tasks
    need — `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
    `SUPABASE_SECRET_KEY`, `ELISE_ENCRYPTION_KEY`, `GOOGLE_OAUTH_CLIENT_ID`,
-   `GOOGLE_OAUTH_CLIENT_SECRET`, `OPENAI_API_KEY` (+ `OPENAI_MODEL`). In development the CLI also
+   `GOOGLE_OAUTH_CLIENT_SECRET`, `OPENAI_API_KEY` (+ `OPENAI_MODEL`, `OPENAI_EMBEDDING_MODEL`), and
+   `NOTION_OAUTH_CLIENT_ID`/`_SECRET` if you use Notion. In development the CLI also
    loads your local `.env` files.
 4. Run the worker next to the app: `npm run trigger:dev`. The `schedules-dispatch` task runs
    every minute and starts due Schedules; **Run now** starts one immediately.
@@ -101,19 +122,21 @@ Without `OPENAI_API_KEY`, everything works except chat, which reports that AI is
 
 ## Environment variables
 
-| Variable                                                           | Required  | Purpose                                            |
-| ------------------------------------------------------------------ | --------- | -------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | yes       | Auth + data (browser-safe; RLS enforces access)    |
-| `OPENAI_API_KEY`                                                   | for chat  | Server-only AI provider key                        |
-| `OPENAI_MODEL`, `OPENAI_MODEL_FAST`                                | no        | Model names (defaults `gpt-5-mini` / `gpt-5-nano`) |
-| `NEXT_PUBLIC_APP_URL`                                              | prod      | Base URL for auth redirects                        |
-| `ELISE_ENV`                                                        | no        | `development` / `staging` / `production` log tag   |
-| `CHAT_RATE_LIMIT_PER_MINUTE`                                       | no        | Per-user chat rate limit (default 20)              |
-| `SUPABASE_SECRET_KEY`                                              | Google    | Server-only: encrypted credential store            |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`             | Google    | OAuth client for Calendar/Tasks/Gmail connections  |
-| `ELISE_ENCRYPTION_KEY` (+ optional `_PREVIOUS`)                    | Google    | AES-256-GCM key for OAuth credentials at rest      |
-| `TRIGGER_SECRET_KEY`                                               | Schedules | Trigger.dev secret key (one per environment)       |
-| `TRIGGER_PROJECT_REF`                                              | no        | Overrides the project ref in `trigger.config.ts`   |
+| Variable                                                           | Required  | Purpose                                                 |
+| ------------------------------------------------------------------ | --------- | ------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | yes       | Auth + data (browser-safe; RLS enforces access)         |
+| `OPENAI_API_KEY`                                                   | for chat  | Server-only AI provider key                             |
+| `OPENAI_MODEL`, `OPENAI_MODEL_FAST`                                | no        | Model names (defaults `gpt-5-mini` / `gpt-5-nano`)      |
+| `NEXT_PUBLIC_APP_URL`                                              | prod      | Base URL for auth redirects                             |
+| `ELISE_ENV`                                                        | no        | `development` / `staging` / `production` log tag        |
+| `CHAT_RATE_LIMIT_PER_MINUTE`                                       | no        | Per-user chat rate limit (default 20)                   |
+| `SUPABASE_SECRET_KEY`                                              | Google    | Server-only: encrypted credential store                 |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`             | Google    | OAuth client for Calendar/Tasks/Gmail connections       |
+| `ELISE_ENCRYPTION_KEY` (+ optional `_PREVIOUS`)                    | Google    | AES-256-GCM key for OAuth credentials at rest           |
+| `TRIGGER_SECRET_KEY`                                               | Schedules | Trigger.dev secret key (one per environment)            |
+| `TRIGGER_PROJECT_REF`                                              | no        | Overrides the project ref in `trigger.config.ts`        |
+| `OPENAI_EMBEDDING_MODEL`                                           | no        | Knowledge embeddings (default `text-embedding-3-small`) |
+| `NOTION_OAUTH_CLIENT_ID`, `NOTION_OAUTH_CLIENT_SECRET`             | Notion    | Notion public integration for Knowledge                 |
 
 ## Scripts
 
@@ -158,6 +181,13 @@ database is needed.
   resolve once, verify the payload hash, and revalidate before executing.
 - Actions, tool executions, AI runs and audit events are recorded; logs are structured and
   redacted.
+- **Knowledge:** Spaces (nested: Work › Firbot › RSFA) fed by uploads, Google Drive folders/files
+  and Notion pages. Background reading → structure-aware chunks → embeddings → hybrid search
+  (vector + full-text, scoped to the Space first). Answers cite their sources `[n]` with a
+  Sources card that opens the cited passage, version and original; ELISE says when the Space
+  doesn't contain enough evidence. Versions are kept (unchanged content is never re-indexed),
+  "what changed" and "compare" use version history, external sources sync hourly and on
+  **Sync now**, removed items leave search. "Ask ELISE" from a Space scopes the conversation.
 - **Schedules (Programados) + Morning Brief:** create from the Schedules screen or from chat
   ("Every weekday at 7:30 prepare my Morning Brief" → confirmation card). Runs in the background
   on Trigger.dev at the schedule's local time (DST-aware), gathers today's calendar, important
