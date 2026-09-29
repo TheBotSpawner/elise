@@ -28,6 +28,8 @@ export const CAPABILITY_SCOPES = {
   ],
   tasks: ["https://www.googleapis.com/auth/tasks"],
   email: ["https://www.googleapis.com/auth/gmail.modify"],
+  // Knowledge from Drive: read-only, and only what the user selects gets indexed.
+  knowledge: ["https://www.googleapis.com/auth/drive.readonly"],
 } as const satisfies Partial<Record<CapabilityKey, readonly string[]>>;
 
 export type GoogleCapability = keyof typeof CAPABILITY_SCOPES;

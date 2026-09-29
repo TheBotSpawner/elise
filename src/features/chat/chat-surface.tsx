@@ -37,12 +37,15 @@ export function ChatSurface({
   timezone,
   userName = "",
   ambient,
+  space,
 }: {
   conversationId?: string;
   initialMessages?: ChatMessage[];
   timezone: string;
   userName?: string;
   ambient?: HomeAmbient;
+  /** "Ask ELISE" from a Knowledge Space: the new conversation searches it first. */
+  space?: { id: string; path: string } | null;
 }) {
   const { t } = useI18n();
   const desktop = useIsDesktop();
@@ -51,6 +54,7 @@ export function ChatSurface({
     useEliseChat({
       conversationId,
       messages: initialMessages,
+      spaceId: space?.id,
     });
   const empty = messages.length === 0;
 
@@ -129,6 +133,15 @@ export function ChatSurface({
             className="flex flex-col items-center"
           >
             <HomeStatus state={orbState} userName={userName} timezone={timezone} />
+            {space && (
+              <Link
+                href={`/knowledge/spaces/${space.id}`}
+                className="mt-3 flex h-8 items-center gap-2 rounded-full border border-accent-line px-3 text-[13px] text-accent-text"
+              >
+                <span className="type-label text-faint">{t.knowledge.inSpace}</span>
+                {space.path}
+              </Link>
+            )}
             <h1 className="mt-3 text-center text-[30px] leading-[1.15] font-light tracking-[-0.025em] md:text-[46px] md:leading-[1.1]">
               {t.chat.emptyTitle}
             </h1>

@@ -6,7 +6,16 @@ import { useEffect, useRef } from "react";
 import { createClient } from "@/infrastructure/supabase/client";
 
 type RealtimeTable =
-  "tasks" | "approvals" | "notifications" | "schedules" | "schedule_runs" | "scheduled_results";
+  | "tasks"
+  | "approvals"
+  | "notifications"
+  | "schedules"
+  | "schedule_runs"
+  | "scheduled_results"
+  | "knowledge_spaces"
+  | "knowledge_sources"
+  | "knowledge_items"
+  | "knowledge_sync_runs";
 
 /**
  * Subscribes to workspace-scoped row changes (RLS still applies server-side) and calls

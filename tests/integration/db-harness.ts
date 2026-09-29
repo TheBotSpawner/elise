@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite-pgvector";
 
 /**
  * In-process Postgres (PGlite) with the minimal Supabase surface our migrations rely on:
@@ -23,6 +24,17 @@ const SUPABASE_STUB = `
   $$;
   grant usage on schema auth to authenticated, anon;
   create publication supabase_realtime;
+  -- Supabase keeps extensions (pgvector) in their own schema, and Storage buckets in storage.
+  create schema extensions;
+  grant usage on schema extensions to authenticated, anon, service_role;
+  create schema storage;
+  create table storage.buckets (
+    id text primary key,
+    name text not null,
+    public boolean default false,
+    file_size_limit bigint,
+    allowed_mime_types text[]
+  );
   -- Supabase's default privileges: API roles get table access, RLS restricts rows.
   -- Migrations can still revoke (e.g. connection_secrets).
   grant usage on schema public to authenticated, anon, service_role;
@@ -33,7 +45,7 @@ const SUPABASE_STUB = `
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
 export async function createTestDatabase(): Promise<PGlite> {
-  const db = new PGlite();
+  const db = new PGlite({ extensions: { vector } });
   await db.exec(SUPABASE_STUB);
   for (const file of readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith(".sql"))

@@ -9,6 +9,10 @@ const serverEnvSchema = z.object({
   // Model names are configuration, never feature code (docs/architecture/12 §16).
   OPENAI_MODEL: z.string().min(1).default("gpt-5-mini"),
   OPENAI_MODEL_FAST: z.string().min(1).default("gpt-5-nano"),
+  /** Knowledge embeddings (1536 dimensions are stored). Changing it requires a reindex. */
+  OPENAI_EMBEDDING_MODEL: z.string().min(1).default("text-embedding-3-small"),
+  NOTION_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  NOTION_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),
   TRIGGER_SECRET_KEY: z.string().min(1).optional(),
   GOOGLE_OAUTH_CLIENT_ID: z.string().min(1).optional(),

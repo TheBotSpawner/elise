@@ -20,6 +20,7 @@ import {
   EmailThreadCard,
   FollowUpsCard,
 } from "./email-cards";
+import { KnowledgeSourcesCard } from "./knowledge-cards";
 
 const RISE = {
   initial: { opacity: 0, y: 8 },
@@ -295,6 +296,8 @@ export function DisplayCard({
       return <FollowUpsCard display={display} timezone={timezone} rise={rise} />;
     case "email_changed":
       return <EmailChangedCard display={display} rise={rise} />;
+    case "knowledge_evidence":
+      return <KnowledgeSourcesCard display={display} rise={rise} />;
     case "schedule_proposal":
       return <ScheduleProposalCard display={display} rise={rise} />;
 

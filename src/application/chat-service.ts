@@ -27,11 +27,13 @@ import {
   toolContext,
   toolRegistry,
 } from "./elise";
+import { listSpaces } from "./knowledge-service";
 
 export interface ChatTurnInput {
   conversationId?: string;
   message: string;
   requestId: string;
+  spaceId?: string;
 }
 
 /**
@@ -48,8 +50,10 @@ export async function startChatTurn(
   const { bindings } = await ports.bindings();
   const capabilities = availableCapabilities(bindings);
 
-  const conversationId = input.conversationId ?? (await createConversation(auth, input.message));
+  const conversationId =
+    input.conversationId ?? (await createConversation(auth, input.message, input.spaceId));
   const history = input.conversationId ? await loadHistory(auth, conversationId) : [];
+  const activeSpace = await loadActiveSpace(auth, conversationId);
 
   const { error: insertError } = await auth.db.from("messages").insert({
     conversation_id: conversationId,
@@ -83,6 +87,7 @@ export async function startChatTurn(
     accounts: accountSummaries(bindings),
     history,
     userMessage: input.message,
+    activeSpace: activeSpace?.path ?? null,
   });
   const encoder = new TextEncoder();
 
@@ -104,7 +109,7 @@ export async function startChatTurn(
         for await (const event of runElise({
           ai,
           ports,
-          ctx: toolContext(auth, "ai", runId),
+          ctx: { ...toolContext(auth, "ai", runId), knowledgeSpaceId: activeSpace?.id ?? null },
           instructions: context.instructions,
           input: context.input,
           tools: toolRegistry.available(capabilities),
@@ -234,16 +239,44 @@ async function enforceRateLimit(auth: AuthContext) {
   }
 }
 
-async function createConversation(auth: AuthContext, firstMessage: string): Promise<string> {
+async function createConversation(
+  auth: AuthContext,
+  firstMessage: string,
+  spaceId?: string,
+): Promise<string> {
   const title = firstMessage.replace(/\s+/g, " ").trim().slice(0, 80);
   const { data, error } = await auth.db
     .from("conversations")
-    .insert({ workspace_id: auth.workspaceId, user_id: auth.userId, title })
+    .insert({
+      workspace_id: auth.workspaceId,
+      user_id: auth.userId,
+      title,
+      // The Space is re-validated on every turn (loadActiveSpace); this is only a reference.
+      active_context: spaceId ? { knowledgeSpaceId: spaceId } : {},
+    })
     .select("id")
     .single();
   if (error)
     throw new AppError("INTERNAL_ERROR", "Could not start the conversation", { cause: error });
   return data.id;
+}
+
+/** The conversation's Knowledge Space, if it has one and it is still an active Space here. */
+async function loadActiveSpace(
+  auth: AuthContext,
+  conversationId: string,
+): Promise<{ id: string; path: string } | null> {
+  const { data } = await auth.db
+    .from("conversations")
+    .select("active_context")
+    .eq("id", conversationId)
+    .eq("workspace_id", auth.workspaceId)
+    .maybeSingle();
+  const spaceId = (data?.active_context as { knowledgeSpaceId?: string } | null)?.knowledgeSpaceId;
+  if (!spaceId) return null;
+  const spaces = await listSpaces(auth).catch(() => []);
+  const space = spaces.find((s) => s.id === spaceId);
+  return space ? { id: space.id, path: space.path } : null;
 }
 
 async function loadHistory(auth: AuthContext, conversationId: string): Promise<HistoryMessage[]> {

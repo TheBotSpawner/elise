@@ -15,8 +15,10 @@ import { AppError } from "@/core/errors";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { EMAIL_TOOLS } from "@/core/tools/email";
+import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { getEmbeddingProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
 import { EliseTasksProvider } from "@/infrastructure/providers/elise-native/tasks";
 import { GoogleCalendarProvider } from "@/infrastructure/providers/google/calendar";
@@ -29,12 +31,14 @@ import {
 import { GmailProvider } from "@/infrastructure/providers/google/gmail";
 import { GoogleHttp } from "@/infrastructure/providers/google/http";
 import { GoogleTasksProvider } from "@/infrastructure/providers/google/tasks";
+import { NotionClient } from "@/infrastructure/providers/notion/client";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 import { SupabaseActionLog } from "@/infrastructure/supabase/repositories/action-log";
 import {
   loadWorkspaceBindings,
   type WorkspaceBindings,
 } from "@/infrastructure/supabase/repositories/bindings";
+import { SupabaseKnowledgeReader } from "@/infrastructure/supabase/repositories/knowledge";
 
 import type { AuthContext } from "./auth-context";
 
@@ -44,13 +48,19 @@ export const toolRegistry = new ToolRegistry().register(
   ...CALENDAR_TOOLS,
   ...EMAIL_TOOLS,
   ...SCHEDULE_TOOLS,
+  ...KNOWLEDGE_TOOLS,
 );
 
 /**
  * A revoked/expired grant: stop using the connection for resolution (status), tell the user
  * once, and keep an audit trail. Never falls back to another account.
  */
-async function markNeedsReauthorization(auth: AuthContext, ref: ConnectionRef, code: string) {
+async function markNeedsReauthorization(
+  auth: AuthContext,
+  ref: ConnectionRef,
+  code: string,
+  providerName: string,
+) {
   const { data } = await auth.db
     .from("provider_connections")
     .update({
@@ -70,7 +80,7 @@ async function markNeedsReauthorization(auth: AuthContext, ref: ConnectionRef, c
       workspace_id: auth.workspaceId,
       user_id: auth.userId,
       notification_type: "connection.needs_attention",
-      title: `Google “${data.display_name}” needs to be reconnected`,
+      title: `${providerName} “${data.display_name}” needs to be reconnected`,
       priority: "high",
       source_type: "provider_connection",
       source_id: ref.connectionId,
@@ -82,13 +92,44 @@ async function markNeedsReauthorization(auth: AuthContext, ref: ConnectionRef, c
       event_type: "connection.needs_reauthorization",
       resource_type: "provider_connection",
       resource_id: ref.connectionId,
-      provider_key: "google",
+      provider_key: providerName.toLowerCase(),
       connection_id: ref.connectionId,
       origin: "system",
       result: "failure",
       metadata: { code },
     }),
   ]);
+}
+
+/** Authenticated Google client for one connection of this workspace (tokens stay server-side). */
+export function googleHttpFor(auth: AuthContext, connectionId: string): GoogleHttp {
+  const ref = { connectionId, workspaceId: auth.workspaceId };
+  return new GoogleHttp(
+    new GoogleTokenProvider(ref, {
+      vault: new SupabaseCredentialVault(createAdminClient(), "google"),
+      config: googleOAuthConfig(),
+      onReauthorizationRequired: (r, code) => markNeedsReauthorization(auth, r, code, "Google"),
+    }),
+  );
+}
+
+/** Notion client for one connection of this workspace. Notion tokens do not expire. */
+export function notionClientFor(auth: AuthContext, connectionId: string): NotionClient {
+  const ref = { connectionId, workspaceId: auth.workspaceId };
+  const vault = new SupabaseCredentialVault(createAdminClient(), "notion");
+  return new NotionClient(
+    async () => {
+      const credential = await vault.read(ref);
+      if (!credential) {
+        await markNeedsReauthorization(auth, ref, "missing_credentials", "Notion");
+        throw new AppError("AUTH_EXPIRED", "This Notion connection needs to be reconnected", {
+          recovery: "reconnect",
+        });
+      }
+      return credential.accessToken;
+    },
+    () => markNeedsReauthorization(auth, ref, "unauthorized", "Notion"),
+  );
 }
 
 /** Maps a resolved binding to the concrete provider adapter. */
@@ -100,17 +141,12 @@ function providerFactory(
   const googleHttp = (connectionId: string) => {
     let http = google.get(connectionId);
     if (!http) {
-      const ref = { connectionId, workspaceId: auth.workspaceId };
-      const tokens = new GoogleTokenProvider(ref, {
-        vault: new SupabaseCredentialVault(createAdminClient(), "google"),
-        config: googleOAuthConfig(),
-        onReauthorizationRequired: (r, code) => markNeedsReauthorization(auth, r, code),
-      });
-      http = new GoogleHttp(tokens);
+      http = googleHttpFor(auth, connectionId);
       google.set(connectionId, http);
     }
     return http;
   };
+  let knowledge: SupabaseKnowledgeReader | undefined;
 
   const make: {
     [K in ImplementedCapability]: (binding: CapabilityBinding) => CapabilityProviders[K];
@@ -146,6 +182,11 @@ function providerFactory(
         { connectionId: binding.connectionId, label: binding.label, account: binding.accountLabel },
         googleHttp(binding.connectionId),
       );
+    },
+    // ELISE's own index, whatever the source; always this workspace's.
+    knowledge() {
+      knowledge ??= new SupabaseKnowledgeReader(auth.db, auth.workspaceId, getEmbeddingProvider);
+      return knowledge;
     },
   };
 

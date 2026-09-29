@@ -24,9 +24,16 @@ import {
   suggestAlias,
   type GoogleCapability,
 } from "@/infrastructure/providers/google/oauth";
+import {
+  buildNotionAuthorizationUrl,
+  exchangeNotionCode,
+  isNotionConfigured,
+  notionOAuthConfig,
+} from "@/infrastructure/providers/notion/oauth";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 
 import type { AuthContext } from "./auth-context";
+import { purgeConnectionKnowledge } from "./knowledge-service";
 
 // ── Pure rules (tested in isolation) ─────────────────────────────────────────
 
@@ -66,7 +73,10 @@ export function validatePendingAuthorization(
 export function parseRequestedCapabilities(values: readonly string[]): GoogleCapability[] {
   const caps = [...new Set(values)].filter(isGoogleCapability);
   if (caps.length === 0)
-    throw new AppError("VALIDATION_ERROR", "Choose at least one of Calendar, Tasks or Email");
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Choose at least one of Calendar, Tasks, Email or Drive",
+    );
   return caps;
 }
 
@@ -361,7 +371,7 @@ export interface ConnectionView {
 
 export async function listConnections(
   auth: AuthContext,
-): Promise<{ connections: ConnectionView[]; googleAvailable: boolean }> {
+): Promise<{ connections: ConnectionView[]; googleAvailable: boolean; notionAvailable: boolean }> {
   const [conns, caps, bindings] = await Promise.all([
     auth.db
       .from("provider_connections")
@@ -400,7 +410,11 @@ export async function listConnections(
         ),
       })),
   }));
-  return { connections, googleAvailable: isGoogleConfigured() };
+  return {
+    connections,
+    googleAvailable: isGoogleConfigured(),
+    notionAvailable: isNotionConfigured(),
+  };
 }
 
 async function ownConnection(auth: AuthContext, connectionId: string) {
@@ -490,10 +504,15 @@ export async function disconnectConnection(auth: AuthContext, connectionId: stri
   const ref = { connectionId, workspaceId: auth.workspaceId };
   const vault = new SupabaseCredentialVault(createAdminClient(), connection.provider_key);
   const credential = await vault.read(ref).catch(() => null);
-  const revoked = credential
-    ? await revokeToken(credential.refreshToken ?? credential.accessToken)
-    : false;
+  // Notion has no token revocation endpoint: deleting the credential ends ELISE's access here,
+  // and the user can remove the integration in Notion's settings.
+  const revoked =
+    credential && connection.provider_key === "google"
+      ? await revokeToken(credential.refreshToken ?? credential.accessToken)
+      : false;
   await vault.remove(ref);
+  // Sync stops now, and what ELISE indexed through this account is deleted.
+  await purgeConnectionKnowledge(auth.workspaceId, connectionId);
 
   const now = new Date().toISOString();
   await Promise.all([
@@ -536,4 +555,117 @@ async function audit(
     result: "success",
     metadata: JSON.parse(JSON.stringify(metadata)),
   });
+}
+
+// ── Notion ───────────────────────────────────────────────────────────────────
+
+/** Starts Notion's consent. The user picks which pages ELISE may read, in Notion. */
+export async function startNotionConnection(auth: AuthContext, origin: string): Promise<string> {
+  const config = notionOAuthConfig(origin);
+  const { state, hash } = createState();
+  const { error } = await auth.db.from("oauth_states").insert({
+    state_hash: hash,
+    workspace_id: auth.workspaceId,
+    user_id: auth.userId,
+    provider_key: "notion",
+    capabilities: ["knowledge"],
+    // Notion's flow has no PKCE; the column stores an encrypted placeholder.
+    code_verifier_ciphertext: encrypt("none", `oauth_state:${hash}`),
+  });
+  if (error)
+    throw new AppError("INTERNAL_ERROR", "Could not start the connection", { cause: error });
+  return buildNotionAuthorizationUrl(config, state);
+}
+
+export async function completeNotionConnection(
+  auth: AuthContext,
+  params: { code: string | null; state: string | null; error: string | null; origin: string },
+): Promise<string> {
+  if (!params.state) throw new AppError("VALIDATION_ERROR", "Missing authorization state");
+  const stateHash = hashState(params.state);
+  const { data: pending } = await auth.db
+    .from("oauth_states")
+    .delete()
+    .eq("state_hash", stateHash)
+    .eq("user_id", auth.userId)
+    .eq("workspace_id", auth.workspaceId)
+    .select("*")
+    .maybeSingle();
+  validatePendingAuthorization(pending, {
+    userId: auth.userId,
+    workspaceId: auth.workspaceId,
+    providerKey: "notion",
+    now: new Date(),
+  });
+  if (params.error || !params.code) {
+    throw new AppError("PERMISSION_DENIED", "Notion access was not granted", { recovery: "retry" });
+  }
+  const grant = await exchangeNotionCode(notionOAuthConfig(params.origin), params.code);
+  const admin = createAdminClient();
+
+  const { data: existing } = await auth.db
+    .from("provider_connections")
+    .select("id")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("provider_key", "notion")
+    .eq("external_account_id", grant.workspaceId)
+    .maybeSingle();
+  let connectionId = existing?.id ?? null;
+  const label = grant.workspaceName ?? "Notion";
+  if (connectionId) {
+    await admin
+      .from("provider_connections")
+      .update({
+        status: "connected",
+        last_connected_at: new Date().toISOString(),
+        last_error_code: null,
+        disconnected_at: null,
+      })
+      .eq("id", connectionId)
+      .eq("workspace_id", auth.workspaceId);
+  } else {
+    const { data, error } = await admin
+      .from("provider_connections")
+      .insert({
+        workspace_id: auth.workspaceId,
+        provider_key: "notion",
+        created_by_user_id: auth.userId,
+        external_account_id: grant.workspaceId,
+        display_name: await uniqueAlias(auth, label, `${label} (Notion)`),
+        account_label: grant.ownerEmail ?? label,
+        status: "connected",
+        auth_metadata: { botId: grant.botId, workspaceName: grant.workspaceName },
+      })
+      .select("id")
+      .single();
+    if (error)
+      throw new AppError("INTERNAL_ERROR", "Could not save the connection", { cause: error });
+    connectionId = data.id;
+  }
+
+  await new SupabaseCredentialVault(admin, "notion").write(
+    { connectionId, workspaceId: auth.workspaceId },
+    {
+      accessToken: grant.accessToken,
+      // Notion access tokens do not expire.
+      accessTokenExpiresAt: new Date("2999-01-01").toISOString(),
+      refreshToken: grant.refreshToken,
+      scopes: ["notion:read_content"],
+    },
+  );
+  await auth.db.from("connection_capabilities").upsert(
+    {
+      workspace_id: auth.workspaceId,
+      connection_id: connectionId,
+      capability_key: "knowledge",
+      enabled: true,
+      permission_level: "read",
+      authorized_scopes: ["notion:read_content"],
+    },
+    { onConflict: "connection_id,capability_key" },
+  );
+  await audit(auth, connectionId, existing ? "connection.reauthorized" : "connection.created", {
+    provider: "notion",
+  });
+  return connectionId;
 }

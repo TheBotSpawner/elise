@@ -113,6 +113,10 @@ function TraceRow({ step, index }: { step: ClientToolTrace; index: number }) {
   else if (o.display?.kind === "event") detail = o.display.event.title;
   else if (o.display?.kind === "event_list")
     detail = `${t.calendar.agenda} · ${o.display.events.length}`;
+  else if (o.display?.kind === "knowledge_evidence")
+    detail = o.display.enough
+      ? `${t.knowledge.sourcesCard} · ${o.display.evidence.length}`
+      : t.knowledge.notEnough;
   else if (o.display?.kind === "email_list") detail = t.email.results(o.display.messages.length);
   else if (o.display?.kind === "email_thread") detail = o.display.thread.subject;
   else if (o.display?.kind === "email_draft") detail = o.display.draft.subject;

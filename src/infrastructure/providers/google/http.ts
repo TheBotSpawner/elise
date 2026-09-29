@@ -35,6 +35,28 @@ export class GoogleHttp {
     throw await toAppError(res, method);
   }
 
+  /** Raw bytes of a file download/export, refusing anything larger than `maxBytes`. */
+  async download(url: string, maxBytes: number): Promise<Uint8Array> {
+    let res = await this.send("GET", url, undefined, false);
+    if (res.status === 401) res = await this.send("GET", url, undefined, true);
+    if (!res.ok) throw await toAppError(res, "GET");
+    const length = Number(res.headers.get("content-length") ?? 0);
+    if (length > maxBytes) {
+      throw new AppError("VALIDATION_ERROR", "This file is too large to understand", {
+        recovery: "review",
+        details: { knowledge: "needs_attention" },
+      });
+    }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength > maxBytes) {
+      throw new AppError("VALIDATION_ERROR", "This file is too large to understand", {
+        recovery: "review",
+        details: { knowledge: "needs_attention" },
+      });
+    }
+    return bytes;
+  }
+
   private async send(
     method: string,
     url: string,

@@ -12,6 +12,7 @@ import type {
 import { getCapability } from "../capabilities/registry";
 import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
+import type { KnowledgeReader } from "../knowledge/model";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
 import type { ScheduleInput } from "../schedules/schedule";
 
@@ -25,6 +26,8 @@ export interface ToolContext {
   now: Date;
   origin: ActionOrigin;
   aiRunId: string | null;
+  /** The Knowledge Space the conversation is in, if any: searched first. */
+  knowledgeSpaceId?: string | null;
 }
 
 /** Capability → provider contract. Grows as capabilities are implemented. */
@@ -32,6 +35,8 @@ export interface CapabilityProviders {
   tasks: TaskProvider;
   calendar: CalendarProvider;
   email: EmailProvider;
+  /** ELISE's own index, whatever source fed it. */
+  knowledge: KnowledgeReader;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -41,6 +46,21 @@ export interface ProviderFactory {
     capability: C,
     binding: CapabilityBinding,
   ): CapabilityProviders[C];
+}
+
+/** One cited passage: enough to show and open the source, never the whole document. */
+export interface KnowledgeEvidence {
+  ref: number;
+  itemId: string;
+  chunkId: string;
+  title: string;
+  section: string | null;
+  page: number | null;
+  sourceType: string;
+  url: string | null;
+  versionNumber: number;
+  spaceName: string;
+  snippet: string;
 }
 
 /** Structured payloads the UI renders as cards inside the conversation. */
@@ -84,6 +104,13 @@ export type ToolDisplay =
       kind: "email_followups";
       followUp: "needs_reply" | "waiting_on_others";
       items: FollowUp[];
+    }
+  | {
+      /** Evidence behind a Knowledge answer: what the citations [n] point to. */
+      kind: "knowledge_evidence";
+      scope: string[];
+      enough: boolean;
+      evidence: KnowledgeEvidence[];
     }
   | {
       /** A Schedule ELISE proposes; created only when the user confirms. */

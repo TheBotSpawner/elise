@@ -189,6 +189,14 @@ function emailNote(display: ToolDisplay): string | null {
       return `thread "${display.thread.subject}" (thread ${display.thread.id}, latest message ${display.thread.messages.at(-1)?.id ?? "?"})`;
     case "email_draft":
       return `draft ${display.change} "${display.draft.subject}" to ${display.draft.to.map((a) => a.email).join(", ")} (draft ${display.draft.id})`;
+    case "knowledge_evidence":
+      return `${display.evidence.length} Knowledge passages${display.enough ? "" : " (not enough evidence)"}: ${[
+        ...new Map(
+          display.evidence.map((e) => [e.itemId, `"${e.title}" (item ${e.itemId})`]),
+        ).values(),
+      ]
+        .slice(0, 5)
+        .join("; ")}`;
     case "email_followups":
       return `${display.items.length} ${display.followUp}: ${display.items
         .slice(0, 5)

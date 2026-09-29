@@ -1,14 +1,20 @@
-import { BookOpen } from "lucide-react";
-
-import { EmptyState, PageContainer, PageHeader } from "@/components/shared/page";
+import { requireAuthContext } from "@/application/auth-context";
+import { knowledgeSetup, listSpaces } from "@/application/knowledge-service";
+import { PageContainer, PageHeader } from "@/components/shared/page";
+import { KnowledgeHome } from "@/features/knowledge/knowledge-home";
 import { getT } from "@/lib/i18n/server";
 
 export default async function KnowledgePage() {
-  const { t } = await getT();
+  const [auth, { t }] = await Promise.all([requireAuthContext(), getT()]);
+  const spaces = await listSpaces(auth);
   return (
     <PageContainer>
-      <PageHeader title={t.knowledge.title} />
-      <EmptyState icon={BookOpen} title={t.knowledge.emptyTitle} body={t.knowledge.emptyBody} />
+      <PageHeader title={t.knowledge.title} subtitle={t.knowledge.subtitle} />
+      <KnowledgeHome
+        spaces={spaces}
+        workspaceId={auth.workspaceId}
+        backgroundAvailable={knowledgeSetup().backgroundAvailable}
+      />
     </PageContainer>
   );
 }

@@ -421,3 +421,159 @@ describe("schedules, runs and results", () => {
     await expect(insert()).rejects.toThrow(/notifications_schedule_run_once/);
   });
 });
+
+describe("knowledge", () => {
+  const vec = (hot: number) =>
+    `[${Array.from({ length: 1536 }, (_, i) => (i === hot ? 1 : 0)).join(",")}]`;
+
+  async function space(
+    owner: { userId: string; workspaceId: string },
+    name: string,
+    parent: string | null = null,
+  ) {
+    const res = await asUser(db, owner.userId, () =>
+      db.query<{ id: string }>(
+        "insert into public.knowledge_spaces (workspace_id, name, parent_space_id, created_by_user_id) values ($1, $2, $3, $4) returning id",
+        [owner.workspaceId, name, parent, owner.userId],
+      ),
+    );
+    return res.rows[0]!.id;
+  }
+
+  /** Server-side ingestion writes (service role), as the background runtime does. */
+  async function indexedDoc(workspaceId: string, spaceId: string, content: string, hot: number) {
+    const src = await db.query<{ id: string }>(
+      "insert into public.knowledge_sources (workspace_id, space_id, provider_key, source_type, display_name) values ($1, $2, 'elise_native', 'upload', 'Uploads') on conflict do nothing returning id",
+      [workspaceId, spaceId],
+    );
+    const sourceId =
+      src.rows[0]?.id ??
+      (
+        await db.query<{ id: string }>(
+          "select id from public.knowledge_sources where space_id = $1",
+          [spaceId],
+        )
+      ).rows[0]!.id;
+    const item = (
+      await db.query<{ id: string }>(
+        "insert into public.knowledge_items (workspace_id, space_id, source_id, item_type, external_id, title, status) values ($1, $2, $3, 'file', gen_random_uuid()::text, 'Doc', 'ready') returning id",
+        [workspaceId, spaceId, sourceId],
+      )
+    ).rows[0]!.id;
+    const version = (
+      await db.query<{ id: string }>(
+        "insert into public.knowledge_versions (workspace_id, knowledge_item_id, version_number, is_current, status) values ($1, $2, 1, true, 'ready') returning id",
+        [workspaceId, item],
+      )
+    ).rows[0]!.id;
+    await db.query("update public.knowledge_items set current_version_id = $1 where id = $2", [
+      version,
+      item,
+    ]);
+    await db.query(
+      "insert into public.knowledge_chunks (workspace_id, space_id, source_id, knowledge_item_id, version_id, chunk_index, content, embedding, embedding_model) values ($1, $2, $3, $4, $5, 0, $6, $7, 'm')",
+      [workspaceId, spaceId, sourceId, item, version, content, vec(hot)],
+    );
+    return { item, version, sourceId };
+  }
+
+  const search = (
+    userId: string,
+    workspaceId: string,
+    keywords: string,
+    hot: number | null,
+    spaces: string[] | null = null,
+  ) =>
+    asUser(db, userId, () =>
+      db.query<{ content: string; similarity: number | null; keyword_rank: number | null }>(
+        "select content, similarity, keyword_rank from public.search_knowledge_chunks($1, $2, $3, 'm', $4, null, 10)",
+        [workspaceId, keywords, hot === null ? null : vec(hot), spaces],
+      ),
+    );
+
+  it("keeps Spaces in one workspace and refuses cycles", async () => {
+    const work = await space(alice, "Work");
+    const firbot = await space(alice, "Firbot", work);
+    await expect(
+      asUser(db, alice.userId, () =>
+        db.query("update public.knowledge_spaces set parent_space_id = $1 where id = $2", [
+          firbot,
+          work,
+        ]),
+      ),
+    ).rejects.toThrow(/cannot be moved under itself/);
+    await expect(space(bob, "Sneaky", work)).rejects.toThrow(/same workspace|row-level security/);
+    const bobSees = await asUser(db, bob.userId, () =>
+      db.query("select id from public.knowledge_spaces"),
+    );
+    expect(bobSees.rows).toHaveLength(0);
+  });
+
+  it("hybrid search is scoped to the workspace, the Space and current versions", async () => {
+    const rsfa = await space(alice, "RSFA");
+    const other = await space(alice, "Personal");
+    await indexedDoc(
+      alice.workspaceId,
+      rsfa,
+      "The Unique ID links each email to the client file.",
+      1,
+    );
+    await indexedDoc(alice.workspaceId, other, "Grocery list and weekend plans.", 2);
+    const bobSpace = await space(bob, "Bob");
+    await indexedDoc(bob.workspaceId, bobSpace, "Bob's secret email filing notes.", 1);
+
+    // Semantic + keyword, within one Space.
+    const inSpace = await search(alice.userId, alice.workspaceId, "email | filing", 1, [rsfa]);
+    expect(inSpace.rows.map((r) => r.content)).toEqual([
+      "The Unique ID links each email to the client file.",
+    ]);
+    expect(inSpace.rows[0]!.similarity).toBeCloseTo(1);
+    expect(inSpace.rows[0]!.keyword_rank).toBe(1);
+
+    // Keyword-only still works (no embedding available).
+    const keywordOnly = await search(alice.userId, alice.workspaceId, "grocery", null);
+    expect(keywordOnly.rows.map((r) => r.content)).toEqual(["Grocery list and weekend plans."]);
+
+    // Another workspace's vectors are never returned, even asking with its id.
+    const crossed = await search(alice.userId, bob.workspaceId, "email | filing", 1);
+    expect(crossed.rows).toHaveLength(0);
+    const own = await search(alice.userId, alice.workspaceId, "secret", 1);
+    expect(own.rows.map((r) => r.content)).not.toContain("Bob's secret email filing notes.");
+  });
+
+  it("stops returning an item once it is removed or superseded", async () => {
+    const s = await space(alice, "Drive");
+    const { item } = await indexedDoc(alice.workspaceId, s, "Quarterly revenue forecast.", 3);
+    expect(
+      (await search(alice.userId, alice.workspaceId, "forecast", null, [s])).rows,
+    ).toHaveLength(1);
+    await db.query("update public.knowledge_items set status = 'removed' where id = $1", [item]);
+    expect(
+      (await search(alice.userId, alice.workspaceId, "forecast", null, [s])).rows,
+    ).toHaveLength(0);
+  });
+
+  it("lets users read their Knowledge but not write the index directly", async () => {
+    const s = await space(alice, "Locked");
+    const { item } = await indexedDoc(alice.workspaceId, s, "Content.", 4);
+    await expect(
+      asUser(db, alice.userId, () =>
+        db.query("update public.knowledge_items set title = 'x' where id = $1", [item]),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(db, alice.userId, () => db.query("delete from public.knowledge_chunks")),
+    ).rejects.toThrow(/permission denied/);
+    const bobChunks = await asUser(db, bob.userId, () =>
+      db.query("select id from public.knowledge_chunks where knowledge_item_id = $1", [item]),
+    );
+    expect(bobChunks.rows).toHaveLength(0);
+  });
+
+  it("stores originals in a private bucket", async () => {
+    const bucket = await db.query<{ public: boolean; file_size_limit: number }>(
+      "select public, file_size_limit from storage.buckets where id = 'knowledge-originals'",
+    );
+    expect(bucket.rows[0]).toMatchObject({ public: false, file_size_limit: 26214400 });
+  });
+});

@@ -58,7 +58,20 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       deleteEvent: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
     },
   },
-  knowledge: { key: "knowledge", status: "planned", operations: {} },
+  // ELISE owns the Knowledge index (whatever fed it): searched in place, never via a provider.
+  knowledge: {
+    key: "knowledge",
+    status: "available",
+    internal: true,
+    operations: {
+      search: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      getItem: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      listSources: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      listRecentChanges: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      compare: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      overview: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+    },
+  },
   habits: { key: "habits", status: "planned", operations: {} },
   lists: { key: "lists", status: "planned", operations: {} },
   goals: { key: "goals", status: "planned", operations: {} },

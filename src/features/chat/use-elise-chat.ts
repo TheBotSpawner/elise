@@ -12,7 +12,12 @@ import type { ChatMessage } from "./types";
 type RunState = "idle" | "thinking" | "using_tools" | "approving";
 
 /** Streams a chat turn from /api/chat (NDJSON) and keeps the conversation state. */
-export function useEliseChat(initial: { conversationId?: string; messages?: ChatMessage[] }) {
+export function useEliseChat(initial: {
+  conversationId?: string;
+  messages?: ChatMessage[];
+  /** A new conversation started from a Knowledge Space. */
+  spaceId?: string;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>(initial.messages ?? []);
   const [runState, setRunState] = useState<RunState>("idle");
   const [lastOutcome, setLastOutcome] = useState<"success" | "error" | null>(null);
@@ -59,7 +64,11 @@ export function useEliseChat(initial: { conversationId?: string; messages?: Chat
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ conversationId: conversationId.current, message }),
+          body: JSON.stringify({
+            conversationId: conversationId.current,
+            message,
+            ...(!conversationId.current && initial.spaceId ? { spaceId: initial.spaceId } : {}),
+          }),
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {
@@ -140,7 +149,7 @@ export function useEliseChat(initial: { conversationId?: string; messages?: Chat
         abort.current = null;
       }
     },
-    [patchAssistant],
+    [patchAssistant, initial.spaceId],
   );
 
   const stop = useCallback(() => abort.current?.abort(), []);

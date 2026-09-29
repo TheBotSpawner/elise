@@ -1,28 +1,46 @@
 import { runs, tasks } from "@trigger.dev/sdk";
 
 import { serverEnv } from "@/config/server-env";
+import type { BackgroundJob, BackgroundRuntime } from "@/core/background/runtime";
 import { AppError } from "@/core/errors";
-import type { BackgroundRuntime } from "@/core/schedules/runner";
-import type { scheduleRunTask } from "@/trigger/schedules";
 
 export function isBackgroundConfigured(): boolean {
   return Boolean(serverEnv().TRIGGER_SECRET_KEY);
 }
+
+const TASKS: Record<
+  BackgroundJob["type"],
+  { id: string; tag: (p: BackgroundJob["payload"]) => string }
+> = {
+  "schedule.run": {
+    id: "schedule-run",
+    tag: (p) => `schedule_run:${(p as { scheduleRunId: string }).scheduleRunId}`,
+  },
+  "knowledge.ingest": {
+    id: "knowledge-ingest",
+    tag: (p) => `knowledge_version:${(p as { versionId: string }).versionId}`,
+  },
+  "knowledge.sync": {
+    id: "knowledge-sync",
+    tag: (p) => `knowledge_sync:${(p as { syncRunId: string }).syncRunId}`,
+  },
+};
 
 /**
  * Trigger.dev behind ELISE's BackgroundRuntime port (docs/architecture/14 §4). Payloads carry
  * ids only; the task loads everything else from ELISE services when it runs.
  */
 export class TriggerDevBackgroundRuntime implements BackgroundRuntime {
-  async enqueue(job: Parameters<BackgroundRuntime["enqueue"]>[0]) {
+  async enqueue(job: BackgroundJob & { idempotencyKey: string }) {
     if (!isBackgroundConfigured()) {
       throw new AppError("CAPABILITY_UNAVAILABLE", "Background execution is not configured", {
         recovery: "configure",
       });
     }
-    const handle = await tasks.trigger<typeof scheduleRunTask>("schedule-run", job.payload, {
+    const task = TASKS[job.type];
+    const handle = await tasks.trigger(task.id, job.payload, {
       idempotencyKey: job.idempotencyKey,
-      tags: [`schedule_run:${job.payload.scheduleRunId}`],
+      tags: [task.tag(job.payload), `workspace:${job.payload.workspaceId}`],
       ttl: "30m",
     });
     return { runtimeJobId: handle.id };

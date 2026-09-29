@@ -12,6 +12,8 @@ const bodySchema = z
   .object({
     conversationId: z.uuid().optional(),
     message: z.string().trim().min(1).max(8000),
+    /** Knowledge Space a new conversation starts in ("Ask ELISE" from a Space). */
+    spaceId: z.uuid().optional(),
   })
   .strict();
 

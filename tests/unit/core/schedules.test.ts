@@ -125,7 +125,10 @@ function setup(handler?: ActionHandler, now = new Date("2026-09-29T10:30:00Z")) 
     store,
     runtime: {
       enqueue: async (job) => {
-        enqueued.push({ key: job.idempotencyKey, runId: job.payload.scheduleRunId });
+        enqueued.push({
+          key: job.idempotencyKey,
+          runId: (job.payload as { scheduleRunId: string }).scheduleRunId,
+        });
         return { runtimeJobId: `run_${enqueued.length}` };
       },
       cancel: async () => undefined,

@@ -9,7 +9,9 @@ import {
   GmailIcon,
   GoogleCalendarIcon,
   GoogleMark,
+  GoogleDriveIcon,
   GoogleTasksIcon,
+  NotionIcon,
 } from "@/components/elise/brand-icons";
 import { CheckIcon } from "@/components/elise/icons";
 import { Button } from "@/components/ui/button";
@@ -24,27 +26,36 @@ import {
   disconnectAction,
   renameConnectionAction,
   setDefaultAction,
+  connectNotion,
   toggleCapabilityAction,
   type ConnectionActionResult,
 } from "./actions";
 
-const GOOGLE_CAPS = ["calendar", "tasks", "email"] as const;
+const GOOGLE_CAPS = ["calendar", "tasks", "email", "knowledge"] as const;
 const CAP_LOGOS = {
   calendar: GoogleCalendarIcon,
   tasks: GoogleTasksIcon,
   email: GmailIcon,
+  knowledge: GoogleDriveIcon,
 } as const;
 // Product names are brands: never translated.
-const CAP_PRODUCT = { calendar: "Google Calendar", tasks: "Google Tasks", email: "Gmail" } as const;
+const CAP_PRODUCT = {
+  calendar: "Google Calendar",
+  tasks: "Google Tasks",
+  email: "Gmail",
+  knowledge: "Google Drive",
+} as const;
 /** Gmail is opt-in: its consent is broader, so least privilege by default. */
-const OPT_IN = new Set<string>(["email"]);
+const OPT_IN = new Set<string>(["email", "knowledge"]);
 
 export function ConnectionsView({
   connections,
   googleAvailable,
+  notionAvailable,
 }: {
   connections: ConnectionView[];
   googleAvailable: boolean;
+  notionAvailable: boolean;
 }) {
   const { t } = useI18n();
   const params = useSearchParams();
@@ -69,6 +80,7 @@ export function ConnectionsView({
 
   const elise = connections.filter((c) => c.providerKey === "elise_native");
   const google = connections.filter((c) => c.providerKey === "google");
+  const notion = connections.filter((c) => c.providerKey === "notion");
 
   return (
     <div className="flex flex-col gap-10">
@@ -120,9 +132,37 @@ export function ConnectionsView({
       </section>
 
       <section className="flex flex-col gap-3">
+        <div>
+          <h2 className="type-label text-faint">Notion</h2>
+          <p className="mt-1 max-w-2xl text-[13.5px] text-muted">{t.connections.notionBody}</p>
+        </div>
+        {notion.map((c) => (
+          <NotionConnectionCard key={c.id} connection={c} notionAvailable={notionAvailable} />
+        ))}
+        {notionAvailable ? (
+          <form
+            action={connectNotion}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-5"
+          >
+            <span className="flex items-center gap-3">
+              <NotionIcon size={32} />
+              <span className="text-[13.5px] text-muted">{t.connections.notionHint}</span>
+            </span>
+            <Button type="submit">
+              {notion.length ? t.connections.addNotion : t.connections.connectNotion}
+            </Button>
+          </form>
+        ) : (
+          <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[13.5px] text-muted">
+            {t.connections.notionNotConfigured}
+          </p>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3">
         <h2 className="type-label text-faint">{t.connections.comingSoon}</h2>
         <div className="flex flex-wrap gap-2">
-          {(["notion", "web_search"] as const).map((p) => (
+          {(["web_search"] as const).map((p) => (
             <span
               key={p}
               className="flex h-9 items-center rounded-full border border-dashed border-border px-4 text-[13px] text-muted"
@@ -153,7 +193,7 @@ function ConnectGooglePanel({ title }: { title: string }) {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         {GOOGLE_CAPS.map((cap) => {
           const Logo = CAP_LOGOS[cap];
           return (
@@ -265,7 +305,7 @@ function GoogleConnectionCard({
             <li key={key} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
               <span className="flex items-center gap-3 text-sm">
                 <Logo size={24} className={cn(!cap?.enabled && "opacity-50 grayscale")} />
-                {t.capabilities[key]}
+                {CAP_PRODUCT[key]}
               </span>
               <div className="flex items-center gap-2">
                 {!granted ? (
@@ -364,6 +404,61 @@ function GoogleConnectionCard({
           onClick={() => {
             if (window.confirm(t.connections.disconnectConfirm(c.displayName)))
               act(() => disconnectAction(c.id));
+          }}
+        >
+          {t.connections.disconnect}
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+function NotionConnectionCard({
+  connection: c,
+  notionAvailable,
+}: {
+  connection: ConnectionView;
+  notionAvailable: boolean;
+}) {
+  const { t } = useI18n();
+  const [pending, startTransition] = useTransition();
+  const healthy = c.status === "connected";
+  return (
+    <article
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-surface px-5 py-4",
+        healthy ? "border-border" : "border-approval-line bg-approval-bg",
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <NotionIcon size={28} />
+        <div className="min-w-0">
+          <p className="truncate font-medium">{c.displayName}</p>
+          <p className="truncate text-[13.5px] text-muted">
+            {healthy ? t.connections.connected : t.connections.needsAttention}
+            {c.accountLabel && ` · ${c.accountLabel}`}
+          </p>
+        </div>
+      </div>
+      <div className="flex gap-1">
+        {!healthy && notionAvailable && (
+          <form action={connectNotion}>
+            <Button type="submit" size="sm">
+              {t.connections.reconnectNotion}
+            </Button>
+          </form>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={pending}
+          className="hover:text-danger-text"
+          onClick={() => {
+            if (window.confirm(t.connections.disconnectNotionConfirm(c.displayName)))
+              startTransition(async () => {
+                const result = await disconnectAction(c.id);
+                if (!result.ok) toast.error(t.errors.codes[result.error.code]);
+              });
           }}
         >
           {t.connections.disconnect}

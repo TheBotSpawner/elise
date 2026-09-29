@@ -9,13 +9,17 @@ import { getT } from "@/lib/i18n/server";
 /** What ELISE can access, per account. The user stays in control (docs/product/04 §13-15). */
 export default async function ConnectionsPage() {
   const [auth, { t }] = await Promise.all([requireAuthContext(), getT()]);
-  const { connections, googleAvailable } = await listConnections(auth);
+  const { connections, googleAvailable, notionAvailable } = await listConnections(auth);
 
   return (
     <PageContainer>
       <PageHeader title={t.connections.title} subtitle={t.connections.subtitle} />
       <Suspense>
-        <ConnectionsView connections={connections} googleAvailable={googleAvailable} />
+        <ConnectionsView
+          connections={connections}
+          googleAvailable={googleAvailable}
+          notionAvailable={notionAvailable}
+        />
       </Suspense>
     </PageContainer>
   );

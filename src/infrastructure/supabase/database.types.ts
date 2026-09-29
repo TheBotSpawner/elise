@@ -402,6 +402,131 @@ export type ScheduledResultRow = {
   created_at: Ts;
 };
 
+export type KnowledgeSpaceRow = {
+  id: string;
+  workspace_id: string;
+  parent_space_id: string | null;
+  name: string;
+  description: string | null;
+  status: "active" | "archived";
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type KnowledgeSourceRow = {
+  id: string;
+  workspace_id: string;
+  space_id: string;
+  provider_key: string;
+  connection_id: string | null;
+  source_type: "upload" | "google_drive" | "notion" | "note";
+  display_name: string;
+  source_url: string | null;
+  configuration: Json;
+  status: "idle" | "syncing" | "ready" | "needs_attention" | "disconnected" | "archived";
+  last_synced_at: Ts | null;
+  next_sync_at: Ts | null;
+  last_error_code: string | null;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type KnowledgeItemRow = {
+  id: string;
+  workspace_id: string;
+  space_id: string;
+  source_id: string;
+  item_type:
+    | "file"
+    | "drive_file"
+    | "google_doc"
+    | "google_sheet"
+    | "google_slides"
+    | "notion_page"
+    | "notion_database_page"
+    | "note";
+  external_id: string;
+  title: string;
+  source_url: string | null;
+  mime_type: string | null;
+  status: "queued" | "processing" | "ready" | "needs_attention" | "failed" | "removed" | "archived";
+  status_detail: string | null;
+  error_code: string | null;
+  current_version_id: string | null;
+  external_modified_at: Ts | null;
+  last_synced_at: Ts | null;
+  metadata: Json;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type KnowledgeVersionRow = {
+  id: string;
+  workspace_id: string;
+  knowledge_item_id: string;
+  version_number: number;
+  source_revision: string | null;
+  content_hash: string | null;
+  storage_path: string | null;
+  size_bytes: number | null;
+  mime_type: string | null;
+  extracted_text: string | null;
+  status: "pending" | "processing" | "ready" | "failed" | "unchanged" | "superseded";
+  parser_version: string | null;
+  chunking_version: string | null;
+  embedding_model: string | null;
+  chunk_count: number;
+  is_current: boolean;
+  runtime_job_id: string | null;
+  error_code: string | null;
+  metadata: Json;
+  created_at: Ts;
+  processed_at: Ts | null;
+};
+
+export type KnowledgeChunkRow = {
+  id: string;
+  workspace_id: string;
+  space_id: string;
+  source_id: string;
+  knowledge_item_id: string;
+  version_id: string;
+  chunk_index: number;
+  content: string;
+  heading_path: string[];
+  page_number: number | null;
+  token_count: number;
+  /** pgvector literal "[0.1,0.2,…]". */
+  embedding: string | null;
+  embedding_model: string | null;
+  metadata: Json;
+  created_at: Ts;
+};
+
+export type KnowledgeSyncRunRow = {
+  id: string;
+  workspace_id: string;
+  source_id: string;
+  trigger: "scheduled" | "manual" | "initial";
+  status: "queued" | "running" | "completed" | "completed_with_warning" | "failed" | "cancelled";
+  runtime_job_id: string | null;
+  started_at: Ts | null;
+  completed_at: Ts | null;
+  items_discovered: number;
+  items_created: number;
+  items_updated: number;
+  items_removed: number;
+  items_failed: number;
+  error_code: string | null;
+  created_at: Ts;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -497,9 +622,59 @@ export type Database = {
         | "title"
         | "content"
       >;
+      knowledge_spaces: Table<KnowledgeSpaceRow, "workspace_id" | "name">;
+      knowledge_sources: Table<
+        KnowledgeSourceRow,
+        "workspace_id" | "space_id" | "provider_key" | "source_type" | "display_name"
+      >;
+      knowledge_items: Table<
+        KnowledgeItemRow,
+        "workspace_id" | "space_id" | "source_id" | "item_type" | "external_id" | "title"
+      >;
+      knowledge_versions: Table<
+        KnowledgeVersionRow,
+        "workspace_id" | "knowledge_item_id" | "version_number"
+      >;
+      knowledge_chunks: Table<
+        KnowledgeChunkRow,
+        | "workspace_id"
+        | "space_id"
+        | "source_id"
+        | "knowledge_item_id"
+        | "version_id"
+        | "chunk_index"
+        | "content"
+      >;
+      knowledge_sync_runs: Table<KnowledgeSyncRunRow, "workspace_id" | "source_id" | "trigger">;
     };
     Views: Record<never, never>;
-    Functions: Record<never, never>;
+    Functions: {
+      search_knowledge_chunks: {
+        Args: {
+          p_workspace_id: string;
+          p_keywords: string;
+          p_embedding: string | null;
+          p_embedding_model: string;
+          p_space_ids?: string[] | null;
+          p_item_ids?: string[] | null;
+          p_limit?: number;
+        };
+        Returns: {
+          chunk_id: string;
+          knowledge_item_id: string;
+          version_id: string;
+          space_id: string;
+          chunk_index: number;
+          content: string;
+          heading_path: string[];
+          page_number: number | null;
+          similarity: number | null;
+          semantic_rank: number | null;
+          keyword_rank: number | null;
+          score: number;
+        }[];
+      };
+    };
     Enums: Record<never, never>;
     CompositeTypes: Record<never, never>;
   };

@@ -80,3 +80,40 @@ export function GoogleTasksIcon({ size = 32, ...props }: Props) {
     </svg>
   );
 }
+
+export function GoogleDriveIcon({ size = 32, ...props }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden {...props}>
+      <path fill="#0066DA" d="M7.6 38.2l2 3.5c.4.7 1 1.3 1.7 1.7l7-12.2H4.3c0 .8.2 1.6.6 2.3z" />
+      <path
+        fill="#00AC47"
+        d="M24 17.4l-7-12.2c-.7.4-1.3 1-1.7 1.7L4.9 25c-.4.7-.6 1.5-.6 2.3h14z"
+      />
+      <path
+        fill="#EA4335"
+        d="M36.7 43.4c.7-.4 1.3-1 1.7-1.7l.8-1.4 3.9-6.8c.4-.7.6-1.5.6-2.3H29.7l3 5.9z"
+      />
+      <path fill="#00832D" d="M24 17.4l7-12.2c-.7-.4-1.5-.6-2.3-.6h-9.4c-.8 0-1.6.2-2.3.6z" />
+      <path fill="#2684FC" d="M29.7 31.2H18.3l-7 12.2c.7.4 1.5.6 2.3.6h20.8c.8 0 1.6-.2 2.3-.6z" />
+      <path
+        fill="#FFBA00"
+        d="M36.6 18.2l-6.5-11.3c-.4-.7-1-1.3-1.7-1.7l-7 12.2 8.3 14h14c0-.8-.2-1.6-.6-2.3z"
+      />
+    </svg>
+  );
+}
+
+export function NotionIcon({ size = 32, ...props }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden {...props}>
+      <rect x="6" y="5" width="36" height="38" rx="6" fill="#fff" stroke="#111" strokeWidth="3" />
+      <path
+        d="M17 34V15l14 19V15"
+        fill="none"
+        stroke="#111"
+        strokeWidth="3.4"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

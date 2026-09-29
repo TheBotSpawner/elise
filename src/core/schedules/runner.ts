@@ -1,3 +1,4 @@
+import type { BackgroundRuntime } from "../background/runtime";
 import { AppError, toAppError } from "../errors";
 import {
   isMissed,
@@ -99,16 +100,7 @@ export interface ScheduleStore {
   expireStaleRuns(before: Date): Promise<number>;
 }
 
-/** Durable execution port (docs/architecture/14 §4). Payloads carry ids only, never secrets. */
-export interface BackgroundRuntime {
-  enqueue(job: {
-    type: "schedule.run";
-    payload: { workspaceId: string; scheduleRunId: string };
-    /** Same key → the runtime starts at most one execution. */
-    idempotencyKey: string;
-  }): Promise<{ runtimeJobId: string }>;
-  cancel(runtimeJobId: string): Promise<void>;
-}
+export type { BackgroundRuntime };
 
 export interface RunResult {
   type: ActionType;

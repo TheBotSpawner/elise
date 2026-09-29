@@ -22,7 +22,7 @@ import { morningBriefHandler } from "./morning-brief-service";
  * service role, after the runner revalidated that the owner is still an active member; every
  * query stays scoped to that workspace, and tools go through the same policies as chat.
  */
-async function ownerContext(workspaceId: string, userId: string): Promise<AuthContext> {
+export async function ownerContext(workspaceId: string, userId: string): Promise<AuthContext> {
   const db = createAdminClient();
   const { data: profile } = await db
     .from("user_profiles")

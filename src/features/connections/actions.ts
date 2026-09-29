@@ -12,12 +12,13 @@ import {
   setCapabilityEnabled,
   setDefaultConnection,
   startGoogleConnection,
+  startNotionConnection,
 } from "@/application/connections-service";
 import { toPublicError, type PublicError } from "@/core/errors";
 
 export type ConnectionActionResult = { ok: true } | { ok: false; error: PublicError };
 
-const capability = z.enum(["tasks", "calendar"]);
+const capability = z.enum(["tasks", "calendar", "email", "knowledge"]);
 
 async function origin(): Promise<string> {
   const h = await headers();
@@ -48,6 +49,18 @@ export async function connectGoogle(form: FormData): Promise<void> {
       connectionId,
       origin: await origin(),
     });
+  } catch (error) {
+    redirect(`/connections?error=${toPublicError(error).code}`);
+  }
+  redirect(url);
+}
+
+/** Starts Notion's consent (the user picks the pages ELISE may read). */
+export async function connectNotion(): Promise<void> {
+  const auth = await requireAuthContext();
+  let url: string;
+  try {
+    url = await startNotionConnection(auth, await origin());
   } catch (error) {
     redirect(`/connections?error=${toPublicError(error).code}`);
   }
