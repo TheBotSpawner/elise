@@ -17,6 +17,7 @@ export interface StoredChatMessage {
   content: string;
   tools: ClientToolTrace[];
   error?: AssistantMessageMetadata["error"];
+  createdAt: string;
 }
 
 export async function listConversations(
@@ -50,7 +51,7 @@ export async function loadConversation(
 
   const { data, error } = await auth.db
     .from("messages")
-    .select("id, role, content, metadata")
+    .select("id, role, content, metadata, created_at")
     .eq("conversation_id", conversationId)
     .in("role", ["user", "assistant"])
     .order("created_at")
@@ -65,6 +66,7 @@ export async function loadConversation(
       content: m.content,
       tools: meta.tools ?? [],
       error: meta.error,
+      createdAt: m.created_at,
     };
   });
 
@@ -86,10 +88,12 @@ export async function loadConversation(
         t.outcome?.status === "approval_required" && resolved.has(t.outcome.approvalId)
           ? {
               ...t,
-              outcome:
-                resolved.get(t.outcome.approvalId) === "approved"
-                  ? { status: "succeeded" }
-                  : { status: "rejected" },
+              resolution: {
+                decision:
+                  resolved.get(t.outcome.approvalId) === "approved"
+                    ? ("approved" as const)
+                    : ("rejected" as const),
+              },
             }
           : t,
       );

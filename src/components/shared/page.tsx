@@ -13,7 +13,7 @@ export function PageHeader({
   return (
     <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-[30px] leading-[1.15] font-light tracking-[-0.025em]">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
       </div>
       {actions}
@@ -22,7 +22,9 @@ export function PageHeader({
 }
 
 export function PageContainer({ children }: { children: ReactNode }) {
-  return <div className="mx-auto w-full max-w-4xl px-4 py-8 md:px-8">{children}</div>;
+  return (
+    <div className="mx-auto w-full max-w-[960px] px-4 pt-6 pb-16 md:px-10 md:pt-10">{children}</div>
+  );
 }
 
 /** Every empty screen explains what to do next (docs/product/04 §30). */
@@ -38,7 +40,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center rounded-[var(--radius-card)] border border-dashed border-border px-6 py-14 text-center">
+    <div className="flex flex-col items-center rounded-2xl border border-dashed border-border px-6 py-14 text-center">
       <span className="mb-4 grid size-12 place-items-center rounded-full bg-accent-soft text-accent">
         <Icon className="size-5" aria-hidden />
       </span>

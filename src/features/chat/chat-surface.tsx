@@ -1,230 +1,257 @@
 "use client";
 
-import { ArrowUp, CircleAlert, Square } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import Markdown from "react-markdown";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Orb } from "@/components/elise/orb/orb";
-import { Button } from "@/components/ui/button";
+import { ORB_FLIGHT, ORB_LAYOUT_ID, useOrbPresence } from "@/components/elise/orb/orb-presence";
 import type { ToolDisplay } from "@/core/agents/tools";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-import { ToolResults, ToolTrace } from "./tool-cards";
+import { Composer } from "./composer";
+import { MessageThread } from "./message-thread";
 import type { ChatMessage } from "./types";
 import { useEliseChat } from "./use-elise-chat";
 
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+export interface HomeAmbient {
+  dueToday: number;
+  overdue: number;
+  pendingApprovals: number;
+}
+
 /**
- * The center of ELISE: one continuous conversation with the Orb as Elise's presence.
- * The Orb reflects the real runtime state (thinking, executing, waiting for approval…).
+ * The center of ELISE. Empty: the Home hero (Orb 440/300, status, headline, input dock).
+ * After the first send the hero Orb flies into the nav brand slot, the dock glides to the
+ * bottom and the thread takes over (motion spec "Home → Chat").
  */
 export function ChatSurface({
   conversationId,
   initialMessages = [],
   timezone,
-  greeting,
+  userName = "",
+  ambient,
 }: {
   conversationId?: string;
   initialMessages?: ChatMessage[];
   timezone: string;
-  greeting?: string;
+  userName?: string;
+  ambient?: HomeAmbient;
 }) {
   const { t } = useI18n();
-  const { messages, send, stop, busy, orbState, setMessages } = useEliseChat({
-    conversationId,
-    messages: initialMessages,
-  });
-  const [draft, setDraft] = useState("");
-  const endRef = useRef<HTMLDivElement>(null);
+  const desktop = useIsDesktop();
+  const presence = useOrbPresence();
+  const { messages, send, stop, busy, orbState, trackApproval, markApprovalResolved } =
+    useEliseChat({
+      conversationId,
+      messages: initialMessages,
+    });
   const empty = messages.length === 0;
 
+  // Publish Elise's state to the shared Orb (nav brand slot + mobile header).
+  const { setState, setDocked } = presence;
+  useEffect(() => setState(orbState), [orbState, setState]);
+  useEffect(() => setDocked(!empty), [empty, setDocked]);
+  useEffect(
+    () => () => {
+      setDocked(false);
+      setState("idle");
+    },
+    [setDocked, setState],
+  );
+
+  // Keep the view pinned to the bottom unless the user scrolled up; then offer "New reply".
+  const [pinned, setPinned] = useState(true);
+  const [unseen, setUnseen] = useState(false);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages]);
+    const onScroll = () => {
+      const atBottom =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
+      setPinned(atBottom);
+      if (atBottom) setUnseen(false);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  const lastContent = messages.at(-1);
+  const signature = `${messages.length}:${lastContent?.content.length ?? 0}:${lastContent?.tools.length ?? 0}`;
+  const pinnedRef = useRef(pinned);
+  useEffect(() => {
+    pinnedRef.current = pinned;
+  }, [pinned]);
+  useEffect(() => {
+    if (empty) return;
+    if (pinnedRef.current) window.scrollTo({ top: document.documentElement.scrollHeight });
+    else setUnseen(true);
+  }, [signature, empty]);
 
-  function submit(text = draft) {
-    if (!text.trim() || busy) return;
-    setDraft("");
-    void send(text);
-  }
+  const onApprovalResolved = useCallback(
+    (approvalId: string, decision: "approved" | "rejected", display?: ToolDisplay) =>
+      markApprovalResolved(approvalId, decision, display),
+    [markApprovalResolved],
+  );
 
-  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      submit();
-    }
-  }
+  const composer = (
+    <Composer
+      placeholder={
+        empty ? (desktop ? t.home.placeholder : t.home.placeholderMobile) : t.chat.replyPlaceholder
+      }
+      label={t.chat.placeholder}
+      busy={busy}
+      onSend={(text) => void send(text)}
+      onStop={stop}
+      sendLabel={t.chat.send}
+      stopLabel={t.chat.stop}
+    />
+  );
 
-  function onApprovalResolved(approvalId: string, display?: ToolDisplay, rejected?: boolean) {
-    setMessages((all) =>
-      all.map((m) => ({
-        ...m,
-        tools: m.tools.map((tool) =>
-          tool.outcome?.status === "approval_required" && tool.outcome.approvalId === approvalId
-            ? {
-                ...tool,
-                outcome: rejected ? { status: "rejected" } : { status: "succeeded", display },
-              }
-            : tool,
-        ),
-      })),
+  if (empty) {
+    return (
+      <main className="relative flex flex-1 flex-col items-center px-4 pb-32 md:px-0 md:pb-24">
+        <div aria-hidden className="elise-halo pointer-events-none fixed inset-0 -z-10" />
+        <motion.div
+          layoutId={ORB_LAYOUT_ID}
+          transition={ORB_FLIGHT}
+          className="mt-11 shrink-0 md:-mt-2"
+        >
+          <Orb state={orbState} size="fill" className="size-[300px] md:size-[440px]" />
+        </motion.div>
+        <AnimatePresence>
+          <motion.div
+            key="hero-copy"
+            exit={{ opacity: 0, y: -8, transition: { duration: 0.16 } }}
+            className="flex flex-col items-center"
+          >
+            <HomeStatus state={orbState} userName={userName} timezone={timezone} />
+            <h1 className="mt-3 text-center text-[30px] leading-[1.15] font-light tracking-[-0.025em] md:text-[46px] md:leading-[1.1]">
+              {t.chat.emptyTitle}
+            </h1>
+            {ambient && <Ambient ambient={ambient} />}
+          </motion.div>
+        </AnimatePresence>
+        <div className="fixed inset-x-4 bottom-7 z-30 md:static md:mt-9 md:w-[720px]">
+          {composer}
+        </div>
+      </main>
     );
   }
 
   return (
-    <div className="elise-backdrop relative flex min-h-dvh flex-1 flex-col md:min-h-dvh">
+    <main className="relative flex flex-1 flex-col">
+      <MessageThread
+        messages={messages}
+        timezone={timezone}
+        handlers={{ onApprovalResolved, onApprovalPhase: trackApproval }}
+      />
       <div
-        className={cn(
-          "flex flex-col items-center transition-all duration-500",
-          empty ? "pt-[14vh]" : "pt-6",
-        )}
-      >
-        <Orb state={orbState} size={empty ? 180 : 76} />
+        aria-hidden
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-20 h-30 bg-[linear-gradient(transparent,var(--bg)_55%)] md:h-33"
+      />
+      <div className="fixed inset-x-4 bottom-7 z-30 md:inset-x-0 md:bottom-9 md:mx-auto md:w-[720px]">
         <AnimatePresence>
-          {empty && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
+          {unseen && (
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="mt-6 px-4 text-center"
+              transition={{ duration: 0.2, ease: EASE }}
+              onClick={() =>
+                window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" })
+              }
+              className="absolute -top-12 left-1/2 h-9 -translate-x-1/2 rounded-full border border-border-strong bg-[var(--menu-bg)] px-4 text-[13px] backdrop-blur"
             >
-              <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-                {greeting ?? t.chat.emptyTitle}
-              </h1>
-            </motion.div>
+              {t.chat.newReply}
+            </motion.button>
           )}
         </AnimatePresence>
+        {composer}
       </div>
-
-      <div className="mx-auto w-full max-w-3xl flex-1 px-4 pb-40 md:px-6">
-        {empty ? (
-          <div className="mt-8 flex flex-wrap justify-center gap-2">
-            {t.chat.suggestions.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => submit(s)}
-                className="rounded-full border border-border bg-surface/70 px-3.5 py-2 text-sm text-muted backdrop-blur transition-colors hover:border-accent/50 hover:text-fg"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <ol className="mt-6 space-y-6" aria-live="polite">
-            {messages.map((m) => (
-              <MessageItem
-                key={m.id}
-                message={m}
-                timezone={timezone}
-                onApprovalResolved={onApprovalResolved}
-              />
-            ))}
-          </ol>
-        )}
-        <div ref={endRef} />
-      </div>
-
-      <div className="fixed inset-x-0 bottom-16 z-30 px-4 pb-4 md:sticky md:bottom-0 md:px-6">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}
-          className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-2xl border border-border bg-surface/90 p-2 shadow-[0_8px_40px_-12px_var(--glow)] backdrop-blur focus-within:border-accent/60"
-        >
-          <label htmlFor="chat-input" className="sr-only">
-            {t.chat.placeholder}
-          </label>
-          <textarea
-            id="chat-input"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKeyDown}
-            rows={1}
-            maxLength={8000}
-            placeholder={t.chat.placeholder}
-            className="[field-sizing:content] max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted/70"
-          />
-          {busy ? (
-            <Button size="icon" variant="secondary" onClick={stop} aria-label={t.chat.stop}>
-              <Square />
-            </Button>
-          ) : (
-            <Button type="submit" size="icon" disabled={!draft.trim()} aria-label={t.chat.send}>
-              <ArrowUp />
-            </Button>
-          )}
-        </form>
-      </div>
-    </div>
+    </main>
   );
 }
 
-function MessageItem({
-  message,
+function HomeStatus({
+  state,
+  userName,
   timezone,
-  onApprovalResolved,
 }: {
-  message: ChatMessage;
+  state: ReturnType<typeof useEliseChat>["orbState"];
+  userName: string;
   timezone: string;
-  onApprovalResolved: (approvalId: string, display?: ToolDisplay, rejected?: boolean) => void;
 }) {
   const { t } = useI18n();
-  if (message.role === "user") {
-    return (
-      <li className="flex justify-end">
-        <p className="max-w-[85%] rounded-2xl rounded-br-md bg-surface-2 px-4 py-2.5 text-sm whitespace-pre-wrap">
-          {message.content}
-        </p>
-      </li>
+  let text: string;
+  if (state === "idle") {
+    const hour = Number(
+      new Intl.DateTimeFormat("en-GB", {
+        hour: "2-digit",
+        hourCycle: "h23",
+        timeZone: timezone,
+      }).format(new Date()),
     );
+    const g =
+      hour < 12
+        ? t.home.greeting.morning
+        : hour < 20
+          ? t.home.greeting.afternoon
+          : t.home.greeting.evening;
+    text = g(userName);
+  } else {
+    text = t.home.status[state];
   }
-
-  const thinking = message.streaming && !message.content && message.tools.length === 0;
   return (
-    <li className="space-y-3">
-      <ToolTrace tools={message.tools} running={Boolean(message.streaming)} />
-      <ToolResults
-        tools={message.tools}
-        timezone={timezone}
-        onApprovalResolved={onApprovalResolved}
-      />
-      {thinking && <p className="animate-pulse text-sm text-muted">{t.chat.thinking}</p>}
-      {message.content && (
-        <div className="prose-elise text-sm leading-relaxed">
-          <Markdown
-            components={{
-              a: ({ href, children }) => (
-                <a
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer nofollow"
-                  className="text-accent underline"
-                >
-                  {children}
-                </a>
-              ),
-            }}
-          >
-            {message.content}
-          </Markdown>
-        </div>
+    <p
+      aria-live="polite"
+      className={cn(
+        "-mt-[22px] flex h-7 items-center type-status text-[11px] md:-mt-9 md:text-[12px]",
+        state === "waiting_approval"
+          ? "text-approval-text"
+          : state === "error"
+            ? "text-danger-text"
+            : "text-muted",
       )}
-      {message.error && (
-        <p role="alert" className="flex items-start gap-2 text-sm text-danger">
-          <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <span>
-            {message.error.code === "AI_NOT_CONFIGURED"
-              ? t.chat.aiNotConfigured
-              : t.errors.codes[message.error.code]}
-            {message.error.referenceId && (
-              <span className="ml-2 font-mono text-xs text-muted">{`${t.chat.reference}: ${message.error.referenceId}`}</span>
-            )}
-          </span>
-        </p>
-      )}
-    </li>
+    >
+      {text}
+    </p>
+  );
+}
+
+/** Real, quiet context under the input — never a dashboard (docs/product/05 §14). */
+function Ambient({ ambient }: { ambient: HomeAmbient }) {
+  const { t } = useI18n();
+  const items = [
+    ambient.dueToday > 0 && {
+      label: t.home.today,
+      text: t.home.tasksDue(ambient.dueToday),
+      href: "/my-elise/tasks",
+    },
+    ambient.overdue > 0 && {
+      label: t.tasks.overdue,
+      text: t.home.overdue(ambient.overdue),
+      href: "/my-elise/tasks",
+    },
+    ambient.pendingApprovals > 0 && {
+      label: t.home.approvals,
+      text: t.home.pending(ambient.pendingApprovals),
+      href: "/approvals",
+    },
+  ].filter(Boolean) as { label: string; text: string; href: string }[];
+  if (items.length === 0) return null;
+  return (
+    <ul className="mt-5 flex flex-col items-center gap-1 text-[13px] text-muted md:fixed md:inset-x-10 md:bottom-8 md:mt-0 md:flex-row md:justify-center md:gap-14">
+      {items.map((item) => (
+        <li key={item.label}>
+          <Link href={item.href} className="flex h-8 items-baseline gap-2.5 hover:text-fg">
+            <span className="type-label text-faint">{item.label}</span>
+            <span>{item.text}</span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }

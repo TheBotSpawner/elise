@@ -35,7 +35,7 @@ export default async function ChatHistoryPage() {
           action={newChat}
         />
       ) : (
-        <ul className="divide-y divide-border rounded-[var(--radius-card)] border border-border bg-surface">
+        <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
           {conversations.map((c) => (
             <li key={c.id}>
               <Link

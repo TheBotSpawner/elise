@@ -50,14 +50,14 @@ export default async function MyElisePage() {
               {available ? (
                 <Link
                   href={href}
-                  className="block rounded-[var(--radius-card)] border border-border bg-surface p-4 transition-colors hover:border-accent/50"
+                  className="block rounded-2xl border border-border bg-surface p-4 transition-colors hover:border-accent/50"
                 >
                   {body}
                 </Link>
               ) : (
                 <div
                   aria-disabled
-                  className="rounded-[var(--radius-card)] border border-dashed border-border p-4 opacity-70"
+                  className="rounded-2xl border border-dashed border-border p-4 opacity-70"
                 >
                   {body}
                 </div>

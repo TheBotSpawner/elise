@@ -3,67 +3,115 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * ELISE design tokens (docs/product/05-ui-design-system.md §33-34).
- * Dark is the JARVIS-leaning identity; light is first-class, not an inversion.
- * Cyan is reserved for energy: focus, active state, the Orb.
+ * ELISE design tokens — Direction A, Clean JARVIS Minimal (approved Claude Design reference).
+ * Values are ported as-is from the reference "Tokens" and "Motion specification" boards.
  */
 :root {
-  --bg: #f5f7fb;
-  --surface: #ffffff;
-  --surface-2: #eef2f7;
-  --border: rgb(15 23 42 / 0.09);
-  --border-strong: rgb(15 23 42 / 0.16);
-  --fg: #0b1220;
-  --muted: #566274;
-  --accent: #0891b2;
-  --accent-fg: #ffffff;
-  --accent-soft: rgb(8 145 178 / 0.1);
-  --accent-2: #2563eb;
-  --success: #047857;
-  --warning: #b45309;
-  --danger: #dc2626;
-  --glow: rgb(8 145 178 / 0.18);
-  --grid-line: rgb(15 23 42 / 0.04);
+  --bg: #f3f6f7;
+  --surface-1: rgba(255, 255, 255, 0.6);
+  --surface-2: rgba(8, 30, 40, 0.05);
+  --line: rgba(8, 30, 40, 0.1);
+  --line-strong: rgba(8, 30, 40, 0.16);
+  --fg: #0b1519;
+  --fg-muted: #4d5d63;
+  --fg-faint: #5b6b71;
+  --accent: #0a95a6;
+  --accent-text: #06707d;
+  --accent-line: rgba(10, 149, 166, 0.45);
+  --accent-soft: rgba(10, 149, 166, 0.1);
+  --on-accent: #ffffff;
+  --approval: #b06c08;
+  --approval-text: #8f5700;
+  --approval-line: rgba(176, 108, 8, 0.35);
+  --approval-bg: rgba(176, 108, 8, 0.05);
+  --success: #00885c;
+  --error: #c63030;
+  --error-text: #b02a2a;
+  --glass: rgba(255, 255, 255, 0.7);
+  --input-bg: rgba(255, 255, 255, 0.85);
+  --active-bg: rgba(8, 30, 40, 0.06);
+  --menu-bg: rgba(255, 255, 255, 0.96);
+  --menu-shadow: 0 24px 60px rgba(8, 30, 40, 0.14);
+  --overlay-bg: #f3f6f7;
+  --halo: radial-gradient(
+    900px 620px at 50% 30%,
+    rgba(0, 150, 170, 0.09),
+    rgba(0, 150, 170, 0) 70%
+  );
+
+  /* Motion tokens */
+  --dur-xs: 120ms;
+  --dur-sm: 200ms;
+  --dur-md: 280ms;
+  --dur-lg: 480ms;
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 }
 
 .dark {
-  --bg: #04070c;
-  --surface: #0a1019;
-  --surface-2: #101925;
-  --border: rgb(148 197 255 / 0.09);
-  --border-strong: rgb(148 197 255 / 0.18);
-  --fg: #e6edf6;
-  --muted: #8b98aa;
-  --accent: #22d3ee;
-  --accent-fg: #03131a;
-  --accent-soft: rgb(34 211 238 / 0.1);
-  --accent-2: #60a5fa;
-  --success: #34d399;
-  --warning: #fbbf24;
-  --danger: #f87171;
-  --glow: rgb(34 211 238 / 0.28);
-  --grid-line: rgb(148 197 255 / 0.035);
+  --bg: #05080a;
+  --surface-1: rgba(255, 255, 255, 0.025);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --fg: #e6eef0;
+  --fg-muted: #8c9ca2;
+  --fg-faint: #6e8187;
+  --accent: #5ee6f0;
+  --accent-text: #8bedf4;
+  --accent-line: rgba(94, 230, 240, 0.45);
+  --accent-soft: rgba(94, 230, 240, 0.12);
+  --on-accent: #041014;
+  --approval: #f5ba60;
+  --approval-text: #f5ba60;
+  --approval-line: rgba(245, 186, 96, 0.32);
+  --approval-bg: rgba(245, 186, 96, 0.04);
+  --success: #78f0be;
+  --error: #ff7a7a;
+  --error-text: #ff9a9a;
+  --glass: rgba(255, 255, 255, 0.03);
+  --input-bg: rgba(12, 17, 20, 0.8);
+  --active-bg: rgba(255, 255, 255, 0.08);
+  --menu-bg: rgba(11, 16, 19, 0.94);
+  --menu-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --overlay-bg: #070b0d;
+  --halo: radial-gradient(
+    900px 620px at 50% 30%,
+    rgba(70, 200, 215, 0.075),
+    rgba(70, 200, 215, 0) 70%
+  );
 }
 
 @theme inline {
   --color-bg: var(--bg);
-  --color-surface: var(--surface);
+  --color-surface: var(--surface-1);
   --color-surface-2: var(--surface-2);
-  --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
+  --color-border: var(--line);
+  --color-border-strong: var(--line-strong);
   --color-fg: var(--fg);
-  --color-muted: var(--muted);
+  --color-muted: var(--fg-muted);
+  --color-faint: var(--fg-faint);
   --color-accent: var(--accent);
-  --color-accent-fg: var(--accent-fg);
+  --color-accent-text: var(--accent-text);
+  --color-accent-line: var(--accent-line);
   --color-accent-soft: var(--accent-soft);
-  --color-accent-2: var(--accent-2);
+  --color-accent-fg: var(--on-accent);
+  --color-approval: var(--approval);
+  --color-approval-text: var(--approval-text);
+  --color-approval-line: var(--approval-line);
+  --color-approval-bg: var(--approval-bg);
+  --color-warning: var(--approval);
   --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-danger: var(--danger);
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --color-danger: var(--error);
+  --color-danger-text: var(--error-text);
+  --color-glass: var(--glass);
+  --color-active: var(--active-bg);
+  --font-sans: var(--font-geist-sans), "Helvetica Neue", system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-  --ease-elise: cubic-bezier(0.22, 1, 0.36, 1);
-  --radius-card: 1rem;
+  --ease-standard: var(--ease-standard);
+  --ease-exit: var(--ease-exit);
+  --radius-card: 16px;
+  --radius-trace: 14px;
 }
 
 @layer base {
@@ -79,25 +127,44 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
+  /* Keyboard focus: 2 px background gap + 1.5 px accent ring (reference nav state 02). */
   :focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    outline: none;
+    box-shadow:
+      0 0 0 2px var(--bg),
+      0 0 0 3.5px var(--accent);
   }
   ::selection {
     background: var(--accent-soft);
   }
 }
 
-/* Subtle technical backdrop used by Home/Chat; purely decorative. */
-.elise-backdrop {
-  background-image:
-    radial-gradient(60rem 40rem at 50% -10%, var(--accent-soft), transparent 70%),
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size:
-    auto,
-    48px 48px,
-    48px 48px;
+/* Status and label typography from the reference type scale. */
+@utility type-status {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+@utility type-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Ambient halo behind the Orb. Decorative. */
+.elise-halo {
+  background-image: var(--halo);
+}
+
+/* Theme switch: colour tokens crossfade in 240 ms, linear (motion spec). */
+.theme-transition,
+.theme-transition * {
+  transition:
+    background-color 240ms linear,
+    border-color 240ms linear,
+    color 240ms linear !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -106,11 +173,16 @@
   *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* Readable markdown for Elise's answers. */
+/* Readable markdown for Elise's answers: body 15 / 1.6. */
+.prose-elise {
+  font-size: 15px;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
 .prose-elise > * + * {
   margin-top: 0.6em;
 }
@@ -126,17 +198,17 @@
   margin-top: 0.2em;
 }
 .prose-elise strong {
-  font-weight: 600;
+  font-weight: 500;
 }
 .prose-elise code {
   font-family: var(--font-mono);
-  font-size: 0.85em;
+  font-size: 12.5px;
   background: var(--surface-2);
   padding: 0.1em 0.35em;
-  border-radius: 0.35em;
+  border-radius: 6px;
 }
 .prose-elise h1,
 .prose-elise h2,
 .prose-elise h3 {
-  font-weight: 600;
+  font-weight: 500;
 }

@@ -18,6 +18,10 @@ export interface ClientToolTrace {
   callId: string;
   name: string;
   outcome?: ClientToolOutcome;
+  /** Wall time of the step, measured server-side. */
+  durationMs?: number;
+  /** Set once an approval requested by this step was decided. */
+  resolution?: { decision: "approved" | "rejected"; display?: ToolDisplay };
 }
 
 export type ChatStreamEvent =
@@ -25,7 +29,13 @@ export type ChatStreamEvent =
   | { type: "status"; state: "thinking" | "using_tools" }
   | { type: "text"; delta: string }
   | { type: "tool_started"; callId: string; name: string }
-  | { type: "tool_finished"; callId: string; name: string; outcome: ClientToolOutcome }
+  | {
+      type: "tool_finished";
+      callId: string;
+      name: string;
+      outcome: ClientToolOutcome;
+      durationMs: number;
+    }
   | { type: "done"; messageId: string | null }
   | { type: "error"; error: PublicError };
 

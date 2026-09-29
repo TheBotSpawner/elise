@@ -86,6 +86,7 @@ export async function startChatTurn(
       send({ type: "conversation", conversationId, runId: runId });
 
       const traces = new Map<string, ClientToolTrace>();
+      const stepStarted = new Map<string, number>();
       const started = Date.now();
       let finalText = "";
       let failure: ReturnType<typeof toPublicError> | null = null;
@@ -105,14 +106,28 @@ export async function startChatTurn(
             case "status":
             case "text":
             case "tool_started":
-              if (event.type === "tool_started")
+              if (event.type === "tool_started") {
                 traces.set(event.callId, { callId: event.callId, name: event.name });
+                stepStarted.set(event.callId, Date.now());
+              }
               send(event);
               break;
             case "tool_finished": {
               const outcome = toClientOutcome(event.outcome);
-              traces.set(event.callId, { callId: event.callId, name: event.name, outcome });
-              send({ type: "tool_finished", callId: event.callId, name: event.name, outcome });
+              const durationMs = Date.now() - (stepStarted.get(event.callId) ?? Date.now());
+              traces.set(event.callId, {
+                callId: event.callId,
+                name: event.name,
+                outcome,
+                durationMs,
+              });
+              send({
+                type: "tool_finished",
+                callId: event.callId,
+                name: event.name,
+                outcome,
+                durationMs,
+              });
               break;
             }
             case "done":

@@ -11,8 +11,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   if (auth.profile.onboardingStatus === "pending") redirect("/onboarding");
 
   const pending = await listPendingApprovals(auth);
+  const name = auth.profile.displayName || auth.email?.split("@")[0] || "ELISE";
   return (
-    <AppShell workspaceId={auth.workspaceId} pendingApprovals={pending.length}>
+    <AppShell
+      workspaceId={auth.workspaceId}
+      pendingApprovals={pending.length}
+      user={{ name, initial: name.charAt(0).toUpperCase(), email: auth.email }}
+    >
       {children}
     </AppShell>
   );

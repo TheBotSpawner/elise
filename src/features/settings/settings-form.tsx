@@ -52,7 +52,19 @@ export function SettingsForm({
                 type="button"
                 role="radio"
                 aria-checked={theme === option}
-                onClick={() => startTransition(() => setTheme(option))}
+                onClick={() => {
+                  // Crossfade colour tokens (240 ms, linear) and apply instantly; persist in the background.
+                  const root = document.documentElement;
+                  root.classList.add("theme-transition");
+                  root.dataset.theme = option;
+                  const dark =
+                    option === "dark" ||
+                    (option === "system" &&
+                      window.matchMedia("(prefers-color-scheme: dark)").matches);
+                  root.classList.toggle("dark", dark);
+                  window.setTimeout(() => root.classList.remove("theme-transition"), 300);
+                  startTransition(() => setTheme(option));
+                }}
                 className={cn(
                   "flex h-16 flex-col items-center justify-center gap-1 rounded-xl border text-xs transition-colors",
                   theme === option

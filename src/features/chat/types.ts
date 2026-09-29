@@ -7,6 +7,9 @@ export interface ChatMessage {
   content: string;
   tools: ClientToolTrace[];
   error?: PublicError;
+  createdAt: string;
+  /** Created in this session (animates in); history loaded from the server does not. */
+  fresh?: boolean;
   /** True while the assistant response is streaming. */
   streaming?: boolean;
 }

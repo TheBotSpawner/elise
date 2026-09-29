@@ -3,12 +3,13 @@
 import { useCallback, useRef, useState } from "react";
 
 import type { ChatStreamEvent } from "@/application/chat-protocol";
-import type { OrbState } from "@/components/elise/orb/orb-states";
+import { resolveOrbState, type OrbState } from "@/components/elise/orb/orb-states";
+import type { ToolDisplay } from "@/core/agents/tools";
 import type { PublicError } from "@/core/errors";
 
 import type { ChatMessage } from "./types";
 
-type RunState = "idle" | "thinking" | "using_tools";
+type RunState = "idle" | "thinking" | "using_tools" | "approving";
 
 /** Streams a chat turn from /api/chat (NDJSON) and keeps the conversation state. */
 export function useEliseChat(initial: { conversationId?: string; messages?: ChatMessage[] }) {
@@ -30,8 +31,23 @@ export function useEliseChat(initial: { conversationId?: string; messages?: Chat
       const assistantId = crypto.randomUUID();
       setMessages((all) => [
         ...all,
-        { id: crypto.randomUUID(), role: "user", content: message, tools: [] },
-        { id: assistantId, role: "assistant", content: "", tools: [], streaming: true },
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: message,
+          tools: [],
+          fresh: true,
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          tools: [],
+          streaming: true,
+          fresh: true,
+          createdAt: new Date().toISOString(),
+        },
       ]);
       setRunState("thinking");
       setLastOutcome(null);
@@ -93,7 +109,9 @@ export function useEliseChat(initial: { conversationId?: string; messages?: Chat
                 patchAssistant(assistantId, (m) => ({
                   ...m,
                   tools: m.tools.map((t) =>
-                    t.callId === event.callId ? { ...t, outcome: event.outcome } : t,
+                    t.callId === event.callId
+                      ? { ...t, outcome: event.outcome, durationMs: event.durationMs }
+                      : t,
                   ),
                 }));
                 break;
@@ -127,22 +145,51 @@ export function useEliseChat(initial: { conversationId?: string; messages?: Chat
 
   const stop = useCallback(() => abort.current?.abort(), []);
 
+  /** Approvals run outside a chat turn: executing while it runs, then success or error. */
+  const trackApproval = useCallback((phase: "start" | "success" | "error") => {
+    if (phase === "start") {
+      setRunState("approving");
+      return;
+    }
+    setRunState("idle");
+    setLastOutcome(phase);
+  }, []);
+
   const waitingApproval = messages.some((m) =>
-    m.tools.some((t) => t.outcome?.status === "approval_required"),
+    m.tools.some((t) => t.outcome?.status === "approval_required" && !t.resolution),
   );
 
-  const orbState: OrbState =
-    runState === "thinking"
-      ? "thinking"
-      : runState === "using_tools"
-        ? "executing"
-        : lastOutcome === "error"
-          ? "error"
-          : waitingApproval
-            ? "waiting_approval"
-            : lastOutcome === "success"
-              ? "success"
-              : "idle";
+  const markApprovalResolved = useCallback(
+    (approvalId: string, decision: "approved" | "rejected", display?: ToolDisplay) => {
+      setMessages((all) =>
+        all.map((m) => ({
+          ...m,
+          tools: m.tools.map((tool) =>
+            tool.outcome?.status === "approval_required" && tool.outcome.approvalId === approvalId
+              ? { ...tool, resolution: { decision, display } }
+              : tool,
+          ),
+        })),
+      );
+    },
+    [],
+  );
 
-  return { messages, send, stop, busy: runState !== "idle", orbState, setMessages };
+  // Most important signal wins (motion spec priority).
+  const orbState: OrbState = resolveOrbState([
+    ...(waitingApproval ? (["waiting_approval"] as const) : []),
+    ...(runState === "using_tools" || runState === "approving" ? (["executing"] as const) : []),
+    ...(runState === "thinking" ? (["thinking"] as const) : []),
+    ...(lastOutcome ? [lastOutcome] : []),
+  ]);
+
+  return {
+    messages,
+    send,
+    stop,
+    busy: runState === "thinking" || runState === "using_tools",
+    orbState,
+    trackApproval,
+    markApprovalResolved,
+  };
 }

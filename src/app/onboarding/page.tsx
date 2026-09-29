@@ -8,7 +8,7 @@ export default async function OnboardingPage() {
   if (!auth) redirect("/login");
   if (auth.profile.onboardingStatus !== "pending") redirect("/");
   return (
-    <main className="elise-backdrop flex min-h-dvh items-center justify-center px-4 py-12">
+    <main className="elise-halo flex min-h-dvh items-center justify-center px-4 py-12">
       <OnboardingFlow />
     </main>
   );

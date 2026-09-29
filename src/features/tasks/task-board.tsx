@@ -95,7 +95,7 @@ export function TaskBoard({
     <div className="space-y-8">
       <form
         onSubmit={onCreate}
-        className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-border bg-surface p-3 sm:flex-row"
+        className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-3 sm:flex-row"
       >
         <Input
           {...form.register("title")}
@@ -160,7 +160,7 @@ function TaskList({
 }) {
   const { t } = useI18n();
   return (
-    <ul className="divide-y divide-border rounded-[var(--radius-card)] border border-border bg-surface">
+    <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
       <AnimatePresence initial={false}>
         {tasks.map((task) => {
           const completed = task.status === "completed";
