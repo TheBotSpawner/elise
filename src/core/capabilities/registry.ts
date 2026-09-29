@@ -66,6 +66,15 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
   finance: { key: "finance", status: "planned", operations: {} },
   web_search: { key: "web_search", status: "planned", operations: {} },
   voice: { key: "voice", status: "planned", operations: {} },
+  // Proposing a Schedule from chat changes nothing: the user confirms on a card.
+  schedules: {
+    key: "schedules",
+    status: "available",
+    internal: true,
+    operations: {
+      propose: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+    },
+  },
 };
 
 export const CAPABILITY_KEYS = Object.keys(CAPABILITIES) as CapabilityKey[];

@@ -11,6 +11,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "format": "prettier --write .",
+    "trigger:dev": "trigger.dev dev",
     "format:check": "prettier --check ."
   },
   "dependencies": {
@@ -51,6 +52,7 @@
     "prettier": "^3.9.9",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",
+    "trigger.dev": "^4.6.4",
     "typescript": "^5",
     "vitest": "^5.0.2"
   },

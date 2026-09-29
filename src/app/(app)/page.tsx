@@ -1,5 +1,6 @@
 import { listPendingApprovals } from "@/application/approvals-service";
 import { requireAuthContext } from "@/application/auth-context";
+import { latestBrief } from "@/application/schedules-service";
 import { listTasks } from "@/application/tasks-service";
 import { todayIn } from "@/core/time";
 import { ChatSurface } from "@/features/chat/chat-surface";
@@ -7,9 +8,10 @@ import { ChatSurface } from "@/features/chat/chat-surface";
 /** Home is chat-first: the Orb, one input, and only real, quiet context. */
 export default async function HomePage() {
   const auth = await requireAuthContext();
-  const [tasks, approvals] = await Promise.all([
+  const [tasks, approvals, brief] = await Promise.all([
     listTasks(auth, "open").catch(() => []) /* ambient context never blocks Home */,
     listPendingApprovals(auth),
+    latestBrief(auth).catch(() => null),
   ]);
   const today = todayIn(auth.profile.timezone);
 
@@ -21,6 +23,7 @@ export default async function HomePage() {
         dueToday: tasks.filter((task) => task.dueDate === today).length,
         overdue: tasks.filter((task) => task.dueDate !== null && task.dueDate < today).length,
         pendingApprovals: approvals.length,
+        brief,
       }}
     />
   );

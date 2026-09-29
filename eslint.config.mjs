@@ -23,7 +23,8 @@ const eslintConfig = defineConfig([
   },
   {
     files: ["src/**"],
-    ignores: ["src/infrastructure/**"],
+    // src/trigger holds the background runtime's entry points (like src/app for HTTP).
+    ignores: ["src/infrastructure/**", "src/trigger/**"],
     rules: {
       "no-restricted-imports": [
         "error",

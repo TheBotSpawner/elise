@@ -310,3 +310,114 @@ describe("google connections", () => {
     ).rejects.toThrow(/row-level security/);
   });
 });
+
+describe("schedules, runs and results", () => {
+  async function schedule(owner: { userId: string; workspaceId: string }) {
+    const res = await asUser(db, owner.userId, () =>
+      db.query<{ id: string }>(
+        `insert into public.schedules
+           (workspace_id, created_by_user_id, name, schedule_type, timezone, schedule_definition, action_type, next_run_at)
+         values ($1, $2, 'Morning Brief', 'recurring', 'America/Argentina/Buenos_Aires',
+                 '{"kind":"weekly","days":[1,2,3,4,5],"time":"07:30"}', 'morning_brief', now())
+         returning id`,
+        [owner.workspaceId, owner.userId],
+      ),
+    );
+    return res.rows[0]!.id;
+  }
+  // Server-side writes (service role) as the background runner does them.
+  const insertRun = (workspaceId: string, scheduleId: string, at: string, status = "queued") =>
+    db.query<{ id: string }>(
+      `insert into public.schedule_runs (workspace_id, schedule_id, trigger, status, scheduled_for)
+       values ($1, $2, 'scheduled', $3, $4) returning id`,
+      [workspaceId, scheduleId, status, at],
+    );
+
+  it("keeps schedules private to their owner", async () => {
+    const id = await schedule(alice);
+    const bobSees = await asUser(db, bob.userId, () =>
+      db.query("select id from public.schedules where id = $1", [id]),
+    );
+    expect(bobSees.rows).toHaveLength(0);
+    await expect(
+      asUser(db, bob.userId, () =>
+        db.query(
+          `insert into public.schedules (workspace_id, created_by_user_id, name, schedule_type, timezone, schedule_definition, action_type)
+           values ($1, $2, 'x', 'recurring', 'UTC', '{}', 'morning_brief')`,
+          [alice.workspaceId, bob.userId],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/);
+  });
+
+  it("produces one run per occurrence and at most one active run per schedule", async () => {
+    const id = await schedule(alice);
+    await insertRun(alice.workspaceId, id, "2026-09-29T10:30:00Z");
+    await expect(
+      insertRun(alice.workspaceId, id, "2026-09-29T10:30:00Z", "skipped"),
+    ).rejects.toThrow(/schedule_runs_occurrence_unique/);
+    await expect(insertRun(alice.workspaceId, id, "2026-09-30T10:30:00Z")).rejects.toThrow(
+      /schedule_runs_one_active/,
+    );
+    // A finished/skipped occurrence can be recorded while one is active.
+    await insertRun(alice.workspaceId, id, "2026-09-30T10:30:00Z", "skipped");
+  });
+
+  it("lets users read their runs and results but only mark results as read", async () => {
+    const id = await schedule(alice);
+    const run = (await insertRun(alice.workspaceId, id, "2026-10-01T10:30:00Z", "completed"))
+      .rows[0]!.id;
+    const result = await db.query<{ id: string }>(
+      `insert into public.scheduled_results (workspace_id, user_id, schedule_id, schedule_run_id, result_type, title, content)
+       values ($1, $2, $3, $4, 'morning_brief', 'Morning Brief', '{}') returning id`,
+      [alice.workspaceId, alice.userId, id, run],
+    );
+    const resultId = result.rows[0]!.id;
+    await expect(
+      db.query(
+        `insert into public.scheduled_results (workspace_id, user_id, schedule_id, schedule_run_id, result_type, title, content)
+         values ($1, $2, $3, $4, 'morning_brief', 'dup', '{}')`,
+        [alice.workspaceId, alice.userId, id, run],
+      ),
+    ).rejects.toThrow(/duplicate key/);
+
+    const seen = await asUser(db, alice.userId, () =>
+      db.query("select id from public.schedule_runs where id = $1", [run]),
+    );
+    expect(seen.rows).toHaveLength(1);
+    await expect(
+      asUser(db, alice.userId, () =>
+        db.query("update public.schedule_runs set status = 'completed' where id = $1", [run]),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asUser(db, alice.userId, () =>
+        db.query("update public.scheduled_results set title = 'x' where id = $1", [resultId]),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    const marked = await asUser(db, alice.userId, () =>
+      db.query("update public.scheduled_results set read_at = now() where id = $1", [resultId]),
+    );
+    expect(marked.affectedRows).toBe(1);
+
+    const bobResults = await asUser(db, bob.userId, () =>
+      db.query("select id from public.scheduled_results"),
+    );
+    expect(bobResults.rows).toHaveLength(0);
+    const bobRuns = await asUser(db, bob.userId, () =>
+      db.query("select id from public.schedule_runs"),
+    );
+    expect(bobRuns.rows).toHaveLength(0);
+  });
+
+  it("notifies once per run and type", async () => {
+    const insert = () =>
+      db.query(
+        `insert into public.notifications (workspace_id, user_id, notification_type, title, source_type, source_id)
+         values ($1, $2, 'schedule.result_ready', 'Morning Brief ready', 'schedule_run', 'run-1')`,
+        [alice.workspaceId, alice.userId],
+      );
+    await insert();
+    await expect(insert()).rejects.toThrow(/notifications_schedule_run_once/);
+  });
+});

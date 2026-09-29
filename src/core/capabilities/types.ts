@@ -13,7 +13,8 @@ export type CapabilityKey =
   | "notes"
   | "finance"
   | "web_search"
-  | "voice";
+  | "voice"
+  | "schedules";
 
 /** docs/architecture/15-tools-actions-approvals.md §9 */
 export type OperationKind =
@@ -34,5 +35,7 @@ export interface CapabilityDefinition {
   key: CapabilityKey;
   /** `available` once at least one provider implements it end to end. */
   status: "available" | "planned";
+  /** Implemented by ELISE itself (no provider, no binding): always available, read-only tools. */
+  internal?: boolean;
   operations: Readonly<Record<string, OperationDefinition>>;
 }

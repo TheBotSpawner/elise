@@ -22,6 +22,8 @@ export interface HomeAmbient {
   dueToday: number;
   overdue: number;
   pendingApprovals: number;
+  /** Today's scheduled result, shown as one quiet line — never a modal. */
+  brief?: { id: string; read: boolean } | null;
 }
 
 /**
@@ -241,9 +243,24 @@ function Ambient({ ambient }: { ambient: HomeAmbient }) {
       href: "/approvals",
     },
   ].filter(Boolean) as { label: string; text: string; href: string }[];
-  if (items.length === 0) return null;
+  const brief = ambient.brief;
+  if (items.length === 0 && !brief) return null;
   return (
     <ul className="mt-5 flex flex-col items-center gap-1 text-[13px] text-muted md:fixed md:inset-x-10 md:bottom-8 md:mt-0 md:flex-row md:justify-center md:gap-14">
+      {brief && (
+        <li className="flex h-8 items-center gap-3">
+          <span className={cn("flex items-center gap-2", brief.read ? "text-faint" : "text-fg")}>
+            {!brief.read && <span aria-hidden className="size-1.5 rounded-full bg-accent" />}
+            {t.brief.ready}
+          </span>
+          <Link
+            href={`/schedules/results/${brief.id}`}
+            className="text-accent-text hover:underline"
+          >
+            {t.brief.view}
+          </Link>
+        </li>
+      )}
       {items.map((item) => (
         <li key={item.label}>
           <Link href={item.href} className="flex h-8 items-baseline gap-2.5 hover:text-fg">

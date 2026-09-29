@@ -15,6 +15,7 @@ import { AppError } from "@/core/errors";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { EMAIL_TOOLS } from "@/core/tools/email";
+import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 import { logger } from "@/infrastructure/observability/logger";
 import { EliseTasksProvider } from "@/infrastructure/providers/elise-native/tasks";
@@ -42,6 +43,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...TASK_TOOLS,
   ...CALENDAR_TOOLS,
   ...EMAIL_TOOLS,
+  ...SCHEDULE_TOOLS,
 );
 
 /**

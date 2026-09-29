@@ -8,7 +8,7 @@ import type {
   ToolRunEnv,
   ToolRunResult,
 } from "./tools";
-import { getOperation } from "../capabilities/registry";
+import { getCapability, getOperation } from "../capabilities/registry";
 import type {
   ApprovalMode,
   OperationDefinition,
@@ -179,6 +179,29 @@ export async function executeToolCall(
     );
   }
   const input: unknown = parsed.data;
+
+  // ELISE-internal capabilities (e.g. proposing a Schedule) have no provider to resolve and
+  // may only read; anything they propose is confirmed by the user through the normal UI.
+  if (getCapability(tool.capability).internal) {
+    if (operation.kind !== "read")
+      return fail(new AppError("INTERNAL_ERROR", `Internal tool ${tool.name} must be read-only`));
+    try {
+      const result = await tool.run(input, {
+        ctx,
+        binding: INTERNAL_BINDING,
+        providers: ports.providers,
+      });
+      return trace(null, null, {
+        status: "succeeded",
+        output: result.output,
+        display: result.display,
+        actionId: null,
+        providerLabel: "elise",
+      });
+    } catch (error) {
+      return trace(null, null, fail(error));
+    }
+  }
 
   const allBindings = await ports.loadBindings();
   let route: ReturnType<NonNullable<AnyToolDefinition["route"]>> = null;
@@ -566,6 +589,23 @@ async function runWrite(
     return trace(binding, actionId, { status: "failed", error: publicError });
   }
 }
+
+/** Stand-in binding for ELISE-internal tools; they never touch a provider. */
+const INTERNAL_BINDING: CapabilityBinding = {
+  id: "internal",
+  capability: "schedules",
+  connectionId: "internal",
+  providerKey: "elise_native",
+  connectionStatus: "connected",
+  contextType: null,
+  contextId: null,
+  priority: 0,
+  isDefault: true,
+  enabled: true,
+  label: "ELISE",
+  accountLabel: null,
+  contextLabel: null,
+};
 
 function fail(error: unknown): ToolCallOutcome {
   return { status: "failed", error: toPublicError(error) };

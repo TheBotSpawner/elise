@@ -9,9 +9,11 @@ import type {
   EmailThread,
   FollowUp,
 } from "../capabilities/email";
+import { getCapability } from "../capabilities/registry";
 import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
+import type { ScheduleInput } from "../schedules/schedule";
 
 export type ActionOrigin = "ai" | "user_ui" | "schedule" | "system";
 
@@ -84,6 +86,12 @@ export type ToolDisplay =
       items: FollowUp[];
     }
   | {
+      /** A Schedule ELISE proposes; created only when the user confirms. */
+      kind: "schedule_proposal";
+      input: ScheduleInput;
+      nextRunAt: string;
+    }
+  | {
       kind: "email_changed";
       change: "archived" | "read" | "unread";
       count: number;
@@ -108,7 +116,7 @@ export interface ToolRunResult<TOutput> {
 export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   /** Capability-based name, never provider-based: "tasks.create", not "gmailSearch". */
   name: string;
-  capability: ImplementedCapability & CapabilityKey;
+  capability: CapabilityKey;
   operation: string;
   description: string;
   input: z.ZodType<TInput>;
@@ -171,7 +179,9 @@ export class ToolRegistry {
 
   /** Tools exposed to the model: only those whose capability is currently available. */
   available(capabilities: ReadonlySet<CapabilityKey>): AnyToolDefinition[] {
-    return [...this.tools.values()].filter((t) => capabilities.has(t.capability));
+    return [...this.tools.values()].filter(
+      (t) => capabilities.has(t.capability) || getCapability(t.capability).internal,
+    );
   }
 
   static toSpec(tool: AnyToolDefinition): AIToolSpec {

@@ -9,6 +9,7 @@ import type { ToolDisplay } from "@/core/agents/tools";
 import type { CalendarEvent } from "@/core/capabilities/calendar";
 import type { Task } from "@/core/capabilities/tasks";
 import { addDays, todayIn } from "@/core/time";
+import { ScheduleProposalCard } from "@/features/schedules/proposal-card";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -294,6 +295,8 @@ export function DisplayCard({
       return <FollowUpsCard display={display} timezone={timezone} rise={rise} />;
     case "email_changed":
       return <EmailChangedCard display={display} rise={rise} />;
+    case "schedule_proposal":
+      return <ScheduleProposalCard display={display} rise={rise} />;
 
     case "availability":
       return (

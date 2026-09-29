@@ -49,6 +49,11 @@ const EMAIL_GUIDANCE = `Email:
 - "Needs reply", "waiting on" → email.findFollowUps and keep its reasons. Your own classifications (important, newsletter, needs reply, action requested) are judgments: say why, and never archive or change mail based on them unless the user asks. Bulk cleanups: show count and examples first; ELISE asks for approval.
 - Attachments: you only see names, types and sizes.`;
 
+const SCHEDULES_GUIDANCE = `Schedules ("Programados"):
+- When the user wants something done regularly or later ("every weekday at 7:30 prepare my Morning Brief"), call schedules.propose. Today only the Morning Brief can be scheduled.
+- The card it shows is the confirmation: nothing is created until the user presses Create. Never say it is already scheduled.
+- Resolve vague times by asking ("in the morning" → which time?). Times are the user's local time.`;
+
 export interface ContextPackage {
   instructions: string;
   input: AIInputItem[];
@@ -105,6 +110,7 @@ export function buildContextPackage(input: ContextInput): ContextPackage {
     sections.push(CALENDAR_TASKS_GUIDANCE);
   }
   if (input.availableCapabilities.includes("email")) sections.push(EMAIL_GUIDANCE);
+  sections.push(SCHEDULES_GUIDANCE);
   if (input.rules && input.rules.length > 0) {
     sections.push(
       `User rules (explicit preferences, always respect them):\n${input.rules.map((r) => `- ${r}`).join("\n")}`,

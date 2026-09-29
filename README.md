@@ -3,13 +3,13 @@
 One persistent intelligence that coordinates your digital world through chat, capabilities and
 replaceable providers.
 
-**Status:** pre-MVP — Slice 1 (Foundation), Slice 2 (Google Calendar + Tasks) and Gmail + Email Copilot implemented. See [What works today](#what-works-today).
+**Status:** pre-MVP — Slice 1 (Foundation), Slice 2 (Google Calendar + Tasks), Gmail + Email Copilot, and Schedules + Morning Brief (Trigger.dev) implemented. See [What works today](#what-works-today).
 
 ## Stack
 
 Next.js 16 (App Router, `src/`) · React 19 · TypeScript strict · Tailwind CSS 4 · Supabase (Auth,
 Postgres + RLS, Realtime) · OpenAI (behind ELISE's `AIProvider` port) · Zod · Motion · Vitest +
-Testing Library + PGlite · Trigger.dev (not connected yet).
+Testing Library + PGlite · Trigger.dev (background execution).
 
 ## Requirements
 
@@ -71,6 +71,25 @@ Gmail is enabled per account and incrementally: on `/connections`, press **Enabl
 Gmail row of an already connected Google account. Calendar and Tasks keep working; no reconnect
 is needed. See [ADR-005](docs/decisions/ADR-005-gmail-email-capability.md).
 
+### Schedules and Morning Brief (Trigger.dev)
+
+Background work (Schedules, Morning Brief) runs on Trigger.dev. The project ref is in
+`trigger.config.ts`; tasks live in `src/trigger/`. See
+[ADR-006](docs/decisions/ADR-006-schedules-background-runtime.md).
+
+1. `npx trigger.dev@latest login` (opens a browser).
+2. Dashboard → project → **API keys**: copy the **development** secret key into `.env.local` as
+   `TRIGGER_SECRET_KEY`.
+3. Dashboard → **Environment variables** (Development, later Production): add what the tasks
+   need — `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
+   `SUPABASE_SECRET_KEY`, `ELISE_ENCRYPTION_KEY`, `GOOGLE_OAUTH_CLIENT_ID`,
+   `GOOGLE_OAUTH_CLIENT_SECRET`, `OPENAI_API_KEY` (+ `OPENAI_MODEL`). In development the CLI also
+   loads your local `.env` files.
+4. Run the worker next to the app: `npm run trigger:dev`. The `schedules-dispatch` task runs
+   every minute and starts due Schedules; **Run now** starts one immediately.
+5. Production: `npx trigger.dev@latest deploy`, and set the production `TRIGGER_SECRET_KEY` on
+   the web app host.
+
 Then:
 
 ```bash
@@ -82,18 +101,19 @@ Without `OPENAI_API_KEY`, everything works except chat, which reports that AI is
 
 ## Environment variables
 
-| Variable                                                           | Required | Purpose                                            |
-| ------------------------------------------------------------------ | -------- | -------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | yes      | Auth + data (browser-safe; RLS enforces access)    |
-| `OPENAI_API_KEY`                                                   | for chat | Server-only AI provider key                        |
-| `OPENAI_MODEL`, `OPENAI_MODEL_FAST`                                | no       | Model names (defaults `gpt-5-mini` / `gpt-5-nano`) |
-| `NEXT_PUBLIC_APP_URL`                                              | prod     | Base URL for auth redirects                        |
-| `ELISE_ENV`                                                        | no       | `development` / `staging` / `production` log tag   |
-| `CHAT_RATE_LIMIT_PER_MINUTE`                                       | no       | Per-user chat rate limit (default 20)              |
-| `SUPABASE_SECRET_KEY`                                              | Google   | Server-only: encrypted credential store            |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`             | Google   | OAuth client for Calendar/Tasks/Gmail connections  |
-| `ELISE_ENCRYPTION_KEY` (+ optional `_PREVIOUS`)                    | Google   | AES-256-GCM key for OAuth credentials at rest      |
-| `TRIGGER_SECRET_KEY`                                               | not yet  | Reserved for background execution                  |
+| Variable                                                           | Required  | Purpose                                            |
+| ------------------------------------------------------------------ | --------- | -------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | yes       | Auth + data (browser-safe; RLS enforces access)    |
+| `OPENAI_API_KEY`                                                   | for chat  | Server-only AI provider key                        |
+| `OPENAI_MODEL`, `OPENAI_MODEL_FAST`                                | no        | Model names (defaults `gpt-5-mini` / `gpt-5-nano`) |
+| `NEXT_PUBLIC_APP_URL`                                              | prod      | Base URL for auth redirects                        |
+| `ELISE_ENV`                                                        | no        | `development` / `staging` / `production` log tag   |
+| `CHAT_RATE_LIMIT_PER_MINUTE`                                       | no        | Per-user chat rate limit (default 20)              |
+| `SUPABASE_SECRET_KEY`                                              | Google    | Server-only: encrypted credential store            |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`             | Google    | OAuth client for Calendar/Tasks/Gmail connections  |
+| `ELISE_ENCRYPTION_KEY` (+ optional `_PREVIOUS`)                    | Google    | AES-256-GCM key for OAuth credentials at rest      |
+| `TRIGGER_SECRET_KEY`                                               | Schedules | Trigger.dev secret key (one per environment)       |
+| `TRIGGER_PROJECT_REF`                                              | no        | Overrides the project ref in `trigger.config.ts`   |
 
 ## Scripts
 
@@ -138,6 +158,14 @@ database is needed.
   resolve once, verify the payload hash, and revalidate before executing.
 - Actions, tool executions, AI runs and audit events are recorded; logs are structured and
   redacted.
+- **Schedules (Programados) + Morning Brief:** create from the Schedules screen or from chat
+  ("Every weekday at 7:30 prepare my Morning Brief" → confirmation card). Runs in the background
+  on Trigger.dev at the schedule's local time (DST-aware), gathers today's calendar, important
+  email, follow-ups and tasks, writes a short brief and stores it. Home shows a quiet
+  "Morning Brief ready"; old briefs stay available; history per schedule; Run now, pause,
+  resume, edit, delete. Partial failures complete with a warning; late briefs are skipped
+  instead of arriving in the afternoon. Optional browser notification (asked in context, no
+  content in the preview).
 - Dark / light / system theme; Spanish and English UI; responsive desktop + mobile navigation.
 
 ## Structure

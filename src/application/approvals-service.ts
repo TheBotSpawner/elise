@@ -5,6 +5,7 @@ import type { ActionOrigin, ToolDisplay } from "@/core/agents/tools";
 import { AppError } from "@/core/errors";
 
 import type { AuthContext } from "./auth-context";
+import { resumeScheduleRunAfterApproval } from "./background";
 import { createExecutorPorts, toolContext } from "./elise";
 
 export interface PendingApproval {
@@ -85,13 +86,14 @@ export async function resolveApproval(
 
   if (decision === "rejected") {
     await auth.db.from("actions").update({ status: "cancelled" }).eq("id", action.id);
+    await resumeRun(approvalId, { approved: false, succeeded: false });
     return null;
   }
   if (!approval.connection_id)
     throw new AppError("CONFLICT", "The approved action has no destination");
 
   await auth.db.from("actions").update({ status: "executing" }).eq("id", action.id);
-  return executeApprovedAction(ports, ctx, {
+  const outcome = await executeApprovedAction(ports, ctx, {
     actionId: action.id,
     approvalId,
     toolName: action.tool_name,
@@ -99,6 +101,21 @@ export async function resolveApproval(
     connectionId: approval.connection_id,
     payloadHash: approval.payload_hash,
   });
+  await resumeRun(approvalId, {
+    approved: true,
+    succeeded: outcome.status === "succeeded",
+    errorCode: outcome.status === "failed" ? outcome.error.code : null,
+  });
+  return outcome;
+}
+
+/** A schedule run waiting on this approval (if any) finishes with the decision. */
+async function resumeRun(
+  approvalId: string,
+  decision: Parameters<typeof resumeScheduleRunAfterApproval>[1],
+) {
+  // Best effort: the approval itself is already resolved and executed.
+  await resumeScheduleRunAfterApproval(approvalId, decision).catch(() => undefined);
 }
 
 async function expireIfNeeded(auth: AuthContext, approvalId: string, now: string) {

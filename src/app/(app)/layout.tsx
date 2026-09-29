@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { listPendingApprovals } from "@/application/approvals-service";
 import { getAuthContext } from "@/application/auth-context";
 import { AppShell } from "@/components/elise/app-shell";
+import { ResultNotifier } from "@/features/schedules/browser-notifications";
 
 /** Authenticated area. The proxy redirects optimistically; this is the authoritative check. */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
@@ -18,6 +19,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       pendingApprovals={pending.length}
       user={{ name, initial: name.charAt(0).toUpperCase(), email: auth.email }}
     >
+      <ResultNotifier userId={auth.userId} />
       {children}
     </AppShell>
   );

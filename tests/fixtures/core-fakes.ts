@@ -15,6 +15,7 @@ import { makeExternalRef } from "@/core/providers/refs";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { EMAIL_TOOLS } from "@/core/tools/email";
+import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 
 export const NATIVE_BINDING: CapabilityBinding = {
@@ -204,7 +205,12 @@ export function makePorts(
   const tasks = new InMemoryTaskProvider();
   const log = new InMemoryActionLog();
   const ports: ExecutorPorts = {
-    registry: new ToolRegistry().register(...TASK_TOOLS, ...CALENDAR_TOOLS, ...EMAIL_TOOLS),
+    registry: new ToolRegistry().register(
+      ...TASK_TOOLS,
+      ...CALENDAR_TOOLS,
+      ...EMAIL_TOOLS,
+      ...SCHEDULE_TOOLS,
+    ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>
         providers[b.connectionId] ?? tasks) as ProviderFactory["get"],

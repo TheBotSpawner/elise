@@ -303,6 +303,105 @@ export type ConnectionSecretRow = {
   updated_at: Ts;
 };
 
+export type BackgroundJobStatus =
+  | "queued"
+  | "running"
+  | "waiting"
+  | "waiting_for_approval"
+  | "completed"
+  | "completed_with_warning"
+  | "failed"
+  | "cancelled";
+
+export type BackgroundJobRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string | null;
+  job_type: "schedule.run";
+  status: BackgroundJobStatus;
+  progress_current: number | null;
+  progress_total: number | null;
+  progress_message: string | null;
+  runtime_provider: string;
+  runtime_job_id: string | null;
+  attempts: number;
+  result_reference: Json | null;
+  error_code: string | null;
+  error_message: string | null;
+  started_at: Ts | null;
+  completed_at: Ts | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type ScheduleRow = {
+  id: string;
+  workspace_id: string;
+  created_by_user_id: string;
+  name: string;
+  schedule_type: "one_time" | "recurring";
+  status: "active" | "paused" | "needs_attention" | "completed" | "archived";
+  timezone: string;
+  schedule_definition: Json;
+  action_type: "morning_brief";
+  configuration: Json;
+  capabilities: string[];
+  instructions: string | null;
+  delivery_config: Json;
+  approval_behavior: "policy";
+  next_run_at: Ts | null;
+  last_run_at: Ts | null;
+  runtime_reference: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type ScheduleRunStatus =
+  | "queued"
+  | "running"
+  | "waiting_for_approval"
+  | "completed"
+  | "completed_with_warning"
+  | "failed"
+  | "cancelled"
+  | "missed"
+  | "skipped";
+
+export type ScheduleRunRow = {
+  id: string;
+  workspace_id: string;
+  schedule_id: string;
+  background_job_id: string | null;
+  trigger: "scheduled" | "manual";
+  status: ScheduleRunStatus;
+  scheduled_for: Ts;
+  started_at: Ts | null;
+  completed_at: Ts | null;
+  approval_id: string | null;
+  result_id: string | null;
+  warnings: Json;
+  error_code: string | null;
+  error_message: string | null;
+  runtime_metadata: Json;
+  created_at: Ts;
+};
+
+export type ScheduledResultRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  schedule_id: string;
+  schedule_run_id: string;
+  result_type: "morning_brief";
+  title: string;
+  content: Json;
+  artifact_reference: string | null;
+  read_at: Ts | null;
+  metadata: Json;
+  created_at: Ts;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -373,6 +472,31 @@ export type Database = {
         "connection_id" | "workspace_id" | "provider_key" | "ciphertext"
       >;
       audit_events: Table<AuditEventRow, "workspace_id" | "event_type" | "origin" | "result">;
+      background_jobs: Table<BackgroundJobRow, "workspace_id" | "job_type">;
+      schedules: Table<
+        ScheduleRow,
+        | "workspace_id"
+        | "created_by_user_id"
+        | "name"
+        | "schedule_type"
+        | "timezone"
+        | "schedule_definition"
+        | "action_type"
+      >;
+      schedule_runs: Table<
+        ScheduleRunRow,
+        "workspace_id" | "schedule_id" | "trigger" | "scheduled_for"
+      >;
+      scheduled_results: Table<
+        ScheduledResultRow,
+        | "workspace_id"
+        | "user_id"
+        | "schedule_id"
+        | "schedule_run_id"
+        | "result_type"
+        | "title"
+        | "content"
+      >;
     };
     Views: Record<never, never>;
     Functions: Record<never, never>;
