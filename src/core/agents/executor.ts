@@ -123,6 +123,7 @@ export type ToolCallOutcome =
       actionId: string;
       summary: string;
       reason: ApprovalReason;
+      preview?: ToolDisplay;
     }
   | {
       status: "clarification_required";
@@ -193,6 +194,7 @@ export async function executeToolCall(
     providerKey: route?.providerKey ?? null,
     // An existing item already names its account; a named destination only picks new ones.
     destination: route ? null : readDestination(input),
+    strict: operation.kind !== "read" && Boolean(tool.strictDestination),
   });
   if (resolution.kind === "unavailable") {
     return trace(
@@ -251,15 +253,17 @@ export async function executeToolCall(
   }
 
   let described: Awaited<ReturnType<AnyToolDefinition["describe"]>>;
+  let pinned: unknown = input;
   try {
-    described = await tool.describe(input, env);
+    if (tool.pin) pinned = await tool.pin(input, env);
+    described = await tool.describe(pinned, env);
   } catch (error) {
     // e.g. the item no longer exists or the times are impossible: a fixable error, not a crash.
     return trace(binding, null, fail(error));
   }
-  const { summary, target } = described;
+  const { summary, target, preview } = described;
   const inputHash = await sha256(
-    stableStringify({ tool: tool.name, input, connectionId: binding.connectionId }),
+    stableStringify({ tool: tool.name, input: pinned, connectionId: binding.connectionId }),
   );
   const recorded = await ports.log.recordAction(ctx, {
     toolName: tool.name,
@@ -268,7 +272,7 @@ export async function executeToolCall(
     providerKey: binding.providerKey,
     connectionId: binding.connectionId,
     riskLevel: operation.risk,
-    input,
+    input: pinned,
     inputHash,
     idempotencyKey: call.idempotencyKey ?? null,
     status: decision.kind === "require_approval" ? "waiting_for_approval" : "executing",
@@ -299,7 +303,7 @@ export async function executeToolCall(
       providerKey: binding.providerKey,
       connectionId: binding.connectionId,
       riskLevel: operation.risk,
-      payload: { input, summary, target },
+      payload: { input: pinned, summary, target, preview },
       payloadHash: inputHash,
       summary,
       reason: decision.reason,
@@ -319,10 +323,11 @@ export async function executeToolCall(
       actionId,
       summary,
       reason: decision.reason,
+      preview,
     });
   }
 
-  return runWrite(ports, ctx, actionId, tool.name, input, { ...env, actionId }, trace);
+  return runWrite(ports, ctx, actionId, tool.name, pinned, { ...env, actionId }, trace);
 
   async function trace(
     b: CapabilityBinding | null,
@@ -370,7 +375,12 @@ async function aggregateRead(
   if (ok.length === 0) throw firstError;
   const merged = tool.merge!(ok, input, ctx);
   if (unavailable.length === 0) return merged;
-  return { ...merged, output: { ...(merged.output as object), unavailable } };
+  // Partial failures stay visible to the model and the user, never silently dropped.
+  const display =
+    merged.display?.kind === "email_list"
+      ? { ...merged.display, unavailable: unavailable.map((u) => u.account) }
+      : merged.display;
+  return { ...merged, display, output: { ...(merged.output as object), unavailable } };
 }
 
 const RISK_ORDER: RiskLevel[] = ["low", "medium", "high", "critical"];

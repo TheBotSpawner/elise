@@ -1,11 +1,20 @@
 import type { AIProvider, AIStreamEvent, AITurnRequest } from "@/core/agents/ai-provider";
 import type { ActionLog, ExecutorPorts, StoredAction } from "@/core/agents/executor";
 import { ToolRegistry, type ProviderFactory, type ToolContext } from "@/core/agents/tools";
+import type {
+  EmailDraft,
+  EmailMessage,
+  EmailProvider,
+  EmailQuery,
+  EmailThread,
+  NewDraft,
+} from "@/core/capabilities/email";
 import type { Task, TaskProvider, TaskQuery } from "@/core/capabilities/tasks";
 import { AppError } from "@/core/errors";
 import { makeExternalRef } from "@/core/providers/refs";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
+import { EMAIL_TOOLS } from "@/core/tools/email";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 
 export const NATIVE_BINDING: CapabilityBinding = {
@@ -122,7 +131,14 @@ export class InMemoryTaskProvider implements TaskProvider {
 
 export class InMemoryActionLog implements ActionLog {
   actions = new Map<string, StoredAction & { idempotencyKey: string | null; input: unknown }>();
-  approvals: { id: string; actionId: string; summary: string; payloadHash: string }[] = [];
+  approvals: {
+    id: string;
+    actionId: string;
+    summary: string;
+    payloadHash: string;
+    connectionId: string;
+    payload: unknown;
+  }[] = [];
   executions: { toolName: string; status: string }[] = [];
   auditEvents: { eventType: string; result: string }[] = [];
 
@@ -157,6 +173,8 @@ export class InMemoryActionLog implements ActionLog {
       actionId: approval.actionId,
       summary: approval.summary,
       payloadHash: approval.payloadHash,
+      connectionId: approval.connectionId,
+      payload: approval.payload,
     });
     return { id };
   }
@@ -186,7 +204,7 @@ export function makePorts(
   const tasks = new InMemoryTaskProvider();
   const log = new InMemoryActionLog();
   const ports: ExecutorPorts = {
-    registry: new ToolRegistry().register(...TASK_TOOLS, ...CALENDAR_TOOLS),
+    registry: new ToolRegistry().register(...TASK_TOOLS, ...CALENDAR_TOOLS, ...EMAIL_TOOLS),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>
         providers[b.connectionId] ?? tasks) as ProviderFactory["get"],
@@ -222,5 +240,153 @@ export class ScriptedAI implements AIProvider {
     const turn = this.turns[this.requests.length - 1];
     if (!turn) throw new Error("ScriptedAI ran out of turns");
     for (const event of turn(request)) yield event;
+  }
+}
+
+/** In-memory mailbox for one account. Refs follow the production format (x:{conn}:m|t|d:id). */
+export class InMemoryEmailProvider implements EmailProvider {
+  messages: EmailMessage[] = [];
+  drafts = new Map<string, EmailDraft>();
+  sent: EmailDraft[] = [];
+  modified: { ids: string[]; change: { archive?: boolean; read?: boolean } }[] = [];
+  /** Makes the next send fail with this error (after optionally "really" sending). */
+  sendFailure: { error: Error; actuallySent: boolean } | null = null;
+  failReads: Error | null = null;
+
+  constructor(
+    readonly connectionId: string,
+    readonly source: string,
+    readonly account: string,
+  ) {}
+
+  ref(kind: "m" | "t" | "d", id: string) {
+    return makeExternalRef(this.connectionId, kind, id);
+  }
+
+  addMessage(over: Partial<EmailMessage> & { id: string; threadId: string }): EmailMessage {
+    const m: EmailMessage = {
+      from: { email: "rod@client.com", name: "Rod" },
+      to: [{ email: this.account, name: null }],
+      cc: [],
+      replyTo: [],
+      subject: "Proposal",
+      snippet: "",
+      date: "2026-09-28T12:00:00.000Z",
+      unread: true,
+      inInbox: true,
+      important: false,
+      fromMe: false,
+      category: "primary",
+      labels: [],
+      attachments: [],
+      bulk: false,
+      body: null,
+      rfcMessageId: `<${over.id}@mail>`,
+      references: null,
+      url: null,
+      ...over,
+      id: this.ref("m", over.id),
+      threadId: this.ref("t", over.threadId),
+      provenance: {
+        providerKey: "google",
+        connectionId: this.connectionId,
+        externalId: over.id,
+        source: this.source,
+        account: this.account,
+      },
+    };
+    this.messages.push(m);
+    return m;
+  }
+
+  async search(q: EmailQuery) {
+    if (this.failReads) throw this.failReads;
+    return this.messages
+      .filter((m) => !q.from || (m.from?.email ?? "").includes(q.from))
+      .filter((m) => !q.inInbox || m.inInbox)
+      .slice(0, q.limit)
+      .map((m) => ({ ...m, body: null }));
+  }
+  async searchThreads(q: EmailQuery): Promise<EmailThread[]> {
+    const ids = [...new Set((await this.search({ ...q, limit: 100 })).map((m) => m.threadId))];
+    return ids.map((id) => this.thread(id)!);
+  }
+  private thread(id: string): EmailThread | null {
+    const messages = this.messages
+      .filter((m) => m.threadId === id)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (!messages.length) return null;
+    return {
+      id,
+      subject: messages[0]!.subject,
+      messages,
+      url: null,
+      provenance: { ...messages[0]!.provenance },
+    };
+  }
+  async getMessage(id: string) {
+    return this.messages.find((m) => m.id === id) ?? null;
+  }
+  async peek(ids: string[]) {
+    return this.messages.filter((m) => ids.includes(m.id) || ids.includes(m.threadId));
+  }
+  async getThread(id: string) {
+    return this.thread(id);
+  }
+  async getDraft(id: string) {
+    return this.drafts.get(id) ?? null;
+  }
+  private save(id: string, d: NewDraft): EmailDraft {
+    const draft: EmailDraft = {
+      id,
+      threadId: d.reply?.threadId ?? null,
+      from: this.account,
+      to: d.to,
+      cc: d.cc,
+      bcc: d.bcc,
+      subject: d.subject,
+      body: d.body,
+      inReplyTo: d.reply?.inReplyTo ?? null,
+      references: d.reply?.references ?? null,
+      url: null,
+      provenance: {
+        providerKey: "google",
+        connectionId: this.connectionId,
+        externalId: id,
+        source: this.source,
+        account: this.account,
+      },
+    };
+    this.drafts.set(id, draft);
+    return draft;
+  }
+  async createDraft(d: NewDraft) {
+    return this.save(this.ref("d", crypto.randomUUID()), d);
+  }
+  async updateDraft(id: string, d: NewDraft) {
+    if (!this.drafts.has(id)) throw new AppError("NOT_FOUND", "Draft not found");
+    return this.save(id, d);
+  }
+  async sendDraft(id: string): Promise<EmailMessage> {
+    const draft = this.drafts.get(id);
+    if (!draft) throw new AppError("NOT_FOUND", "Draft not found");
+    const failure = this.sendFailure;
+    this.sendFailure = null;
+    if (failure && !failure.actuallySent) throw failure.error;
+    this.drafts.delete(id);
+    this.sent.push(draft);
+    if (failure) throw failure.error;
+    return this.addMessage({
+      id: `sent-${this.sent.length}`,
+      threadId: draft.threadId?.split(":").at(-1) ?? `new-${this.sent.length}`,
+      fromMe: true,
+      subject: draft.subject,
+    });
+  }
+  async deleteDraft(id: string) {
+    this.drafts.delete(id);
+  }
+  async modify(ids: string[], change: { archive?: boolean; read?: boolean }) {
+    this.modified.push({ ids, change });
   }
 }

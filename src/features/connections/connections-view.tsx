@@ -5,7 +5,12 @@ import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { ConnectionView } from "@/application/connections-service";
-import { GoogleCalendarIcon, GoogleMark, GoogleTasksIcon } from "@/components/elise/brand-icons";
+import {
+  GmailIcon,
+  GoogleCalendarIcon,
+  GoogleMark,
+  GoogleTasksIcon,
+} from "@/components/elise/brand-icons";
 import { CheckIcon } from "@/components/elise/icons";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -23,10 +28,16 @@ import {
   type ConnectionActionResult,
 } from "./actions";
 
-const GOOGLE_CAPS = ["calendar", "tasks"] as const;
-const CAP_LOGOS = { calendar: GoogleCalendarIcon, tasks: GoogleTasksIcon } as const;
+const GOOGLE_CAPS = ["calendar", "tasks", "email"] as const;
+const CAP_LOGOS = {
+  calendar: GoogleCalendarIcon,
+  tasks: GoogleTasksIcon,
+  email: GmailIcon,
+} as const;
 // Product names are brands: never translated.
-const CAP_PRODUCT = { calendar: "Google Calendar", tasks: "Google Tasks" } as const;
+const CAP_PRODUCT = { calendar: "Google Calendar", tasks: "Google Tasks", email: "Gmail" } as const;
+/** Gmail is opt-in: its consent is broader, so least privilege by default. */
+const OPT_IN = new Set<string>(["email"]);
 
 export function ConnectionsView({
   connections,
@@ -142,7 +153,7 @@ function ConnectGooglePanel({ title }: { title: string }) {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         {GOOGLE_CAPS.map((cap) => {
           const Logo = CAP_LOGOS[cap];
           return (
@@ -154,7 +165,7 @@ function ConnectGooglePanel({ title }: { title: string }) {
                 type="checkbox"
                 name="capability"
                 value={cap}
-                defaultChecked
+                defaultChecked={!OPT_IN.has(cap)}
                 className="peer sr-only"
               />
               <Logo size={36} className="shrink-0" />

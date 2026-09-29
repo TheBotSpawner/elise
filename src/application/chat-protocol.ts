@@ -9,7 +9,14 @@ import type { PublicError } from "@/core/errors";
 /** Tool outcome as the UI needs it (model-facing output stripped). */
 export type ClientToolOutcome =
   | { status: "succeeded"; display?: ToolDisplay }
-  | { status: "approval_required"; approvalId: string; summary: string; reason: ApprovalReason }
+  | {
+      status: "approval_required";
+      approvalId: string;
+      summary: string;
+      reason: ApprovalReason;
+      /** Exactly what will happen (e.g. the email that will be sent). */
+      preview?: ToolDisplay;
+    }
   | { status: "clarification_required" }
   | { status: "rejected" }
   | { status: "failed"; error: PublicError };

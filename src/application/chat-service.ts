@@ -273,6 +273,7 @@ function toClientOutcome(outcome: ToolCallOutcome): ClientToolOutcome {
         approvalId: outcome.approvalId,
         summary: outcome.summary,
         reason: outcome.reason,
+        preview: outcome.preview,
       };
     case "clarification_required":
       return { status: "clarification_required" };

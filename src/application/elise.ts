@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { AccountSummary } from "@/core/agents/context";
-import type { ExecutorPorts } from "@/core/agents/executor";
+import { executeToolCall, type ExecutorPorts } from "@/core/agents/executor";
 import {
   ToolRegistry,
   type ActionOrigin,
@@ -14,6 +14,7 @@ import type { CapabilityKey } from "@/core/capabilities/types";
 import { AppError } from "@/core/errors";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
+import { EMAIL_TOOLS } from "@/core/tools/email";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 import { logger } from "@/infrastructure/observability/logger";
 import { EliseTasksProvider } from "@/infrastructure/providers/elise-native/tasks";
@@ -24,6 +25,7 @@ import {
   GoogleTokenProvider,
   type ConnectionRef,
 } from "@/infrastructure/providers/google/credentials";
+import { GmailProvider } from "@/infrastructure/providers/google/gmail";
 import { GoogleHttp } from "@/infrastructure/providers/google/http";
 import { GoogleTasksProvider } from "@/infrastructure/providers/google/tasks";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
@@ -36,7 +38,11 @@ import {
 import type { AuthContext } from "./auth-context";
 
 /** Every tool ELISE can use. Exposure per run is filtered by available capabilities. */
-export const toolRegistry = new ToolRegistry().register(...TASK_TOOLS, ...CALENDAR_TOOLS);
+export const toolRegistry = new ToolRegistry().register(
+  ...TASK_TOOLS,
+  ...CALENDAR_TOOLS,
+  ...EMAIL_TOOLS,
+);
 
 /**
  * A revoked/expired grant: stop using the connection for resolution (status), tell the user
@@ -132,6 +138,13 @@ function providerFactory(
         googleHttp(binding.connectionId),
       );
     },
+    email(binding) {
+      if (binding.providerKey !== "google") throw unsupported("email", binding);
+      return new GmailProvider(
+        { connectionId: binding.connectionId, label: binding.label, account: binding.accountLabel },
+        googleHttp(binding.connectionId),
+      );
+    },
   };
 
   return {
@@ -167,6 +180,34 @@ export function createExecutorPorts(
       (await bindings()).permissions.get(`${binding.connectionId}:${binding.capability}`) ??
       "understand",
   };
+}
+
+/**
+ * A tool call made by the user in the UI. Goes through exactly the same path as Chat
+ * (validation, provider resolution, policy, audit) with origin `user_ui`.
+ */
+export async function runUserTool(
+  auth: AuthContext,
+  name: string,
+  args: unknown,
+  idempotencyKey?: string,
+) {
+  const outcome = await executeToolCall(createExecutorPorts(auth), toolContext(auth, "user_ui"), {
+    name,
+    args,
+    idempotencyKey: idempotencyKey ? `ui:${idempotencyKey}` : null,
+  });
+  if (outcome.status === "failed") {
+    throw new AppError(outcome.error.code, outcome.error.message, {
+      recovery: outcome.error.recovery,
+    });
+  }
+  if (outcome.status !== "succeeded") {
+    throw new AppError("PERMISSION_DENIED", "This action needs attention before it can run", {
+      recovery: "review",
+    });
+  }
+  return outcome;
 }
 
 export function toolContext(

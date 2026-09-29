@@ -10,6 +10,8 @@ import { decideApproval } from "@/features/approvals/actions";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { DisplayCard } from "./result-cards";
+
 const EASE = [0.22, 1, 0.36, 1] as const;
 
 export type ApprovalPhase = "start" | "success" | "error";
@@ -24,6 +26,8 @@ export function ApprovalCard({
   summary,
   reason,
   tool,
+  preview,
+  timezone,
   autoFocus = false,
   initialResolution = null,
   onResolved,
@@ -33,6 +37,9 @@ export function ApprovalCard({
   summary: string;
   reason: string;
   tool?: string;
+  /** Exactly what will happen, e.g. the email that will be sent. */
+  preview?: ToolDisplay;
+  timezone?: string;
   autoFocus?: boolean;
   initialResolution?: "approved" | "rejected" | null;
   onResolved?: (
@@ -123,6 +130,7 @@ export function ApprovalCard({
             )}
           </div>
           <p className="text-[15px] font-medium md:text-base">{summary}</p>
+          {preview && <DisplayCard display={preview} timezone={timezone ?? "UTC"} embedded />}
           {reasonText && (
             <p className="rounded-[10px] bg-surface-2 px-3 py-2.5 text-[13.5px] leading-[1.55] text-muted md:rounded-xl md:px-4 md:py-3.5 md:text-sm">
               {reasonText}

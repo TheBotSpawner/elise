@@ -51,6 +51,18 @@ export function GoogleCalendarIcon({ size = 32, ...props }: Props) {
   );
 }
 
+export function GmailIcon({ size = 32, ...props }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden {...props}>
+      <path fill="#4285F4" d="M4 38.5V14l8 6v21.5H6.5A2.5 2.5 0 0 1 4 38.5z" />
+      <path fill="#34A853" d="M36 41.5V20l8-6v24.5a2.5 2.5 0 0 1-2.5 3z" />
+      <path fill="#EA4335" d="M12 20l12 9 12-9v-8L24 21 12 12z" />
+      <path fill="#C5221F" d="M4 11.5V14l8 6v-8l-3.6-2.7A2.8 2.8 0 0 0 4 11.5z" />
+      <path fill="#FBBC04" d="M44 11.5V14l-8 6v-8l3.6-2.7a2.8 2.8 0 0 1 4.4 2.2z" />
+    </svg>
+  );
+}
+
 export function GoogleTasksIcon({ size = 32, ...props }: Props) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden {...props}>

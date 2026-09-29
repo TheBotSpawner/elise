@@ -1,7 +1,7 @@
 import "server-only";
 
 import { executeApprovedAction, type ToolCallOutcome } from "@/core/agents/executor";
-import type { ActionOrigin } from "@/core/agents/tools";
+import type { ActionOrigin, ToolDisplay } from "@/core/agents/tools";
 import { AppError } from "@/core/errors";
 
 import type { AuthContext } from "./auth-context";
@@ -14,12 +14,13 @@ export interface PendingApproval {
   capability: string;
   createdAt: string;
   expiresAt: string | null;
+  preview?: ToolDisplay;
 }
 
 export async function listPendingApprovals(auth: AuthContext): Promise<PendingApproval[]> {
   const { data, error } = await auth.db
     .from("approvals")
-    .select("id, summary, reason, capability_key, created_at, expires_at")
+    .select("id, summary, reason, capability_key, created_at, expires_at, payload_snapshot")
     .eq("workspace_id", auth.workspaceId)
     .eq("user_id", auth.userId)
     .eq("status", "pending")
@@ -32,6 +33,7 @@ export async function listPendingApprovals(auth: AuthContext): Promise<PendingAp
     capability: a.capability_key,
     createdAt: a.created_at,
     expiresAt: a.expires_at,
+    preview: (a.payload_snapshot as { preview?: ToolDisplay } | null)?.preview,
   }));
 }
 

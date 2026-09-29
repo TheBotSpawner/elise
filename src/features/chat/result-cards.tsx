@@ -12,6 +12,14 @@ import { addDays, todayIn } from "@/core/time";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import {
+  DraftCard,
+  EmailChangedCard,
+  EmailListCard,
+  EmailThreadCard,
+  FollowUpsCard,
+} from "./email-cards";
+
 const RISE = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
@@ -106,11 +114,14 @@ export function DisplayCard({
   display,
   timezone,
   animate = false,
+  embedded = false,
 }: {
   display: ToolDisplay;
   timezone: string;
   /** Rise in (240 ms) only when the result arrives live, not when history loads. */
   animate?: boolean;
+  /** Shown inside an approval: content only, no actions of its own. */
+  embedded?: boolean;
 }) {
   const rise = animate ? RISE : { initial: false as const };
   const { t } = useI18n();
@@ -272,6 +283,17 @@ export function DisplayCard({
         </motion.section>
       );
     }
+
+    case "email_list":
+      return <EmailListCard display={display} timezone={timezone} rise={rise} />;
+    case "email_thread":
+      return <EmailThreadCard display={display} timezone={timezone} rise={rise} />;
+    case "email_draft":
+      return <DraftCard display={display} rise={rise} embedded={embedded} />;
+    case "email_followups":
+      return <FollowUpsCard display={display} timezone={timezone} rise={rise} />;
+    case "email_changed":
+      return <EmailChangedCard display={display} rise={rise} />;
 
     case "availability":
       return (

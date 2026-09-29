@@ -18,7 +18,32 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       delete: { kind: "destructive", risk: "medium", defaultApproval: "ask_when_uncertain" },
     },
   },
-  email: { key: "email", status: "planned", operations: {} },
+  email: {
+    key: "email",
+    status: "available",
+    operations: {
+      search: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      listRecent: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      getMessage: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      getThread: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      findFollowUps: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      // Drafts never leave the mailbox: creating and editing them is low-friction.
+      createDraft: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
+      reply: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
+      updateDraft: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
+      discardDraft: { kind: "destructive", risk: "medium", defaultApproval: "ask_when_uncertain" },
+      // Sending reaches people outside ELISE: approval by default (docs/architecture/15 §14).
+      sendDraft: {
+        kind: "external_communication",
+        risk: "high",
+        defaultApproval: "always_ask",
+      },
+      // Reversible mailbox changes; tools escalate bulk changes to an approval.
+      archive: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
+      markRead: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
+      markUnread: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
+    },
+  },
   calendar: {
     key: "calendar",
     status: "available",

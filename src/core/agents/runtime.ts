@@ -1,7 +1,7 @@
 import { AppError, toPublicError, type PublicError } from "../errors";
 import type { AIInputItem, AIProvider, AIUsage, ModelTier } from "./ai-provider";
 import { executeToolCall, type ExecutorPorts, type ToolCallOutcome } from "./executor";
-import { ToolRegistry, type AnyToolDefinition, type ToolContext } from "./tools";
+import { ToolRegistry, type AnyToolDefinition, type ToolContext, type ToolDisplay } from "./tools";
 
 export interface RuntimeLimits {
   maxModelTurns: number;
@@ -166,6 +166,35 @@ export function toolNotes(traces: readonly ToolTrace[]): string[] {
     if (outcome.status === "succeeded" && outcome.display?.kind === "event_list") {
       return `${name} ✓ ${outcome.display.events.length} events`;
     }
+    if (outcome.status === "succeeded" && outcome.display) {
+      const note = emailNote(outcome.display);
+      if (note) return `${name} ✓ ${note}`;
+    }
     return `${name} ${outcome.status}`;
   });
+}
+
+/** Email notes keep the ids later turns need ("summarize that thread", "send it"). */
+function emailNote(display: ToolDisplay): string | null {
+  switch (display.kind) {
+    case "email_list":
+      return `${display.messages.length} emails: ${display.messages
+        .slice(0, 5)
+        .map(
+          (m) =>
+            `"${m.subject}" from ${m.from?.email ?? "?"} (message ${m.id}, thread ${m.threadId})`,
+        )
+        .join("; ")}`;
+    case "email_thread":
+      return `thread "${display.thread.subject}" (thread ${display.thread.id}, latest message ${display.thread.messages.at(-1)?.id ?? "?"})`;
+    case "email_draft":
+      return `draft ${display.change} "${display.draft.subject}" to ${display.draft.to.map((a) => a.email).join(", ")} (draft ${display.draft.id})`;
+    case "email_followups":
+      return `${display.items.length} ${display.followUp}: ${display.items
+        .slice(0, 5)
+        .map((f) => `"${f.subject}" (thread ${f.threadId})`)
+        .join("; ")}`;
+    default:
+      return null;
+  }
 }

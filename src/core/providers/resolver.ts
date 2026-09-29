@@ -11,6 +11,11 @@ export interface ResolutionRequest {
   /** Account named in natural language: "Firbot", "Google", "ELISE", an email… */
   destination?: string | null;
   context?: { type: ContextType; id?: string | null } | null;
+  /**
+   * New writes that speak for the user (a new email) never fall back to the global default
+   * when several accounts could send it: ELISE asks which one.
+   */
+  strict?: boolean;
 }
 
 export type ResolutionReason =
@@ -88,7 +93,7 @@ export function resolveBindings(
     if (req.operationKind === "read" || connections.length === 1) {
       return { kind: "resolved", bindings: connections, reason: "destination" };
     }
-    const preferred = usable.find((b) => b.isDefault);
+    const preferred = req.strict ? undefined : usable.find((b) => b.isDefault);
     if (preferred) return { kind: "resolved", bindings: [preferred], reason: "destination" };
     return { kind: "clarify", candidates: connections };
   }
@@ -120,11 +125,13 @@ export function resolveBindings(
     return { kind: "resolved", bindings: [inContext[0]!], reason: "context_match" };
   }
 
+  const candidates = uniqueByConnection(usable);
+  if (req.strict && candidates.length > 1) return { kind: "clarify", candidates };
+
   const globalDefault = usable.find((b) => b.isDefault && b.contextType === null);
   if (globalDefault)
     return { kind: "resolved", bindings: [globalDefault], reason: "global_default" };
 
-  const candidates = uniqueByConnection(usable);
   if (candidates.length === 1)
     return { kind: "resolved", bindings: candidates, reason: "only_option" };
   return { kind: "clarify", candidates };

@@ -16,8 +16,10 @@ export const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/user
 export const IDENTITY_SCOPES = ["openid", "email", "profile"] as const;
 
 /**
- * Least privilege per capability. Gmail/Drive will add entries here and be requested
- * incrementally on the same connection (include_granted_scopes) — no reconnect needed.
+ * Least privilege per capability, requested incrementally on the same connection
+ * (include_granted_scopes): adding one never drops the others. Email uses gmail.modify, the
+ * narrowest single scope that covers reading, drafts, sending, archiving and read state; it
+ * cannot permanently delete mail (docs/decisions/ADR-005).
  */
 export const CAPABILITY_SCOPES = {
   calendar: [
@@ -25,6 +27,7 @@ export const CAPABILITY_SCOPES = {
     "https://www.googleapis.com/auth/calendar.readonly",
   ],
   tasks: ["https://www.googleapis.com/auth/tasks"],
+  email: ["https://www.googleapis.com/auth/gmail.modify"],
 } as const satisfies Partial<Record<CapabilityKey, readonly string[]>>;
 
 export type GoogleCapability = keyof typeof CAPABILITY_SCOPES;

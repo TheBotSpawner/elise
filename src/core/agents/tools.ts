@@ -2,6 +2,13 @@ import { z } from "zod";
 
 import type { AIToolSpec } from "./ai-provider";
 import type { CalendarEvent, CalendarInfo, CalendarProvider } from "../capabilities/calendar";
+import type {
+  EmailDraft,
+  EmailMessage,
+  EmailProvider,
+  EmailThread,
+  FollowUp,
+} from "../capabilities/email";
 import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
@@ -22,6 +29,7 @@ export interface ToolContext {
 export interface CapabilityProviders {
   tasks: TaskProvider;
   calendar: CalendarProvider;
+  email: EmailProvider;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -55,6 +63,31 @@ export type ToolDisplay =
       to: string;
       free: { start: string; end: string }[];
       busy: { start: string; end: string; source: string }[];
+    }
+  /** Message lists never carry bodies (compact, and safe to keep in history). */
+  | { kind: "email_list"; messages: EmailMessage[]; unavailable?: string[] }
+  | { kind: "email_thread"; thread: EmailThread }
+  | {
+      kind: "email_draft";
+      draft: EmailDraft;
+      change: "created" | "updated" | "sent" | "discarded" | "preview";
+      /** Recipients outside the sender's organization. */
+      external: string[];
+      /** People reply-all added beyond a plain reply. */
+      addedByReplyAll?: string[];
+      /** Fingerprint of exactly this content; sending from the card is pinned to it. */
+      version?: string;
+    }
+  | {
+      kind: "email_followups";
+      followUp: "needs_reply" | "waiting_on_others";
+      items: FollowUp[];
+    }
+  | {
+      kind: "email_changed";
+      change: "archived" | "read" | "unread";
+      count: number;
+      source: string;
     };
 
 export interface ToolRunEnv {
@@ -83,7 +116,19 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   describe(
     input: TInput,
     env: ToolRunEnv,
-  ): Promise<{ summary: string; target?: { type: string; id: string } }>;
+  ): Promise<{
+    summary: string;
+    target?: { type: string; id: string };
+    /** What the user reviews before approving (e.g. the exact email that will be sent). */
+    preview?: ToolDisplay;
+  }>;
+  /**
+   * Pins the exact content a write acts on before it is hashed and approved (e.g. the draft's
+   * current version). The pinned input is what runs, so later edits invalidate the approval.
+   */
+  pin?(input: TInput, env: ToolRunEnv): Promise<TInput>;
+  /** New outbound writes: ask which account instead of using the global default. */
+  strictDestination?: boolean;
   run(input: TInput, env: ToolRunEnv): Promise<ToolRunResult<TOutput>>;
   /**
    * Existing items name the account they live in (see providers/refs.ts). Routing is still

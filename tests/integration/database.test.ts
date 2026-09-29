@@ -1,7 +1,7 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { CAPABILITY_KEYS } from "@/core/capabilities/registry";
+import { CAPABILITY_KEYS, getCapability } from "@/core/capabilities/registry";
 import { PROVIDERS } from "@/core/providers/registry";
 
 import { asUser, createTestDatabase, createUser } from "./db-harness";
@@ -78,6 +78,15 @@ describe("catalog", () => {
       "select key from public.provider_definitions order by key",
     );
     expect(providers.rows.map((r) => r.key)).toEqual(PROVIDERS.map((p) => p.key).sort());
+  });
+
+  it("marks the same capabilities available as the code registry", async () => {
+    const available = await db.query<{ key: string }>(
+      "select key from public.capability_definitions where status = 'available' order by key",
+    );
+    expect(available.rows.map((r) => r.key)).toEqual(
+      CAPABILITY_KEYS.filter((k) => getCapability(k).status === "available").sort(),
+    );
   });
 });
 

@@ -3,7 +3,7 @@
 One persistent intelligence that coordinates your digital world through chat, capabilities and
 replaceable providers.
 
-**Status:** pre-MVP — Slice 1 (Foundation) and Slice 2 (Google Calendar + Tasks) implemented. See [What works today](#what-works-today).
+**Status:** pre-MVP — Slice 1 (Foundation), Slice 2 (Google Calendar + Tasks) and Gmail + Email Copilot implemented. See [What works today](#what-works-today).
 
 ## Stack
 
@@ -39,17 +39,19 @@ In the Supabase dashboard:
 - **Authentication → Providers → Google (optional):** enable it with your Google OAuth client to
   make "Continue with Google" work. Email/password and magic links work without it.
 
-### Google Calendar + Google Tasks (optional)
+### Google Calendar, Google Tasks and Gmail (optional)
 
 Connections to Google are separate from signing in to ELISE. To enable them:
 
 1. **Google Cloud Console** → create (or pick) a project.
-2. **APIs & Services → Library:** enable **Google Calendar API** and **Google Tasks API**.
+2. **APIs & Services → Library:** enable **Google Calendar API**, **Google Tasks API** and
+   **Gmail API**.
 3. **Google Auth Platform → Branding / Audience:** app name, support email; User type
    _External_; while in _Testing_, add your Google accounts as **test users**.
 4. **Data Access (scopes):** add `openid`, `…/auth/userinfo.email`, `…/auth/userinfo.profile`,
    `https://www.googleapis.com/auth/calendar.events`,
-   `https://www.googleapis.com/auth/calendar.readonly`, `https://www.googleapis.com/auth/tasks`.
+   `https://www.googleapis.com/auth/calendar.readonly`, `https://www.googleapis.com/auth/tasks`,
+   `https://www.googleapis.com/auth/gmail.modify`.
 5. **Clients → Create client → Web application:**
    - Authorized JavaScript origin: `http://localhost:3000`
    - Authorized redirect URI: `http://localhost:3000/api/connections/google/callback`
@@ -61,8 +63,13 @@ Connections to Google are separate from signing in to ELISE. To enable them:
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # → ELISE_ENCRYPTION_KEY
 ```
 
-Calendar and Tasks are _sensitive_ scopes: publishing the app for other users requires Google's
-verification. Testing mode works for the listed test users.
+Calendar and Tasks are _sensitive_ scopes and `gmail.modify` is a _restricted_ scope: publishing
+the app for other users requires Google's verification (and a security assessment for Gmail).
+Testing mode works for the listed test users.
+
+Gmail is enabled per account and incrementally: on `/connections`, press **Enable** on the
+Gmail row of an already connected Google account. Calendar and Tasks keep working; no reconnect
+is needed. See [ADR-005](docs/decisions/ADR-005-gmail-email-capability.md).
 
 Then:
 
@@ -84,7 +91,7 @@ Without `OPENAI_API_KEY`, everything works except chat, which reports that AI is
 | `ELISE_ENV`                                                        | no       | `development` / `staging` / `production` log tag   |
 | `CHAT_RATE_LIMIT_PER_MINUTE`                                       | no       | Per-user chat rate limit (default 20)              |
 | `SUPABASE_SECRET_KEY`                                              | Google   | Server-only: encrypted credential store            |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`             | Google   | OAuth client for Calendar/Tasks connections        |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`             | Google   | OAuth client for Calendar/Tasks/Gmail connections  |
 | `ELISE_ENCRYPTION_KEY` (+ optional `_PREVIOUS`)                    | Google   | AES-256-GCM key for OAuth credentials at rest      |
 | `TRIGGER_SECRET_KEY`                                               | not yet  | Reserved for background execution                  |
 
@@ -121,6 +128,12 @@ database is needed.
   disconnect. Elise reads across all calendars/task accounts (with the account shown), writes to
   the default or the account you name ("en mis tareas de Firbot"), and asks when it's ambiguous.
   Inviting people or deleting events waits for your approval.
+- **Gmail + Email Copilot:** search and read across Gmail accounts with the account shown;
+  thread summaries; "needs reply" / "waiting on" with reasons; replies drafted in the same
+  thread and account; new emails ask which account when unclear. Drafting is automatic; sending
+  waits for your approval of that exact email (editing it afterwards needs a new approval).
+  Bulk archive/mark-read shows count and examples and asks first. Email content is treated as
+  untrusted data, never as instructions.
 - Deletions requested through chat wait for approval (inline card or Approvals page); approvals
   resolve once, verify the payload hash, and revalidate before executing.
 - Actions, tool executions, AI runs and audit events are recorded; logs are structured and

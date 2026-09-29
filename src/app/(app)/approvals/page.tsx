@@ -16,7 +16,7 @@ export default async function ApprovalsPage() {
       {approvals.length === 0 ? (
         <EmptyState icon={ShieldCheck} title={t.approvals.title} body={t.approvals.empty} />
       ) : (
-        <ApprovalCenter approvals={approvals} />
+        <ApprovalCenter approvals={approvals} timezone={auth.profile.timezone} />
       )}
     </PageContainer>
   );

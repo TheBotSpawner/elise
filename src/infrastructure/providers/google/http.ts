@@ -19,7 +19,7 @@ export class GoogleHttp {
   ) {}
 
   async request<T>(
-    method: "GET" | "POST" | "PATCH" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     url: string,
     body?: unknown,
     options: { notFoundAsNull?: boolean } = {},
@@ -103,5 +103,12 @@ async function toAppError(res: Response, method: string): Promise<AppError> {
     });
   if (res.status === 403)
     return new AppError("PERMISSION_DENIED", "Google denied the request", { details });
+  // A server error on a write (e.g. sending an email) may or may not have been applied.
+  if (res.status >= 500 && method !== "GET") {
+    return new AppError("UNKNOWN_OUTCOME", "Google did not confirm the change", {
+      recovery: "review",
+      details,
+    });
+  }
   return new AppError("PROVIDER_UNAVAILABLE", "Google is temporarily unavailable", { details });
 }

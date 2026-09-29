@@ -1,7 +1,8 @@
 import type { ActionOrigin } from "./tools";
 import type { ApprovalMode, OperationDefinition } from "../capabilities/types";
 
-export type ApprovalReason = "destructive" | "external_communication" | "sensitive" | "user_rule";
+export type ApprovalReason =
+  "destructive" | "external_communication" | "sensitive" | "user_rule" | "bulk_change";
 
 export type PolicyDecision =
   | { kind: "execute" }
@@ -56,5 +57,7 @@ export function decidePolicy({
 function reasonFor(operation: OperationDefinition): ApprovalReason {
   if (operation.kind === "external_communication") return "external_communication";
   if (operation.kind === "sensitive") return "sensitive";
+  // A plain write only asks when a tool escalated it (e.g. archiving many emails at once).
+  if (operation.kind === "write") return "bulk_change";
   return "destructive";
 }

@@ -66,8 +66,31 @@ export function validatePendingAuthorization(
 export function parseRequestedCapabilities(values: readonly string[]): GoogleCapability[] {
   const caps = [...new Set(values)].filter(isGoogleCapability);
   if (caps.length === 0)
-    throw new AppError("VALIDATION_ERROR", "Choose at least one of Calendar or Tasks");
+    throw new AppError("VALIDATION_ERROR", "Choose at least one of Calendar, Tasks or Email");
   return caps;
+}
+
+/**
+ * Incremental authorization: capabilities touched by this grant and their new state. Asking
+ * for Gmail on an account that already has Calendar + Tasks keeps them (Google returns every
+ * scope granted so far with include_granted_scopes); a capability is enabled only if all of
+ * its scopes were granted. Capabilities neither requested nor enabled before are left alone.
+ */
+export function planCapabilityGrants(params: {
+  requested: readonly GoogleCapability[];
+  granted: readonly GoogleCapability[];
+  wasEnabled: ReadonlySet<string>;
+}): { capability: GoogleCapability; enabled: boolean; scopes: string[] }[] {
+  return GOOGLE_CAPABILITIES.filter(
+    (c) => params.requested.includes(c) || params.wasEnabled.has(c),
+  ).map((capability) => {
+    const granted = params.granted.includes(capability);
+    return {
+      capability,
+      enabled: granted,
+      scopes: granted ? [...CAPABILITY_SCOPES[capability]] : [],
+    };
+  });
 }
 
 // ── Start ────────────────────────────────────────────────────────────────────
@@ -253,24 +276,22 @@ export async function completeGoogleConnection(
   const wasEnabled = new Set(
     (currentCaps ?? []).filter((c) => c.enabled).map((c) => c.capability_key),
   );
-  const enabled = GOOGLE_CAPABILITIES.filter(
-    (c) => granted.includes(c) && (requested.includes(c) || wasEnabled.has(c)),
-  );
+  const plan = planCapabilityGrants({ requested, granted, wasEnabled });
+  const enabled = plan.filter((p) => p.enabled).map((p) => p.capability);
 
-  for (const capability of GOOGLE_CAPABILITIES) {
-    if (!requested.includes(capability) && !wasEnabled.has(capability)) continue;
+  for (const p of plan) {
     await auth.db.from("connection_capabilities").upsert(
       {
         workspace_id: auth.workspaceId,
         connection_id: connectionId,
-        capability_key: capability,
-        enabled: enabled.includes(capability),
+        capability_key: p.capability,
+        enabled: p.enabled,
         permission_level: "write",
-        authorized_scopes: granted.includes(capability) ? [...CAPABILITY_SCOPES[capability]] : [],
+        authorized_scopes: p.scopes,
       },
       { onConflict: "connection_id,capability_key" },
     );
-    if (enabled.includes(capability)) await ensureBinding(auth, connectionId, capability);
+    if (p.enabled) await ensureBinding(auth, connectionId, p.capability);
   }
 
   await auth.db.from("audit_events").insert({

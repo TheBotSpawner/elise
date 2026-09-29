@@ -162,6 +162,8 @@ function AssistantMessage({
                   summary={o.summary}
                   reason={o.reason}
                   tool={tool.name}
+                  preview={o.preview}
+                  timezone={timezone}
                   autoFocus={running}
                   initialResolution={tool.resolution?.decision ?? null}
                   onResolved={handlers.onApprovalResolved}
