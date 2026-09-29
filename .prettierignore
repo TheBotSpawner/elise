@@ -1,0 +1,8 @@
+package-lock.json
+.next
+node_modules
+coverage
+next-env.d.ts
+.trigger
+# Docs are authored outside this repo; keep their content byte-for-byte.
+docs/
