@@ -12,4 +12,6 @@ export interface ChatMessage {
   fresh?: boolean;
   /** True while the assistant response is streaming. */
   streaming?: boolean;
+  /** Stored message id, once persisted (history loads with it; live turns get it on "done"). */
+  serverId?: string;
 }

@@ -2,13 +2,16 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Orb } from "@/components/elise/orb/orb";
 import { ORB_FLIGHT, ORB_LAYOUT_ID, useOrbPresence } from "@/components/elise/orb/orb-presence";
-import type { ToolDisplay } from "@/core/agents/tools";
+import { WORKSPACE_LIMITS, type WorkspaceState } from "@/core/workspace/model";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
-import { useIsDesktop } from "@/hooks/use-is-desktop";
+import { LiveWorkspace, SurfaceCard } from "@/features/workspace/live-workspace";
+import type { SurfaceHandlers } from "@/features/workspace/surfaces";
+import { useWorkspaceController } from "@/features/workspace/use-workspace";
+import { useIsDesktop, useIsWide } from "@/hooks/use-is-desktop";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +28,8 @@ export interface HomeAmbient {
   pendingApprovals: number;
   /** Today's scheduled result, shown as one quiet line — never a modal. */
   brief?: { id: string; read: boolean } | null;
+  /** A Live Workspace still active from earlier: one quiet "Continue" line. */
+  resume?: { conversationId: string; description: string } | null;
 }
 
 /**
@@ -39,7 +44,12 @@ export function ChatSurface({
   userName = "",
   ambient,
   space,
+  workspaceId,
+  initialWorkspace,
 }: {
+  /** For Realtime updates of this conversation's Live Workspace. */
+  workspaceId: string;
+  initialWorkspace?: WorkspaceState;
   conversationId?: string;
   initialMessages?: ChatMessage[];
   timezone: string;
@@ -50,14 +60,69 @@ export function ChatSurface({
 }) {
   const { t } = useI18n();
   const desktop = useIsDesktop();
+  const wide = useIsWide();
   const presence = useOrbPresence();
-  const { messages, send, stop, busy, orbState, trackApproval, markApprovalResolved } =
-    useEliseChat({
-      conversationId,
-      messages: initialMessages,
-      spaceId: space?.id,
-    });
+  const {
+    messages,
+    send,
+    stop,
+    busy,
+    orbState,
+    trackApproval,
+    markApprovalResolved,
+    workspace,
+    setWorkspace,
+    outOfSync,
+    clearOutOfSync,
+    getConversationId,
+  } = useEliseChat({
+    conversationId,
+    messages: initialMessages,
+    spaceId: space?.id,
+    workspace: initialWorkspace,
+  });
   const empty = messages.length === 0;
+  const controller = useWorkspaceController({
+    workspace,
+    setWorkspace,
+    getConversationId,
+    busy,
+    workspaceId,
+    outOfSync,
+    clearOutOfSync,
+    onApprovalResolved: markApprovalResolved,
+  });
+  const last = messages.at(-1);
+  const turnTools = last?.role === "assistant" ? last.tools : [];
+  // Home becomes a workspace only while an intent has something worth showing; a quick
+  // confirmation (a settings change) appears by the composer and leaves on its own.
+  const active = !empty && workspace.surfaces.some((s) => !s.transient);
+  const confirmations = workspace.surfaces.filter((s) => s.transient);
+  const confirmationKey = confirmations.map((s) => `${s.id}:${s.updatedAt}`).join(",");
+  const dismissRef = useRef(controller.dismiss);
+  useEffect(() => {
+    dismissRef.current = controller.dismiss;
+  });
+  const confirmationsRef = useRef(confirmations);
+  useEffect(() => {
+    confirmationsRef.current = confirmations;
+  });
+  useEffect(() => {
+    if (!confirmationKey) return;
+    const timer = window.setTimeout(() => {
+      for (const s of confirmationsRef.current) dismissRef.current(s);
+    }, WORKSPACE_LIMITS.transientMs);
+    return () => window.clearTimeout(timer);
+  }, [confirmationKey]);
+  const surfaceHandlers: SurfaceHandlers = {
+    onAction: (surface, action, itemId) => void controller.runAction(surface, action, itemId),
+    onPrompt: (text) => void send(text),
+    onExpand: controller.expand,
+    onApprovalResolved: controller.approvalResolved,
+    onApprovalPhase: trackApproval,
+    pending: controller.pending,
+    busy,
+  };
 
   // Publish Elise's state to the shared Orb (nav brand slot + mobile header).
   const { setState, setDocked } = presence;
@@ -85,7 +150,7 @@ export function ChatSurface({
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
   const lastContent = messages.at(-1);
-  const signature = `${messages.length}:${lastContent?.content.length ?? 0}:${lastContent?.tools.length ?? 0}`;
+  const signature = `${messages.length}:${lastContent?.content.length ?? 0}:${lastContent?.tools.length ?? 0}:${wide ? 0 : workspace.surfaces.length}`;
   const pinnedRef = useRef(pinned);
   useEffect(() => {
     pinnedRef.current = pinned;
@@ -96,10 +161,25 @@ export function ChatSurface({
     else setUnseen(true);
   }, [signature, empty]);
 
-  const onApprovalResolved = useCallback(
-    (approvalId: string, decision: "approved" | "rejected", display?: ToolDisplay) =>
-      markApprovalResolved(approvalId, decision, display),
-    [markApprovalResolved],
+  const confirmationSlot = (
+    <div
+      aria-live="polite"
+      className="pointer-events-none absolute inset-x-0 bottom-full mb-3 flex flex-col gap-2"
+    >
+      <AnimatePresence initial={false}>
+        {confirmations.map((s) => (
+          <div key={s.id} className="pointer-events-auto">
+            <SurfaceCard
+              surface={s}
+              timezone={timezone}
+              handlers={surfaceHandlers}
+              onDismiss={controller.dismiss}
+              className="bg-[var(--menu-bg)] backdrop-blur"
+            />
+          </div>
+        ))}
+      </AnimatePresence>
+    </div>
   );
 
   const composer = (
@@ -161,18 +241,73 @@ export function ChatSurface({
     );
   }
 
+  const workspaceView = (variant: "pane" | "stack") => (
+    <LiveWorkspace
+      state={workspace}
+      timezone={timezone}
+      handlers={surfaceHandlers}
+      activity={turnTools}
+      running={busy}
+      expanded={controller.expanded}
+      onCollapse={controller.collapse}
+      onDismiss={controller.dismiss}
+      loadDetail={controller.loadDetail}
+      variant={variant}
+    />
+  );
+  const split = active && wide;
+
   return (
-    <main className="relative flex flex-1 flex-col">
-      <MessageThread
-        messages={messages}
-        timezone={timezone}
-        handlers={{ onApprovalResolved, onApprovalPhase: trackApproval }}
-      />
+    <main
+      className={cn(
+        "relative flex flex-1 flex-col",
+        split &&
+          "mx-auto w-full max-w-[1480px] lg:grid lg:grid-cols-[minmax(360px,500px)_minmax(0,1fr)] lg:gap-10 lg:px-8 xl:grid-cols-[minmax(400px,540px)_minmax(0,1fr)]",
+      )}
+    >
+      <div className={cn("flex min-w-0 flex-col", split && "min-h-[calc(100dvh-5rem)]")}>
+        <MessageThread
+          messages={messages}
+          timezone={timezone}
+          column={split}
+          handlers={{
+            onApprovalResolved: controller.approvalResolved,
+            onApprovalPhase: trackApproval,
+            onShowSurface: (ids, messageId, callId) =>
+              void controller.showFromThread(ids, messageId, callId),
+          }}
+          after={active && !wide ? workspaceView("stack") : undefined}
+        />
+        {split && <div className="flex-1" />}
+        {split && (
+          <div className="sticky bottom-0 z-30 bg-[linear-gradient(transparent,var(--bg)_28%)] pt-8 pb-9">
+            <div className="relative">
+              {confirmationSlot}
+              {composer}
+            </div>
+          </div>
+        )}
+      </div>
+      {split && (
+        <aside
+          id="live-workspace"
+          className="sticky top-20 h-[calc(100dvh-5rem)] [scrollbar-width:thin] overflow-y-auto overscroll-contain pt-6"
+        >
+          {workspaceView("pane")}
+        </aside>
+      )}
+      {!split && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-x-0 bottom-0 z-20 h-30 bg-[linear-gradient(transparent,var(--bg)_55%)] md:h-33"
+        />
+      )}
       <div
-        aria-hidden
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-20 h-30 bg-[linear-gradient(transparent,var(--bg)_55%)] md:h-33"
-      />
-      <div className="fixed inset-x-4 bottom-7 z-30 md:inset-x-0 md:bottom-9 md:mx-auto md:w-[720px]">
+        className={cn(
+          "fixed inset-x-4 bottom-7 z-30 md:inset-x-0 md:bottom-9 md:mx-auto md:w-[720px]",
+          split && "hidden",
+        )}
+      >
         <AnimatePresence>
           {unseen && (
             <motion.button
@@ -190,6 +325,7 @@ export function ChatSurface({
             </motion.button>
           )}
         </AnimatePresence>
+        {!split && confirmationSlot}
         {composer}
       </div>
     </main>
@@ -263,6 +399,13 @@ function Ambient({ ambient }: { ambient: HomeAmbient }) {
     },
   ].filter(Boolean) as { label: string; text: string; href: string }[];
   const brief = ambient.brief;
+  const resume = ambient.resume;
+  if (resume)
+    items.unshift({
+      label: t.workspace.resumeLabel,
+      text: t.workspace.resume(resume.description),
+      href: `/chat/${resume.conversationId}`,
+    });
   if (items.length === 0 && !brief) return null;
   return (
     <ul className="mt-5 flex flex-col items-center gap-1 text-[13px] text-muted md:fixed md:inset-x-10 md:bottom-8 md:mt-0 md:flex-row md:justify-center md:gap-14">

@@ -29,6 +29,7 @@ import type { AuthContext } from "./auth-context";
 import { ownerContext, workspaceContext } from "./background";
 import { notionStructuredApiFor } from "./elise";
 import { startStructuredBulk, type BulkInput } from "./structured-bulk";
+import { markResourceSurfaces } from "./workspace-service";
 
 /**
  * Structured Notion setup and upkeep (ADR-011): discover the databases the user shared with
@@ -500,6 +501,22 @@ export async function runStructuredBulk(workspaceId: string, jobId: string) {
     metadata: { done, failed, total: input.recordRefs.length },
   });
   logger.info("structured.bulk_completed", { job_id: jobId, done, failed });
+  // The Live Workspace that asked for it shows the result (Realtime updates open browsers).
+  const { data: approval } = input.actionId
+    ? await db
+        .from("approvals")
+        .select("id")
+        .eq("action_id", input.actionId)
+        .eq("workspace_id", workspaceId)
+        .maybeSingle()
+    : { data: null };
+  if (approval)
+    await markResourceSurfaces(workspaceId, "approval", approval.id, (s) => ({
+      state: failed && !done ? "error" : "ready",
+      payload: { ...(s.payload as object), background: failed && !done ? "failed" : "done" },
+    })).catch((error) =>
+      logger.warn("workspace.background_update_failed", { code: toAppError(error).code }),
+    );
   return { done, failed };
 }
 

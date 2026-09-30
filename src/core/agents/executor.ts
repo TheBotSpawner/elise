@@ -190,6 +190,7 @@ export async function executeToolCall(
         ctx,
         binding: INTERNAL_BINDING,
         providers: ports.providers,
+        invoke: nestedReads(ports, ctx),
       });
       return trace(null, null, {
         status: "succeeded",
@@ -245,7 +246,12 @@ export async function executeToolCall(
     });
   }
   const binding = resolution.bindings[0]!;
-  const env: ToolRunEnv = { ctx, binding, providers: ports.providers };
+  const env: ToolRunEnv = {
+    ctx,
+    binding,
+    providers: ports.providers,
+    invoke: nestedReads(ports, ctx),
+  };
 
   if (operation.kind !== "read" && tool.assess) {
     try {
@@ -619,6 +625,22 @@ const INTERNAL_BINDING: CapabilityBinding = {
   accountLabel: null,
   contextLabel: null,
 };
+
+/**
+ * Orchestrations (meeting prep) read other capabilities through this same path, so each read
+ * keeps its own resolution, permissions and trace. Writes and presentation tools are refused.
+ */
+function nestedReads(ports: ExecutorPorts, ctx: ToolContext) {
+  return async (name: string, args: unknown): Promise<ToolCallOutcome> => {
+    const tool = ports.registry.get(name);
+    const op = tool ? getOperation(tool.capability, tool.operation) : undefined;
+    if (!tool || !op || op.kind !== "read" || tool.capability === "workspace")
+      return fail(
+        new AppError("VALIDATION_ERROR", `${name} can't be used inside an orchestration`),
+      );
+    return executeToolCall(ports, ctx, { name, args });
+  };
+}
 
 function fail(error: unknown): ToolCallOutcome {
   return { status: "failed", error: toPublicError(error) };

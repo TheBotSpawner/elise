@@ -21,11 +21,13 @@ import { HABIT_TOOLS } from "@/core/tools/habits";
 import { HISTORY_TOOLS } from "@/core/tools/history";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { LIST_TOOLS } from "@/core/tools/lists";
+import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { SETTINGS_TOOLS } from "@/core/tools/settings";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { WORKSPACE_TOOLS } from "@/core/tools/workspace";
 import { getEmbeddingProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
 import { EliseFinanceProvider } from "@/infrastructure/providers/elise-native/finance";
@@ -78,6 +80,8 @@ export const toolRegistry = new ToolRegistry().register(
   ...STRUCTURED_TOOLS,
   ...HISTORY_TOOLS,
   ...SETTINGS_TOOLS,
+  ...WORKSPACE_TOOLS,
+  ...MEETING_TOOLS,
 );
 
 /**

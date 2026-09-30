@@ -79,11 +79,23 @@ export const updateSettingsTool: ToolDefinition = {
   },
   async run(raw, env) {
     const u = updateInput.parse(raw);
+    const before = await store(env).get();
     const p = await store(env).update({
       ...(u.language ? { language: u.language } : {}),
       ...(u.timezone ? { timezone: resolveTimezone(u.timezone) } : {}),
     });
-    return { output: { updated: true, language: p.language, timezone: p.timezone } };
+    const changes = [
+      ...(u.language
+        ? [{ setting: "language" as const, from: before.language, to: p.language }]
+        : []),
+      ...(u.timezone
+        ? [{ setting: "timezone" as const, from: before.timezone, to: p.timezone }]
+        : []),
+    ];
+    return {
+      output: { updated: true, language: p.language, timezone: p.timezone },
+      display: { kind: "setting_changed", changes },
+    };
   },
 };
 
@@ -114,10 +126,16 @@ export const setThemeTool: ToolDefinition = {
     return { summary: `Theme → ${themeInput.parse(raw).theme}` };
   },
   async run(raw, env) {
+    const before = await store(env).get();
     const p = await store(env).update({ theme: themeInput.parse(raw).theme });
     return {
       output: { theme: p.theme },
-      display: { kind: "appearance", theme: p.theme, accent: p.accent },
+      display: {
+        kind: "appearance",
+        theme: p.theme,
+        accent: p.accent,
+        previous: { theme: before.theme, accent: before.accent },
+      },
     };
   },
 };
@@ -140,10 +158,16 @@ export const setAccentTool: ToolDefinition = {
     return { summary: `Accent → ${accentInput.parse(raw).accent}` };
   },
   async run(raw, env) {
+    const before = await store(env).get();
     const p = await store(env).update({ accent: accentInput.parse(raw).accent });
     return {
       output: { accent: p.accent },
-      display: { kind: "appearance", theme: p.theme, accent: p.accent },
+      display: {
+        kind: "appearance",
+        theme: p.theme,
+        accent: p.accent,
+        previous: { theme: before.theme, accent: before.accent },
+      },
     };
   },
 };
@@ -234,7 +258,21 @@ export const updateNotificationsTool: ToolDefinition = {
     } else {
       throw new AppError("VALIDATION_ERROR", "Nothing to change", { recovery: "review" });
     }
-    return { output: { updated: true, schedules: (await s.schedules()).map(scheduleForModel) } };
+    const after = await s.schedules();
+    return {
+      output: { updated: true, schedules: after.map(scheduleForModel) },
+      display: {
+        kind: "setting_changed",
+        changes: [
+          {
+            setting: "notifications",
+            from: null,
+            to: u.schedule ? (u.notify ?? "in_app") : u.browser ? "browser" : "in_app",
+            ...(u.schedule ? { subject: u.schedule } : {}),
+          },
+        ],
+      },
+    };
   },
 };
 
@@ -277,6 +315,17 @@ function pauseTool(name: "pause" | "resume"): ToolDefinition {
       const s = await pickSchedule(env, scheduleRef.parse(raw).schedule);
       await store(env).setSchedulePaused(s.id, name === "pause");
       return {
+        display: {
+          kind: "setting_changed",
+          changes: [
+            {
+              setting: "schedule",
+              from: s.status,
+              to: name === "pause" ? "paused" : "active",
+              subject: s.name,
+            },
+          ],
+        },
         output: { [name === "pause" ? "paused" : "resumed"]: s.name },
         target: { type: "schedule", id: s.id },
       };

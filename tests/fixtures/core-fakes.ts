@@ -21,11 +21,13 @@ import { HABIT_TOOLS } from "@/core/tools/habits";
 import { HISTORY_TOOLS } from "@/core/tools/history";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { LIST_TOOLS } from "@/core/tools/lists";
+import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { SETTINGS_TOOLS } from "@/core/tools/settings";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { WORKSPACE_TOOLS } from "@/core/tools/workspace";
 
 export const NATIVE_BINDING: CapabilityBinding = {
   id: "binding-native",
@@ -228,6 +230,8 @@ export function makePorts(
       ...STRUCTURED_TOOLS,
       ...HISTORY_TOOLS,
       ...SETTINGS_TOOLS,
+      ...WORKSPACE_TOOLS,
+      ...MEETING_TOOLS,
     ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>

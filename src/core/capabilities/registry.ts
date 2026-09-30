@@ -222,6 +222,22 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       listConnections: READ,
     },
   },
+  // Live Workspace (ADR-013): presentation only — no user data changes, so reads. Meeting
+  // prep reads other capabilities through the executor, each under its own permissions.
+  workspace: {
+    key: "workspace",
+    status: "available",
+    internal: true,
+    operations: {
+      listSurfaces: READ,
+      present: READ,
+      update: READ,
+      focus: READ,
+      dismiss: READ,
+      clear: READ,
+      prepareMeeting: READ,
+    },
+  },
 };
 
 export const CAPABILITY_KEYS = Object.keys(CAPABILITIES) as CapabilityKey[];

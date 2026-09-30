@@ -176,6 +176,18 @@ export const getItemTool: ToolDefinition = {
         sourceType: SOURCE_NAMES[item.sourceType] ?? item.sourceType,
         versions: item.versions.slice(0, 10),
       },
+      display: {
+        kind: "knowledge_document",
+        document: {
+          itemId: item.id,
+          title: item.title,
+          sourceType: item.sourceType,
+          spaceName: item.spaceName,
+          url: item.sourceUrl,
+          updatedAt: item.updatedAt,
+          versions: item.versions.length,
+        },
+      },
     };
   },
 };

@@ -53,7 +53,21 @@ export interface CalendarEvent {
   attendees: Attendee[];
   status: "confirmed" | "tentative" | "cancelled";
   url: string | null;
+  /** Video-call link (Meet, Zoom, Teams…), when the event has one. */
+  meetingUrl?: string | null;
   provenance: CalendarProvenance;
+}
+
+const MEETING_LINK =
+  /https:\/\/(?:meet\.google\.com|[\w-]+\.zoom\.us|zoom\.us|teams\.microsoft\.com|teams\.live\.com|[\w-]+\.webex\.com|whereby\.com)\/[^\s<>"')\]]+/i;
+
+/** The call link: the provider's own field, else the first known video link in the text. */
+export function findMeetingUrl(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    const m = t?.match(MEETING_LINK);
+    if (m) return m[0];
+  }
+  return null;
 }
 
 export type EventTime = { kind: "dateTime"; local: string } | { kind: "date"; date: string };

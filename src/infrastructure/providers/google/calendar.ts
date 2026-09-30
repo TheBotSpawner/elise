@@ -11,6 +11,7 @@ import type {
   EventTime,
   NewEvent,
 } from "@/core/capabilities/calendar";
+import { findMeetingUrl } from "@/core/capabilities/calendar";
 import { AppError } from "@/core/errors";
 import { makeExternalRef, parseExternalRef } from "@/core/providers/refs";
 
@@ -47,6 +48,8 @@ export interface GEvent {
   description?: string;
   location?: string;
   htmlLink?: string;
+  hangoutLink?: string;
+  conferenceData?: { entryPoints?: { entryPointType?: string; uri?: string }[] };
   start?: { dateTime?: string; date?: string; timeZone?: string };
   end?: { dateTime?: string; date?: string; timeZone?: string };
   attendees?: {
@@ -113,6 +116,10 @@ export function normalizeEvent(
     attendees,
     status: event.status ?? "confirmed",
     url: event.htmlLink ?? null,
+    meetingUrl:
+      event.hangoutLink ??
+      event.conferenceData?.entryPoints?.find((p) => p.entryPointType === "video")?.uri ??
+      findMeetingUrl(event.location, event.description),
     provenance: {
       providerKey: "google",
       connectionId: conn.connectionId,

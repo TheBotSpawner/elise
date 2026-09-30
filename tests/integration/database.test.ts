@@ -997,3 +997,72 @@ describe("universal recall", () => {
     expect(updated.rows).toHaveLength(0);
   });
 });
+
+describe("live workspace", () => {
+  const as = <T>(u: { userId: string }, sql: string, args: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, args));
+
+  const conversation = async (u: { userId: string; workspaceId: string }) =>
+    (
+      await db.query<{ id: string }>(
+        `insert into public.conversations (workspace_id, user_id, title) values ($1, $2, 'Prep') returning id`,
+        [u.workspaceId, u.userId],
+      )
+    ).rows[0]!.id;
+
+  const save = (u: { userId: string; workspaceId: string }, conv: string) =>
+    as(
+      u,
+      `insert into public.live_workspaces (workspace_id, user_id, conversation_id, surfaces, version)
+       values ($1, $2, $3, '[{"id":"summary:x"}]'::jsonb, 1)
+       on conflict (conversation_id) do update set version = public.live_workspaces.version + 1
+       returning version`,
+      [u.workspaceId, u.userId, conv],
+    );
+
+  it("is private to its author and restorable across saves", async () => {
+    const conv = await conversation(alice);
+    await save(alice, conv);
+    const again = await save(alice, conv);
+    expect(again.rows[0]).toMatchObject({ version: 2 });
+    expect((await as(alice, "select id from public.live_workspaces")).rows.length).toBeGreaterThan(
+      0,
+    );
+    expect((await as(bob, "select id from public.live_workspaces")).rows).toHaveLength(0);
+    const hijack = await as(
+      bob,
+      `update public.live_workspaces set surfaces = '[]' where conversation_id = $1 returning id`,
+      [conv],
+    );
+    expect(hijack.rows).toHaveLength(0);
+  });
+
+  it("can't point at someone else's conversation or workspace", async () => {
+    const conv = await conversation(alice);
+    await expect(save({ ...bob }, conv)).rejects.toThrow();
+    await expect(
+      as(
+        alice,
+        `insert into public.live_workspaces (workspace_id, user_id, conversation_id) values ($1, $2, $3)`,
+        [bob.workspaceId, alice.userId, conv],
+      ),
+    ).rejects.toThrow();
+    await expect(
+      db.query(
+        `insert into public.live_workspaces (workspace_id, user_id, conversation_id, surfaces) values ($1, $2, $3, '{}'::jsonb)`,
+        [alice.workspaceId, alice.userId, conv],
+      ),
+    ).rejects.toThrow(/check/);
+  });
+
+  it("is deleted with its conversation", async () => {
+    const conv = await conversation(alice);
+    await save(alice, conv);
+    await as(alice, `update public.conversations set archived_at = now() where id = $1`, [conv]);
+    const left = await db.query(
+      `select id from public.live_workspaces where conversation_id = $1`,
+      [conv],
+    );
+    expect(left.rows).toHaveLength(0);
+  });
+});

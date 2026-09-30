@@ -12,6 +12,7 @@ import {
   PauseIcon,
   RunningIcon,
 } from "@/components/elise/icons";
+import { activityLabel, isPresentationTool } from "@/features/workspace/activity-labels";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -26,7 +27,9 @@ function formatSeconds(ms: number | undefined): string {
  * Tool execution trace (reference Chat). Live while running: rows enter with an 80 ms stagger,
  * the running icon turns once per 900 ms. Collapses to its summary 1.5 s after the final answer.
  */
-export function ToolTrace({ tools, running }: { tools: ClientToolTrace[]; running: boolean }) {
+export function ToolTrace({ tools: all, running }: { tools: ClientToolTrace[]; running: boolean }) {
+  // Presentation steps arrange the workspace; the trace lists the work and its sources.
+  const tools = all.filter((s) => !isPresentationTool(s.name));
   const { t } = useI18n();
   const desktop = useIsDesktop();
   const [open, setOpen] = useState(running);
@@ -162,7 +165,11 @@ function TraceRow({ step, index }: { step: ClientToolTrace; index: number }) {
           </motion.span>
         </AnimatePresence>
       </span>
-      <span className="truncate font-mono text-[12.5px]">{step.name}</span>
+      <span className={cn("truncate text-[13px] text-fg", step.parentId && "pl-4 text-muted")}>
+        {o?.status === "failed" && o.error.code === "CAPABILITY_UNAVAILABLE"
+          ? t.chat.activity.unavailable(activityLabel(t, step.name, false))
+          : activityLabel(t, step.name, !o)}
+      </span>
       <span className={cn("truncate", kind === "waiting" ? "text-approval-text" : "text-muted")}>
         {detail}
       </span>

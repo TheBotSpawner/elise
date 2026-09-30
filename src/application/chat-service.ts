@@ -10,6 +10,8 @@ import type { ToolCallOutcome } from "@/core/agents/executor";
 import { runElise, toolNotes } from "@/core/agents/runtime";
 import { AppError, toPublicError } from "@/core/errors";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
+import { intentForTool } from "@/core/workspace/from-results";
+import { describeWorkspace } from "@/core/workspace/registry";
 import { getAIProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
 import type { Json } from "@/infrastructure/supabase/database.types";
@@ -31,6 +33,7 @@ import {
 import { listSpaces } from "./knowledge-service";
 import { queueRecallIndex, searchRecall } from "./recall-service";
 import { structuredSourcesForChat } from "./structured-service";
+import { openWorkspaceSession, toClientOutcome } from "./workspace-service";
 
 export interface ChatTurnInput {
   conversationId?: string;
@@ -87,6 +90,10 @@ export async function startChatTurn(
     throw new AppError("INTERNAL_ERROR", "Could not start the run", { cause: runError });
   const runId = run.id;
 
+  // The interaction's Live Workspace: untouched Surfaces decay at the start of each turn.
+  const workspace = await openWorkspaceSession(auth, conversationId, !input.conversationId);
+  workspace.apply([{ op: "turn", at: new Date().toISOString() }]);
+
   const context = buildContextPackage({
     user: auth.profile,
     now: new Date(),
@@ -97,6 +104,7 @@ export async function startChatTurn(
     activeSpace: activeSpace?.path ?? null,
     structuredSources,
     recallEvidence,
+    workspace: describeWorkspace(workspace.state(), auth.profile.timezone),
   });
   const encoder = new TextEncoder();
 
@@ -105,6 +113,36 @@ export async function startChatTurn(
       const send = (event: ChatStreamEvent) =>
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       send({ type: "conversation", conversationId, runId: runId });
+      workspace.attach(
+        (ops, version) => send({ type: "workspace", ops, version }),
+        (step, parent) => {
+          // Orchestration steps show in the activity trace, nested under their tool.
+          const nest = parent ? { parentId: parent } : {};
+          if (step.status === "running") {
+            traces.set(step.id, { callId: step.id, name: step.tool, ...nest });
+            stepStarted.set(step.id, Date.now());
+            send({ type: "tool_started", callId: step.id, name: step.tool, ...nest });
+            return;
+          }
+          const outcome: ClientToolOutcome =
+            step.status === "done"
+              ? { status: "succeeded" }
+              : {
+                  status: "failed",
+                  error: toPublicError(
+                    new AppError(
+                      step.status === "unavailable"
+                        ? "CAPABILITY_UNAVAILABLE"
+                        : "PROVIDER_UNAVAILABLE",
+                      "Source unavailable",
+                    ),
+                  ),
+                };
+          const durationMs = Date.now() - (stepStarted.get(step.id) ?? Date.now());
+          traces.set(step.id, { callId: step.id, name: step.tool, outcome, durationMs, ...nest });
+          send({ type: "tool_finished", callId: step.id, name: step.tool, outcome, durationMs });
+        },
+      );
 
       const traces = new Map<string, ClientToolTrace>();
       const stepStarted = new Map<string, number>();
@@ -121,6 +159,7 @@ export async function startChatTurn(
           ctx: {
             ...toolContext(auth, "ai", runId, conversationId),
             knowledgeSpaceId: activeSpace?.id ?? null,
+            workspace,
           },
           instructions: context.instructions,
           input: context.input,
@@ -133,17 +172,29 @@ export async function startChatTurn(
               if (event.type === "tool_started") {
                 traces.set(event.callId, { callId: event.callId, name: event.name });
                 stepStarted.set(event.callId, Date.now());
+                workspace.current = event.callId;
+                beginIntent(event.name);
+                if (event.name === "meeting.prepare")
+                  logger.info("meeting_prep.started", { run_id: runId });
               }
               send(event);
               break;
             case "tool_finished": {
               const outcome = toClientOutcome(event.outcome);
               const durationMs = Date.now() - (stepStarted.get(event.callId) ?? Date.now());
+              workspace.current = null;
+              // Every result ELISE fetched is presented by the application, never "drawn".
+              const surfaceIds = event.name.startsWith("ui.")
+                ? []
+                : workspace.present(event.name, event.callId, event.outcome);
+              if (event.name === "meeting.prepare") logMeetingPrep(event.outcome, durationMs);
+              const shown = surfaceIds.length ? { surfaceIds } : {};
               traces.set(event.callId, {
                 callId: event.callId,
                 name: event.name,
                 outcome,
                 durationMs,
+                ...shown,
               });
               send({
                 type: "tool_finished",
@@ -151,6 +202,7 @@ export async function startChatTurn(
                 name: event.name,
                 outcome,
                 durationMs,
+                ...shown,
               });
               break;
             }
@@ -179,8 +231,44 @@ export async function startChatTurn(
         failure = toPublicError(error);
         send({ type: "error", error: failure });
       } finally {
+        await workspace.flush();
         await finishRun();
         controller.close();
+      }
+
+      /** A request's first tool sets a lightweight intent when there is none yet. */
+      function beginIntent(toolName: string) {
+        if (workspace.state().intent || toolName.startsWith("meeting.")) return;
+        const kind = intentForTool(toolName);
+        if (!kind) return;
+        const at = new Date().toISOString();
+        workspace.apply([
+          {
+            op: "intent",
+            intent: {
+              id: `intent:${runId}`,
+              kind,
+              description: input.message.slice(0, 160),
+              startedAt: at,
+            },
+            at,
+          },
+        ]);
+      }
+
+      function logMeetingPrep(outcome: ToolCallOutcome, latencyMs: number) {
+        const out = (outcome.status === "succeeded" ? outcome.output : null) as {
+          found?: boolean;
+          unavailable?: string[];
+        } | null;
+        logger.info("meeting_prep.completed", {
+          run_id: runId,
+          status: outcome.status,
+          found: Boolean(out?.found),
+          unavailable_sources: out?.unavailable?.length ?? 0,
+          surfaces: workspace.state().surfaces.length,
+          latency_ms: latencyMs,
+        });
       }
 
       async function persistAssistant(text: string, metadata: AssistantMessageMetadata) {
@@ -327,25 +415,4 @@ async function loadHistory(auth: AuthContext, conversationId: string): Promise<H
     content: m.content,
     toolNotes: ((m.metadata as AssistantMessageMetadata | null)?.toolNotes ?? []).slice(0, 10),
   }));
-}
-
-function toClientOutcome(outcome: ToolCallOutcome): ClientToolOutcome {
-  switch (outcome.status) {
-    case "succeeded":
-      return { status: "succeeded", display: outcome.display };
-    case "approval_required":
-      return {
-        status: "approval_required",
-        approvalId: outcome.approvalId,
-        summary: outcome.summary,
-        reason: outcome.reason,
-        preview: outcome.preview,
-      };
-    case "clarification_required":
-      return { status: "clarification_required" };
-    case "rejected":
-      return { status: "rejected" };
-    case "failed":
-      return { status: "failed", error: outcome.error };
-  }
 }

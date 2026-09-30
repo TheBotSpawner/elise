@@ -887,6 +887,22 @@ export type RecallChunkRow = {
   created_at: Ts;
 };
 
+export type LiveWorkspaceRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  conversation_id: string;
+  intent: Json | null;
+  surfaces: Json;
+  focus_id: string | null;
+  turn: number;
+  next_handle: number;
+  version: number;
+  updated_at: Ts;
+  expires_at: Ts;
+  created_at: Ts;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -907,6 +923,7 @@ export type Database = {
         "workspace_id" | "capability_key" | "connection_id"
       >;
       conversations: Table<ConversationRow, "workspace_id" | "user_id">;
+      live_workspaces: Table<LiveWorkspaceRow, "workspace_id" | "user_id" | "conversation_id">;
       messages: Table<MessageRow, "conversation_id" | "workspace_id" | "role" | "content">;
       ai_runs: Table<AiRunRow, "workspace_id" | "user_id" | "ai_provider" | "model_key">;
       task_lists: Table<TaskListRow, "workspace_id" | "name">;

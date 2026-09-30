@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { loadConversation } from "@/application/conversations-service";
+import { loadWorkspace } from "@/application/workspace-service";
 import { ChatSurface } from "@/features/chat/chat-surface";
 
 export default async function ConversationPage({ params }: PageProps<"/chat/[id]">) {
@@ -10,7 +11,11 @@ export default async function ConversationPage({ params }: PageProps<"/chat/[id]
   if (!z.uuid().safeParse(id).success) notFound();
 
   const auth = await requireAuthContext();
-  const messages = await loadConversation(auth, id);
+  const [messages, workspace] = await Promise.all([
+    loadConversation(auth, id),
+    // The Live Workspace survives refreshes and navigation; a failure never blocks the chat.
+    loadWorkspace(auth, id).catch(() => undefined),
+  ]);
   if (!messages) notFound();
 
   return (
@@ -19,6 +24,8 @@ export default async function ConversationPage({ params }: PageProps<"/chat/[id]
       conversationId={id}
       initialMessages={messages}
       timezone={auth.profile.timezone}
+      workspaceId={auth.workspaceId}
+      initialWorkspace={workspace}
     />
   );
 }

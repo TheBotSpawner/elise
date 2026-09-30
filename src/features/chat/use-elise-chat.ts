@@ -6,6 +6,7 @@ import type { ChatStreamEvent } from "@/application/chat-protocol";
 import { resolveOrbState, type OrbState } from "@/components/elise/orb/orb-states";
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { PublicError } from "@/core/errors";
+import { applyOps, emptyWorkspace, type WorkspaceState } from "@/core/workspace/model";
 import { applyAppearance } from "@/lib/theme";
 
 import type { ChatMessage } from "./types";
@@ -18,12 +19,19 @@ export function useEliseChat(initial: {
   messages?: ChatMessage[];
   /** A new conversation started from a Knowledge Space. */
   spaceId?: string;
+  /** The conversation's Live Workspace, restored by the server (ADR-013). */
+  workspace?: WorkspaceState;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>(initial.messages ?? []);
+  const [workspace, setWorkspace] = useState<WorkspaceState>(initial.workspace ?? emptyWorkspace());
+  /** Set when streamed ops didn't land on the server's version: re-read after the turn. */
+  const [outOfSync, setOutOfSync] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
   const [lastOutcome, setLastOutcome] = useState<"success" | "error" | null>(null);
   const conversationId = useRef(initial.conversationId);
   const abort = useRef<AbortController | null>(null);
+  /** Read when acting (the id arrives with the first streamed event). */
+  const getConversationId = useCallback(() => conversationId.current ?? null, []);
 
   const patchAssistant = useCallback((id: string, patch: (m: ChatMessage) => ChatMessage) => {
     setMessages((all) => all.map((m) => (m.id === id ? patch(m) : m)));
@@ -112,9 +120,25 @@ export function useEliseChat(initial: {
               case "tool_started":
                 patchAssistant(assistantId, (m) => ({
                   ...m,
-                  tools: [...m.tools, { callId: event.callId, name: event.name }],
+                  tools: [
+                    ...m.tools,
+                    {
+                      callId: event.callId,
+                      name: event.name,
+                      ...(event.parentId ? { parentId: event.parentId } : {}),
+                    },
+                  ],
                 }));
                 break;
+              case "workspace": {
+                const { ops, version } = event;
+                setWorkspace((s) => {
+                  const next = applyOps(s, ops);
+                  if (next.version !== version) setOutOfSync(true);
+                  return next;
+                });
+                break;
+              }
               case "tool_finished":
                 // ELISE changed its own appearance: apply the approved values right away.
                 if (
@@ -126,7 +150,12 @@ export function useEliseChat(initial: {
                   ...m,
                   tools: m.tools.map((t) =>
                     t.callId === event.callId
-                      ? { ...t, outcome: event.outcome, durationMs: event.durationMs }
+                      ? {
+                          ...t,
+                          outcome: event.outcome,
+                          durationMs: event.durationMs,
+                          ...(event.surfaceIds ? { surfaceIds: event.surfaceIds } : {}),
+                        }
                       : t,
                   ),
                 }));
@@ -135,6 +164,11 @@ export function useEliseChat(initial: {
                 failed = event.error;
                 break;
               case "done":
+                if (event.messageId)
+                  patchAssistant(assistantId, (m) => ({
+                    ...m,
+                    serverId: event.messageId ?? undefined,
+                  }));
                 break;
             }
           }
@@ -201,6 +235,11 @@ export function useEliseChat(initial: {
 
   return {
     messages,
+    workspace,
+    setWorkspace,
+    outOfSync,
+    clearOutOfSync: () => setOutOfSync(false),
+    getConversationId,
     send,
     stop,
     busy: runState === "thinking" || runState === "using_tools",

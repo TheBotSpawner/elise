@@ -15,6 +15,7 @@ export type CapabilityKey =
   | "structured"
   | "history"
   | "settings"
+  | "workspace"
   | "web_search"
   | "voice"
   | "schedules";

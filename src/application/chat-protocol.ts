@@ -5,6 +5,7 @@
 import type { ApprovalReason } from "@/core/agents/policy";
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { PublicError } from "@/core/errors";
+import type { WorkspaceOp } from "@/core/workspace/model";
 
 /** Tool outcome as the UI needs it (model-facing output stripped). */
 export type ClientToolOutcome =
@@ -29,20 +30,27 @@ export interface ClientToolTrace {
   durationMs?: number;
   /** Set once an approval requested by this step was decided. */
   resolution?: { decision: "approved" | "rejected"; display?: ToolDisplay };
+  /** A step inside an orchestration (e.g. meeting prep searching email). */
+  parentId?: string;
+  /** Live Workspace Surfaces this result was presented as (ADR-013). */
+  surfaceIds?: string[];
 }
 
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string; runId: string }
   | { type: "status"; state: "thinking" | "using_tools" }
   | { type: "text"; delta: string }
-  | { type: "tool_started"; callId: string; name: string }
+  | { type: "tool_started"; callId: string; name: string; parentId?: string }
   | {
       type: "tool_finished";
       callId: string;
       name: string;
       outcome: ClientToolOutcome;
       durationMs: number;
+      surfaceIds?: string[];
     }
+  /** Live Workspace changes, applied in the browser with the same reducer (ADR-013). */
+  | { type: "workspace"; ops: WorkspaceOp[]; version: number }
   | { type: "done"; messageId: string | null }
   | { type: "error"; error: PublicError };
 

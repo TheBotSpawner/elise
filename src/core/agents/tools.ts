@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { AIToolSpec } from "./ai-provider";
+import type { ToolCallOutcome } from "./executor";
 import type { CalendarEvent, CalendarInfo, CalendarProvider } from "../capabilities/calendar";
 import type {
   EmailDraft,
@@ -35,6 +36,7 @@ import type { KnowledgeReader } from "../knowledge/model";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
 import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
+import type { WorkspacePort } from "../workspace/port";
 
 export type ActionOrigin = "ai" | "user_ui" | "schedule" | "system";
 
@@ -50,6 +52,8 @@ export interface ToolContext {
   knowledgeSpaceId?: string | null;
   /** The conversation this run belongs to (Recall skips it: it's already in context). */
   conversationId?: string | null;
+  /** The interaction's Live Workspace, when the request has one (ADR-013). */
+  workspace?: WorkspacePort;
 }
 
 /** Capability → provider contract. Grows as capabilities are implemented. */
@@ -157,7 +161,35 @@ export type ToolDisplay =
   /** Past interactions found by Recall (surface-ready, not UI-coupled). */
   | { kind: "recall_results"; query: string; results: RecallResult[] }
   /** ELISE changed its own appearance: the UI applies it at once. */
-  | { kind: "appearance"; theme: Theme; accent: Accent }
+  | {
+      kind: "appearance";
+      theme: Theme;
+      accent: Accent;
+      previous?: { theme: Theme; accent: Accent };
+    }
+  /** ELISE changed one of its own settings (time zone, notifications, a Schedule's status). */
+  | {
+      kind: "setting_changed";
+      changes: {
+        setting: "timezone" | "language" | "notifications" | "schedule";
+        from: string | null;
+        to: string;
+        subject?: string;
+      }[];
+    }
+  /** One Knowledge document (its metadata; the text is loaded only when opened). */
+  | {
+      kind: "knowledge_document";
+      document: {
+        itemId: string;
+        title: string;
+        sourceType: string;
+        spaceName: string;
+        url: string | null;
+        updatedAt: string;
+        versions: number;
+      };
+    }
   /** Structured records from a mapped source (the source stays authoritative). */
   | { kind: "structured_sources"; sources: StructuredSource[] }
   | {
@@ -212,6 +244,11 @@ export interface ToolRunEnv {
   providers: ProviderFactory;
   /** The recorded action for writes (stable across retries); null for reads. */
   actionId?: string | null;
+  /**
+   * Runs another read-only tool through the full executor path (resolution, permissions,
+   * trace), for orchestrations such as meeting prep. Writes are refused.
+   */
+  invoke?: (name: string, args: unknown) => Promise<ToolCallOutcome>;
 }
 
 export interface ToolRunResult<TOutput> {
