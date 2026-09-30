@@ -133,7 +133,8 @@ export function useWorkspaceController({
   const runAction = useCallback(
     async (surface: Surface, action: ActionId, itemId: string | null) => {
       const id = getConversationId();
-      if (!id || pending) return;
+      // Not while a turn streams: its own saves would race this one.
+      if (!id || pending || busy) return;
       setPending(`${surface.id}:${itemId ?? action}`);
       try {
         const result = await surfaceActionAction(id, surface.id, action, itemId);
@@ -150,7 +151,7 @@ export function useWorkspaceController({
         setPending(null);
       }
     },
-    [getConversationId, pending, setWorkspace, t],
+    [busy, getConversationId, pending, setWorkspace, t],
   );
 
   const loadDetail = useCallback(

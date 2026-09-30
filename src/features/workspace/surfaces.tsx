@@ -188,7 +188,7 @@ export function SurfaceActions({
       return [
         <ActionButton
           key={a.id}
-          disabled={handlers.pending !== null}
+          disabled={handlers.pending !== null || handlers.busy}
           onClick={() => handlers.onAction(surface, a.id, null)}
         >
           {t.workspace.actions[a.id]}
@@ -486,7 +486,7 @@ function TaskRow({
         role="checkbox"
         aria-checked={!open}
         aria-label={`${t.workspace.actions.complete}: ${task.title}`}
-        disabled={!open || pending || handlers.pending !== null}
+        disabled={!open || pending || handlers.pending !== null || handlers.busy}
         onClick={() => handlers.onAction(surface, "complete", task.id)}
         className={cn(
           "grid size-5 shrink-0 place-items-center rounded-full border transition-colors",
