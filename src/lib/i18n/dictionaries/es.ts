@@ -430,8 +430,9 @@ export const es: Dictionary = {
     googleBody:
       "Calendario, Tareas y Gmail de una o varias cuentas de Google. Iniciar sesión en ELISE no le da acceso a ellas.",
     connectGoogle: "Conectar Google",
-    addGoogle: "Agregar otra cuenta de Google",
-    choose: "¿Qué puede usar ELISE de esta cuenta?",
+    addGoogle: "Conectar nueva cuenta",
+    connectGoogleTitle: "Conectar cuenta de Google",
+    choose: "¿Qué querés permitirle usar a ELISE de esta cuenta?",
     chooseHint: "Google solo pide permiso para lo que elijas. Podés sumar el resto después.",
     capabilityBody: {
       calendar: "Ver tu agenda, crear y mover eventos.",

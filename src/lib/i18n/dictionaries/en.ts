@@ -421,8 +421,9 @@ export const en = {
     googleBody:
       "Calendar, Tasks and Gmail from one or more Google accounts. Signing in to ELISE doesn't give ELISE access to them.",
     connectGoogle: "Connect Google",
-    addGoogle: "Add another Google account",
-    choose: "What should ELISE use from this account?",
+    addGoogle: "Connect another Google account",
+    connectGoogleTitle: "Connect Google account",
+    choose: "What should ELISE be able to use from this account?",
     chooseHint: "Google only asks for what you pick. You can add the rest later.",
     capabilityBody: {
       calendar: "See your agenda, create and move events.",

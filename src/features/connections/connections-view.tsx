@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Star } from "lucide-react";
+import { ChevronDown, Plus, Star } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import {
 } from "@/components/elise/brand-icons";
 import { CheckIcon } from "@/components/elise/icons";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { ErrorCode } from "@/core/errors";
@@ -87,9 +88,17 @@ function setExpanded(id: string, open: boolean) {
   }
   expandedListeners.forEach((l) => l());
 }
-function useExpanded(id: string): [boolean, (open: boolean) => void] {
+/** `openOnce`: shown expanded in this view only (just connected), not remembered. */
+function useExpanded(id: string, openOnce = false): [boolean, (open: boolean) => void] {
   const raw = useSyncExternalStore(subscribeExpanded, readExpanded, () => "[]");
-  return [parseExpanded(raw).includes(id), (open) => setExpanded(id, open)];
+  const [override, setOverride] = useState<boolean | null>(openOnce ? true : null);
+  return [
+    override ?? parseExpanded(raw).includes(id),
+    (open) => {
+      setOverride(null);
+      setExpanded(id, open);
+    },
+  ];
 }
 
 /**
@@ -155,6 +164,8 @@ export function ConnectionsView({
   const params = useSearchParams();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // Read once on first render: the URL is cleaned right after.
+  const [justConnected] = useState(() => params.get("connected"));
   const multi = (key: string) => selectableFor(connections, key) > 1;
   const makeDefault = (connectionId: string, key: ConnectionView["capabilities"][number]["key"]) =>
     startTransition(async () => {
@@ -174,8 +185,6 @@ export function ConnectionsView({
           ? t.connections.connectedNotionToast
           : t.connections.connectedToast,
       );
-      // The account just connected opens so its settings are at hand.
-      setExpanded(connected, true);
     }
     if (missing) {
       const names = missing
@@ -246,11 +255,12 @@ export function ConnectionsView({
             connection={c}
             googleAvailable={googleAvailable}
             multi={multi}
+            openOnce={c.id === justConnected}
           />
         ))}
         {googleAvailable ? (
-          <ConnectGooglePanel
-            title={google.length ? t.connections.addGoogle : t.connections.connectGoogle}
+          <ConnectGoogleAction
+            label={google.length ? t.connections.addGoogle : t.connections.connectGoogle}
           />
         ) : (
           <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[13.5px] text-muted">
@@ -304,64 +314,85 @@ export function ConnectionsView({
   );
 }
 
-function ConnectGooglePanel({ title }: { title: string }) {
+/** A compact action; the capability choice only appears, in a dialog, when asked for. */
+function ConnectGoogleAction({ label }: { label: string }) {
   const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   return (
-    <form
-      action={connectGoogle}
-      className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-5"
-    >
-      <div className="flex items-start gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-full border border-border bg-bg">
-          <GoogleMark size={20} />
-        </span>
-        <div>
-          <p className="font-medium">{title}</p>
-          <p className="text-[13.5px] text-muted">{t.connections.choose}</p>
-        </div>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        {GOOGLE_CAPS.map((cap) => {
-          const Logo = CAP_LOGOS[cap];
-          return (
-            <label
-              key={cap}
-              className="group relative flex cursor-pointer items-start gap-3.5 rounded-xl border border-border-strong bg-bg p-4 transition-colors duration-[var(--dur-xs)] hover:border-fg/30 has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent"
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong text-[14px] text-muted transition-colors hover:border-accent-line hover:text-fg"
+      >
+        <Plus className="size-4" aria-hidden />
+        {label}
+      </button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={t.connections.connectGoogleTitle}
+        description={t.connections.choose}
+        busy={submitting}
+        className="sm:max-w-2xl"
+      >
+        {/* Children mount only while open: cancelling discards the selection. */}
+        <form
+          action={connectGoogle}
+          onSubmit={() => setSubmitting(true)}
+          className="flex flex-col gap-5"
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            {GOOGLE_CAPS.map((cap) => {
+              const Logo = CAP_LOGOS[cap];
+              return (
+                <label
+                  key={cap}
+                  className="group relative flex cursor-pointer items-start gap-3.5 rounded-xl border border-border-strong bg-bg p-4 transition-colors duration-[var(--dur-xs)] hover:border-fg/30 has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent"
+                >
+                  <input
+                    type="checkbox"
+                    name="capability"
+                    value={cap}
+                    defaultChecked={!OPT_IN.has(cap)}
+                    className="peer sr-only"
+                  />
+                  <Logo size={36} className="shrink-0" />
+                  <span className="min-w-0 pr-6">
+                    <span className="block text-sm font-medium">{CAP_PRODUCT[cap]}</span>
+                    <span className="block text-[13px] text-muted">
+                      {t.connections.capabilityBody[cap]}
+                    </span>
+                  </span>
+                  <span
+                    aria-hidden
+                    className="absolute top-3.5 right-3.5 grid size-5 place-items-center rounded-full border border-border-strong text-accent-fg transition-colors peer-checked:border-accent peer-checked:bg-accent [&>svg]:opacity-0 peer-checked:[&>svg]:opacity-100"
+                  >
+                    <CheckIcon size={12} strokeWidth={2.4} />
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          <p className="text-[13px] text-faint">{t.connections.chooseHint}</p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={submitting}
+              onClick={() => setOpen(false)}
             >
-              <input
-                type="checkbox"
-                name="capability"
-                value={cap}
-                defaultChecked={!OPT_IN.has(cap)}
-                className="peer sr-only"
-              />
-              <Logo size={36} className="shrink-0" />
-              <span className="min-w-0 pr-6">
-                <span className="block text-sm font-medium">{CAP_PRODUCT[cap]}</span>
-                <span className="block text-[13px] text-muted">
-                  {t.connections.capabilityBody[cap]}
-                </span>
-              </span>
-              <span
-                aria-hidden
-                className="absolute top-3.5 right-3.5 grid size-5 place-items-center rounded-full border border-border-strong text-accent-fg transition-colors peer-checked:border-accent peer-checked:bg-accent [&>svg]:opacity-0 peer-checked:[&>svg]:opacity-100"
-              >
-                <CheckIcon size={12} strokeWidth={2.4} />
-              </span>
-            </label>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[13px] text-faint">{t.connections.chooseHint}</p>
-        <Button type="submit">
-          <GoogleMark size={16} />
-          {t.connections.continueWithGoogle}
-        </Button>
-      </div>
-    </form>
+              {t.connections.cancel}
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              <GoogleMark size={16} />
+              {t.connections.continueWithGoogle}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+    </>
   );
 }
 
@@ -369,9 +400,12 @@ function GoogleConnectionCard({
   connection: c,
   googleAvailable,
   multi,
+  openOnce,
 }: {
   connection: ConnectionView;
   googleAvailable: boolean;
+  /** Just connected: open in this view, collapsed again on the next visit. */
+  openOnce: boolean;
   /** Whether a capability has several providers (only then is the default shown). */
   multi: (key: string) => boolean;
 }) {
@@ -379,7 +413,7 @@ function GoogleConnectionCard({
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState(c.displayName);
   const [context, setContext] = useState(c.contextLabel ?? "");
-  const [expanded, setOpen] = useExpanded(c.id);
+  const [expanded, setOpen] = useExpanded(c.id, openOnce);
   const healthy = c.status === "connected";
   const enabled = GOOGLE_CAPS.filter((key) =>
     c.capabilities.some((x) => x.key === key && x.enabled),
