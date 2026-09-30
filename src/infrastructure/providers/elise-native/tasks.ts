@@ -1,14 +1,15 @@
-import type {
-  CreateTaskInput,
-  Task,
-  TaskList,
-  TaskProvider,
-  TaskQuery,
-  TaskWriteMeta,
-  UpdateTaskInput,
+import {
+  matchTaskLists,
+  type CreateTaskInput,
+  type Task,
+  type TaskList,
+  type TaskProvider,
+  type TaskQuery,
+  type TaskWriteMeta,
+  type UpdateTaskInput,
 } from "@/core/capabilities/tasks";
 import { AppError } from "@/core/errors";
-import type { TaskRow } from "@/infrastructure/supabase/database.types";
+import type { TaskListRow, TaskRow } from "@/infrastructure/supabase/database.types";
 import type { ServerSupabase } from "@/infrastructure/supabase/server";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -21,25 +22,74 @@ const COLUMNS =
  * Every query is scoped to the workspace explicitly (defense in depth on top of RLS).
  */
 export class EliseTasksProvider implements TaskProvider {
+  private listRows?: Promise<TaskListRow[]>;
+
   constructor(
     private readonly db: ServerSupabase,
     private readonly workspaceId: string,
     private readonly connectionId: string,
   ) {}
 
-  /** ELISE Tasks has a single list today; the schema is ready for more. */
+  /** The workspace's lists, default (Inbox) first. */
+  private lists(): Promise<TaskListRow[]> {
+    this.listRows ??= (async () => {
+      const { data, error } = await this.db
+        .from("task_lists")
+        .select("*")
+        .eq("workspace_id", this.workspaceId)
+        .eq("status", "active")
+        .order("is_default", { ascending: false })
+        .order("name");
+      if (error) throw dbError(error);
+      return data ?? [];
+    })();
+    return this.listRows;
+  }
+
+  private toList(row: TaskListRow): TaskList {
+    return {
+      id: row.id,
+      name: row.name,
+      isDefault: row.is_default,
+      provenance: { providerKey: "elise_native", connectionId: this.connectionId, source: "ELISE" },
+    };
+  }
+
   async listLists(): Promise<TaskList[]> {
-    return [
-      {
-        id: "elise-default",
-        name: "ELISE Tasks",
-        provenance: {
-          providerKey: "elise_native",
-          connectionId: this.connectionId,
-          source: "ELISE",
-        },
-      },
-    ];
+    return (await this.lists()).map((l) => this.toList(l));
+  }
+
+  async createList(name: string): Promise<TaskList> {
+    const existing = matchTaskLists(await this.lists(), name).find(
+      (l) => l.name.toLowerCase() === name.trim().toLowerCase(),
+    );
+    if (existing) return this.toList(existing);
+    const { data, error } = await this.db
+      .from("task_lists")
+      .insert({ workspace_id: this.workspaceId, name: name.trim() })
+      .select("*")
+      .single();
+    if (error) throw dbError(error);
+    this.listRows = undefined;
+    return this.toList(data);
+  }
+
+  /** A named list (id or name) of this workspace, or the default Inbox. Never a guess. */
+  private async resolveList(ref: string | undefined): Promise<TaskListRow | null> {
+    const lists = await this.lists();
+    const fallback = lists.find((l) => l.is_default) ?? lists[0] ?? null;
+    // "elise-default" was the id of the single list before Task Lists existed.
+    if (!ref || ref === "elise-default") return fallback;
+    const matches = matchTaskLists(lists, ref);
+    if (matches.length === 1) return matches[0]!;
+    const names = lists.map((l) => l.name).join(", ");
+    throw new AppError(
+      "VALIDATION_ERROR",
+      matches.length
+        ? `Several ELISE lists match "${ref}": ${matches.map((l) => l.name).join(", ")}. Ask which one.`
+        : `ELISE has no list called "${ref}". Lists: ${names}.`,
+      { recovery: "review" },
+    );
   }
 
   async list(query: TaskQuery): Promise<Task[]> {
@@ -53,15 +103,16 @@ export class EliseTasksProvider implements TaskProvider {
       .limit(query.limit);
 
     if (query.status === "open") q = q.in("status", ["pending", "in_progress"]);
-    if (query.status === "completed") q = q.eq("status", "completed");
+    if (query.status === "completed")
+      q = q.eq("status", "completed").order("completed_at", { ascending: false });
     if (query.dueFrom) q = q.gte("due_date", query.dueFrom);
     if (query.dueTo) q = q.lte("due_date", query.dueTo);
     if (query.noDueDate) q = q.is("due_date", null);
     if (query.search) q = q.ilike("title", `%${escapeLike(query.search)}%`);
 
-    const { data, error } = await q;
+    const [{ data, error }, lists] = await Promise.all([q, this.lists()]);
     if (error) throw dbError(error);
-    return data.map((row) => this.toTask(row));
+    return data.map((row) => this.toTask(row, lists));
   }
 
   async get(taskId: string): Promise<Task | null> {
@@ -74,19 +125,16 @@ export class EliseTasksProvider implements TaskProvider {
       .is("archived_at", null)
       .maybeSingle();
     if (error) throw dbError(error);
-    return data ? this.toTask(data) : null;
+    return data ? this.toTask(data, await this.lists()) : null;
   }
 
   async create(input: CreateTaskInput, meta: TaskWriteMeta): Promise<Task> {
-    if (input.list && input.list !== "elise-default") {
-      throw new AppError("VALIDATION_ERROR", "ELISE Tasks has a single list", {
-        recovery: "review",
-      });
-    }
+    const list = await this.resolveList(input.list);
     const { data, error } = await this.db
       .from("tasks")
       .insert({
         workspace_id: this.workspaceId,
+        task_list_id: list?.id ?? null,
         title: input.title,
         description: input.description ?? null,
         notes: input.notes ?? null,
@@ -99,7 +147,7 @@ export class EliseTasksProvider implements TaskProvider {
       .select(COLUMNS)
       .single();
     if (error) throw dbError(error);
-    return this.toTask(data);
+    return this.toTask(data, await this.lists());
   }
 
   async update(input: UpdateTaskInput): Promise<Task> {
@@ -114,6 +162,8 @@ export class EliseTasksProvider implements TaskProvider {
     if (input.priority !== undefined) patch.priority = input.priority;
     if (input.category !== undefined) patch.category = input.category;
     if (input.dueDate !== undefined) patch.due_date = input.dueDate;
+    if (input.list !== undefined)
+      patch.task_list_id = (await this.resolveList(input.list))?.id ?? null;
     return this.patch(input.taskId, patch);
   }
 
@@ -142,10 +192,13 @@ export class EliseTasksProvider implements TaskProvider {
       .maybeSingle();
     if (error) throw dbError(error);
     if (!data) throw new AppError("NOT_FOUND", "Task not found", { recovery: "review" });
-    return this.toTask(data);
+    return this.toTask(data, await this.lists());
   }
 
-  private toTask(row: TaskRow): Task {
+  private toTask(row: TaskRow, lists: TaskListRow[]): Task {
+    // A task without a list (or whose list was archived) shows in the default list.
+    const list =
+      lists.find((l) => l.id === row.task_list_id) ?? lists.find((l) => l.is_default) ?? null;
     return {
       id: row.id,
       title: row.title,
@@ -163,7 +216,7 @@ export class EliseTasksProvider implements TaskProvider {
         connectionId: this.connectionId,
         externalId: row.id,
         source: "ELISE",
-        listId: "elise-default",
+        ...(list ? { listId: list.id, listName: list.name } : {}),
       },
     };
   }

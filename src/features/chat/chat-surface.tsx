@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Orb } from "@/components/elise/orb/orb";
 import { ORB_FLIGHT, ORB_LAYOUT_ID, useOrbPresence } from "@/components/elise/orb/orb-presence";
 import type { ToolDisplay } from "@/core/agents/tools";
+import { SpaceGlyph } from "@/features/knowledge/appearance";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -45,7 +46,7 @@ export function ChatSurface({
   userName?: string;
   ambient?: HomeAmbient;
   /** "Ask ELISE" from a Knowledge Space: the new conversation searches it first. */
-  space?: { id: string; path: string } | null;
+  space?: { id: string; path: string; icon: string; color: string } | null;
 }) {
   const { t } = useI18n();
   const desktop = useIsDesktop();
@@ -138,7 +139,12 @@ export function ChatSurface({
                 href={`/knowledge/spaces/${space.id}`}
                 className="mt-3 flex h-8 items-center gap-2 rounded-full border border-accent-line px-3 text-[13px] text-accent-text"
               >
-                <span className="type-label text-faint">{t.knowledge.inSpace}</span>
+                <SpaceGlyph
+                  icon={space.icon}
+                  color={space.color}
+                  size="sm"
+                  className="rounded-full"
+                />
                 {space.path}
               </Link>
             )}
@@ -243,12 +249,12 @@ function Ambient({ ambient }: { ambient: HomeAmbient }) {
     ambient.dueToday > 0 && {
       label: t.home.today,
       text: t.home.tasksDue(ambient.dueToday),
-      href: "/my-elise/tasks",
+      href: "/my-elise/tasks?view=today",
     },
     ambient.overdue > 0 && {
       label: t.tasks.overdue,
       text: t.home.overdue(ambient.overdue),
-      href: "/my-elise/tasks",
+      href: "/my-elise/tasks?view=overdue",
     },
     ambient.pendingApprovals > 0 && {
       label: t.home.approvals,

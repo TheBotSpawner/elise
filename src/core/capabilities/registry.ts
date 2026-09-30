@@ -27,6 +27,7 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     operations: {
       list: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
       listLists: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      createList: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
       create: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
       update: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
       complete: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },

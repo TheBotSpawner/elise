@@ -241,8 +241,9 @@ function MyEliseMenu({
                   href={m.href}
                   role="menuitem"
                   onClick={() => close(false)}
-                  className="flex h-10 items-center rounded-[10px] px-3 text-[13.5px] text-fg hover:bg-active focus-visible:bg-active"
+                  className="flex h-10 items-center gap-2.5 rounded-[10px] px-3 text-[13.5px] text-fg hover:bg-active focus-visible:bg-active"
                 >
+                  <m.icon className="size-4 text-muted" aria-hidden />
                   {t.capabilities[m.key]}
                 </Link>
               ) : (
@@ -253,7 +254,10 @@ function MyEliseMenu({
                   tabIndex={-1}
                   className="flex h-10 items-center justify-between rounded-[10px] px-3 text-[13.5px] text-muted"
                 >
-                  {t.capabilities[m.key]}
+                  <span className="flex items-center gap-2.5">
+                    <m.icon className="size-4" aria-hidden />
+                    {t.capabilities[m.key]}
+                  </span>
                   <span className="type-label text-faint">{t.nav.soon}</span>
                 </span>
               ),

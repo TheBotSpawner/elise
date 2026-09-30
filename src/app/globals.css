@@ -137,6 +137,22 @@
   ::selection {
     background: var(--accent-soft);
   }
+  /*
+   * Native select popups: fields use a translucent surface, so browsers that draw options with
+   * the field's colors (Chrome/Edge on Windows) showed light text on a white popup in dark mode.
+   * Options get the opaque overlay surface and the theme's text color in both themes.
+   */
+  select option,
+  select optgroup {
+    background-color: var(--overlay-bg);
+    color: var(--fg);
+  }
+  select option:checked {
+    background-color: var(--active-bg);
+  }
+  select option:disabled {
+    color: var(--fg-faint);
+  }
 }
 
 /* Status and label typography from the reference type scale. */

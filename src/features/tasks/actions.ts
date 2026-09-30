@@ -13,7 +13,7 @@ export type TaskActionResult = { ok: true } | { ok: false; error: PublicError };
  * `idempotencyKey` comes from the form submission so double submits never duplicate a task.
  */
 export async function taskAction(
-  operation: "create" | "update" | "complete" | "reopen" | "delete",
+  operation: "create" | "update" | "complete" | "reopen" | "delete" | "createList",
   args: unknown,
   idempotencyKey?: string,
 ): Promise<TaskActionResult> {

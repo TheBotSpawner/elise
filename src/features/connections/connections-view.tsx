@@ -1,7 +1,8 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { ConnectionView } from "@/application/connections-service";
@@ -48,6 +49,46 @@ const CAP_PRODUCT = {
 /** Gmail is opt-in: its consent is broader, so least privilege by default. */
 const OPT_IN = new Set<string>(["email", "knowledge"]);
 
+// Which account cards are expanded, remembered per browser (collapsed by default).
+const EXPANDED_KEY = "elise.connections.expanded";
+const expandedListeners = new Set<() => void>();
+function readExpanded(): string {
+  try {
+    return window.localStorage.getItem(EXPANDED_KEY) ?? "[]";
+  } catch {
+    return "[]";
+  }
+}
+function subscribeExpanded(callback: () => void) {
+  expandedListeners.add(callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    expandedListeners.delete(callback);
+    window.removeEventListener("storage", callback);
+  };
+}
+function parseExpanded(raw: string): string[] {
+  try {
+    const ids = JSON.parse(raw) as unknown;
+    return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function setExpanded(id: string, open: boolean) {
+  const ids = parseExpanded(readExpanded()).filter((x) => x !== id);
+  try {
+    window.localStorage.setItem(EXPANDED_KEY, JSON.stringify(open ? [...ids, id] : ids));
+  } catch {
+    // Private mode: the card still toggles for this visit via the listeners below.
+  }
+  expandedListeners.forEach((l) => l());
+}
+function useExpanded(id: string): [boolean, (open: boolean) => void] {
+  const raw = useSyncExternalStore(subscribeExpanded, readExpanded, () => "[]");
+  return [parseExpanded(raw).includes(id), (open) => setExpanded(id, open)];
+}
+
 export function ConnectionsView({
   connections,
   googleAvailable,
@@ -67,7 +108,11 @@ export function ConnectionsView({
     const missing = params.get("missing");
     const error = params.get("error") as ErrorCode | null;
     if (!connected && !error) return;
-    if (connected) toast.success(t.connections.connectedToast);
+    if (connected) {
+      toast.success(t.connections.connectedToast);
+      // The account just connected opens so its settings are at hand.
+      setExpanded(connected, true);
+    }
     if (missing) {
       const names = missing
         .split(",")
@@ -248,7 +293,13 @@ function GoogleConnectionCard({
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState(c.displayName);
   const [context, setContext] = useState(c.contextLabel ?? "");
+  const [expanded, setOpen] = useExpanded(c.id);
   const healthy = c.status === "connected";
+  const enabled = GOOGLE_CAPS.filter((key) =>
+    c.capabilities.some((x) => x.key === key && x.enabled),
+  )
+    .map((key) => CAP_PRODUCT[key])
+    .join(" · ");
   const dirty = name !== c.displayName || context !== (c.contextLabel ?? "");
 
   function act(fn: () => Promise<ConnectionActionResult>, success?: string) {
@@ -267,148 +318,195 @@ function GoogleConnectionCard({
         healthy ? "border-border" : "border-approval-line bg-approval-bg",
       )}
     >
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-base font-medium">{c.displayName}</p>
-          <p className="truncate text-[13.5px] text-muted">{c.accountLabel}</p>
-        </div>
-        {healthy ? (
-          <span className="flex h-8 items-center gap-2 rounded-full px-3 text-[13px] text-muted">
-            <span aria-hidden className="size-1.5 rounded-full bg-success" />
-            {t.connections.connected}
+      <header>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={`conn-${c.id}`}
+          aria-label={
+            expanded ? t.connections.collapse(c.displayName) : t.connections.expand(c.displayName)
+          }
+          onClick={() => setOpen(!expanded)}
+          className="-mx-2 -my-1 grid w-[calc(100%+1rem)] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-1 text-left transition-colors hover:bg-active"
+        >
+          <span className="grid size-9 place-items-center rounded-full border border-border bg-bg">
+            <GoogleMark size={18} />
           </span>
-        ) : (
-          <span className="flex h-8 items-center gap-2 rounded-full px-3 text-[13px] text-approval-text">
-            <span aria-hidden className="size-1.5 rounded-full bg-approval" />
-            {t.connections.needsAttention}
+          <span className="min-w-0">
+            <span className="block truncate text-base font-medium">{c.displayName}</span>
+            <span className="block truncate text-[13px] text-muted">{c.accountLabel}</span>
+            {enabled && <span className="block truncate text-[12.5px] text-faint">{enabled}</span>}
           </span>
-        )}
+          <span className="flex items-center gap-2">
+            {healthy ? (
+              <span className="hidden items-center gap-2 text-[13px] text-muted sm:flex">
+                <span aria-hidden className="size-1.5 rounded-full bg-success" />
+                {t.connections.connected}
+              </span>
+            ) : (
+              <span className="flex items-center gap-2 text-[13px] text-approval-text">
+                <span aria-hidden className="size-1.5 rounded-full bg-approval" />
+                {t.connections.needsAttention}
+              </span>
+            )}
+            <ChevronDown
+              className={cn("size-4 text-faint transition-transform", expanded && "rotate-180")}
+              aria-hidden
+            />
+          </span>
+        </button>
       </header>
 
-      {!healthy && (
-        <form action={connectGoogle} className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[13.5px] text-approval-text">{t.connections.needsAttentionBody}</p>
-          <input type="hidden" name="connectionId" value={c.id} />
-          {c.capabilities.map((cap) => (
-            <input key={cap.key} type="hidden" name="capability" value={cap.key} />
-          ))}
-          {googleAvailable && <Button type="submit">{t.connections.reconnect}</Button>}
-        </form>
-      )}
+      {expanded && (
+        <div id={`conn-${c.id}`} className="flex flex-col gap-4">
+          {!healthy && (
+            <form
+              action={connectGoogle}
+              className="flex flex-wrap items-center justify-between gap-3"
+            >
+              <p className="text-[13.5px] text-approval-text">{t.connections.needsAttentionBody}</p>
+              <input type="hidden" name="connectionId" value={c.id} />
+              {c.capabilities.map((cap) => (
+                <input key={cap.key} type="hidden" name="capability" value={cap.key} />
+              ))}
+              {googleAvailable && <Button type="submit">{t.connections.reconnect}</Button>}
+            </form>
+          )}
 
-      <ul className="flex flex-col divide-y divide-border rounded-xl border border-border">
-        {GOOGLE_CAPS.map((key) => {
-          const cap = c.capabilities.find((x) => x.key === key);
-          const granted = Boolean(cap?.granted);
-          const Logo = CAP_LOGOS[key];
-          return (
-            <li key={key} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-              <span className="flex items-center gap-3 text-sm">
-                <Logo size={24} className={cn(!cap?.enabled && "opacity-50 grayscale")} />
-                {CAP_PRODUCT[key]}
-              </span>
-              <div className="flex items-center gap-2">
-                {!granted ? (
-                  <form action={connectGoogle}>
-                    <input type="hidden" name="connectionId" value={c.id} />
-                    <input type="hidden" name="capability" value={key} />
-                    <span className="mr-2 text-[13px] text-muted">{t.connections.notAllowed}</span>
-                    <Button type="submit" size="sm" variant="secondary" disabled={!googleAvailable}>
-                      {t.connections.allow}
-                    </Button>
-                  </form>
-                ) : (
-                  <>
-                    {cap?.isDefault ? (
-                      <span className="px-2 type-label text-accent-text">
-                        {t.connections.default}
-                      </span>
-                    ) : (
-                      cap?.enabled && (
+          <ul className="flex flex-col divide-y divide-border rounded-xl border border-border">
+            {GOOGLE_CAPS.map((key) => {
+              const cap = c.capabilities.find((x) => x.key === key);
+              const granted = Boolean(cap?.granted);
+              const Logo = CAP_LOGOS[key];
+              return (
+                <li
+                  key={key}
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5"
+                >
+                  <span className="flex items-center gap-3 text-sm">
+                    <Logo size={24} className={cn(!cap?.enabled && "opacity-50 grayscale")} />
+                    {CAP_PRODUCT[key]}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {!granted ? (
+                      <form action={connectGoogle}>
+                        <input type="hidden" name="connectionId" value={c.id} />
+                        <input type="hidden" name="capability" value={key} />
+                        <span className="mr-2 text-[13px] text-muted">
+                          {t.connections.notAllowed}
+                        </span>
                         <Button
+                          type="submit"
                           size="sm"
-                          variant="ghost"
-                          disabled={pending || !healthy}
-                          onClick={() => act(() => setDefaultAction(c.id, key))}
+                          variant="secondary"
+                          disabled={!googleAvailable}
                         >
-                          {t.connections.makeDefault}
+                          {t.connections.allow}
                         </Button>
-                      )
+                      </form>
+                    ) : (
+                      <>
+                        {cap?.isDefault ? (
+                          <span className="px-2 type-label text-accent-text">
+                            {t.connections.default}
+                          </span>
+                        ) : (
+                          cap?.enabled && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={pending || !healthy}
+                              onClick={() => act(() => setDefaultAction(c.id, key))}
+                            >
+                              {t.connections.makeDefault}
+                            </Button>
+                          )
+                        )}
+                        <Switch
+                          checked={Boolean(cap?.enabled)}
+                          aria-label={t.capabilities[key]}
+                          disabled={pending}
+                          onCheckedChange={(on) => act(() => toggleCapabilityAction(c.id, key, on))}
+                        />
+                      </>
                     )}
-                    <Switch
-                      checked={Boolean(cap?.enabled)}
-                      aria-label={t.capabilities[key]}
-                      disabled={pending}
-                      onCheckedChange={(on) => act(() => toggleCapabilityAction(c.id, key, on))}
-                    />
-                  </>
-                )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              act(() => renameConnectionAction(c.id, name, context), t.connections.saved);
+            }}
+            className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-start"
+          >
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`name-${c.id}`}>{t.connections.name}</Label>
+              <Input
+                id={`name-${c.id}`}
+                value={name}
+                maxLength={120}
+                required
+                placeholder={t.connections.namePlaceholder}
+                aria-describedby={`name-hint-${c.id}`}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <p id={`name-hint-${c.id}`} className="text-[12.5px] text-faint">
+                {t.connections.nameHint}
+              </p>
+            </div>
+            <details className="group flex flex-col gap-1.5" open={Boolean(c.contextLabel)}>
+              <summary className="flex h-6 cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted hover:text-fg [&::-webkit-details-marker]:hidden">
+                <ChevronDown
+                  className="size-3.5 transition-transform group-open:rotate-180"
+                  aria-hidden
+                />
+                {t.connections.contextSection}
+              </summary>
+              <div className="mt-1.5 flex flex-col gap-1.5">
+                <Label htmlFor={`ctx-${c.id}`}>{t.connections.context}</Label>
+                <Input
+                  id={`ctx-${c.id}`}
+                  value={context}
+                  maxLength={80}
+                  placeholder={t.connections.contextPlaceholder}
+                  aria-describedby={`ctx-hint-${c.id}`}
+                  onChange={(e) => setContext(e.target.value)}
+                />
+                <p id={`ctx-hint-${c.id}`} className="text-[12.5px] text-faint">
+                  {t.connections.contextHint}
+                </p>
               </div>
-            </li>
-          );
-        })}
-      </ul>
+            </details>
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={!dirty || pending}
+              className="sm:mt-[26px]"
+            >
+              {t.connections.save}
+            </Button>
+          </form>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          act(() => renameConnectionAction(c.id, name, context), t.connections.saved);
-        }}
-        className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-start"
-      >
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`name-${c.id}`}>{t.connections.name}</Label>
-          <Input
-            id={`name-${c.id}`}
-            value={name}
-            maxLength={120}
-            required
-            placeholder={t.connections.namePlaceholder}
-            aria-describedby={`name-hint-${c.id}`}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <p id={`name-hint-${c.id}`} className="text-[12.5px] text-faint">
-            {t.connections.nameHint}
-          </p>
+          <div className="flex justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              className="hover:text-danger-text"
+              onClick={() => {
+                if (window.confirm(t.connections.disconnectConfirm(c.displayName)))
+                  act(() => disconnectAction(c.id));
+              }}
+            >
+              {t.connections.disconnect}
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`ctx-${c.id}`}>{t.connections.context}</Label>
-          <Input
-            id={`ctx-${c.id}`}
-            value={context}
-            maxLength={80}
-            placeholder={t.connections.contextPlaceholder}
-            aria-describedby={`ctx-hint-${c.id}`}
-            onChange={(e) => setContext(e.target.value)}
-          />
-          <p id={`ctx-hint-${c.id}`} className="text-[12.5px] text-faint">
-            {t.connections.contextHint}
-          </p>
-        </div>
-        <Button
-          type="submit"
-          variant="secondary"
-          disabled={!dirty || pending}
-          className="sm:mt-[26px]"
-        >
-          {t.connections.save}
-        </Button>
-      </form>
-
-      <div className="flex justify-end">
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={pending}
-          className="hover:text-danger-text"
-          onClick={() => {
-            if (window.confirm(t.connections.disconnectConfirm(c.displayName)))
-              act(() => disconnectAction(c.id));
-          }}
-        >
-          {t.connections.disconnect}
-        </Button>
-      </div>
+      )}
     </article>
   );
 }

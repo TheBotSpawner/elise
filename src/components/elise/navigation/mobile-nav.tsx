@@ -206,16 +206,18 @@ function MobileNavOverlay({
                   <Link
                     key={m.key}
                     href={m.href}
-                    className="flex h-11 items-center justify-center rounded-xl border border-border text-sm"
+                    className="flex h-11 items-center justify-center gap-2 rounded-xl border border-border text-sm"
                   >
+                    <m.icon className="size-4 text-muted" aria-hidden />
                     {t.capabilities[m.key]}
                   </Link>
                 ) : (
                   <span
                     key={m.key}
                     aria-disabled="true"
-                    className="flex h-11 flex-col items-center justify-center rounded-xl border border-border text-sm text-muted"
+                    className="flex h-11 items-center justify-center gap-2 rounded-xl border border-border text-sm text-muted"
                   >
+                    <m.icon className="size-4" aria-hidden />
                     {t.capabilities[m.key]}
                   </span>
                 ),

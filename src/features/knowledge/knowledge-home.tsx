@@ -11,6 +11,7 @@ import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { SpaceGlyph } from "./appearance";
 import { CreateSpaceDialog } from "./space-dialogs";
 import { SourceIcon, useRelative } from "./ui";
 
@@ -22,16 +23,19 @@ function SpaceCard({ space, subspaces }: { space: SpaceSummary; subspaces: Space
   const dot = c.attention ? "bg-approval" : c.processing ? "bg-accent animate-pulse" : "bg-success";
   return (
     <li className="group relative flex flex-col gap-3 rounded-2xl border border-border bg-surface px-5 py-4 transition-colors hover:border-border-strong">
-      <div className="flex flex-col gap-1">
-        <Link
-          href={`/knowledge/spaces/${space.id}`}
-          className="text-base font-medium group-hover:text-accent-text after:absolute after:inset-0 after:rounded-2xl focus-visible:outline-none after:focus-visible:ring-2 after:focus-visible:ring-accent"
-        >
-          {space.name}
-        </Link>
-        {space.description && (
-          <p className="line-clamp-2 text-[13.5px] text-muted">{space.description}</p>
-        )}
+      <div className="flex items-start gap-3">
+        <SpaceGlyph icon={space.icon} color={space.color} />
+        <div className="flex min-w-0 flex-col gap-1">
+          <Link
+            href={`/knowledge/spaces/${space.id}`}
+            className="text-base font-medium group-hover:text-accent-text after:absolute after:inset-0 after:rounded-2xl focus-visible:outline-none after:focus-visible:ring-2 after:focus-visible:ring-accent"
+          >
+            {space.name}
+          </Link>
+          {space.description && (
+            <p className="line-clamp-2 text-[13.5px] text-muted">{space.description}</p>
+          )}
+        </div>
       </div>
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-faint">
         {space.sourceTypes.length > 0 && (
@@ -55,8 +59,14 @@ function SpaceCard({ space, subspaces }: { space: SpaceSummary; subspaces: Space
             <li key={child.id}>
               <Link
                 href={`/knowledge/spaces/${child.id}`}
-                className="flex h-8 items-center rounded-full bg-surface-2 px-3 text-[13px] text-muted hover:text-fg"
+                className="flex h-8 items-center gap-1.5 rounded-full bg-surface-2 pr-3 pl-1.5 text-[13px] text-muted hover:text-fg"
               >
+                <SpaceGlyph
+                  icon={child.icon}
+                  color={child.color}
+                  size="sm"
+                  className="rounded-full"
+                />
                 {child.name}
               </Link>
             </li>

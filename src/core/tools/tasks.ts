@@ -1,6 +1,7 @@
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import {
   createTaskInput,
+  createTaskListInput,
   listTaskListsInput,
   listTasksInput,
   taskIdInput,
@@ -48,7 +49,20 @@ function routeTask(input: unknown) {
 
 const target = (id: string) => ({ type: "task", id });
 
-function sortTasks(tasks: Task[]): Task[] {
+const UUID = /^[0-9a-f-]{36}$/i;
+
+/** A new task goes to the account its list belongs to (a list ref or an ELISE list id). */
+function routeList(input: unknown) {
+  const list = (input as { list?: unknown }).list;
+  if (typeof list !== "string") return null;
+  const external = parseExternalRef(list);
+  if (external) return { connectionId: external.connectionId };
+  return UUID.test(list) ? { providerKey: "elise_native" as const } : null;
+}
+
+function sortTasks(tasks: Task[], status?: string): Task[] {
+  if (status === "completed")
+    return [...tasks].sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
   return [...tasks].sort((a, b) => {
     if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
     if (a.dueDate) return -1;
@@ -80,11 +94,12 @@ export const listTasksTool: ToolDefinition = {
     };
   },
   merge(results, input) {
-    const { limit } = listTasksInput.parse(input);
+    const { limit, status } = listTasksInput.parse(input);
     const tasks = sortTasks(
       results.flatMap(({ result }) =>
         result.display?.kind === "task_list" ? result.display.tasks : [],
       ),
+      status,
     ).slice(0, limit);
     return {
       output: { count: tasks.length, tasks: tasks.map(forModel) },
@@ -120,8 +135,9 @@ export const createTaskTool: ToolDefinition = {
   capability: "tasks",
   operation: "create",
   description:
-    'Create a task. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user\'s timezone. Only set priority/category when the user implies them. Set `destination` only when the user says where (e.g. "in Google Tasks", "in my Firbot tasks").',
+    'Create a task. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user\'s timezone. Only set priority/category when the user implies them. Set `destination` only when the user says which account ("Personal", "Firbot"), and `list` when they name a list ("my Firbot Clients list" → destination "Firbot", list "Clients"). If the tool says a list is ambiguous or missing, ask.',
   input: createTaskInput,
+  route: routeList,
   async describe(input, env) {
     return {
       summary: `Create task “${createTaskInput.parse(input).title}” in ${env.binding.label}`,
@@ -238,9 +254,34 @@ export const deleteTaskTool: ToolDefinition = {
   },
 };
 
+export const createTaskListTool: ToolDefinition = {
+  name: "tasks.createList",
+  capability: "tasks",
+  operation: "createList",
+  description:
+    'Create an ELISE task list ("Study", "Shopping"). Only when the user asks for a new list.',
+  input: createTaskListInput,
+  route: () => ({ providerKey: "elise_native" as const }),
+  async describe(input) {
+    return { summary: `Create task list “${createTaskListInput.parse(input).name}”` };
+  },
+  async run(input, env) {
+    const p = provider(env);
+    if (!p.createList)
+      throw new AppError("CAPABILITY_UNAVAILABLE", "This account can't create lists here");
+    const list = await p.createList(createTaskListInput.parse(input).name);
+    return {
+      output: { created: { id: list.id, name: list.name, source: list.provenance.source } },
+      display: { kind: "task_lists", lists: [list] },
+      target: { type: "task_list", id: list.id },
+    };
+  },
+};
+
 export const TASK_TOOLS = [
   listTasksTool,
   listTaskListsTool,
+  createTaskListTool,
   createTaskTool,
   updateTaskTool,
   completeTaskTool,

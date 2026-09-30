@@ -39,9 +39,14 @@ export interface Task {
 }
 
 export interface TaskList {
-  /** Canonical id to pass back as `list` when creating tasks. */
+  /**
+   * Canonical id to pass back as `list` when creating tasks. Scoped by provider/connection:
+   * ELISE list UUIDs, Google lists as connection refs — never assumed globally unique.
+   */
   id: string;
   name: string;
+  /** Where new tasks go when no list is named (ELISE's Inbox, Google's first list). */
+  isDefault?: boolean;
   provenance: { providerKey: ProviderKey; connectionId: string; source: string };
 }
 
@@ -68,10 +73,14 @@ export const createTaskInput = z
       .min(1)
       .max(600)
       .optional()
-      .describe("Task list id from tasks.listLists, if not the default list."),
+      .describe(
+        'Task list: its id from tasks.listLists, or its name ("Clients", "Shopping"). Omit for the default list.',
+      ),
     destination: destinationField,
   })
   .strict();
+
+export const createTaskListInput = z.object({ name: z.string().trim().min(1).max(120) }).strict();
 
 export const updateTaskInput = z
   .object({
@@ -83,6 +92,13 @@ export const updateTaskInput = z
     priority: z.enum(TASK_PRIORITIES).nullable().optional(),
     category: z.string().trim().max(80).nullable().optional(),
     dueDate: isoDate.nullable().optional(),
+    list: z
+      .string()
+      .trim()
+      .min(1)
+      .max(600)
+      .optional()
+      .describe("Move to another list of the same account (id or name)."),
   })
   .strict();
 
@@ -95,7 +111,7 @@ export const listTasksInput = z
     status: z.enum(["open", "completed", "all"]).default("open"),
     due: z.enum(["any", "today", "overdue", "this_week", "no_date"]).default("any"),
     search: z.string().trim().min(1).max(200).optional(),
-    limit: z.number().int().min(1).max(50).default(20),
+    limit: z.number().int().min(1).max(500).default(20),
     destination: destinationField,
   })
   .strict();
@@ -135,6 +151,55 @@ export function toTaskQuery(
   }
 }
 
+/**
+ * The single definition of open / due today / overdue used by Home, the Tasks screen, Chat and
+ * the Morning Brief, so a count and the list behind it always agree.
+ */
+export function isOpenTask(task: Pick<Task, "status">): boolean {
+  return task.status === "pending" || task.status === "in_progress";
+}
+
+export type TaskView = "open" | "today" | "overdue" | "completed";
+
+export function inTaskView(task: Task, view: TaskView, today: string): boolean {
+  switch (view) {
+    case "open":
+      return isOpenTask(task);
+    case "today":
+      return isOpenTask(task) && task.dueDate === today;
+    case "overdue":
+      return isOpenTask(task) && task.dueDate !== null && task.dueDate < today;
+    case "completed":
+      return task.status === "completed";
+  }
+}
+
+export function taskCounts(tasks: Task[], today: string) {
+  return {
+    open: tasks.filter((t) => inTaskView(t, "open", today)).length,
+    dueToday: tasks.filter((t) => inTaskView(t, "today", today)).length,
+    overdue: tasks.filter((t) => inTaskView(t, "overdue", today)).length,
+  };
+}
+
+const normName = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+/**
+ * A list the user named, within one account: exact id, then exact name, then partial name.
+ * Several matches are returned so the caller asks instead of guessing.
+ */
+export function matchTaskLists<T extends { id: string; name: string }>(
+  lists: T[],
+  ref: string,
+): T[] {
+  const byId = lists.filter((l) => l.id === ref);
+  if (byId.length) return byId;
+  const wanted = normName(ref);
+  const exact = lists.filter((l) => normName(l.name) === wanted);
+  if (exact.length) return exact;
+  return lists.filter((l) => normName(l.name).includes(wanted));
+}
+
 export interface TaskWriteMeta {
   userId: string;
   source: "user_ui" | "ai" | "schedule" | "import" | "system";
@@ -143,6 +208,8 @@ export interface TaskWriteMeta {
 /** Contract every Tasks provider implements (ELISE Native today, Google Tasks next). */
 export interface TaskProvider {
   listLists(): Promise<TaskList[]>;
+  /** Providers with user-managed lists in ELISE (ELISE Native). */
+  createList?(name: string): Promise<TaskList>;
   list(query: TaskQuery): Promise<Task[]>;
   get(taskId: string): Promise<Task | null>;
   create(input: CreateTaskInput, meta: TaskWriteMeta): Promise<Task>;

@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, MoreHorizontal, Plus, Upload } from "lucide-react";
+import { MessageSquare, MoreHorizontal, Pencil, Plus, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
@@ -14,8 +14,6 @@ import type {
 } from "@/application/knowledge-service";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Input, Label, Select } from "@/components/ui/input";
-import { withDescendants } from "@/core/knowledge/model";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -23,13 +21,12 @@ import { cn } from "@/lib/utils";
 import {
   archiveSpaceAction,
   deleteItemAction,
-  moveSpaceAction,
   removeSourceAction,
-  renameSpaceAction,
   retryItemAction,
   syncNowAction,
   type KnowledgeResult,
 } from "./actions";
+import { SpaceGlyph } from "./appearance";
 import { UPLOAD_ACCEPT } from "./constants";
 import { AddSourceDialog, CreateSpaceDialog, type AddSourceView } from "./space-dialogs";
 import { SourceIcon, SourceOptions, useRelative } from "./ui";
@@ -77,6 +74,7 @@ export function SpaceView({
   const [pending, startTransition] = useTransition();
   const [adding, setAdding] = useState<AddSourceView | null>(initialAdd);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editingSpace, setEditingSpace] = useState(false);
   const [creatingSub, setCreatingSub] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -134,7 +132,8 @@ export function SpaceView({
             .map((p) => ` › ${p}`)}
         </nav>
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
+          <h1 className="flex items-center gap-3 text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
+            <SpaceGlyph icon={space.icon} color={space.color} size="lg" />
             {space.name}
           </h1>
           {space.description && (
@@ -149,6 +148,10 @@ export function SpaceView({
           <Button variant="secondary" onClick={() => setAdding("choose")}>
             <Plus />
             {t.knowledge.addSource}
+          </Button>
+          <Button variant="ghost" onClick={() => setEditingSpace(true)}>
+            <Pencil />
+            {t.knowledge.editSpace}
           </Button>
           <Button
             variant="ghost"
@@ -173,8 +176,9 @@ export function SpaceView({
               <li key={c.id}>
                 <Link
                   href={`/knowledge/spaces/${c.id}`}
-                  className="flex h-9 items-center rounded-full bg-surface-2 px-4 text-[13.5px] text-muted hover:text-fg"
+                  className="flex h-9 items-center gap-2 rounded-full bg-surface-2 pr-4 pl-1.5 text-[13.5px] text-muted hover:text-fg"
                 >
+                  <SpaceGlyph icon={c.icon} color={c.color} size="sm" className="rounded-full" />
                   {c.name}
                 </Link>
               </li>
@@ -422,12 +426,17 @@ export function SpaceView({
         accounts={accounts}
         notionAvailable={notionAvailable}
       />
+      <CreateSpaceDialog
+        open={editingSpace}
+        onClose={() => setEditingSpace(false)}
+        space={space}
+        allSpaces={allSpaces}
+        notionAvailable={notionAvailable}
+      />
       <SpaceSettingsDialog
-        key={`${space.name}\n${space.description ?? ""}`}
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         space={space}
-        allSpaces={allSpaces}
         onNewSubspace={() => {
           setSettingsOpen(false);
           setCreatingSub(true);
@@ -443,113 +452,24 @@ export function SpaceView({
   );
 }
 
-/** Rename, describe, move, nest or archive: kept out of the way until asked for. */
+/** Nest or archive: kept out of the way until asked for (editing is "Edit Space"). */
 function SpaceSettingsDialog({
   open,
   onClose,
   space,
-  allSpaces,
   onNewSubspace,
 }: {
   open: boolean;
   onClose: () => void;
   space: SpaceSummary;
-  allSpaces: SpaceSummary[];
   onNewSubspace: () => void;
 }) {
   const { t } = useI18n();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [name, setName] = useState(space.name);
-  const [description, setDescription] = useState(space.description ?? "");
-  // A Space cannot move under itself or its descendants.
-  const descendants = new Set(withDescendants(allSpaces, [space.id]));
-
-  function act(fn: () => Promise<KnowledgeResult<unknown>>) {
-    startTransition(async () => {
-      const r = await fn();
-      if (!r.ok) toast.error(t.errors.codes[r.error.code]);
-      else {
-        router.refresh();
-        onClose();
-      }
-    });
-  }
-
   return (
-    <Dialog
-      open={open}
-      onClose={() => {
-        // Closing without saving discards the edits.
-        setName(space.name);
-        setDescription(space.description ?? "");
-        onClose();
-      }}
-      busy={pending}
-      title={t.knowledge.settings}
-    >
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          act(() => renameSpaceAction(space.id, name, description.trim() || null));
-        }}
-      >
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="space-settings-name">{t.knowledge.spaceName}</Label>
-          <Input
-            id="space-settings-name"
-            data-autofocus=""
-            required
-            value={name}
-            maxLength={120}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="space-settings-description">
-            {t.knowledge.description}{" "}
-            <span className="font-normal text-faint">· {t.knowledge.optional}</span>
-          </Label>
-          <textarea
-            id="space-settings-description"
-            rows={2}
-            value={description}
-            maxLength={1000}
-            placeholder={t.knowledge.descriptionPlaceholder}
-            onChange={(e) => setDescription(e.target.value)}
-            className="min-h-20 w-full resize-none rounded-xl border border-border bg-surface px-3 py-2.5 text-sm text-fg placeholder:text-muted/70 hover:border-border-strong focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:outline-none"
-          />
-        </div>
-        <div className="flex justify-end">
-          <Button type="submit" disabled={pending || !name.trim()}>
-            {t.knowledge.save}
-          </Button>
-        </div>
-      </form>
-      <div className="flex flex-col gap-2 border-t border-border pt-4">
-        <Label htmlFor="space-settings-move">{t.knowledge.move}</Label>
-        <Select
-          id="space-settings-move"
-          value=""
-          disabled={pending}
-          onChange={(e) => {
-            const target = e.target.value;
-            if (target) act(() => moveSpaceAction(space.id, target === "__top" ? null : target));
-          }}
-        >
-          <option value="">{space.path}</option>
-          <option value="__top">{t.knowledge.topLevel}</option>
-          {allSpaces
-            .filter((s) => !descendants.has(s.id))
-            .map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.path}
-              </option>
-            ))}
-        </Select>
-      </div>
-      <div className="flex flex-wrap justify-between gap-2 border-t border-border pt-4">
+    <Dialog open={open} onClose={onClose} busy={pending} title={t.knowledge.settings}>
+      <div className="flex flex-wrap justify-between gap-2">
         <Button variant="ghost" onClick={onNewSubspace} disabled={pending}>
           <Plus />
           {t.knowledge.newSubspace}

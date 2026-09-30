@@ -26,7 +26,7 @@ export default async function ChatHistoryPage() {
 
   return (
     <PageContainer>
-      <PageHeader title={t.chat.history} actions={newChat} />
+      <PageHeader title={t.chat.history} subtitle={t.chat.historySubtitle} actions={newChat} />
       {conversations.length === 0 ? (
         <EmptyState
           icon={MessagesSquare}

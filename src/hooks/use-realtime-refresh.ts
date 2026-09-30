@@ -7,6 +7,7 @@ import { createClient } from "@/infrastructure/supabase/client";
 
 type RealtimeTable =
   | "tasks"
+  | "task_lists"
   | "approvals"
   | "notifications"
   | "schedules"

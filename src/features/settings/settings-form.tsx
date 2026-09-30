@@ -6,10 +6,12 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Combobox } from "@/components/ui/combobox";
 import { Input, Label, Select } from "@/components/ui/input";
 import { LOCALES, type Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import type { Theme } from "@/lib/theme";
+import { timezoneOptions } from "@/lib/timezones";
 import { cn } from "@/lib/utils";
 
 import { setTheme, updateProfile } from "./actions";
@@ -26,7 +28,11 @@ export function SettingsForm({
   const { t } = useI18n();
   const [pending, startTransition] = useTransition();
   const [values, setValues] = useState(profile);
-  const timezones = useMemo(() => Intl.supportedValuesOf("timeZone"), []);
+  // Canonical IANA ids stored; friendly, searchable labels shown ("Buenos Aires, Argentina").
+  const timezones = useMemo(() => {
+    const zones = Intl.supportedValuesOf("timeZone");
+    return timezoneOptions(zones.includes(profile.timezone) ? zones : [profile.timezone, ...zones]);
+  }, [profile.timezone]);
 
   function save(event: React.FormEvent) {
     event.preventDefault();
@@ -109,17 +115,14 @@ export function SettingsForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="timezone">{t.settings.timezone}</Label>
-            <Select
+            <Combobox
               id="timezone"
               value={values.timezone}
-              onChange={(e) => setValues({ ...values, timezone: e.target.value })}
-            >
-              {[values.timezone, ...timezones.filter((z) => z !== values.timezone)].map((z) => (
-                <option key={z} value={z}>
-                  {z}
-                </option>
-              ))}
-            </Select>
+              options={timezones}
+              placeholder={t.settings.timezoneSearch}
+              emptyText={t.settings.timezoneNone}
+              onChange={(timezone) => setValues({ ...values, timezone })}
+            />
           </div>
           <div className="sm:col-span-2">
             <Button type="submit" disabled={pending}>

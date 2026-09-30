@@ -44,7 +44,7 @@ export function AttachToKnowledge() {
     setBusy(true);
     let spaceId = target;
     if (target === NEW) {
-      const created = await createSpaceAction(newName, null);
+      const created = await createSpaceAction({ name: newName, parentId: null });
       if (!created.ok) {
         setBusy(false);
         toast.error(t.errors.codes[created.error.code]);

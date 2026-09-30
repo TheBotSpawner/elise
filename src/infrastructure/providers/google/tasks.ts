@@ -1,10 +1,11 @@
-import type {
-  CreateTaskInput,
-  Task,
-  TaskList,
-  TaskProvider,
-  TaskQuery,
-  UpdateTaskInput,
+import {
+  matchTaskLists,
+  type CreateTaskInput,
+  type Task,
+  type TaskList,
+  type TaskProvider,
+  type TaskQuery,
+  type UpdateTaskInput,
 } from "@/core/capabilities/tasks";
 import { AppError } from "@/core/errors";
 import { makeExternalRef, parseExternalRef } from "@/core/providers/refs";
@@ -14,7 +15,10 @@ import type { GoogleConnectionInfo } from "./calendar";
 import type { GoogleHttp } from "./http";
 
 const API = "https://tasks.googleapis.com/tasks/v1";
-const MAX_LISTS = 10;
+/** Every list of the account is read (Google allows a few dozen at most). */
+const MAX_LISTS = 100;
+/** Pages of 100 per list, enough for any real open-task list; completed stop at `limit`. */
+const MAX_PAGES = 10;
 
 export interface GTaskList {
   id: string;
@@ -89,9 +93,19 @@ export class GoogleTasksProvider implements TaskProvider {
   ) {}
 
   private allLists(): Promise<GTaskList[]> {
-    this.lists ??= this.http
-      .request<{ items?: GTaskList[] }>("GET", `${API}/users/@me/lists?maxResults=100`)
-      .then((r) => r?.items ?? []);
+    this.lists ??= (async () => {
+      const lists: GTaskList[] = [];
+      let pageToken: string | undefined;
+      do {
+        const r = await this.http.request<{ items?: GTaskList[]; nextPageToken?: string }>(
+          "GET",
+          `${API}/users/@me/lists?maxResults=100${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`,
+        );
+        lists.push(...(r?.items ?? []));
+        pageToken = r?.nextPageToken;
+      } while (pageToken && lists.length < MAX_LISTS);
+      return lists;
+    })();
     return this.lists;
   }
 
@@ -118,9 +132,11 @@ export class GoogleTasksProvider implements TaskProvider {
   }
 
   async listLists(): Promise<TaskList[]> {
-    return (await this.allLists()).map((l) => ({
+    // Google's first list is the account's default ("My Tasks").
+    return (await this.allLists()).map((l, i) => ({
       id: makeExternalRef(this.conn.connectionId, "list", l.id),
       name: l.title ?? "Tasks",
+      isDefault: i === 0,
       provenance: {
         providerKey: "google",
         connectionId: this.conn.connectionId,
@@ -130,25 +146,31 @@ export class GoogleTasksProvider implements TaskProvider {
   }
 
   async list(query: TaskQuery): Promise<Task[]> {
-    const lists = (await this.allLists()).slice(0, MAX_LISTS);
+    const lists = await this.allLists();
     const includeCompleted = query.status !== "open";
     const perList = await Promise.all(
       lists.map(async (list) => {
-        const params = new URLSearchParams({
-          maxResults: "100",
-          showCompleted: String(includeCompleted),
-          showHidden: String(includeCompleted),
-        });
-        if (query.dueFrom) params.set("dueMin", toGoogleDue(query.dueFrom));
-        // dueMax is exclusive at Google; our dueTo is an inclusive date.
-        if (query.dueTo) params.set("dueMax", toGoogleDue(addDays(query.dueTo, 1)));
-        const res = await this.http.request<{ items?: GTask[] }>(
-          "GET",
-          `${API}/lists/${encodeURIComponent(list.id)}/tasks?${params}`,
-        );
-        return (res?.items ?? [])
-          .filter((t) => !t.deleted)
-          .map((t) => normalizeTask(t, list, this.conn));
+        const items: GTask[] = [];
+        let pageToken: string | undefined;
+        for (let page = 0; page < MAX_PAGES; page++) {
+          const params = new URLSearchParams({
+            maxResults: "100",
+            showCompleted: String(includeCompleted),
+            showHidden: String(includeCompleted),
+          });
+          if (query.dueFrom) params.set("dueMin", toGoogleDue(query.dueFrom));
+          // dueMax is exclusive at Google; our dueTo is an inclusive date.
+          if (query.dueTo) params.set("dueMax", toGoogleDue(addDays(query.dueTo, 1)));
+          if (pageToken) params.set("pageToken", pageToken);
+          const res = await this.http.request<{ items?: GTask[]; nextPageToken?: string }>(
+            "GET",
+            `${API}/lists/${encodeURIComponent(list.id)}/tasks?${params}`,
+          );
+          items.push(...(res?.items ?? []));
+          pageToken = res?.nextPageToken;
+          if (!pageToken || items.length >= query.limit) break;
+        }
+        return items.filter((t) => !t.deleted).map((t) => normalizeTask(t, list, this.conn));
       }),
     );
     const search = query.search?.toLowerCase();
@@ -161,7 +183,11 @@ export class GoogleTasksProvider implements TaskProvider {
         if (search && !t.title.toLowerCase().includes(search)) return false;
         return true;
       })
-      .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"))
+      .sort((a, b) =>
+        query.status === "completed"
+          ? (b.completedAt ?? "").localeCompare(a.completedAt ?? "")
+          : (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"),
+      )
       .slice(0, query.limit);
   }
 
@@ -177,7 +203,7 @@ export class GoogleTasksProvider implements TaskProvider {
   async create(input: CreateTaskInput): Promise<Task> {
     if (input.priority) throw unsupported("priorities");
     if (input.category) throw unsupported("categories");
-    const listId = input.list ? this.parse(input.list, "list")[0]! : "@default";
+    const listId = input.list ? await this.resolveList(input.list) : "@default";
     const notes = [input.description, input.notes].filter(Boolean).join("\n\n") || undefined;
     const created = await this.http.request<GTask>(
       "POST",
@@ -195,7 +221,27 @@ export class GoogleTasksProvider implements TaskProvider {
     return normalizeTask(created!, list, this.conn);
   }
 
+  /** A list of this account by its ref or its name ("Clients"). */
+  private async resolveList(ref: string): Promise<string> {
+    const parsed = parseExternalRef(ref);
+    if (parsed) return this.parse(ref, "list")[0]!;
+    const lists = await this.allLists();
+    const matches = matchTaskLists(
+      lists.map((l) => ({ id: l.id, name: l.title ?? "Tasks" })),
+      ref,
+    );
+    if (matches.length === 1) return matches[0]!.id;
+    throw new AppError(
+      "VALIDATION_ERROR",
+      matches.length
+        ? `Several lists in ${this.conn.label} match "${ref}": ${matches.map((l) => l.name).join(", ")}. Ask which one.`
+        : `${this.conn.label} has no list called "${ref}". Lists: ${lists.map((l) => l.title).join(", ")}.`,
+      { recovery: "review" },
+    );
+  }
+
   async update(input: UpdateTaskInput): Promise<Task> {
+    if (input.list) throw unsupported("moving tasks between lists");
     if (input.priority) throw unsupported("priorities");
     if (input.category) throw unsupported("categories");
     if (input.status === "in_progress" || input.status === "cancelled")

@@ -1,8 +1,22 @@
+import {
+  CheckSquare,
+  Target,
+  ListChecks,
+  Repeat,
+  StickyNote,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
+
 import type { CapabilityKey } from "@/core/capabilities/types";
 
 export type SectionKey = "home" | "chat" | "knowledge" | "connections" | "schedules";
 
-/** Primary sections, in reference order. Native modules live under My Elise (docs/product/04 §6-7). */
+/**
+ * Primary sections, in reference order. Native modules live under My Elise (docs/product/04
+ * §6-7). "chat" is labeled History: Home is where you talk to ELISE; this lists past
+ * conversations (the route stays /chat).
+ */
 export const SECTIONS: { key: SectionKey; href: string }[] = [
   { key: "home", href: "/" },
   { key: "chat", href: "/chat" },
@@ -11,13 +25,14 @@ export const SECTIONS: { key: SectionKey; href: string }[] = [
   { key: "schedules", href: "/schedules" },
 ];
 
-export const MY_ELISE: { key: CapabilityKey; href: string | null }[] = [
-  { key: "tasks", href: "/my-elise/tasks" },
-  { key: "habits", href: "/my-elise/habits" },
-  { key: "lists", href: "/my-elise/lists" },
-  { key: "goals", href: "/my-elise/goals" },
-  { key: "notes", href: "/my-elise/notes" },
-  { key: "finance", href: null },
+/** Monochrome icons, the same ones as the My Elise page. */
+export const MY_ELISE: { key: CapabilityKey; href: string | null; icon: LucideIcon }[] = [
+  { key: "tasks", href: "/my-elise/tasks", icon: CheckSquare },
+  { key: "habits", href: "/my-elise/habits", icon: Repeat },
+  { key: "lists", href: "/my-elise/lists", icon: ListChecks },
+  { key: "goals", href: "/my-elise/goals", icon: Target },
+  { key: "notes", href: "/my-elise/notes", icon: StickyNote },
+  { key: "finance", href: null, icon: Wallet },
 ];
 
 export type ActiveSection = SectionKey | "myElise" | "settings" | "approvals" | null;

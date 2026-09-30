@@ -16,6 +16,7 @@ import { toLocalDateTime } from "@/core/time";
 
 import type { AuthContext } from "./auth-context";
 import { createExecutorPorts, toolContext } from "./elise";
+import { OPEN_LIMIT } from "./tasks-service";
 
 type Source = "all" | string;
 
@@ -102,7 +103,7 @@ export async function gatherBrief(
         )
       : undefined,
     want.has("tasks")
-      ? call("tasks", "tasks.list", { status: "open", limit: 50 }, config.sources.tasks)
+      ? call("tasks", "tasks.list", { status: "open", limit: OPEN_LIMIT }, config.sources.tasks)
       : undefined,
     want.has("habits") ? call("habits", "habits.list", {}, "all") : undefined,
     want.has("goals") ? call("goals", "goals.list", { status: "active" }, "all") : undefined,

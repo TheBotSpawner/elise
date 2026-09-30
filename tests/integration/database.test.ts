@@ -676,3 +676,56 @@ describe("my elise native", () => {
     expect(found.rows.map((r) => r.title)).toContain("ELISE ideas");
   });
 });
+
+describe("native task lists", () => {
+  const as = <T>(u: { userId: string }, sql: string, args: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, args));
+
+  it("gives every workspace one default Inbox, private to it", async () => {
+    const lists = await as<{ name: string; is_default: boolean }>(
+      alice,
+      "select name, is_default from public.task_lists where status = 'active'",
+    );
+    expect(lists.rows).toEqual([{ name: "Inbox", is_default: true }]);
+    await expect(
+      as(
+        alice,
+        "insert into public.task_lists (workspace_id, name, is_default) values ($1, 'Other', true)",
+        [alice.workspaceId],
+      ),
+    ).rejects.toThrow(/duplicate key/);
+    await expect(
+      as(alice, "insert into public.task_lists (workspace_id, name) values ($1, 'inbox')", [
+        alice.workspaceId,
+      ]),
+    ).rejects.toThrow(/duplicate key/);
+    const inbox = (
+      await as<{ id: string }>(alice, "select id from public.task_lists where is_default")
+    ).rows[0]!.id;
+    // Bob can't file a task into Alice's list, nor delete lists.
+    await expect(
+      as(bob, "insert into public.tasks (workspace_id, title, task_list_id) values ($1, 'x', $2)", [
+        bob.workspaceId,
+        inbox,
+      ]),
+    ).rejects.toThrow(/row-level security/);
+    await expect(as(alice, "delete from public.task_lists where id = $1", [inbox])).rejects.toThrow(
+      /permission denied/,
+    );
+  });
+});
+
+describe("knowledge space appearance", () => {
+  it("stores a curated icon and color key and refuses anything else", async () => {
+    const insert = (icon: string | null, color: string | null) =>
+      db.query(
+        "insert into public.knowledge_spaces (workspace_id, name, icon, color) values ($1, $2, $3, $4) returning icon, color",
+        [alice.workspaceId, `S ${Math.random()}`, icon, color],
+      );
+    await expect(insert("graduation", "blue")).resolves.toMatchObject({
+      rows: [{ icon: "graduation", color: "blue" }],
+    });
+    await expect(insert("<svg onload=x>", "blue")).rejects.toThrow(/check/);
+    await expect(insert("folder", "#ff0000")).rejects.toThrow(/check/);
+  });
+});

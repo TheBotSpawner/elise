@@ -3,6 +3,14 @@ import "server-only";
 import { z } from "zod";
 
 import { AppError } from "@/core/errors";
+import {
+  SPACE_COLORS,
+  SPACE_ICONS,
+  spaceColor,
+  spaceIcon,
+  type SpaceColor,
+  type SpaceIcon,
+} from "@/core/knowledge/appearance";
 import { spacePaths, withDescendants, type SpaceInfo } from "@/core/knowledge/model";
 import { isBackgroundConfigured } from "@/infrastructure/background/trigger/runtime";
 import {
@@ -40,6 +48,10 @@ import { enqueueIngestion, startSync } from "./knowledge-background";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Json;
 const nameSchema = z.string().trim().min(1).max(120);
+const appearanceSchema = z.object({
+  icon: z.enum(SPACE_ICONS).nullable(),
+  color: z.enum(SPACE_COLORS).nullable(),
+});
 const descriptionSchema = z
   .string()
   .trim()
@@ -70,6 +82,8 @@ async function audit(
 
 export interface SpaceSummary extends SpaceInfo {
   description: string | null;
+  icon: SpaceIcon;
+  color: SpaceColor;
   counts: { ready: number; processing: number; attention: number };
   /** Distinct kinds of source connected to this Space (uploads, Drive, Notion, notes). */
   sourceTypes: KnowledgeSourceRow["source_type"][];
@@ -81,7 +95,7 @@ export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
   const [{ data: spaces, error }, { data: items }, { data: sources }] = await Promise.all([
     auth.db
       .from("knowledge_spaces")
-      .select("id, name, parent_space_id, description, updated_at")
+      .select("id, name, parent_space_id, description, icon, color, updated_at")
       .eq("workspace_id", auth.workspaceId)
       .eq("status", "active")
       .order("name"),
@@ -106,6 +120,8 @@ export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
     return {
       ...s,
       description: row?.description ?? null,
+      icon: spaceIcon(row?.icon),
+      color: spaceColor(row?.color),
       sourceTypes: [
         ...new Set((sources ?? []).filter((x) => x.space_id === s.id).map((x) => x.source_type)),
       ],
@@ -137,10 +153,20 @@ async function ownSpace(auth: AuthContext, spaceId: string) {
 
 export async function createSpace(
   auth: AuthContext,
-  input: { name: string; description?: string | null; parentId?: string | null },
+  input: {
+    name: string;
+    description?: string | null;
+    parentId?: string | null;
+    icon?: string | null;
+    color?: string | null;
+  },
 ) {
   const name = nameSchema.parse(input.name);
   const description = descriptionSchema.parse(input.description ?? null);
+  const appearance = appearanceSchema.parse({
+    icon: input.icon ?? null,
+    color: input.color ?? null,
+  });
   if (input.parentId) await ownSpace(auth, input.parentId);
   const { data, error } = await auth.db
     .from("knowledge_spaces")
@@ -148,6 +174,7 @@ export async function createSpace(
       workspace_id: auth.workspaceId,
       name,
       description,
+      ...appearance,
       parent_space_id: input.parentId ?? null,
       created_by_user_id: auth.userId,
     })
@@ -161,7 +188,13 @@ export async function createSpace(
 export async function updateSpace(
   auth: AuthContext,
   spaceId: string,
-  input: { name?: string; description?: string | null; parentId?: string | null },
+  input: {
+    name?: string;
+    description?: string | null;
+    parentId?: string | null;
+    icon?: string | null;
+    color?: string | null;
+  },
 ) {
   await ownSpace(auth, spaceId);
   if (input.parentId) await ownSpace(auth, input.parentId);
@@ -171,6 +204,10 @@ export async function updateSpace(
       ...(input.name !== undefined ? { name: nameSchema.parse(input.name) } : {}),
       ...(input.description !== undefined
         ? { description: descriptionSchema.parse(input.description) }
+        : {}),
+      ...(input.icon !== undefined ? { icon: appearanceSchema.shape.icon.parse(input.icon) } : {}),
+      ...(input.color !== undefined
+        ? { color: appearanceSchema.shape.color.parse(input.color) }
         : {}),
       ...(input.parentId !== undefined ? { parent_space_id: input.parentId } : {}),
     })
@@ -274,6 +311,8 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       parentId: space.parent_space_id,
       path: space.name,
       counts: { ready: 0, processing: 0, attention: 0 },
+      icon: spaceIcon(space.icon),
+      color: spaceColor(space.color),
       sourceTypes: [],
       updatedAt: space.updated_at,
     },

@@ -48,27 +48,34 @@ export async function listSpacesAction(): Promise<KnowledgeResult<{ id: string; 
 }
 
 /** Every input is validated again by the service; nothing from the client is trusted. */
-export async function createSpaceAction(
-  name: string,
-  parentId: string | null,
-  description: string | null = null,
-) {
+export interface SpaceFields {
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+  color?: string | null;
+}
+
+export async function createSpaceAction(input: SpaceFields & { parentId: string | null }) {
   return run(async () =>
     createSpace(await requireAuthContext(), {
-      name,
-      description,
-      parentId: parentId ? id.parse(parentId) : null,
+      name: input.name,
+      description: input.description ?? null,
+      icon: input.icon ?? null,
+      color: input.color ?? null,
+      parentId: input.parentId ? id.parse(input.parentId) : null,
     }),
   );
 }
 
-export async function renameSpaceAction(
-  spaceId: string,
-  name: string,
-  description: string | null = null,
-) {
+/** Name, description, icon and color; the service validates each (curated icons/colors). */
+export async function updateSpaceAction(spaceId: string, input: SpaceFields) {
   return run(async () =>
-    updateSpace(await requireAuthContext(), id.parse(spaceId), { name, description }),
+    updateSpace(await requireAuthContext(), id.parse(spaceId), {
+      name: input.name,
+      description: input.description ?? null,
+      ...(input.icon !== undefined ? { icon: input.icon } : {}),
+      ...(input.color !== undefined ? { color: input.color } : {}),
+    }),
   );
 }
 

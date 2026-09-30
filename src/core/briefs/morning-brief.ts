@@ -3,7 +3,7 @@ import type { CalendarEvent } from "../capabilities/calendar";
 import { clip, noiseSignals, type EmailMessage, type FollowUp } from "../capabilities/email";
 import type { Goal, GoalProgress } from "../capabilities/goals";
 import type { HabitProgress } from "../capabilities/habits";
-import type { Task } from "../capabilities/tasks";
+import { isOpenTask, type Task } from "../capabilities/tasks";
 import { addDays, toLocalDateTime, zonedDateTimeToUtc } from "../time";
 
 /**
@@ -231,9 +231,7 @@ export function assembleBrief(data: BriefData): MorningBrief {
       important: m.important,
     }));
 
-  const open = (data.tasks ?? []).filter(
-    (t) => t.status === "pending" || t.status === "in_progress",
-  );
+  const open = (data.tasks ?? []).filter(isOpenTask);
   const dueToday = open.filter((t) => t.dueDate === today);
   const soon = open.filter(
     (t) =>

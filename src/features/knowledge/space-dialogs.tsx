@@ -5,13 +5,22 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import type { KnowledgeAccount } from "@/application/knowledge-service";
+import type { KnowledgeAccount, SpaceSummary } from "@/application/knowledge-service";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, Select } from "@/components/ui/input";
+import {
+  DEFAULT_SPACE_COLOR,
+  DEFAULT_SPACE_ICON,
+  suggestAppearance,
+  type SpaceColor,
+  type SpaceIcon,
+} from "@/core/knowledge/appearance";
+import { withDescendants } from "@/core/knowledge/model";
 import { useI18n } from "@/lib/i18n/client";
 
-import { createSpaceAction } from "./actions";
+import { createSpaceAction, moveSpaceAction, updateSpaceAction } from "./actions";
+import { AppearancePicker, SpaceGlyph } from "./appearance";
 import { MAX_UPLOAD_MB, UPLOAD_ACCEPT } from "./constants";
 import { DrivePicker, NotionPicker } from "./source-pickers";
 import { SourceOptions, type SourceChoice } from "./ui";
@@ -23,7 +32,8 @@ const textareaClass =
 /**
  * Create a Space in two steps: what it is, then (optionally) what goes in it. Nothing is created
  * until step 2, so closing the dialog at any point leaves no trace. Drive and Notion continue on
- * the new Space's page, where the account pickers live.
+ * the new Space's page, where the account pickers live. With `space` it edits that Space (one
+ * step: name, description, icon, color and parent).
  */
 export function CreateSpaceDialog({
   open,
@@ -31,18 +41,30 @@ export function CreateSpaceDialog({
   parent = null,
   initialName = "",
   notionAvailable,
+  space = null,
+  allSpaces = [],
 }: {
   open: boolean;
   onClose: () => void;
   parent?: { id: string; name: string } | null;
   initialName?: string;
   notionAvailable: boolean;
+  space?: SpaceSummary | null;
+  allSpaces?: SpaceSummary[];
 }) {
+  const editing = Boolean(space);
   const { t } = useI18n();
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState(initialName);
   const [description, setDescription] = useState("");
+  const [look, setLook] = useState<{ icon: SpaceIcon; color: SpaceColor }>({
+    icon: DEFAULT_SPACE_ICON,
+    color: DEFAULT_SPACE_COLOR,
+  });
+  // Until the user picks a look, it follows the name ("UTN" -> graduation cap, blue).
+  const [lookTouched, setLookTouched] = useState(false);
+  const [parentId, setParentId] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -52,7 +74,18 @@ export function CreateSpaceDialog({
   const [openedWith, setOpenedWith] = useState<string | null>(null);
   if (open && openedWith === null) {
     setOpenedWith(initialName);
-    setName(initialName);
+    setName(space?.name ?? initialName);
+    setDescription(space?.description ?? "");
+    setLook(
+      space
+        ? { icon: space.icon, color: space.color }
+        : (suggestAppearance(initialName) ?? {
+            icon: DEFAULT_SPACE_ICON,
+            color: DEFAULT_SPACE_COLOR,
+          }),
+    );
+    setLookTouched(Boolean(space));
+    setParentId(space?.parentId ?? "");
   }
   if (!open && openedWith !== null) {
     setOpenedWith(null);
@@ -68,7 +101,12 @@ export function CreateSpaceDialog({
   async function finish(choice: SourceChoice, files?: File[]) {
     setBusy(true);
     setError(null);
-    const created = await createSpaceAction(name, parent?.id ?? null, description.trim() || null);
+    const created = await createSpaceAction({
+      name,
+      parentId: parent?.id ?? null,
+      description: description.trim() || null,
+      ...look,
+    });
     if (!created.ok) {
       setBusy(false);
       setError(t.errors.codes[created.error.code]);
@@ -85,19 +123,53 @@ export function CreateSpaceDialog({
     onClose();
   }
 
+  async function save() {
+    if (!space) return;
+    setBusy(true);
+    setError(null);
+    const r = await updateSpaceAction(space.id, {
+      name,
+      description: description.trim() || null,
+      ...look,
+    });
+    const moved =
+      r.ok && (parentId || null) !== space.parentId
+        ? await moveSpaceAction(space.id, parentId || null)
+        : r;
+    setBusy(false);
+    if (!moved.ok) {
+      setError(t.errors.codes[moved.error.code]);
+      return;
+    }
+    router.refresh();
+    onClose();
+  }
+
+  const setNameAndLook = (value: string) => {
+    setName(value);
+    if (!lookTouched) {
+      const suggested = suggestAppearance(value);
+      if (suggested) setLook(suggested);
+    }
+  };
+  // A Space can't move under itself or one of its own sub-Spaces.
+  const blocked = space ? new Set(withDescendants(allSpaces, [space.id])) : new Set<string>();
+
   return (
     <Dialog
       open={open}
       onClose={onClose}
       busy={busy}
       title={
-        step === 1
-          ? parent
-            ? t.knowledge.subspaceTitle(parent.name)
-            : t.knowledge.createTitle
-          : t.knowledge.addTitle
+        editing
+          ? t.knowledge.editTitle
+          : step === 1
+            ? parent
+              ? t.knowledge.subspaceTitle(parent.name)
+              : t.knowledge.createTitle
+            : t.knowledge.addTitle
       }
-      description={step === 1 ? t.knowledge.createBody : t.knowledge.addBody}
+      description={editing ? undefined : step === 1 ? t.knowledge.createBody : t.knowledge.addBody}
     >
       <div ref={body} className="flex flex-col gap-5">
         {step === 1 ? (
@@ -105,35 +177,72 @@ export function CreateSpaceDialog({
             className="flex flex-col gap-5"
             onSubmit={(e) => {
               e.preventDefault();
-              if (name.trim()) setStep(2);
+              if (!name.trim()) return;
+              if (editing) void save();
+              else setStep(2);
             }}
           >
             <div className="flex flex-col gap-2">
               <Label htmlFor="space-name">{t.knowledge.spaceName}</Label>
-              <Input
-                id="space-name"
-                data-autofocus=""
-                required
-                value={name}
-                maxLength={120}
-                placeholder={t.knowledge.spacePlaceholder}
-                onChange={(e) => setName(e.target.value)}
-                className="h-11 text-[15px]"
-              />
-              <ul className="flex flex-wrap gap-1.5" aria-label={t.knowledge.spacePlaceholder}>
-                {t.knowledge.nameExamples.map((example) => (
-                  <li key={example}>
-                    <button
-                      type="button"
-                      onClick={() => setName(example)}
-                      className="h-8 rounded-full bg-surface-2 px-3 text-[13px] text-muted transition-colors hover:text-fg"
-                    >
-                      {example}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="flex items-center gap-2.5">
+                <SpaceGlyph icon={look.icon} color={look.color} size="lg" />
+                <Input
+                  id="space-name"
+                  data-autofocus=""
+                  required
+                  value={name}
+                  maxLength={120}
+                  placeholder={t.knowledge.spacePlaceholder}
+                  onChange={(e) => setNameAndLook(e.target.value)}
+                  className="h-11 text-[15px]"
+                />
+              </div>
+              {!editing && (
+                <ul className="flex flex-wrap gap-1.5" aria-label={t.knowledge.spacePlaceholder}>
+                  {t.knowledge.nameExamples.map((example) => (
+                    <li key={example}>
+                      <button
+                        type="button"
+                        onClick={() => setNameAndLook(example)}
+                        className="h-8 rounded-full bg-surface-2 px-3 text-[13px] text-muted transition-colors hover:text-fg"
+                      >
+                        {example}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-medium text-muted">{t.knowledge.appearance}</span>
+              <AppearancePicker
+                icon={look.icon}
+                color={look.color}
+                onChange={(next) => {
+                  setLook(next);
+                  setLookTouched(true);
+                }}
+              />
+            </div>
+            {editing && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="space-parent">{t.knowledge.parent}</Label>
+                <Select
+                  id="space-parent"
+                  value={parentId}
+                  onChange={(e) => setParentId(e.target.value)}
+                >
+                  <option value="">{t.knowledge.topLevel}</option>
+                  {allSpaces
+                    .filter((x) => !blocked.has(x.id))
+                    .map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.path}
+                      </option>
+                    ))}
+                </Select>
+              </div>
+            )}
             <div className="flex flex-col gap-2">
               <Label htmlFor="space-description">
                 {t.knowledge.description}{" "}
@@ -149,13 +258,18 @@ export function CreateSpaceDialog({
                 className={textareaClass}
               />
             </div>
-            <p className="text-[13px] text-faint">{t.knowledge.helper}</p>
+            {!editing && <p className="text-[13px] text-faint">{t.knowledge.helper}</p>}
+            {editing && error && (
+              <p role="alert" className="text-[13.5px] text-danger-text">
+                {error}
+              </p>
+            )}
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={onClose}>
+              <Button variant="ghost" onClick={onClose} disabled={busy}>
                 {t.knowledge.cancel}
               </Button>
-              <Button type="submit" disabled={!name.trim()}>
-                {t.knowledge.continue}
+              <Button type="submit" disabled={!name.trim() || busy}>
+                {editing ? t.knowledge.save : t.knowledge.continue}
               </Button>
             </div>
           </form>

@@ -152,6 +152,17 @@ export type AiRunRow = {
   created_at: Ts;
 };
 
+export type TaskListRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  status: "active" | "archived";
+  is_default: boolean;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
 export type TaskRow = {
   id: string;
   workspace_id: string;
@@ -516,6 +527,8 @@ export type KnowledgeSpaceRow = {
   parent_space_id: string | null;
   name: string;
   description: string | null;
+  icon: string | null;
+  color: string | null;
   status: "active" | "archived";
   created_by_user_id: string | null;
   created_at: Ts;
@@ -657,6 +670,7 @@ export type Database = {
       conversations: Table<ConversationRow, "workspace_id" | "user_id">;
       messages: Table<MessageRow, "conversation_id" | "workspace_id" | "role" | "content">;
       ai_runs: Table<AiRunRow, "workspace_id" | "user_id" | "ai_provider" | "model_key">;
+      task_lists: Table<TaskListRow, "workspace_id" | "name">;
       tasks: Table<TaskRow, "workspace_id" | "title">;
       actions: Table<
         ActionRow,
