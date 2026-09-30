@@ -180,11 +180,11 @@ export async function executeToolCall(
   }
   const input: unknown = parsed.data;
 
-  // ELISE-internal capabilities (e.g. proposing a Schedule) have no provider to resolve and
-  // may only read; anything they propose is confirmed by the user through the normal UI.
-  if (getCapability(tool.capability).internal) {
-    if (operation.kind !== "read")
-      return fail(new AppError("INTERNAL_ERROR", `Internal tool ${tool.name} must be read-only`));
+  // ELISE-internal capabilities (Recall, proposing a Schedule, ELISE's own settings) have no
+  // provider to resolve. Reads run directly; writes (ELISE changing its own settings) take the
+  // normal path below — policy, recorded action, audit — without a provider connection.
+  const internal = Boolean(getCapability(tool.capability).internal);
+  if (internal && operation.kind === "read") {
     try {
       const result = await tool.run(input, {
         ctx,
@@ -203,22 +203,28 @@ export async function executeToolCall(
     }
   }
 
-  const allBindings = await ports.loadBindings();
+  const allBindings = internal ? [] : await ports.loadBindings();
   let route: ReturnType<NonNullable<AnyToolDefinition["route"]>> = null;
   try {
-    route = tool.route?.(input) ?? null;
+    route = internal ? null : (tool.route?.(input) ?? null);
   } catch (error) {
     return trace(null, null, fail(error));
   }
-  const resolution = resolveBindings(allBindings, {
-    capability: tool.capability,
-    operationKind: operation.kind,
-    connectionId: call.connectionId ?? route?.connectionId ?? null,
-    providerKey: route?.providerKey ?? null,
-    // An existing item already names its account; a named destination only picks new ones.
-    destination: route ? null : readDestination(input),
-    strict: operation.kind !== "read" && Boolean(tool.strictDestination),
-  });
+  const resolution: ReturnType<typeof resolveBindings> = internal
+    ? {
+        kind: "resolved",
+        bindings: [{ ...INTERNAL_BINDING, capability: tool.capability }],
+        reason: "explicit",
+      }
+    : resolveBindings(allBindings, {
+        capability: tool.capability,
+        operationKind: operation.kind,
+        connectionId: call.connectionId ?? route?.connectionId ?? null,
+        providerKey: route?.providerKey ?? null,
+        // An existing item already names its account; a named destination only picks new ones.
+        destination: route ? null : readDestination(input),
+        strict: operation.kind !== "read" && Boolean(tool.strictDestination),
+      });
   if (resolution.kind === "unavailable") {
     return trace(
       null,
@@ -252,7 +258,8 @@ export async function executeToolCall(
   const decision = decidePolicy({
     operation,
     origin: ctx.origin,
-    permission: await ports.permissionFor(binding),
+    // The user's own ELISE settings belong to the user: writable, still under policy + audit.
+    permission: internal ? "write" : await ports.permissionFor(binding),
   });
   if (decision.kind === "reject")
     return trace(binding, null, { status: "rejected", reason: decision.reason });
@@ -499,11 +506,17 @@ export async function executeApprovedAction(
   if (!parsed.success)
     return fail(new AppError("VALIDATION_ERROR", "Stored action input is no longer valid"));
 
-  const resolution = resolveBindings(await ports.loadBindings(), {
-    capability: tool.capability,
-    operationKind: "write",
-    connectionId: approved.connectionId,
-  });
+  const resolution: ReturnType<typeof resolveBindings> = getCapability(tool.capability).internal
+    ? {
+        kind: "resolved",
+        bindings: [{ ...INTERNAL_BINDING, capability: tool.capability }],
+        reason: "explicit",
+      }
+    : resolveBindings(await ports.loadBindings(), {
+        capability: tool.capability,
+        operationKind: "write",
+        connectionId: approved.connectionId,
+      });
   if (resolution.kind !== "resolved") {
     return fail(
       new AppError("PROVIDER_UNAVAILABLE", "The account for this action is no longer available", {

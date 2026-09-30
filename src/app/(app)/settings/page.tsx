@@ -1,20 +1,17 @@
-import { cookies } from "next/headers";
-
 import { requireAuthContext } from "@/application/auth-context";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { SettingsForm } from "@/features/settings/settings-form";
 import { getT } from "@/lib/i18n/server";
-import { isTheme, THEME_COOKIE } from "@/lib/theme";
 
 export default async function SettingsPage() {
-  const [auth, { t }, cookieStore] = await Promise.all([requireAuthContext(), getT(), cookies()]);
-  const stored = cookieStore.get(THEME_COOKIE)?.value;
+  const [auth, { t }] = await Promise.all([requireAuthContext(), getT()]);
   return (
     <PageContainer>
       <PageHeader title={t.settings.title} />
       <SettingsForm
         email={auth.email}
-        theme={isTheme(stored) ? stored : "system"}
+        theme={auth.profile.theme}
+        accent={auth.profile.accent}
         profile={{
           displayName: auth.profile.displayName ?? "",
           language: auth.profile.locale,

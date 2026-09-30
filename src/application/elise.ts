@@ -18,10 +18,12 @@ import { EMAIL_TOOLS } from "@/core/tools/email";
 import { FINANCE_TOOLS } from "@/core/tools/finance";
 import { GOAL_TOOLS } from "@/core/tools/goals";
 import { HABIT_TOOLS } from "@/core/tools/habits";
+import { HISTORY_TOOLS } from "@/core/tools/history";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
+import { SETTINGS_TOOLS } from "@/core/tools/settings";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 import { getEmbeddingProvider } from "@/infrastructure/ai";
@@ -54,9 +56,11 @@ import {
   type WorkspaceBindings,
 } from "@/infrastructure/supabase/repositories/bindings";
 import { SupabaseKnowledgeReader } from "@/infrastructure/supabase/repositories/knowledge";
+import { SupabaseRecallReader } from "@/infrastructure/supabase/repositories/recall";
 
 import type { AuthContext } from "./auth-context";
 import { syncNoteToKnowledge } from "./notes-knowledge";
+import { settingsStore } from "./settings-service";
 import { startStructuredBulk } from "./structured-bulk";
 
 /** Every tool ELISE can use. Exposure per run is filtered by available capabilities. */
@@ -72,6 +76,8 @@ export const toolRegistry = new ToolRegistry().register(
   ...NOTE_TOOLS,
   ...FINANCE_TOOLS,
   ...STRUCTURED_TOOLS,
+  ...HISTORY_TOOLS,
+  ...SETTINGS_TOOLS,
 );
 
 /**
@@ -274,6 +280,13 @@ function providerFactory(
       knowledge ??= new SupabaseKnowledgeReader(auth.db, auth.workspaceId, getEmbeddingProvider);
       return knowledge;
     },
+    // Recall is always the user's own interactions (RLS: author-only).
+    history() {
+      return new SupabaseRecallReader(auth.db, auth.workspaceId, auth.userId, getEmbeddingProvider);
+    },
+    settings() {
+      return settingsStore(auth);
+    },
   };
 
   return {
@@ -343,6 +356,7 @@ export function toolContext(
   auth: AuthContext,
   origin: ActionOrigin,
   aiRunId: string | null = null,
+  conversationId: string | null = null,
 ): ToolContext {
   return {
     workspaceId: auth.workspaceId,
@@ -352,6 +366,7 @@ export function toolContext(
     now: new Date(),
     origin,
     aiRunId,
+    ...(conversationId ? { conversationId } : {}),
   };
 }
 

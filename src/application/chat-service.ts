@@ -9,6 +9,7 @@ import {
 import type { ToolCallOutcome } from "@/core/agents/executor";
 import { runElise, toolNotes } from "@/core/agents/runtime";
 import { AppError, toPublicError } from "@/core/errors";
+import { recallIntent, type RecallResult } from "@/core/recall/model";
 import { getAIProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
 import type { Json } from "@/infrastructure/supabase/database.types";
@@ -28,6 +29,7 @@ import {
   toolRegistry,
 } from "./elise";
 import { listSpaces } from "./knowledge-service";
+import { queueRecallIndex, searchRecall } from "./recall-service";
 import { structuredSourcesForChat } from "./structured-service";
 
 export interface ChatTurnInput {
@@ -55,9 +57,10 @@ export async function startChatTurn(
     input.conversationId ?? (await createConversation(auth, input.message, input.spaceId));
   const history = input.conversationId ? await loadHistory(auth, conversationId) : [];
   const activeSpace = await loadActiveSpace(auth, conversationId);
-  const structuredSources = capabilities.has("structured")
-    ? await structuredSourcesForChat(auth)
-    : [];
+  const [structuredSources, recallEvidence] = await Promise.all([
+    capabilities.has("structured") ? structuredSourcesForChat(auth) : [],
+    recallIntent(input.message) ? prefetchRecall(auth, input.message, conversationId) : null,
+  ]);
 
   const { error: insertError } = await auth.db.from("messages").insert({
     conversation_id: conversationId,
@@ -93,6 +96,7 @@ export async function startChatTurn(
     userMessage: input.message,
     activeSpace: activeSpace?.path ?? null,
     structuredSources,
+    recallEvidence,
   });
   const encoder = new TextEncoder();
 
@@ -114,7 +118,10 @@ export async function startChatTurn(
         for await (const event of runElise({
           ai,
           ports,
-          ctx: { ...toolContext(auth, "ai", runId), knowledgeSpaceId: activeSpace?.id ?? null },
+          ctx: {
+            ...toolContext(auth, "ai", runId, conversationId),
+            knowledgeSpaceId: activeSpace?.id ?? null,
+          },
           instructions: context.instructions,
           input: context.input,
           tools: toolRegistry.available(capabilities),
@@ -212,6 +219,8 @@ export async function startChatTurn(
             .update({ last_message_at: new Date().toISOString() })
             .eq("id", conversationId),
         ]);
+        // Recall indexing never delays or fails the chat.
+        queueRecallIndex(auth.workspaceId, conversationId);
         logger.info("ai_run.finished", {
           run_id: runId,
           request_id: input.requestId,
@@ -282,6 +291,25 @@ async function loadActiveSpace(
   const spaces = await listSpaces(auth).catch(() => []);
   const space = spaces.find((s) => s.id === spaceId);
   return space ? { id: space.id, path: space.path } : null;
+}
+
+/** Bounded, best-effort: a slow or failing index never blocks the turn. */
+async function prefetchRecall(
+  auth: AuthContext,
+  message: string,
+  conversationId: string,
+): Promise<RecallResult[] | null> {
+  try {
+    return await Promise.race([
+      searchRecall(auth, message, conversationId, 3),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+    ]);
+  } catch (error) {
+    logger.warn("recall.prefetch_failed", {
+      code: error instanceof AppError ? error.code : "UNKNOWN",
+    });
+    return null;
+  }
 }
 
 async function loadHistory(auth: AuthContext, conversationId: string): Promise<HistoryMessage[]> {

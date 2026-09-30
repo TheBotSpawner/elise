@@ -18,10 +18,12 @@ import { EMAIL_TOOLS } from "@/core/tools/email";
 import { FINANCE_TOOLS } from "@/core/tools/finance";
 import { GOAL_TOOLS } from "@/core/tools/goals";
 import { HABIT_TOOLS } from "@/core/tools/habits";
+import { HISTORY_TOOLS } from "@/core/tools/history";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
+import { SETTINGS_TOOLS } from "@/core/tools/settings";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 
@@ -224,6 +226,8 @@ export function makePorts(
       ...NOTE_TOOLS,
       ...FINANCE_TOOLS,
       ...STRUCTURED_TOOLS,
+      ...HISTORY_TOOLS,
+      ...SETTINGS_TOOLS,
     ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>

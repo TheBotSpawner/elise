@@ -22,6 +22,7 @@ import type { HabitProgress, HabitsProvider } from "../capabilities/habits";
 import type { ListsProvider, NativeList } from "../capabilities/lists";
 import type { Note, NotesProvider } from "../capabilities/notes";
 import { getCapability } from "../capabilities/registry";
+import type { Accent, SettingsStore, Theme } from "../capabilities/settings";
 import type {
   FieldMapping,
   StructuredProvider,
@@ -32,6 +33,7 @@ import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { KnowledgeReader } from "../knowledge/model";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
+import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
 
 export type ActionOrigin = "ai" | "user_ui" | "schedule" | "system";
@@ -46,6 +48,8 @@ export interface ToolContext {
   aiRunId: string | null;
   /** The Knowledge Space the conversation is in, if any: searched first. */
   knowledgeSpaceId?: string | null;
+  /** The conversation this run belongs to (Recall skips it: it's already in context). */
+  conversationId?: string | null;
 }
 
 /** Capability → provider contract. Grows as capabilities are implemented. */
@@ -61,6 +65,10 @@ export interface CapabilityProviders {
   notes: NotesProvider;
   finance: FinanceProvider;
   structured: StructuredProvider;
+  /** The user's own past interactions (Recall). */
+  history: RecallReader;
+  /** ELISE's own settings for this user. */
+  settings: SettingsStore;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -146,6 +154,10 @@ export type ToolDisplay =
     }
   | { kind: "finance_accounts"; accounts: FinanceAccount[] }
   | { kind: "finance_categories"; categories: FinanceCategory[] }
+  /** Past interactions found by Recall (surface-ready, not UI-coupled). */
+  | { kind: "recall_results"; query: string; results: RecallResult[] }
+  /** ELISE changed its own appearance: the UI applies it at once. */
+  | { kind: "appearance"; theme: Theme; accent: Accent }
   /** Structured records from a mapped source (the source stays authoritative). */
   | { kind: "structured_sources"; sources: StructuredSource[] }
   | {

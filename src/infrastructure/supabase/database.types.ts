@@ -22,6 +22,8 @@ export type UserProfileRow = {
   timezone: string;
   avatar_url: string | null;
   onboarding_status: "pending" | "completed" | "skipped";
+  theme: "system" | "dark" | "light";
+  accent: "cyan" | "blue" | "violet" | "green" | "amber";
   created_at: Ts;
   updated_at: Ts;
 };
@@ -835,6 +837,56 @@ export type StructuredSourceRow = {
   archived_at: Ts | null;
 };
 
+export type InteractionSessionRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  modality: "text" | "voice" | "proactive" | "live";
+  conversation_id: string | null;
+  title: string | null;
+  summary: string | null;
+  topics: string[];
+  status: "active" | "archived";
+  started_at: Ts;
+  last_activity_at: Ts;
+  indexed_through: Ts | null;
+  summarized_turns: number;
+  index_version: number;
+  metadata: Json;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type InteractionTurnRow = {
+  id: string;
+  workspace_id: string;
+  session_id: string;
+  role: "user" | "assistant" | "tool" | "surface";
+  modality: "text" | "voice";
+  content: string;
+  occurred_at: Ts;
+  metadata: Json;
+  created_at: Ts;
+};
+
+export type RecallChunkRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  session_id: string;
+  chunk_index: number;
+  source_ids: string[];
+  started_at: Ts;
+  ended_at: Ts;
+  modality: string;
+  content: string;
+  content_hash: string;
+  topics: string[];
+  embedding: string | null;
+  embedding_model: string | null;
+  created_at: Ts;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -963,6 +1015,22 @@ export type Database = {
       >;
       knowledge_sync_runs: Table<KnowledgeSyncRunRow, "workspace_id" | "source_id" | "trigger">;
       finance_settings: Table<FinanceSettingsRow, "workspace_id">;
+      interaction_sessions: Table<InteractionSessionRow, "workspace_id" | "user_id">;
+      interaction_turns: Table<
+        InteractionTurnRow,
+        "workspace_id" | "session_id" | "role" | "content"
+      >;
+      recall_chunks: Table<
+        RecallChunkRow,
+        | "workspace_id"
+        | "user_id"
+        | "session_id"
+        | "chunk_index"
+        | "started_at"
+        | "ended_at"
+        | "content"
+        | "content_hash"
+      >;
       structured_sources: Table<
         StructuredSourceRow,
         "workspace_id" | "database_id" | "data_source_id" | "name" | "schema_fingerprint"
@@ -1005,6 +1073,31 @@ export type Database = {
     };
     Views: Record<never, never>;
     Functions: {
+      search_recall_chunks: {
+        Args: {
+          p_workspace_id: string;
+          p_user_id: string;
+          p_keywords: string;
+          p_embedding: string | null;
+          p_embedding_model: string;
+          p_from?: string | null;
+          p_to?: string | null;
+          p_exclude_session?: string | null;
+          p_limit?: number;
+        };
+        Returns: {
+          chunk_id: string;
+          session_id: string;
+          chunk_index: number;
+          content: string;
+          started_at: string;
+          ended_at: string;
+          source_ids: string[];
+          similarity: number | null;
+          keyword_rank: number | null;
+          score: number;
+        }[];
+      };
       search_knowledge_chunks: {
         Args: {
           p_workspace_id: string;

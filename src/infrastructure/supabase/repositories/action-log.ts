@@ -33,7 +33,7 @@ export class SupabaseActionLog implements ActionLog {
         capability_key: action.capability,
         operation: action.operation,
         provider_key: action.providerKey,
-        connection_id: action.connectionId,
+        connection_id: connectionOrNull(action.connectionId),
         target_type: action.target?.type ?? null,
         target_id: action.target?.id ?? null,
         risk_level: action.riskLevel,
@@ -96,7 +96,7 @@ export class SupabaseActionLog implements ActionLog {
         capability_key: a.capability,
         operation: a.operation,
         provider_key: a.providerKey,
-        connection_id: a.connectionId,
+        connection_id: connectionOrNull(a.connectionId),
         risk_level: a.riskLevel,
         payload_snapshot: asJson(a.payload),
         payload_hash: a.payloadHash,
@@ -121,7 +121,7 @@ export class SupabaseActionLog implements ActionLog {
       action_id: e.actionId,
       tool_name: e.toolName,
       provider_key: e.providerKey,
-      connection_id: e.connectionId,
+      connection_id: connectionOrNull(e.connectionId),
       status: e.status,
       latency_ms: e.latencyMs,
       error_code: e.errorCode,
@@ -149,7 +149,7 @@ export class SupabaseActionLog implements ActionLog {
       action_id: e.actionId ?? null,
       approval_id: e.approvalId ?? null,
       provider_key: e.providerKey ?? null,
-      connection_id: e.connectionId ?? null,
+      connection_id: connectionOrNull(e.connectionId),
       origin: ctx.origin,
       result: e.result,
       metadata: asJson(e.metadata ?? {}),
@@ -168,4 +168,9 @@ function toStored(row: {
     status: row.status,
     resultReference: (row.result_reference as Record<string, unknown> | null) ?? null,
   };
+}
+
+/** ELISE-internal actions (its own settings) have no provider connection: stored as null. */
+function connectionOrNull(id: string | null | undefined): string | null {
+  return id && /^[0-9a-f-]{36}$/i.test(id) ? id : null;
 }

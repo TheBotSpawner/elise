@@ -101,3 +101,22 @@ export async function loadConversation(
   }
   return messages;
 }
+
+/**
+ * Deleting a conversation from History archives it: it leaves every list, and a database
+ * trigger removes it from Recall in the same transaction (no orphan excerpts or embeddings).
+ */
+export async function archiveConversation(auth: AuthContext, id: string): Promise<void> {
+  const { data, error } = await auth.db
+    .from("conversations")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("workspace_id", auth.workspaceId)
+    .eq("user_id", auth.userId)
+    .is("archived_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error)
+    throw new AppError("INTERNAL_ERROR", "Could not delete the conversation", { cause: error });
+  if (!data) throw new AppError("NOT_FOUND", "Conversation not found");
+}

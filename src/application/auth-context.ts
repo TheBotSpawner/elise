@@ -16,6 +16,8 @@ export interface AuthContext {
     locale: "es" | "en";
     timezone: string;
     onboardingStatus: "pending" | "completed" | "skipped";
+    theme: "system" | "dark" | "light";
+    accent: "cyan" | "blue" | "violet" | "green" | "amber";
   };
 }
 
@@ -60,6 +62,8 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
       locale: profile.preferred_language,
       timezone: profile.timezone,
       onboardingStatus: profile.onboarding_status,
+      theme: profile.theme,
+      accent: profile.accent,
     },
   };
 });

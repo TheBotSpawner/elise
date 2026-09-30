@@ -27,7 +27,7 @@ import {
   FinanceTransactionCard,
   FinanceTransactionsCard,
 } from "./finance-cards";
-import { KnowledgeSourcesCard } from "./knowledge-cards";
+import { KnowledgeSourcesCard, RecallResultsCard } from "./knowledge-cards";
 import { GoalsCard, HabitsCard, ListCard, NoteCard } from "./native-cards";
 import {
   StructuredBulkCard,
@@ -340,6 +340,11 @@ export function DisplayCard({
       return <StructuredBulkCard display={display} rise={rise} />;
     case "knowledge_evidence":
       return <KnowledgeSourcesCard display={display} rise={rise} />;
+    case "recall_results":
+      return <RecallResultsCard display={display} rise={rise} />;
+    case "appearance":
+      // Applied live by the chat; the trace line is enough.
+      return null;
     case "schedule_proposal":
       return <ScheduleProposalCard display={display} rise={rise} />;
 

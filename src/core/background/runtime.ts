@@ -11,7 +11,9 @@ export type BackgroundJob =
   | { type: "knowledge.sync"; payload: { workspaceId: string; syncRunId: string } }
   | { type: "finance.import"; payload: { workspaceId: string; importId: string } }
   | { type: "finance.sync"; payload: { workspaceId: string; sourceId: string } }
-  | { type: "structured.bulk"; payload: { workspaceId: string; jobId: string } };
+  | { type: "structured.bulk"; payload: { workspaceId: string; jobId: string } }
+  | { type: "recall.index"; payload: { workspaceId: string; conversationId: string } }
+  | { type: "recall.backfill"; payload: { workspaceId: string } };
 
 export interface BackgroundRuntime {
   /** Same idempotency key → the runtime starts at most one execution. */

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Star } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
@@ -92,6 +92,56 @@ function useExpanded(id: string): [boolean, (open: boolean) => void] {
   return [parseExpanded(raw).includes(id), (open) => setExpanded(id, open)];
 }
 
+/**
+ * Connections that could receive new items for a capability. Connected sheets are read-only
+ * for Finance, so they never compete for its default.
+ */
+function selectableFor(connections: ConnectionView[], key: string) {
+  return connections.filter(
+    (c) =>
+      c.status === "connected" &&
+      !(key === "finance" && c.providerKey !== "elise_native") &&
+      c.capabilities.some((x) => x.key === key && x.enabled && x.granted),
+  ).length;
+}
+
+/**
+ * The default provider for a capability, as a compact star. Only rendered when the user has
+ * more than one provider for it: with a single one the default is implicit.
+ */
+function DefaultMark({
+  capability,
+  isDefault,
+  disabled,
+  onSelect,
+}: {
+  capability: ConnectionView["capabilities"][number]["key"];
+  isDefault: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+}) {
+  const { t } = useI18n();
+  const label = (isDefault ? t.connections.defaultFor : t.connections.makeDefaultFor)(
+    t.capabilities[capability],
+  );
+  return (
+    <button
+      type="button"
+      aria-pressed={isDefault}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={isDefault ? undefined : onSelect}
+      className={cn(
+        "grid size-7 shrink-0 place-items-center rounded-full transition-colors",
+        isDefault ? "cursor-default text-accent" : "text-faint hover:text-fg disabled:opacity-50",
+      )}
+    >
+      <Star className="size-4" fill={isDefault ? "currentColor" : "none"} aria-hidden />
+    </button>
+  );
+}
+
 export function ConnectionsView({
   connections,
   googleAvailable,
@@ -104,6 +154,13 @@ export function ConnectionsView({
   const { t } = useI18n();
   const params = useSearchParams();
   const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const multi = (key: string) => selectableFor(connections, key) > 1;
+  const makeDefault = (connectionId: string, key: ConnectionView["capabilities"][number]["key"]) =>
+    startTransition(async () => {
+      const result = await setDefaultAction(connectionId, key);
+      if (!result.ok) toast.error(t.errors.codes[result.error.code]);
+    });
 
   // One-shot feedback after returning from Google, then clean the URL.
   useEffect(() => {
@@ -112,7 +169,11 @@ export function ConnectionsView({
     const error = params.get("error") as ErrorCode | null;
     if (!connected && !error) return;
     if (connected) {
-      toast.success(t.connections.connectedToast);
+      toast.success(
+        params.get("provider") === "notion"
+          ? t.connections.connectedNotionToast
+          : t.connections.connectedToast,
+      );
       // The account just connected opens so its settings are at hand.
       setExpanded(connected, true);
     }
@@ -140,18 +201,32 @@ export function ConnectionsView({
             className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-5 py-4"
           >
             <div>
-              <p className="font-medium">ELISE</p>
+              <p className="flex items-center gap-2 font-medium">
+                <span
+                  aria-hidden
+                  className="size-2.5 rounded-full bg-accent shadow-[0_0_8px_var(--accent)]"
+                />
+                ELISE
+              </p>
               <p className="text-[13.5px] text-muted">{t.connections.eliseBody}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {c.capabilities.map((cap) => (
                 <span
                   key={cap.key}
-                  className="flex h-8 items-center gap-2 rounded-full border border-border px-3 text-[13px]"
+                  className={cn(
+                    "flex h-8 items-center gap-1 rounded-full border border-border text-[13px]",
+                    multi(cap.key) ? "pr-0.5 pl-3" : "px-3",
+                  )}
                 >
                   {t.capabilities[cap.key]}
-                  {cap.isDefault && (
-                    <span className="type-label text-accent-text">{t.connections.default}</span>
+                  {multi(cap.key) && (
+                    <DefaultMark
+                      capability={cap.key}
+                      isDefault={cap.isDefault}
+                      disabled={pending}
+                      onSelect={() => makeDefault(c.id, cap.key)}
+                    />
                   )}
                 </span>
               ))}
@@ -166,7 +241,12 @@ export function ConnectionsView({
           <p className="mt-1 max-w-2xl text-[13.5px] text-muted">{t.connections.googleBody}</p>
         </div>
         {google.map((c) => (
-          <GoogleConnectionCard key={c.id} connection={c} googleAvailable={googleAvailable} />
+          <GoogleConnectionCard
+            key={c.id}
+            connection={c}
+            googleAvailable={googleAvailable}
+            multi={multi}
+          />
         ))}
         {googleAvailable ? (
           <ConnectGooglePanel
@@ -288,9 +368,12 @@ function ConnectGooglePanel({ title }: { title: string }) {
 function GoogleConnectionCard({
   connection: c,
   googleAvailable,
+  multi,
 }: {
   connection: ConnectionView;
   googleAvailable: boolean;
+  /** Whether a capability has several providers (only then is the default shown). */
+  multi: (key: string) => boolean;
 }) {
   const { t } = useI18n();
   const [pending, startTransition] = useTransition();
@@ -409,21 +492,13 @@ function GoogleConnectionCard({
                       </form>
                     ) : (
                       <>
-                        {cap?.isDefault ? (
-                          <span className="px-2 type-label text-accent-text">
-                            {t.connections.default}
-                          </span>
-                        ) : (
-                          cap?.enabled && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={pending || !healthy}
-                              onClick={() => act(() => setDefaultAction(c.id, key))}
-                            >
-                              {t.connections.makeDefault}
-                            </Button>
-                          )
+                        {cap?.enabled && healthy && multi(key) && !(key === "finance") && (
+                          <DefaultMark
+                            capability={key}
+                            isDefault={cap.isDefault}
+                            disabled={pending}
+                            onSelect={() => act(() => setDefaultAction(c.id, key))}
+                          />
                         )}
                         <Switch
                           checked={Boolean(cap?.enabled)}

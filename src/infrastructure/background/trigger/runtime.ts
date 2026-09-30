@@ -32,6 +32,14 @@ const TASKS: Record<
     id: "finance-sync",
     tag: (p) => `finance_source:${(p as { sourceId: string }).sourceId}`,
   },
+  "recall.index": {
+    id: "recall-index",
+    tag: (p) => `conversation:${(p as { conversationId: string }).conversationId}`,
+  },
+  "recall.backfill": {
+    id: "recall-backfill",
+    tag: (p) => `workspace:${p.workspaceId}`,
+  },
   "structured.bulk": {
     id: "structured-bulk",
     tag: (p) => `background_job:${(p as { jobId: string }).jobId}`,

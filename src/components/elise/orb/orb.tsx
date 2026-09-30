@@ -75,6 +75,7 @@ export function Orb({
       renderer.frame(ctx, px, dpr, now, {
         state: toRendererState(s),
         light: !document.documentElement.classList.contains("dark"),
+        accent: document.documentElement.dataset.accent,
         reduced: reducedQuery.matches,
         level: lv,
         pointer,

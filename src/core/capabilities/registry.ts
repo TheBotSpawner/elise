@@ -186,13 +186,40 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
   },
   web_search: { key: "web_search", status: "planned", operations: {} },
   voice: { key: "voice", status: "planned", operations: {} },
-  // Proposing a Schedule from chat changes nothing: the user confirms on a card.
+  // Proposing a Schedule from chat changes nothing: the user confirms on a card. Pausing or
+  // resuming one is a reversible, audited write.
   schedules: {
     key: "schedules",
     status: "available",
     internal: true,
     operations: {
       propose: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      list: READ,
+      pause: WRITE,
+      resume: WRITE,
+    },
+  },
+  // Universal Recall: the user's past interactions, read-only (ADR-012).
+  history: {
+    key: "history",
+    status: "available",
+    internal: true,
+    operations: { search: READ, getContext: READ, getInteraction: READ, getRecent: READ },
+  },
+  // ELISE's own product settings for this user: allowlisted values, audited (ADR-012).
+  settings: {
+    key: "settings",
+    status: "available",
+    internal: true,
+    operations: {
+      get: READ,
+      update: WRITE,
+      getAppearance: READ,
+      setTheme: WRITE,
+      setAccent: WRITE,
+      getNotifications: READ,
+      updateNotifications: WRITE,
+      listConnections: READ,
     },
   },
 };

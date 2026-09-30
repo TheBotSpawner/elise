@@ -44,7 +44,51 @@ const NUMERIC = [
   "follow",
 ] as const;
 
-export function orbParams(key: ParamKey, light: boolean): Params {
+/** Idle/listening colours per approved accent (ADR-012); state colours never change. */
+const ACCENT_RGB: Record<string, { light: [RGB, RGB]; dark: [RGB, RGB] }> = {
+  blue: {
+    light: [
+      [47, 111, 220],
+      [36, 89, 184],
+    ],
+    dark: [
+      [127, 176, 255],
+      [166, 200, 255],
+    ],
+  },
+  violet: {
+    light: [
+      [124, 77, 219],
+      [106, 60, 196],
+    ],
+    dark: [
+      [180, 156, 255],
+      [203, 188, 255],
+    ],
+  },
+  green: {
+    light: [
+      [23, 138, 79],
+      [17, 112, 63],
+    ],
+    dark: [
+      [111, 227, 164],
+      [152, 236, 191],
+    ],
+  },
+  amber: {
+    light: [
+      [183, 121, 31],
+      [143, 92, 18],
+    ],
+    dark: [
+      [242, 195, 91],
+      [246, 212, 137],
+    ],
+  },
+};
+
+export function orbParams(key: ParamKey, light: boolean, accent?: string): Params {
   const C: Record<string, RGB> = light
     ? {
         idle: [0, 128, 146],
@@ -64,6 +108,8 @@ export function orbParams(key: ParamKey, light: boolean): Params {
         success: [120, 240, 190],
         error: [255, 122, 122],
       };
+  const tint = accent ? ACCENT_RGB[accent] : undefined;
+  if (tint) [C.idle, C.listen] = light ? tint.light : tint.dark;
   const S: Record<ParamKey, Omit<Params, "level">> = {
     idle: {
       rot: 0.12,
@@ -208,6 +254,8 @@ export function orbParams(key: ParamKey, light: boolean): Params {
 export interface OrbFrameInput {
   state: RendererState;
   light: boolean;
+  /** Approved accent key (data-accent); cyan when absent. */
+  accent?: string;
   reduced: boolean;
   /** Live mic/TTS RMS 0..1; negative = simulated while listening/speaking. */
   level: number;
@@ -249,7 +297,7 @@ export class OrbRenderer {
     if (s === "success" && e > 0.9) key = "idle";
     if (s === "error" && e > 1.2) key = "rest";
 
-    const T = orbParams(key, light);
+    const T = orbParams(key, light, input.accent);
     if (!this.P) this.P = T;
     const P = this.P;
     const k = 1 - Math.exp(-dt / 0.45);

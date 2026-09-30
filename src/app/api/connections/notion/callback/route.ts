@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
       origin,
     });
     back.searchParams.set("connected", connectionId);
+    back.searchParams.set("provider", "notion");
   } catch (error) {
     const e = toAppError(error);
     logger.warn("connection.notion_callback_failed", { code: e.code, reference: e.referenceId });

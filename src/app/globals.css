@@ -82,6 +82,65 @@
   );
 }
 
+/* Accents (ADR-012): approved palette only, chosen by data-accent. Cyan is the default above.
+   Semantic colours (error, warning, success, approval) are never affected. */
+:root[data-accent="blue"] {
+  --accent: #2f6fdc;
+  --accent-text: #2459b8;
+  --accent-line: rgba(47, 111, 220, 0.45);
+  --accent-soft: rgba(47, 111, 220, 0.1);
+  --on-accent: #ffffff;
+}
+:root[data-accent="violet"] {
+  --accent: #7c4ddb;
+  --accent-text: #6a3cc4;
+  --accent-line: rgba(124, 77, 219, 0.45);
+  --accent-soft: rgba(124, 77, 219, 0.1);
+  --on-accent: #ffffff;
+}
+:root[data-accent="green"] {
+  --accent: #178a4f;
+  --accent-text: #11703f;
+  --accent-line: rgba(23, 138, 79, 0.45);
+  --accent-soft: rgba(23, 138, 79, 0.1);
+  --on-accent: #ffffff;
+}
+:root[data-accent="amber"] {
+  --accent: #b7791f;
+  --accent-text: #8f5c12;
+  --accent-line: rgba(183, 121, 31, 0.45);
+  --accent-soft: rgba(183, 121, 31, 0.1);
+  --on-accent: #ffffff;
+}
+.dark[data-accent="blue"] {
+  --accent: #7fb0ff;
+  --accent-text: #a6c8ff;
+  --accent-line: rgba(127, 176, 255, 0.45);
+  --accent-soft: rgba(127, 176, 255, 0.12);
+  --on-accent: #06101f;
+}
+.dark[data-accent="violet"] {
+  --accent: #b49cff;
+  --accent-text: #cbbcff;
+  --accent-line: rgba(180, 156, 255, 0.45);
+  --accent-soft: rgba(180, 156, 255, 0.12);
+  --on-accent: #0e0820;
+}
+.dark[data-accent="green"] {
+  --accent: #6fe3a4;
+  --accent-text: #98ecbf;
+  --accent-line: rgba(111, 227, 164, 0.45);
+  --accent-soft: rgba(111, 227, 164, 0.12);
+  --on-accent: #03140b;
+}
+.dark[data-accent="amber"] {
+  --accent: #f2c35b;
+  --accent-text: #f6d489;
+  --accent-line: rgba(242, 195, 91, 0.45);
+  --accent-soft: rgba(242, 195, 91, 0.12);
+  --on-accent: #1a1003;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface-1);

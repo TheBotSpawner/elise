@@ -13,6 +13,8 @@ export type CapabilityKey =
   | "notes"
   | "finance"
   | "structured"
+  | "history"
+  | "settings"
   | "web_search"
   | "voice"
   | "schedules";

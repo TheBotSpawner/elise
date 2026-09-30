@@ -6,6 +6,7 @@ import type { ChatStreamEvent } from "@/application/chat-protocol";
 import { resolveOrbState, type OrbState } from "@/components/elise/orb/orb-states";
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { PublicError } from "@/core/errors";
+import { applyAppearance } from "@/lib/theme";
 
 import type { ChatMessage } from "./types";
 
@@ -115,6 +116,12 @@ export function useEliseChat(initial: {
                 }));
                 break;
               case "tool_finished":
+                // ELISE changed its own appearance: apply the approved values right away.
+                if (
+                  event.outcome.status === "succeeded" &&
+                  event.outcome.display?.kind === "appearance"
+                )
+                  applyAppearance(event.outcome.display);
                 patchAssistant(assistantId, (m) => ({
                   ...m,
                   tools: m.tools.map((t) =>

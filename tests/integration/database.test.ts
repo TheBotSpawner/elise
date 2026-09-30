@@ -891,3 +891,109 @@ describe("structured sources", () => {
     );
   });
 });
+
+describe("universal recall", () => {
+  const as = <T>(u: { userId: string }, sql: string, args: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, args));
+
+  /** A conversation of `u` indexed by the service role, as the indexer does. */
+  async function indexed(u: { userId: string; workspaceId: string }, text: string, at: string) {
+    const conv = (
+      await db.query<{ id: string }>(
+        `insert into public.conversations (workspace_id, user_id, title) values ($1, $2, 'Pricing') returning id`,
+        [u.workspaceId, u.userId],
+      )
+    ).rows[0]!.id;
+    const session = (
+      await db.query<{ id: string }>(
+        `insert into public.interaction_sessions (workspace_id, user_id, modality, conversation_id, started_at, last_activity_at)
+         values ($1, $2, 'text', $3, $4, $4) returning id`,
+        [u.workspaceId, u.userId, conv, at],
+      )
+    ).rows[0]!.id;
+    await db.query(
+      `insert into public.recall_chunks (workspace_id, user_id, session_id, chunk_index, started_at, ended_at, content, content_hash)
+       values ($1, $2, $3, 0, $4, $4, $5, 'h')`,
+      [u.workspaceId, u.userId, session, at, text],
+    );
+    return { conv, session };
+  }
+
+  const search = (
+    u: { userId: string; workspaceId: string },
+    words: string,
+    from?: string,
+    to?: string,
+  ) =>
+    as<{ session_id: string; keyword_rank: number | null }>(
+      u,
+      `select * from public.search_recall_chunks($1, $2, $3, null, 'none', $4, $5, null, 10)`,
+      [u.workspaceId, u.userId, words, from ?? null, to ?? null],
+    );
+
+  it("finds the author's own interactions by words and dates, and nobody else's", async () => {
+    const a = await indexed(
+      alice,
+      "User: we decided annual pricing for Firbot",
+      "2026-09-10T12:00:00Z",
+    );
+    expect((await search(alice, "pricing")).rows.map((r) => r.session_id)).toContain(a.session);
+    expect(
+      (await search(alice, "pricing", "2026-09-11T00:00:00Z")).rows.map((r) => r.session_id),
+    ).not.toContain(a.session);
+    // Bob can't read Alice's index, even asking for her ids.
+    expect((await as(bob, "select id from public.recall_chunks")).rows).toHaveLength(0);
+    expect((await as(bob, "select id from public.interaction_sessions")).rows).toHaveLength(0);
+    expect((await search({ ...alice, userId: bob.userId }, "pricing")).rows).toHaveLength(0);
+  });
+
+  it("is written only by the service role, within one user's workspace", async () => {
+    const a = await indexed(alice, "User: notes", "2026-09-12T12:00:00Z");
+    await expect(
+      as(
+        alice,
+        `insert into public.recall_chunks (workspace_id, user_id, session_id, chunk_index, started_at, ended_at, content, content_hash)
+         values ($1, $2, $3, 5, now(), now(), 'forged', 'x')`,
+        [alice.workspaceId, alice.userId, a.session],
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      db.query(
+        `insert into public.interaction_sessions (workspace_id, user_id, modality, conversation_id) values ($1, $2, 'text', $3)`,
+        [bob.workspaceId, bob.userId, (await indexed(alice, "x", "2026-09-12T12:00:00Z")).conv],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("forgets a deleted conversation: no orphan excerpts, the session is archived", async () => {
+    const a = await indexed(alice, "User: the secret project Zephyr", "2026-09-13T12:00:00Z");
+    await as(alice, `update public.conversations set archived_at = now() where id = $1`, [a.conv]);
+    const left = await db.query(`select id from public.recall_chunks where session_id = $1`, [
+      a.session,
+    ]);
+    expect(left.rows).toHaveLength(0);
+    const s = await db.query<{ status: string; summary: string | null }>(
+      `select status, summary from public.interaction_sessions where id = $1`,
+      [a.session],
+    );
+    expect(s.rows[0]).toMatchObject({ status: "archived", summary: null });
+    expect((await search(alice, "Zephyr")).rows).toHaveLength(0);
+  });
+
+  it("accepts only approved themes and accents", async () => {
+    await as(
+      alice,
+      `update public.user_profiles set accent = 'green', theme = 'light' where id = $1`,
+      [alice.userId],
+    );
+    await expect(
+      as(alice, `update public.user_profiles set accent = 'pink' where id = $1`, [alice.userId]),
+    ).rejects.toThrow(/check/);
+    const updated = await as(
+      bob,
+      `update public.user_profiles set accent = 'blue' where id = $1 returning id`,
+      [alice.userId],
+    );
+    expect(updated.rows).toHaveLength(0);
+  });
+});

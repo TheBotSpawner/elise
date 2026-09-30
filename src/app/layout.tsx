@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { Toaster } from "sonner";
 
+import { getAuthContext } from "@/application/auth-context";
 import { I18nProvider } from "@/lib/i18n/client";
 import { getLocale } from "@/lib/i18n/server";
 import { isTheme, SYSTEM_THEME_SCRIPT, THEME_COOKIE } from "@/lib/theme";
@@ -26,14 +27,22 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const [locale, cookieStore] = await Promise.all([getLocale(), cookies()]);
+  const [locale, cookieStore, auth] = await Promise.all([
+    getLocale(),
+    cookies(),
+    getAuthContext().catch(() => null),
+  ]);
+  // Signed in: the profile is the source of truth (ELISE can change it from chat).
+  // Signed out: the cookie keeps the last choice on this device.
   const stored = cookieStore.get(THEME_COOKIE)?.value;
-  const theme = isTheme(stored) ? stored : "system";
+  const theme = auth?.profile.theme ?? (isTheme(stored) ? stored : "system");
+  const accent = auth?.profile.accent ?? "cyan";
 
   return (
     <html
       lang={locale}
       data-theme={theme}
+      data-accent={accent}
       className={cn(geistSans.variable, geistMono.variable, "h-full", theme === "dark" && "dark")}
       suppressHydrationWarning
     >

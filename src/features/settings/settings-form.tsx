@@ -10,19 +10,30 @@ import { Combobox } from "@/components/ui/combobox";
 import { Input, Label, Select } from "@/components/ui/input";
 import { LOCALES, type Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
-import type { Theme } from "@/lib/theme";
+import { ACCENTS, applyAppearance, type Accent, type Theme } from "@/lib/theme";
 import { timezoneOptions } from "@/lib/timezones";
 import { cn } from "@/lib/utils";
 
-import { setTheme, updateProfile } from "./actions";
+import { setAccent, setTheme, updateProfile } from "./actions";
+
+/** Swatches of the approved accents (the tokens themselves live in globals.css). */
+const SWATCHES: Record<Accent, string> = {
+  cyan: "#1fb8c8",
+  blue: "#4f86e8",
+  violet: "#9272e6",
+  green: "#2fae6c",
+  amber: "#d49a35",
+};
 
 export function SettingsForm({
   profile,
   theme,
+  accent,
   email,
 }: {
   profile: { displayName: string; language: Locale; timezone: string };
   theme: Theme;
+  accent: Accent;
   email: string | null;
 }) {
   const { t } = useI18n();
@@ -59,16 +70,8 @@ export function SettingsForm({
                 role="radio"
                 aria-checked={theme === option}
                 onClick={() => {
-                  // Crossfade colour tokens (240 ms, linear) and apply instantly; persist in the background.
-                  const root = document.documentElement;
-                  root.classList.add("theme-transition");
-                  root.dataset.theme = option;
-                  const dark =
-                    option === "dark" ||
-                    (option === "system" &&
-                      window.matchMedia("(prefers-color-scheme: dark)").matches);
-                  root.classList.toggle("dark", dark);
-                  window.setTimeout(() => root.classList.remove("theme-transition"), 300);
+                  // Crossfade colour tokens and apply instantly; persist in the background.
+                  applyAppearance({ theme: option });
                   startTransition(() => setTheme(option));
                 }}
                 className={cn(
@@ -83,6 +86,32 @@ export function SettingsForm({
               </button>
             );
           })}
+        </div>
+        <div
+          role="radiogroup"
+          aria-label={t.settings.accent}
+          className="mt-4 flex flex-wrap items-center gap-3"
+        >
+          <span className="mr-1 text-xs text-muted">{t.settings.accent}</span>
+          {ACCENTS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={accent === option}
+              aria-label={t.settings.accents[option]}
+              title={t.settings.accents[option]}
+              style={{ background: SWATCHES[option] }}
+              onClick={() => {
+                applyAppearance({ accent: option });
+                startTransition(() => setAccent(option));
+              }}
+              className={cn(
+                "size-7 rounded-full border-2 transition-shadow",
+                accent === option ? "border-fg" : "border-transparent",
+              )}
+            />
+          ))}
         </div>
       </Card>
 
