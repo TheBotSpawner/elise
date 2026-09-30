@@ -11,6 +11,7 @@ import {
   completeUploads,
   createSpace,
   deleteItem,
+  listSpaces,
   prepareNewVersion,
   prepareUploads,
   removeSource,
@@ -36,18 +37,39 @@ async function run<T>(fn: () => Promise<T>): Promise<KnowledgeResult<T>> {
   }
 }
 
+/** Spaces to offer as a destination (chat attachments). A read: nothing to revalidate. */
+export async function listSpacesAction(): Promise<KnowledgeResult<{ id: string; path: string }[]>> {
+  try {
+    const spaces = await listSpaces(await requireAuthContext());
+    return { ok: true, value: spaces.map((s) => ({ id: s.id, path: s.path })) };
+  } catch (error) {
+    return { ok: false, error: toPublicError(error) };
+  }
+}
+
 /** Every input is validated again by the service; nothing from the client is trusted. */
-export async function createSpaceAction(name: string, parentId: string | null) {
+export async function createSpaceAction(
+  name: string,
+  parentId: string | null,
+  description: string | null = null,
+) {
   return run(async () =>
     createSpace(await requireAuthContext(), {
       name,
+      description,
       parentId: parentId ? id.parse(parentId) : null,
     }),
   );
 }
 
-export async function renameSpaceAction(spaceId: string, name: string) {
-  return run(async () => updateSpace(await requireAuthContext(), id.parse(spaceId), { name }));
+export async function renameSpaceAction(
+  spaceId: string,
+  name: string,
+  description: string | null = null,
+) {
+  return run(async () =>
+    updateSpace(await requireAuthContext(), id.parse(spaceId), { name, description }),
+  );
 }
 
 export async function moveSpaceAction(spaceId: string, parentId: string | null) {

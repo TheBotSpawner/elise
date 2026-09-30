@@ -7,13 +7,15 @@ import { getT } from "@/lib/i18n/server";
 export default async function KnowledgePage() {
   const [auth, { t }] = await Promise.all([requireAuthContext(), getT()]);
   const spaces = await listSpaces(auth);
+  const setup = knowledgeSetup();
   return (
     <PageContainer>
       <PageHeader title={t.knowledge.title} subtitle={t.knowledge.subtitle} />
       <KnowledgeHome
         spaces={spaces}
         workspaceId={auth.workspaceId}
-        backgroundAvailable={knowledgeSetup().backgroundAvailable}
+        backgroundAvailable={setup.backgroundAvailable}
+        notionAvailable={setup.notionAvailable}
       />
     </PageContainer>
   );

@@ -523,6 +523,22 @@ University
 Personal
 ```
 
+Crear un Space es un diálogo de dos pasos que se puede cerrar en cualquier momento sin dejar
+rastro:
+
+1. **Create a Knowledge Space**: “What should ELISE understand here?”. Nombre y una descripción
+   opcional.
+2. **Add knowledge**: Upload files / Connect Google Drive / Connect Notion / Start empty. Crear un
+   Space vacío está permitido.
+
+Dentro de un Space, “+ Add source” ofrece las mismas opciones. Las fuentes (archivos subidos,
+Drive, Notion, ELISE Notes) conviven en el mismo Space. Renombrar, mover, crear un sub-Space o
+archivar quedan en “Space settings”.
+
+Un archivo adjuntado en el chat nunca se guarda en silencio: el usuario elige sumarlo a un Space
+(existente o nuevo). “Usarlo solo en esta conversación” aparece como próximamente, hasta que
+existan archivos por conversación.
+
 ## Suggested by ELISE
 
 ELISE puede detectar grupos y sugerir:

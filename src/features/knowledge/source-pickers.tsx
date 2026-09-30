@@ -92,6 +92,18 @@ function Footer({
   );
 }
 
+function NoAccounts() {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col items-start gap-3 text-[13.5px] text-muted">
+      <p>{t.knowledge.picker.noAccounts}</p>
+      <Link href="/connections" className="text-accent-text underline">
+        {t.knowledge.goToConnections}
+      </Link>
+    </div>
+  );
+}
+
 function useSelection() {
   const [selected, setSelected] = useState<Selected[]>([]);
   const toggle = (item: Selected) =>
@@ -139,12 +151,10 @@ export function DrivePicker({
     };
   }, [connectionId, folder.id, account?.ready, t]);
 
-  if (!google.length)
-    return <p className="text-[13.5px] text-muted">{t.knowledge.picker.noAccounts}</p>;
+  if (!google.length) return <NoAccounts />;
 
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-5">
-      <p className="font-medium">{t.knowledge.picker.titleDrive}</p>
+    <div className="flex flex-col gap-4">
       <AccountSelect
         accounts={google}
         value={connectionId}
@@ -280,12 +290,10 @@ export function NotionPicker({
 
   if (!notionAvailable)
     return <p className="text-[13.5px] text-muted">{t.knowledge.picker.notionNotConfigured}</p>;
-  if (!notion.length)
-    return <p className="text-[13.5px] text-muted">{t.knowledge.picker.noAccounts}</p>;
+  if (!notion.length) return <NoAccounts />;
 
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-5">
-      <p className="font-medium">{t.knowledge.picker.titleNotion}</p>
+    <div className="flex flex-col gap-4">
       <AccountSelect accounts={notion} value={connectionId} onChange={setConnectionId} />
       <Input
         aria-label={t.knowledge.picker.searchNotion}

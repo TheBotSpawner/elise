@@ -11,8 +11,11 @@ import {
 import { PageContainer } from "@/components/shared/page";
 import { SpaceView } from "@/features/knowledge/space-view";
 
-export default async function SpacePage({ params }: PageProps<"/knowledge/spaces/[id]">) {
-  const { id } = await params;
+export default async function SpacePage({
+  params,
+  searchParams,
+}: PageProps<"/knowledge/spaces/[id]">) {
+  const [{ id }, { add }] = await Promise.all([params, searchParams]);
   if (!z.uuid().safeParse(id).success) notFound();
   const auth = await requireAuthContext();
   const data = await getSpace(auth, id).catch(() => null);
@@ -31,6 +34,7 @@ export default async function SpacePage({ params }: PageProps<"/knowledge/spaces
         workspaceId={auth.workspaceId}
         notionAvailable={setup.notionAvailable}
         backgroundAvailable={setup.backgroundAvailable}
+        initialAdd={add === "drive" || add === "notion" ? add : null}
       />
     </PageContainer>
   );

@@ -40,6 +40,12 @@ import { enqueueIngestion, startSync } from "./knowledge-background";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Json;
 const nameSchema = z.string().trim().min(1).max(120);
+const descriptionSchema = z
+  .string()
+  .trim()
+  .max(1000)
+  .nullable()
+  .transform((v) => v || null);
 
 async function audit(
   auth: AuthContext,
@@ -63,31 +69,50 @@ async function audit(
 // ── Spaces ───────────────────────────────────────────────────────────────────
 
 export interface SpaceSummary extends SpaceInfo {
+  description: string | null;
   counts: { ready: number; processing: number; attention: number };
+  /** Distinct kinds of source connected to this Space (uploads, Drive, Notion, notes). */
+  sourceTypes: KnowledgeSourceRow["source_type"][];
+  /** Latest change to the Space or anything in it. */
+  updatedAt: string;
 }
 
 export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
-  const [{ data: spaces, error }, { data: items }] = await Promise.all([
+  const [{ data: spaces, error }, { data: items }, { data: sources }] = await Promise.all([
     auth.db
       .from("knowledge_spaces")
-      .select("id, name, parent_space_id")
+      .select("id, name, parent_space_id, description, updated_at")
       .eq("workspace_id", auth.workspaceId)
       .eq("status", "active")
       .order("name"),
     auth.db
       .from("knowledge_items")
-      .select("space_id, status")
+      .select("space_id, status, updated_at")
       .eq("workspace_id", auth.workspaceId)
       .is("archived_at", null)
       .neq("status", "removed"),
+    auth.db
+      .from("knowledge_sources")
+      .select("space_id, source_type")
+      .eq("workspace_id", auth.workspaceId)
+      .is("archived_at", null),
   ]);
   if (error) throw new AppError("INTERNAL_ERROR", "Could not load Knowledge", { cause: error });
   return spacePaths(
     spaces.map((s) => ({ id: s.id, name: s.name, parentId: s.parent_space_id })),
   ).map((s) => {
+    const row = spaces.find((r) => r.id === s.id);
     const own = (items ?? []).filter((i) => i.space_id === s.id);
     return {
       ...s,
+      description: row?.description ?? null,
+      sourceTypes: [
+        ...new Set((sources ?? []).filter((x) => x.space_id === s.id).map((x) => x.source_type)),
+      ],
+      updatedAt: own.reduce(
+        (latest, i) => (i.updated_at > latest ? i.updated_at : latest),
+        row?.updated_at ?? "",
+      ),
       counts: {
         ready: own.filter((i) => i.status === "ready").length,
         processing: own.filter((i) => i.status === "queued" || i.status === "processing").length,
@@ -112,15 +137,17 @@ async function ownSpace(auth: AuthContext, spaceId: string) {
 
 export async function createSpace(
   auth: AuthContext,
-  input: { name: string; parentId?: string | null },
+  input: { name: string; description?: string | null; parentId?: string | null },
 ) {
   const name = nameSchema.parse(input.name);
+  const description = descriptionSchema.parse(input.description ?? null);
   if (input.parentId) await ownSpace(auth, input.parentId);
   const { data, error } = await auth.db
     .from("knowledge_spaces")
     .insert({
       workspace_id: auth.workspaceId,
       name,
+      description,
       parent_space_id: input.parentId ?? null,
       created_by_user_id: auth.userId,
     })
@@ -134,7 +161,7 @@ export async function createSpace(
 export async function updateSpace(
   auth: AuthContext,
   spaceId: string,
-  input: { name?: string; parentId?: string | null },
+  input: { name?: string; description?: string | null; parentId?: string | null },
 ) {
   await ownSpace(auth, spaceId);
   if (input.parentId) await ownSpace(auth, input.parentId);
@@ -142,6 +169,9 @@ export async function updateSpace(
     .from("knowledge_spaces")
     .update({
       ...(input.name !== undefined ? { name: nameSchema.parse(input.name) } : {}),
+      ...(input.description !== undefined
+        ? { description: descriptionSchema.parse(input.description) }
+        : {}),
       ...(input.parentId !== undefined ? { parent_space_id: input.parentId } : {}),
     })
     .eq("id", spaceId)
@@ -244,6 +274,8 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       parentId: space.parent_space_id,
       path: space.name,
       counts: { ready: 0, processing: 0, attention: 0 },
+      sourceTypes: [],
+      updatedAt: space.updated_at,
     },
     children: spaces.filter((s) => s.parentId === spaceId),
     sources: (sources ?? []).map((s): SourceView => ({

@@ -4,12 +4,13 @@ import { motion } from "motion/react";
 import { useState, type KeyboardEvent } from "react";
 
 import { SendIcon, StopIcon } from "@/components/elise/icons";
+import { AttachToKnowledge } from "@/features/knowledge/attach-dialog";
 import { cn } from "@/lib/utils";
 
 /**
  * Input dock (reference: 720 × 60 pill, radius 30; mobile 56 / 28). Shared between Home and the
  * conversation so it can glide from the hero to the bottom dock (layoutId, motion spec).
- * Voice and attachments are not wired yet, so their buttons are not shown.
+ * Voice isn't wired yet, so its button is not shown. Attaching asks what to do with the file.
  */
 export function Composer({
   placeholder,
@@ -54,10 +55,11 @@ export function Composer({
         submit();
       }}
       className={cn(
-        "flex min-h-14 w-full items-end gap-0.5 rounded-[28px] border border-border-strong bg-[var(--input-bg)] py-1.5 pr-1.5 pl-4 backdrop-blur-lg md:min-h-15 md:gap-1 md:rounded-[30px] md:pr-2 md:pl-5",
+        "flex min-h-14 w-full items-end gap-0.5 rounded-[28px] border border-border-strong bg-[var(--input-bg)] py-1.5 pr-1.5 pl-1.5 backdrop-blur-lg md:min-h-15 md:gap-1 md:rounded-[30px] md:pr-2 md:pl-2",
         className,
       )}
     >
+      <AttachToKnowledge />
       <label htmlFor="elise-ask" className="sr-only">
         {label}
       </label>
