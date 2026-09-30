@@ -32,6 +32,10 @@ const TASKS: Record<
     id: "finance-sync",
     tag: (p) => `finance_source:${(p as { sourceId: string }).sourceId}`,
   },
+  "structured.bulk": {
+    id: "structured-bulk",
+    tag: (p) => `background_job:${(p as { jobId: string }).jobId}`,
+  },
 };
 
 /**

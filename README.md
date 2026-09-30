@@ -83,14 +83,36 @@ Trigger.dev tasks in `src/trigger/knowledge.ts`. See
 - **Google Drive:** on `/connections`, press **Enable** on the Google Drive row of a Google
   account (scope `drive.readonly`, incremental — Calendar/Tasks/Gmail keep working). Then in a
   Space: **Add from Google Drive** → pick folders/files.
-- **Notion:** create a _public_ integration at notion.so/profile/integrations (capability: Read
-  content), set the redirect URI `{NEXT_PUBLIC_APP_URL}/api/connections/notion/callback`, and
+- **Notion:** create a _public_ integration at notion.so/profile/integrations (capabilities:
+  Read content, plus Update/Insert content for Structured databases), set the redirect URI `{NEXT_PUBLIC_APP_URL}/api/connections/notion/callback`, and
   put `NOTION_OAUTH_CLIENT_ID` / `NOTION_OAUTH_CLIENT_SECRET` in `.env.local` (and in the
   Trigger.dev environment). Then **Connect Notion** on `/connections` (choose pages in Notion)
   and, in a Space, **Add from Notion**.
 - Embeddings use `OPENAI_EMBEDDING_MODEL` (default `text-embedding-3-small`).
 - Internal reindex (after changing the embedding model or chunking): trigger the
   `knowledge-reindex` task from the Trigger.dev dashboard with `{}` or `{ "workspaceId": "…" }`.
+
+### Structured Notion (databases)
+
+The same Notion connection also powers **Structured Data**: Notion databases that ELISE
+understands field by field. They are read and written live in Notion; ELISE keeps only the
+mapping (migration `20260930000014_structured_notion.sql`). See
+[ADR-011](docs/decisions/ADR-011-structured-notion.md). Notion API version: `2026-03-11`
+(databases → data sources), set once in `src/infrastructure/providers/notion/http.ts`.
+
+1. In the Notion integration settings enable **Read content**, **Update content** and
+   **Insert content**. Leave comments off; user information without email is enough.
+   Existing connections keep working: re-authorize (**Connect Notion** again) only if you
+   changed the integration's capabilities.
+2. In Notion, share each database with the integration (database → ••• → Connections).
+3. On `/connections` → **Databases** → **Connect a Notion database**: choose the database, review
+   ELISE's interpretation of each field, choose what ELISE may change, check the preview,
+   confirm.
+4. Ask in chat: "What projects are still in progress?", "What's due this week?", "Mark ELISE
+   Website as completed", "Create a project called Website Redesign for Firbot".
+
+Bulk changes over 25 records run on Trigger.dev (`structured-bulk`); schemas are re-checked
+hourly (`structured-schema-check`) and at most every 10 minutes when used.
 
 ### Finance (ELISE Finance, imports, Google Sheets)
 
@@ -232,6 +254,13 @@ database is needed.
   keep their source (ELISE Finance / each sheet), and a sheet that was also imported isn't counted
   twice. The Morning Brief can include an optional Finance block (off by default; notifications
   never show amounts).
+- **Structured Notion:** map Notion databases (field meanings proposed by ELISE, confirmed by
+  you) and ask about or change their records from chat. Filters run in Notion (status groups,
+  date windows like "this week" or overdue, options); writes are validated against the mapping,
+  read-only and calculated fields are never written, several matching records make ELISE ask,
+  archiving asks first and bulk changes always need approval with count and examples. Renamed
+  fields are followed; removed or retyped fields mark the database as needing attention. Record
+  content is treated as data. Document questions still go to Knowledge.
 - Dark / light / system theme; Spanish and English UI; responsive desktop + mobile navigation.
 
 ## Structure

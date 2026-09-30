@@ -28,7 +28,8 @@ type RealtimeTable =
   | "finance_accounts"
   | "finance_categories"
   | "finance_sources"
-  | "imports";
+  | "imports"
+  | "structured_sources";
 
 /**
  * Subscribes to workspace-scoped row changes (RLS still applies server-side) and calls

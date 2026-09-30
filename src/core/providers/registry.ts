@@ -22,7 +22,7 @@ export const PROVIDERS: readonly ProviderDefinition[] = [
     key: "notion",
     authType: "oauth2",
     supportsMultipleAccounts: true,
-    capabilities: ["knowledge"],
+    capabilities: ["knowledge", "structured"],
     status: "planned",
     sourceOfTruth: "external",
   },

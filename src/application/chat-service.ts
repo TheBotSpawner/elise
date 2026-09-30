@@ -28,6 +28,7 @@ import {
   toolRegistry,
 } from "./elise";
 import { listSpaces } from "./knowledge-service";
+import { structuredSourcesForChat } from "./structured-service";
 
 export interface ChatTurnInput {
   conversationId?: string;
@@ -54,6 +55,9 @@ export async function startChatTurn(
     input.conversationId ?? (await createConversation(auth, input.message, input.spaceId));
   const history = input.conversationId ? await loadHistory(auth, conversationId) : [];
   const activeSpace = await loadActiveSpace(auth, conversationId);
+  const structuredSources = capabilities.has("structured")
+    ? await structuredSourcesForChat(auth)
+    : [];
 
   const { error: insertError } = await auth.db.from("messages").insert({
     conversation_id: conversationId,
@@ -88,6 +92,7 @@ export async function startChatTurn(
     history,
     userMessage: input.message,
     activeSpace: activeSpace?.path ?? null,
+    structuredSources,
   });
   const encoder = new TextEncoder();
 

@@ -1,18 +1,17 @@
-import { AppError } from "@/core/errors";
 import type { DocumentSection, NormalizedDocument } from "@/core/knowledge/model";
 import type { ExternalItem } from "@/core/knowledge/sync";
 
+import { NotionHttp, type FetchLike } from "./http";
+
+export { NOTION_API, NOTION_VERSION, type FetchLike } from "./http";
+
 /**
  * Notion as a Knowledge source (docs/architecture/09 §41-42): pages, subpages and database
- * pages become canonical text with their heading structure. Read-only; no structured Notion
- * mapping here. Endpoints per Notion's public API (version 2022-06-28).
+ * pages become canonical text with their heading structure. Read-only. Structured records
+ * (fields, filters, writes) live in ./structured.ts. API version: see ./http.ts.
  */
-export const NOTION_API = "https://api.notion.com/v1";
-export const NOTION_VERSION = "2022-06-28";
 const MAX_DEPTH = 4;
 const MAX_BLOCKS = 2000;
-
-export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface NotionSelection {
   id: string;
@@ -32,13 +31,13 @@ export interface NotionBlock {
 }
 
 export interface NotionPage {
-  object: "page" | "database";
+  object: "page" | "database" | "data_source";
   id: string;
   url?: string;
   last_edited_time?: string;
-  archived?: boolean;
   in_trash?: boolean;
-  parent?: { type: string; database_id?: string };
+  is_archived?: boolean;
+  parent?: { type: string; database_id?: string; data_source_id?: string };
   properties?: Record<string, { type: string; [key: string]: unknown }>;
   title?: RichText[];
 }
@@ -146,49 +145,19 @@ export function blocksToSections(
 }
 
 export class NotionClient {
-  constructor(
-    private readonly token: () => Promise<string>,
-    private readonly onUnauthorized: () => Promise<void>,
-    private readonly fetchImpl: FetchLike = fetch,
-  ) {}
+  private readonly http: NotionHttp;
 
-  private async request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
-    let res: Response;
-    try {
-      res = await this.fetchImpl(`${NOTION_API}${path}`, {
-        method,
-        headers: {
-          authorization: `Bearer ${await this.token()}`,
-          "notion-version": NOTION_VERSION,
-          ...(body ? { "content-type": "application/json" } : {}),
-        },
-        body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(20_000),
-      });
-    } catch (cause) {
-      throw new AppError("PROVIDER_UNAVAILABLE", "Notion did not respond", { cause });
-    }
-    if (res.ok) return (await res.json()) as T;
-    const details = { providerStatus: res.status };
-    if (res.status === 401) {
-      await this.onUnauthorized();
-      throw new AppError("AUTH_EXPIRED", "This Notion connection needs to be reconnected", {
-        recovery: "reconnect",
-        details,
-      });
-    }
-    if (res.status === 403)
-      throw new AppError("PERMISSION_DENIED", "ELISE can't access this in Notion", {
-        details,
-        recovery: "reconnect",
-      });
-    if (res.status === 404)
-      throw new AppError("NOT_FOUND", "That page is no longer shared with ELISE", { details });
-    if (res.status === 429)
-      throw new AppError("RATE_LIMITED", "Notion is limiting requests", { details });
-    if (res.status >= 500)
-      throw new AppError("PROVIDER_UNAVAILABLE", "Notion is unavailable", { details });
-    throw new AppError("VALIDATION_ERROR", "Notion rejected the request", { details });
+  constructor(
+    token: () => Promise<string>,
+    onUnauthorized: () => Promise<void>,
+    fetchImpl: FetchLike = fetch,
+  ) {
+    this.http = new NotionHttp(token, onUnauthorized, fetchImpl);
+  }
+
+  private request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+    // Knowledge only reads (search and query are reads too).
+    return this.http.request<T>(method, path, body, true);
   }
 
   /** Pages and databases the user shared with ELISE, for the picker. */
@@ -198,7 +167,7 @@ export class NotionClient {
       page_size: 50,
       sort: { direction: "descending", timestamp: "last_edited_time" },
     });
-    return res.results.filter((p) => !p.archived && !p.in_trash);
+    return res.results.filter((p) => !p.in_trash && !p.is_archived);
   }
 
   async page(pageId: string): Promise<NotionPage> {
@@ -232,18 +201,26 @@ export class NotionClient {
     return blocks;
   }
 
+  /** A database's rows: a database holds one or more data sources, each queried in turn. */
   private async queryDatabase(databaseId: string): Promise<NotionPage[]> {
+    const database = await this.request<{ data_sources?: { id: string }[] }>(
+      "GET",
+      `/databases/${databaseId}`,
+    );
     const out: NotionPage[] = [];
-    let cursor: string | undefined;
-    do {
-      const res = await this.request<{ results: NotionPage[]; next_cursor: string | null }>(
-        "POST",
-        `/databases/${databaseId}/query`,
-        { page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) },
-      );
-      out.push(...res.results);
-      cursor = res.next_cursor ?? undefined;
-    } while (cursor && out.length < 500);
+    for (const source of database.data_sources ?? []) {
+      let cursor: string | undefined;
+      do {
+        const res = await this.request<{ results: NotionPage[]; next_cursor: string | null }>(
+          "POST",
+          `/data_sources/${source.id}/query`,
+          { page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) },
+        );
+        out.push(...res.results);
+        cursor = res.next_cursor ?? undefined;
+      } while (cursor && out.length < 500);
+      if (out.length >= 500) break;
+    }
     return out;
   }
 
@@ -254,12 +231,14 @@ export class NotionClient {
   ): Promise<ExternalItem[]> {
     const items = new Map<string, ExternalItem>();
     const addPage = (page: NotionPage, path: string[], database = false) => {
-      if (page.archived || page.in_trash) return;
+      if (page.in_trash || page.is_archived) return;
       items.set(page.id, {
         externalId: page.id,
         title: pageTitle(page),
         itemType:
-          database || page.parent?.type === "database_id" ? "notion_database_page" : "notion_page",
+          database || page.parent?.type === "database_id" || page.parent?.type === "data_source_id"
+            ? "notion_database_page"
+            : "notion_page",
         mimeType: null,
         url: page.url ?? null,
         modifiedAt: page.last_edited_time ?? null,

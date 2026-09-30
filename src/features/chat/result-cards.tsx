@@ -29,6 +29,12 @@ import {
 } from "./finance-cards";
 import { KnowledgeSourcesCard } from "./knowledge-cards";
 import { GoalsCard, HabitsCard, ListCard, NoteCard } from "./native-cards";
+import {
+  StructuredBulkCard,
+  StructuredRecordCard,
+  StructuredRecordsCard,
+  StructuredSourcesCard,
+} from "./structured-cards";
 
 const RISE = {
   initial: { opacity: 0, y: 8 },
@@ -324,6 +330,14 @@ export function DisplayCard({
     case "finance_accounts":
     case "finance_categories":
       return <FinanceListCard display={display} rise={rise} />;
+    case "structured_records":
+      return <StructuredRecordsCard display={display} rise={rise} />;
+    case "structured_record":
+      return <StructuredRecordCard display={display} rise={rise} />;
+    case "structured_sources":
+      return <StructuredSourcesCard display={display} rise={rise} />;
+    case "structured_bulk_preview":
+      return <StructuredBulkCard display={display} rise={rise} />;
     case "knowledge_evidence":
       return <KnowledgeSourcesCard display={display} rise={rise} />;
     case "schedule_proposal":

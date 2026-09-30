@@ -745,11 +745,20 @@ export async function browseDrive(auth: AuthContext, connectionId: string, folde
 export async function searchNotion(auth: AuthContext, connectionId: string, query: string) {
   await ownConnection(auth, connectionId, "notion");
   const results = await notionClientFor(auth, connectionId).search(query.slice(0, 100));
-  return results.map((p) => ({
-    id: p.id,
-    name: pageTitle(p),
-    kind: p.object === "database" ? ("database" as const) : ("page" as const),
-  }));
+  // Search returns one result per data source; Knowledge follows the database that holds it.
+  const seen = new Set<string>();
+  return results.flatMap((p) => {
+    const database =
+      p.object === "data_source"
+        ? (p.parent?.database_id ?? null)
+        : p.object === "database"
+          ? p.id
+          : null;
+    const id = database ?? p.id;
+    if (seen.has(id)) return [];
+    seen.add(id);
+    return [{ id, name: pageTitle(p), kind: database ? ("database" as const) : ("page" as const) }];
+  });
 }
 
 const selectionSchema = z

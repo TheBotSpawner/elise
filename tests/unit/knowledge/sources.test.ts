@@ -225,14 +225,16 @@ describe("Notion", () => {
           next_cursor: null,
         });
       if (url.includes("/blocks/sub/children")) return json({ results: [], next_cursor: null });
-      if (url.includes("/databases/db/query"))
+      if (url.endsWith("/databases/db"))
+        return json({ data_sources: [{ id: "ds1", name: "Rows" }] });
+      if (url.includes("/data_sources/ds1/query"))
         return json({
           results: [
             {
               object: "page",
               id: "row",
               last_edited_time: "t3",
-              parent: { type: "database_id" },
+              parent: { type: "data_source_id", data_source_id: "ds1", database_id: "db" },
               properties: {},
             },
           ],

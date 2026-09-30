@@ -3,7 +3,7 @@ import "server-only";
 import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
 
-import { NOTION_API, type FetchLike } from "./client";
+import { NOTION_API, type FetchLike } from "./http";
 
 /** Notion public integration OAuth (authorization code). Tokens never reach the browser. */
 export const NOTION_AUTH_URL = `${NOTION_API}/oauth/authorize`;

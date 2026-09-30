@@ -328,7 +328,8 @@ export type BackgroundJobRow = {
   id: string;
   workspace_id: string;
   user_id: string | null;
-  job_type: "schedule.run";
+  job_type: "schedule.run" | "structured.bulk";
+  input: Json | null;
   status: BackgroundJobStatus;
   progress_current: number | null;
   progress_total: number | null;
@@ -807,6 +808,33 @@ export type FinanceSourceRowRow = {
   updated_at: Ts;
 };
 
+export type StructuredSourceRow = {
+  id: string;
+  workspace_id: string;
+  connection_id: string | null;
+  provider_key: "notion";
+  database_id: string;
+  data_source_id: string;
+  name: string;
+  context: string | null;
+  semantic_type: "generic" | "habits";
+  schema_fingerprint: string;
+  schema_snapshot: Json;
+  field_mappings: Json;
+  allow_read: boolean;
+  allow_create: boolean;
+  allow_update: boolean;
+  allow_archive: boolean;
+  status: "active" | "needs_attention" | "paused" | "archived";
+  schema_issues: Json;
+  schema_checked_at: Ts | null;
+  url: string | null;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -935,6 +963,10 @@ export type Database = {
       >;
       knowledge_sync_runs: Table<KnowledgeSyncRunRow, "workspace_id" | "source_id" | "trigger">;
       finance_settings: Table<FinanceSettingsRow, "workspace_id">;
+      structured_sources: Table<
+        StructuredSourceRow,
+        "workspace_id" | "database_id" | "data_source_id" | "name" | "schema_fingerprint"
+      >;
       finance_accounts: Table<FinanceAccountRow, "workspace_id" | "name">;
       finance_categories: Table<FinanceCategoryRow, "workspace_id" | "name">;
       finance_transactions: Table<

@@ -168,6 +168,22 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       undoImport: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
     },
   },
+  // Mapped external databases (Notion today). Small writes follow the usual policy; archiving
+  // asks when ELISE proposes it; bulk changes always ask, with count and sample.
+  structured: {
+    key: "structured",
+    status: "available",
+    operations: {
+      listSources: READ,
+      getSchema: READ,
+      query: READ,
+      getRecord: READ,
+      createRecord: WRITE,
+      updateRecord: WRITE,
+      archiveRecord: ARCHIVE,
+      bulkUpdate: { kind: "write", risk: "high", defaultApproval: "always_ask" },
+    },
+  },
   web_search: { key: "web_search", status: "planned", operations: {} },
   voice: { key: "voice", status: "planned", operations: {} },
   // Proposing a Schedule from chat changes nothing: the user confirms on a card.

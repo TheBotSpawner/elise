@@ -853,3 +853,41 @@ describe("finance", () => {
     ).rejects.toThrow(/permission denied/);
   });
 });
+
+describe("structured sources", () => {
+  const as = <T>(u: { userId: string }, sql: string, args: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, args));
+
+  it("keeps mappings in their workspace and only on that workspace's Notion connections", async () => {
+    const conn = (
+      await db.query<{ id: string }>(
+        `insert into public.provider_connections (workspace_id, provider_key, external_account_id, display_name, status)
+         values ($1, 'notion', 'nw-alice', 'Firbot Workspace', 'connected') returning id`,
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    const insert = (u: { userId: string; workspaceId: string }, connection: string) =>
+      as(
+        u,
+        `insert into public.structured_sources (workspace_id, connection_id, database_id, data_source_id, name, schema_fingerprint)
+         values ($1, $2, 'db', $3, $4, 'f') returning id`,
+        [u.workspaceId, connection, `ds-${Math.random()}`, `Projects ${Math.random()}`],
+      );
+    await expect(insert(alice, conn)).resolves.toMatchObject({
+      rows: [{ id: expect.any(String) }],
+    });
+    expect((await as(bob, "select id from public.structured_sources")).rows).toHaveLength(0);
+    await expect(insert(bob, conn)).rejects.toThrow(/same workspace/);
+    const google = (
+      await db.query<{ id: string }>(
+        `insert into public.provider_connections (workspace_id, provider_key, external_account_id, display_name, status)
+         values ($1, 'google', 'g-alice-2', 'Personal', 'connected') returning id`,
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    await expect(insert(alice, google)).rejects.toThrow(/same workspace and provider/);
+    await expect(as(alice, "delete from public.structured_sources")).rejects.toThrow(
+      /permission denied/,
+    );
+  });
+});

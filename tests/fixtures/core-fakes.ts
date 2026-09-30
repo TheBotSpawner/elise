@@ -22,6 +22,7 @@ import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
+import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 
 export const NATIVE_BINDING: CapabilityBinding = {
@@ -222,6 +223,7 @@ export function makePorts(
       ...LIST_TOOLS,
       ...NOTE_TOOLS,
       ...FINANCE_TOOLS,
+      ...STRUCTURED_TOOLS,
     ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>

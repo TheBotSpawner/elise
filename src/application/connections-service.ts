@@ -522,6 +522,13 @@ export async function disconnectConnection(auth: AuthContext, connectionId: stri
   // Sync stops now, and what ELISE indexed through this account is deleted.
   await purgeConnectionKnowledge(auth.workspaceId, connectionId);
   await purgeConnectionFinance(auth.workspaceId, connectionId);
+  // Mapped databases stay mapped (reconnecting resumes them) but stop working now.
+  await createAdminClient()
+    .from("structured_sources")
+    .update({ status: "paused" })
+    .eq("workspace_id", auth.workspaceId)
+    .eq("connection_id", connectionId)
+    .is("archived_at", null);
 
   const now = new Date().toISOString();
   await Promise.all([
@@ -663,16 +670,40 @@ export async function completeNotionConnection(
     },
   );
   await auth.db.from("connection_capabilities").upsert(
-    {
-      workspace_id: auth.workspaceId,
-      connection_id: connectionId,
-      capability_key: "knowledge",
-      enabled: true,
-      permission_level: "read",
-      authorized_scopes: ["notion:read_content"],
-    },
+    [
+      {
+        workspace_id: auth.workspaceId,
+        connection_id: connectionId,
+        capability_key: "knowledge",
+        enabled: true,
+        permission_level: "read",
+        authorized_scopes: ["notion:read_content"],
+      },
+      // Structured Data: databases the user maps. Whether ELISE may insert/update is set by
+      // the integration's capabilities in Notion and per database in ELISE.
+      {
+        workspace_id: auth.workspaceId,
+        connection_id: connectionId,
+        capability_key: "structured",
+        enabled: true,
+        permission_level: "write",
+        authorized_scopes: [
+          "notion:read_content",
+          "notion:update_content",
+          "notion:insert_content",
+        ],
+      },
+    ],
     { onConflict: "connection_id,capability_key" },
   );
+  await ensureBinding(auth, connectionId, "structured");
+  // Reconnecting resumes the databases that were mapped through this connection.
+  await auth.db
+    .from("structured_sources")
+    .update({ status: "active", schema_checked_at: null })
+    .eq("workspace_id", auth.workspaceId)
+    .eq("connection_id", connectionId)
+    .eq("status", "paused");
   await audit(auth, connectionId, existing ? "connection.reauthorized" : "connection.created", {
     provider: "notion",
   });

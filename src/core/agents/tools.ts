@@ -22,6 +22,12 @@ import type { HabitProgress, HabitsProvider } from "../capabilities/habits";
 import type { ListsProvider, NativeList } from "../capabilities/lists";
 import type { Note, NotesProvider } from "../capabilities/notes";
 import { getCapability } from "../capabilities/registry";
+import type {
+  FieldMapping,
+  StructuredProvider,
+  StructuredRecord,
+  StructuredSource,
+} from "../capabilities/structured";
 import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { KnowledgeReader } from "../knowledge/model";
@@ -54,6 +60,7 @@ export interface CapabilityProviders {
   lists: ListsProvider;
   notes: NotesProvider;
   finance: FinanceProvider;
+  structured: StructuredProvider;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -139,6 +146,27 @@ export type ToolDisplay =
     }
   | { kind: "finance_accounts"; accounts: FinanceAccount[] }
   | { kind: "finance_categories"; categories: FinanceCategory[] }
+  /** Structured records from a mapped source (the source stays authoritative). */
+  | { kind: "structured_sources"; sources: StructuredSource[] }
+  | {
+      kind: "structured_records";
+      source: StructuredSourceRef;
+      records: StructuredRecord[];
+      hasMore: boolean;
+    }
+  | {
+      kind: "structured_record";
+      source: StructuredSourceRef;
+      record: StructuredRecord;
+      change: "created" | "updated" | "archived" | "shown";
+    }
+  | {
+      kind: "structured_bulk_preview";
+      source: StructuredSourceRef;
+      count: number;
+      sample: StructuredRecord[];
+      change: string;
+    }
   | {
       /** Evidence behind a Knowledge answer: what the citations [n] point to. */
       kind: "knowledge_evidence";
@@ -158,6 +186,13 @@ export type ToolDisplay =
       count: number;
       source: string;
     };
+
+export interface StructuredSourceRef {
+  id: string;
+  name: string;
+  account: string;
+  fields: FieldMapping[];
+}
 
 export interface ToolRunEnv {
   ctx: ToolContext;

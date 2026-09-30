@@ -22,6 +22,7 @@ import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
+import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 import { getEmbeddingProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
@@ -43,6 +44,9 @@ import { GoogleHttp } from "@/infrastructure/providers/google/http";
 import { GoogleSheetsFinanceProvider } from "@/infrastructure/providers/google/sheets-finance";
 import { GoogleTasksProvider } from "@/infrastructure/providers/google/tasks";
 import { NotionClient } from "@/infrastructure/providers/notion/client";
+import { NotionHttp } from "@/infrastructure/providers/notion/http";
+import { NotionStructuredApi } from "@/infrastructure/providers/notion/structured";
+import { NotionStructuredProvider } from "@/infrastructure/providers/notion/structured-provider";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 import { SupabaseActionLog } from "@/infrastructure/supabase/repositories/action-log";
 import {
@@ -53,6 +57,7 @@ import { SupabaseKnowledgeReader } from "@/infrastructure/supabase/repositories/
 
 import type { AuthContext } from "./auth-context";
 import { syncNoteToKnowledge } from "./notes-knowledge";
+import { startStructuredBulk } from "./structured-bulk";
 
 /** Every tool ELISE can use. Exposure per run is filtered by available capabilities. */
 export const toolRegistry = new ToolRegistry().register(
@@ -66,6 +71,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...LIST_TOOLS,
   ...NOTE_TOOLS,
   ...FINANCE_TOOLS,
+  ...STRUCTURED_TOOLS,
 );
 
 /**
@@ -130,12 +136,12 @@ export function googleHttpFor(auth: AuthContext, connectionId: string): GoogleHt
   );
 }
 
-/** Notion client for one connection of this workspace. Notion tokens do not expire. */
-export function notionClientFor(auth: AuthContext, connectionId: string): NotionClient {
+/** Token + revocation handling for one Notion connection (shared by Knowledge and Structured). */
+function notionAuth(auth: AuthContext, connectionId: string) {
   const ref = { connectionId, workspaceId: auth.workspaceId };
   const vault = new SupabaseCredentialVault(createAdminClient(), "notion");
-  return new NotionClient(
-    async () => {
+  return {
+    token: async () => {
       const credential = await vault.read(ref);
       if (!credential) {
         await markNeedsReauthorization(auth, ref, "missing_credentials", "Notion");
@@ -145,8 +151,20 @@ export function notionClientFor(auth: AuthContext, connectionId: string): Notion
       }
       return credential.accessToken;
     },
-    () => markNeedsReauthorization(auth, ref, "unauthorized", "Notion"),
-  );
+    onUnauthorized: () => markNeedsReauthorization(auth, ref, "unauthorized", "Notion"),
+  };
+}
+
+/** Notion client for Knowledge (one connection of this workspace). Notion tokens do not expire. */
+export function notionClientFor(auth: AuthContext, connectionId: string): NotionClient {
+  const a = notionAuth(auth, connectionId);
+  return new NotionClient(a.token, a.onUnauthorized);
+}
+
+/** Notion structured-data API for one connection of this workspace. */
+export function notionStructuredApiFor(auth: AuthContext, connectionId: string) {
+  const a = notionAuth(auth, connectionId);
+  return new NotionStructuredApi(new NotionHttp(a.token, a.onUnauthorized));
 }
 
 /** Maps a resolved binding to the concrete provider adapter. */
@@ -239,6 +257,17 @@ function providerFactory(
         return new GoogleSheetsFinanceProvider(auth.db, auth.workspaceId, binding.connectionId);
       }
       throw unsupported("finance", binding);
+    },
+    structured(binding) {
+      if (binding.providerKey !== "notion") throw unsupported("structured", binding);
+      return new NotionStructuredProvider(
+        auth.db,
+        auth.workspaceId,
+        binding.connectionId,
+        binding.label,
+        notionStructuredApiFor(auth, binding.connectionId),
+        (input) => startStructuredBulk(auth.workspaceId, auth.userId, input),
+      );
     },
     // ELISE's own index, whatever the source; always this workspace's.
     knowledge() {

@@ -2,14 +2,19 @@ import { Suspense } from "react";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { listConnections } from "@/application/connections-service";
+import { listStructuredSources } from "@/application/structured-service";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { ConnectionsView } from "@/features/connections/connections-view";
+import { StructuredSourcesSection } from "@/features/structured/sources-section";
 import { getT } from "@/lib/i18n/server";
 
 /** What ELISE can access, per account. The user stays in control (docs/product/04 §13-15). */
 export default async function ConnectionsPage() {
   const [auth, { t }] = await Promise.all([requireAuthContext(), getT()]);
-  const { connections, googleAvailable, notionAvailable } = await listConnections(auth);
+  const [{ connections, googleAvailable, notionAvailable }, sources] = await Promise.all([
+    listConnections(auth),
+    listStructuredSources(auth).catch(() => []),
+  ]);
 
   return (
     <PageContainer>
@@ -21,6 +26,11 @@ export default async function ConnectionsPage() {
           notionAvailable={notionAvailable}
         />
       </Suspense>
+      <StructuredSourcesSection
+        sources={sources}
+        hasNotion={connections.some((c) => c.providerKey === "notion" && c.status === "connected")}
+        t={t}
+      />
     </PageContainer>
   );
 }
