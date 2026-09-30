@@ -63,7 +63,7 @@ describe("tenancy bootstrap", () => {
       [alice.workspaceId],
     );
     expect(rows.rows).toEqual(
-      ["goals", "habits", "lists", "notes", "tasks"].map((capability_key) => ({
+      ["finance", "goals", "habits", "lists", "notes", "tasks"].map((capability_key) => ({
         provider_key: "elise_native",
         capability_key,
         is_default: true,
@@ -727,5 +727,129 @@ describe("knowledge space appearance", () => {
     });
     await expect(insert("<svg onload=x>", "blue")).rejects.toThrow(/check/);
     await expect(insert("folder", "#ff0000")).rejects.toThrow(/check/);
+  });
+});
+
+describe("finance", () => {
+  const as = <T>(u: { userId: string }, sql: string, args: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, args));
+
+  it("stores exact decimals and keeps transactions inside their workspace", async () => {
+    const tx = (
+      await as<{ id: string; amount: string }>(
+        alice,
+        `insert into public.finance_transactions
+           (workspace_id, transaction_type, amount, currency, transaction_date, counterparty, fingerprint)
+         values ($1, 'expense', '0.1', 'USD', '2026-09-29', 'OpenAI', 'fp') returning id, amount::text`,
+        [alice.workspaceId],
+      )
+    ).rows[0]!;
+    await as(
+      alice,
+      `insert into public.finance_transactions (workspace_id, transaction_type, amount, currency, transaction_date, fingerprint)
+       values ($1, 'expense', '0.2', 'USD', '2026-09-29', 'fp2')`,
+      [alice.workspaceId],
+    );
+    const sum = await as<{ total: string }>(
+      alice,
+      "select sum(amount)::text as total from public.finance_transactions where currency = 'USD'",
+    );
+    expect(sum.rows[0]!.total).toBe("0.3000");
+    expect((await as(bob, "select id from public.finance_transactions")).rows).toHaveLength(0);
+    await expect(
+      as(bob, "update public.finance_transactions set amount = 1 where id = $1 returning id", [
+        tx.id,
+      ]),
+    ).resolves.toMatchObject({ rows: [] });
+    await expect(
+      as(alice, "delete from public.finance_transactions where id = $1", [tx.id]),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("refuses invalid money and currencies", async () => {
+    const insert = (amount: string, currency: string) =>
+      as(
+        alice,
+        `insert into public.finance_transactions (workspace_id, transaction_type, amount, currency, transaction_date, fingerprint)
+         values ($1, 'expense', $2, $3, '2026-09-29', 'fp')`,
+        [alice.workspaceId, amount, currency],
+      );
+    await expect(insert("-5", "USD")).rejects.toThrow(/check/);
+    await expect(insert("5", "usd")).rejects.toThrow(/check/);
+    await expect(insert("5", "DOLLARS")).rejects.toThrow(/check/);
+  });
+
+  it("links accounts, categories and imports only within the workspace", async () => {
+    const account = (
+      await as<{ id: string }>(
+        alice,
+        "insert into public.finance_accounts (workspace_id, name, account_type, currency) values ($1, 'Visa', 'credit_card', 'ARS') returning id",
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    await expect(
+      as(
+        bob,
+        `insert into public.finance_transactions (workspace_id, transaction_type, amount, currency, transaction_date, account_id, fingerprint)
+         values ($1, 'expense', 1, 'ARS', '2026-09-29', $2, 'fp')`,
+        [bob.workspaceId, account],
+      ),
+    ).rejects.toThrow(/same workspace/);
+    expect((await as(bob, "select id from public.finance_accounts")).rows).toHaveLength(0);
+    await expect(
+      as(alice, "insert into public.finance_accounts (workspace_id, name) values ($1, 'visa')", [
+        alice.workspaceId,
+      ]),
+    ).rejects.toThrow(/duplicate key/);
+  });
+
+  it("lets members read connected-sheet rows and import rows, but only ELISE's server write them", async () => {
+    const conn = (
+      await db.query<{ id: string }>(
+        `insert into public.provider_connections (workspace_id, provider_key, external_account_id, display_name, status)
+         values ($1, 'google', 'g-alice', 'Personal', 'connected') returning id`,
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    const source = (
+      await as<{ id: string }>(
+        alice,
+        `insert into public.finance_sources (workspace_id, connection_id, display_name, spreadsheet_id, sheet_id, sheet_title)
+         values ($1, $2, 'Firbot Revenue', 'abcdefghijklmnopqrstuvwxyz', 0, 'Ingresos') returning id`,
+        [alice.workspaceId, conn],
+      )
+    ).rows[0]!.id;
+    // Service role (the sync) writes the mirror.
+    await db.query(
+      `insert into public.finance_source_rows (workspace_id, source_id, row_key, row_number, transaction_type, amount, currency, transaction_date, fingerprint)
+       values ($1, $2, 'k#1', 2, 'income', 1500, 'USD', '2026-09-10', 'k')`,
+      [alice.workspaceId, source],
+    );
+    expect((await as(alice, "select id from public.finance_source_rows")).rows).toHaveLength(1);
+    expect((await as(bob, "select id from public.finance_source_rows")).rows).toHaveLength(0);
+    await expect(
+      as(
+        alice,
+        `insert into public.finance_source_rows (workspace_id, source_id, row_key, row_number, transaction_type, amount, currency, transaction_date, fingerprint)
+         values ($1, $2, 'k#2', 3, 'income', 1, 'USD', '2026-09-10', 'k2')`,
+        [alice.workspaceId, source],
+      ),
+    ).rejects.toThrow(/permission denied/);
+    // Bob can't attach a source to Alice's Google connection.
+    await expect(
+      as(
+        bob,
+        `insert into public.finance_sources (workspace_id, connection_id, display_name, spreadsheet_id, sheet_id, sheet_title)
+         values ($1, $2, 'x', 'abcdefghijklmnopqrstuvwxyz', 1, 'x')`,
+        [bob.workspaceId, conn],
+      ),
+    ).rejects.toThrow(/same workspace/);
+    await expect(
+      as(
+        alice,
+        "insert into public.import_rows (workspace_id, import_id, source_row_number, status) values ($1, gen_random_uuid(), 2, 'invalid')",
+        [alice.workspaceId],
+      ),
+    ).rejects.toThrow(/permission denied/);
   });
 });

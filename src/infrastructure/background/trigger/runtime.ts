@@ -24,6 +24,14 @@ const TASKS: Record<
     id: "knowledge-sync",
     tag: (p) => `knowledge_sync:${(p as { syncRunId: string }).syncRunId}`,
   },
+  "finance.import": {
+    id: "finance-import",
+    tag: (p) => `finance_import:${(p as { importId: string }).importId}`,
+  },
+  "finance.sync": {
+    id: "finance-sync",
+    tag: (p) => `finance_source:${(p as { sourceId: string }).sourceId}`,
+  },
 };
 
 /**

@@ -11,6 +11,7 @@ import {
   GoogleCalendarIcon,
   GoogleMark,
   GoogleDriveIcon,
+  GoogleSheetsIcon,
   GoogleTasksIcon,
   NotionIcon,
 } from "@/components/elise/brand-icons";
@@ -32,12 +33,13 @@ import {
   type ConnectionActionResult,
 } from "./actions";
 
-const GOOGLE_CAPS = ["calendar", "tasks", "email", "knowledge"] as const;
+const GOOGLE_CAPS = ["calendar", "tasks", "email", "knowledge", "finance"] as const;
 const CAP_LOGOS = {
   calendar: GoogleCalendarIcon,
   tasks: GoogleTasksIcon,
   email: GmailIcon,
   knowledge: GoogleDriveIcon,
+  finance: GoogleSheetsIcon,
 } as const;
 // Product names are brands: never translated.
 const CAP_PRODUCT = {
@@ -45,9 +47,10 @@ const CAP_PRODUCT = {
   tasks: "Google Tasks",
   email: "Gmail",
   knowledge: "Google Drive",
+  finance: "Google Sheets",
 } as const;
 /** Gmail is opt-in: its consent is broader, so least privilege by default. */
-const OPT_IN = new Set<string>(["email", "knowledge"]);
+const OPT_IN = new Set<string>(["email", "knowledge", "finance"]);
 
 // Which account cards are expanded, remembered per browser (collapsed by default).
 const EXPANDED_KEY = "elise.connections.expanded";

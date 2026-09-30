@@ -44,6 +44,17 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
   };
 }
 
+/** Background work that belongs to a workspace (Knowledge, Finance) runs as its owner. */
+export async function workspaceContext(workspaceId: string): Promise<AuthContext> {
+  const { data } = await createAdminClient()
+    .from("workspaces")
+    .select("owner_user_id, archived_at")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  if (!data || data.archived_at) throw new AppError("NOT_FOUND", "Workspace not found");
+  return ownerContext(workspaceId, data.owner_user_id);
+}
+
 export function runnerPorts(): RunnerPorts {
   return {
     store: new SupabaseScheduleStore(createAdminClient()),

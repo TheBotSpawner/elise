@@ -74,40 +74,67 @@ export async function gatherBrief(
 
   const today = toLocalDateTime(ctx.now, ctx.timezone).slice(0, 10);
   const want = new Set(config.blocks);
-  const [events, unread, needsReply, waiting, tasks, habits, goals] = await Promise.all([
-    want.has("calendar")
-      ? call("calendar", "calendar.listEvents", { from: today, limit: 50 }, config.sources.calendar)
-      : undefined,
-    want.has("email")
-      ? call(
-          "email",
-          "email.listRecent",
-          { unreadOnly: true, days: 1, limit: 25 },
-          config.sources.email,
-        )
-      : undefined,
-    want.has("needs_reply")
-      ? call(
-          "needs_reply",
-          "email.findFollowUps",
-          { kind: "needs_reply", days: 7, limit: 10 },
-          config.sources.email,
-        )
-      : undefined,
-    want.has("needs_reply")
-      ? call(
-          "waiting_on_others",
-          "email.findFollowUps",
-          { kind: "waiting_on_others", days: 14, olderThanHours: 48, limit: 5 },
-          config.sources.email,
-        )
-      : undefined,
-    want.has("tasks")
-      ? call("tasks", "tasks.list", { status: "open", limit: OPEN_LIMIT }, config.sources.tasks)
-      : undefined,
-    want.has("habits") ? call("habits", "habits.list", {}, "all") : undefined,
-    want.has("goals") ? call("goals", "goals.list", { status: "active" }, "all") : undefined,
-  ]);
+  const [events, unread, needsReply, waiting, tasks, habits, goals, month, recent, yesterday] =
+    await Promise.all([
+      want.has("calendar")
+        ? call(
+            "calendar",
+            "calendar.listEvents",
+            { from: today, limit: 50 },
+            config.sources.calendar,
+          )
+        : undefined,
+      want.has("email")
+        ? call(
+            "email",
+            "email.listRecent",
+            { unreadOnly: true, days: 1, limit: 25 },
+            config.sources.email,
+          )
+        : undefined,
+      want.has("needs_reply")
+        ? call(
+            "needs_reply",
+            "email.findFollowUps",
+            { kind: "needs_reply", days: 7, limit: 10 },
+            config.sources.email,
+          )
+        : undefined,
+      want.has("needs_reply")
+        ? call(
+            "waiting_on_others",
+            "email.findFollowUps",
+            { kind: "waiting_on_others", days: 14, olderThanHours: 48, limit: 5 },
+            config.sources.email,
+          )
+        : undefined,
+      want.has("tasks")
+        ? call("tasks", "tasks.list", { status: "open", limit: OPEN_LIMIT }, config.sources.tasks)
+        : undefined,
+      want.has("habits") ? call("habits", "habits.list", {}, "all") : undefined,
+      want.has("goals") ? call("goals", "goals.list", { status: "active" }, "all") : undefined,
+      // Finance: month-to-date totals, the last 30 days vs the 30 before (for grounded
+      // observations), and yesterday's expenses. Every number is computed by the tools.
+      want.has("finance")
+        ? call("finance", "finance.getSummary", { period: "this_month", compare: "none" }, "all")
+        : undefined,
+      want.has("finance")
+        ? call(
+            "finance",
+            "finance.getSummary",
+            { period: "last_30_days", compare: "previous", type: "expense" },
+            "all",
+          )
+        : undefined,
+      want.has("finance")
+        ? call(
+            "finance",
+            "finance.listTransactions",
+            { period: "yesterday", type: "expense", limit: 50 },
+            "all",
+          )
+        : undefined,
+    ]);
 
   if (failed === attempted && attempted > 0) {
     // Nothing could be loaded: retry later if it looks transient, otherwise fail clearly.
@@ -127,6 +154,13 @@ export async function gatherBrief(
       tasks: tasks?.kind === "task_list" ? tasks.tasks : undefined,
       habits: habits?.kind === "habits" ? habits.progress : undefined,
       goals: goals?.kind === "goals" ? goals.goals : undefined,
+      finance: want.has("finance")
+        ? {
+            month: month?.kind === "finance_summary" ? month.summary : null,
+            recent: recent?.kind === "finance_summary" ? recent.summary : null,
+            yesterday: yesterday?.kind === "finance_transactions" ? yesterday.transactions : [],
+          }
+        : undefined,
       warnings,
     },
     approvalId,

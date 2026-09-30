@@ -9,6 +9,14 @@ import type {
   EmailThread,
   FollowUp,
 } from "../capabilities/email";
+import type {
+  FinanceAccount,
+  FinanceBreakdown,
+  FinanceCategory,
+  FinanceProvider,
+  FinanceSummary,
+  FinanceTransaction,
+} from "../capabilities/finance";
 import type { Goal, GoalProgress, GoalsProvider } from "../capabilities/goals";
 import type { HabitProgress, HabitsProvider } from "../capabilities/habits";
 import type { ListsProvider, NativeList } from "../capabilities/lists";
@@ -45,6 +53,7 @@ export interface CapabilityProviders {
   goals: GoalsProvider;
   lists: ListsProvider;
   notes: NotesProvider;
+  finance: FinanceProvider;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -119,6 +128,17 @@ export type ToolDisplay =
   | { kind: "native_list"; list: NativeList }
   | { kind: "note"; note: Note; change: "created" | "updated" | "archived" }
   | { kind: "notes"; notes: Note[] }
+  /** Finance: every number was computed by ELISE, per currency. */
+  | { kind: "finance_summary"; summary: FinanceSummary }
+  | { kind: "finance_breakdown"; breakdown: FinanceBreakdown }
+  | { kind: "finance_transactions"; transactions: FinanceTransaction[]; total: number }
+  | {
+      kind: "finance_transaction";
+      transaction: FinanceTransaction;
+      change: "created" | "updated" | "archived" | "shown";
+    }
+  | { kind: "finance_accounts"; accounts: FinanceAccount[] }
+  | { kind: "finance_categories"; categories: FinanceCategory[] }
   | {
       /** Evidence behind a Knowledge answer: what the citations [n] point to. */
       kind: "knowledge_evidence";

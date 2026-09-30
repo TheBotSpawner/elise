@@ -20,7 +20,7 @@ import { SupabaseKnowledgeStore } from "@/infrastructure/supabase/repositories/k
 import { downloadOriginal } from "@/infrastructure/supabase/storage";
 
 import type { AuthContext } from "./auth-context";
-import { ownerContext } from "./background";
+import { workspaceContext } from "./background";
 import { googleHttpFor, notionClientFor } from "./elise";
 
 /**
@@ -31,16 +31,6 @@ import { googleHttpFor, notionClientFor } from "./elise";
  */
 
 const log = (event: string, fields: Record<string, unknown>) => logger.info(event, fields);
-
-async function workspaceContext(workspaceId: string): Promise<AuthContext> {
-  const { data } = await createAdminClient()
-    .from("workspaces")
-    .select("owner_user_id, archived_at")
-    .eq("id", workspaceId)
-    .maybeSingle();
-  if (!data || data.archived_at) throw new AppError("NOT_FOUND", "Workspace not found");
-  return ownerContext(workspaceId, data.owner_user_id);
-}
 
 function ingestionPorts(auth: AuthContext): IngestionPorts {
   const store = new SupabaseKnowledgeStore(createAdminClient());

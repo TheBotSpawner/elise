@@ -23,7 +23,12 @@ type RealtimeTable =
   | "goal_links"
   | "lists"
   | "list_items"
-  | "notes";
+  | "notes"
+  | "finance_transactions"
+  | "finance_accounts"
+  | "finance_categories"
+  | "finance_sources"
+  | "imports";
 
 /**
  * Subscribes to workspace-scoped row changes (RLS still applies server-side) and calls

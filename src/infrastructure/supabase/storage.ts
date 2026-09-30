@@ -78,3 +78,52 @@ export async function removeOriginals(workspaceId: string, paths: string[]) {
   paths.forEach((p) => assertOwned(workspaceId, p));
   if (paths.length) await createAdminClient().storage.from(KNOWLEDGE_BUCKET).remove(paths);
 }
+
+// ── Finance imports (bucket `finance-imports`) ───────────────────────────────
+// Spreadsheets waiting to be imported: workspace/{workspace_id}/finance-imports/{import_id}/{file}.
+
+export const FINANCE_IMPORTS_BUCKET = "finance-imports";
+
+export function financeImportPath(workspaceId: string, importId: string, filename: string) {
+  const safe =
+    filename
+      .normalize("NFKD")
+      .replace(/[^\w.-]+/g, "_")
+      .replace(/_+/g, "_")
+      .slice(-120) || "file";
+  return `workspace/${workspaceId}/finance-imports/${importId}/${safe}`;
+}
+
+function assertFinanceOwned(workspaceId: string, path: string) {
+  if (!path.startsWith(`workspace/${workspaceId}/finance-imports/`) || path.includes("..")) {
+    throw new AppError("PERMISSION_DENIED", "That file does not belong to this workspace");
+  }
+}
+
+export async function createFinanceUploadUrl(workspaceId: string, path: string) {
+  assertFinanceOwned(workspaceId, path);
+  const { data, error } = await createAdminClient()
+    .storage.from(FINANCE_IMPORTS_BUCKET)
+    .createSignedUploadUrl(path);
+  if (error || !data)
+    throw new AppError("INTERNAL_ERROR", "Could not prepare the upload", { cause: error });
+  return { path: data.path, token: data.token };
+}
+
+export async function downloadFinanceImport(workspaceId: string, path: string) {
+  assertFinanceOwned(workspaceId, path);
+  const { data, error } = await createAdminClient()
+    .storage.from(FINANCE_IMPORTS_BUCKET)
+    .download(path);
+  if (error || !data)
+    throw new AppError("NOT_FOUND", "The uploaded file is missing. Upload it again.", {
+      cause: error,
+      recovery: "retry",
+    });
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+export async function removeFinanceImport(workspaceId: string, path: string) {
+  assertFinanceOwned(workspaceId, path);
+  await createAdminClient().storage.from(FINANCE_IMPORTS_BUCKET).remove([path]);
+}

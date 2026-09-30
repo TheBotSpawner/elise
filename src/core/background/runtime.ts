@@ -8,7 +8,9 @@ export type BackgroundJob =
       type: "knowledge.ingest";
       payload: { workspaceId: string; versionId: string; force?: boolean };
     }
-  | { type: "knowledge.sync"; payload: { workspaceId: string; syncRunId: string } };
+  | { type: "knowledge.sync"; payload: { workspaceId: string; syncRunId: string } }
+  | { type: "finance.import"; payload: { workspaceId: string; importId: string } }
+  | { type: "finance.sync"; payload: { workspaceId: string; sourceId: string } };
 
 export interface BackgroundRuntime {
   /** Same idempotency key → the runtime starts at most one execution. */

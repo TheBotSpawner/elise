@@ -21,7 +21,7 @@ const MODULES: { key: CapabilityKey; icon: LucideIcon; href: string }[] = [
   { key: "lists", icon: ListChecks, href: "/my-elise/lists" },
   { key: "goals", icon: Target, href: "/my-elise/goals" },
   { key: "notes", icon: StickyNote, href: "/my-elise/notes" },
-  { key: "finance", icon: Wallet, href: "" },
+  { key: "finance", icon: Wallet, href: "/my-elise/finance" },
 ];
 
 /** ELISE Native modules, grouped so the primary navigation stays small. */

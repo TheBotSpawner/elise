@@ -20,6 +20,13 @@ import {
   EmailThreadCard,
   FollowUpsCard,
 } from "./email-cards";
+import {
+  FinanceBreakdownCard,
+  FinanceListCard,
+  FinanceSummaryCard,
+  FinanceTransactionCard,
+  FinanceTransactionsCard,
+} from "./finance-cards";
 import { KnowledgeSourcesCard } from "./knowledge-cards";
 import { GoalsCard, HabitsCard, ListCard, NoteCard } from "./native-cards";
 
@@ -306,6 +313,17 @@ export function DisplayCard({
     case "note":
     case "notes":
       return <NoteCard display={display} rise={rise} />;
+    case "finance_summary":
+      return <FinanceSummaryCard display={display} rise={rise} />;
+    case "finance_breakdown":
+      return <FinanceBreakdownCard display={display} rise={rise} />;
+    case "finance_transactions":
+      return <FinanceTransactionsCard display={display} rise={rise} />;
+    case "finance_transaction":
+      return <FinanceTransactionCard display={display} rise={rise} />;
+    case "finance_accounts":
+    case "finance_categories":
+      return <FinanceListCard display={display} rise={rise} />;
     case "knowledge_evidence":
       return <KnowledgeSourcesCard display={display} rise={rise} />;
     case "schedule_proposal":

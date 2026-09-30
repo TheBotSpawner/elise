@@ -33,6 +33,7 @@ import {
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 
 import type { AuthContext } from "./auth-context";
+import { purgeConnectionFinance } from "./finance-sources";
 import { purgeConnectionKnowledge } from "./knowledge-service";
 
 // ── Pure rules (tested in isolation) ─────────────────────────────────────────
@@ -75,7 +76,7 @@ export function parseRequestedCapabilities(values: readonly string[]): GoogleCap
   if (caps.length === 0)
     throw new AppError(
       "VALIDATION_ERROR",
-      "Choose at least one of Calendar, Tasks, Email or Drive",
+      "Choose at least one of Calendar, Tasks, Email, Drive or Sheets",
     );
   return caps;
 }
@@ -296,7 +297,8 @@ export async function completeGoogleConnection(
         connection_id: connectionId,
         capability_key: p.capability,
         enabled: p.enabled,
-        permission_level: "write",
+        // Sheets are read-only in ELISE: Finance never writes back to a spreadsheet.
+        permission_level: p.capability === "finance" ? "read" : "write",
         authorized_scopes: p.scopes,
       },
       { onConflict: "connection_id,capability_key" },
@@ -472,7 +474,13 @@ export async function setDefaultConnection(
   connectionId: string,
   capability: CapabilityKey,
 ): Promise<void> {
-  await ownConnection(auth, connectionId);
+  const connection = await ownConnection(auth, connectionId);
+  if (capability === "finance" && connection.provider_key !== "elise_native") {
+    // Connected sheets are read-only: new records always go to ELISE Finance.
+    throw new AppError("VALIDATION_ERROR", "Google Sheets can't be the default for new records", {
+      recovery: "review",
+    });
+  }
   // One default per capability (enforced by a unique index): clear, then set.
   await auth.db
     .from("capability_bindings")
@@ -513,6 +521,7 @@ export async function disconnectConnection(auth: AuthContext, connectionId: stri
   await vault.remove(ref);
   // Sync stops now, and what ELISE indexed through this account is deleted.
   await purgeConnectionKnowledge(auth.workspaceId, connectionId);
+  await purgeConnectionFinance(auth.workspaceId, connectionId);
 
   const now = new Date().toISOString();
   await Promise.all([

@@ -15,6 +15,7 @@ import { makeExternalRef } from "@/core/providers/refs";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { EMAIL_TOOLS } from "@/core/tools/email";
+import { FINANCE_TOOLS } from "@/core/tools/finance";
 import { GOAL_TOOLS } from "@/core/tools/goals";
 import { HABIT_TOOLS } from "@/core/tools/habits";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
@@ -220,6 +221,7 @@ export function makePorts(
       ...GOAL_TOOLS,
       ...LIST_TOOLS,
       ...NOTE_TOOLS,
+      ...FINANCE_TOOLS,
     ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>

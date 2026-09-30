@@ -3,7 +3,7 @@
 One persistent intelligence that coordinates your digital world through chat, capabilities and
 replaceable providers.
 
-**Status:** pre-MVP — Slice 1 (Foundation), Slice 2 (Google Calendar + Tasks), Gmail + Email Copilot, Schedules + Morning Brief (Trigger.dev), Knowledge (uploads, Google Drive, Notion) and My Elise Native (Habits, Goals, Lists, Notes) implemented. See [What works today](#what-works-today).
+**Status:** pre-MVP — Slice 1 (Foundation), Slice 2 (Google Calendar + Tasks), Gmail + Email Copilot, Schedules + Morning Brief (Trigger.dev), Knowledge (uploads, Google Drive, Notion), My Elise Native (Habits, Goals, Lists, Notes, Tasks with lists) and Finance (native, imports, Google Sheets) implemented. See [What works today](#what-works-today).
 
 ## Stack
 
@@ -45,13 +45,14 @@ Connections to Google are separate from signing in to ELISE. To enable them:
 
 1. **Google Cloud Console** → create (or pick) a project.
 2. **APIs & Services → Library:** enable **Google Calendar API**, **Google Tasks API**,
-   **Gmail API** and **Google Drive API**.
+   **Gmail API**, **Google Drive API** and **Google Sheets API**.
 3. **Google Auth Platform → Branding / Audience:** app name, support email; User type
    _External_; while in _Testing_, add your Google accounts as **test users**.
 4. **Data Access (scopes):** add `openid`, `…/auth/userinfo.email`, `…/auth/userinfo.profile`,
    `https://www.googleapis.com/auth/calendar.events`,
    `https://www.googleapis.com/auth/calendar.readonly`, `https://www.googleapis.com/auth/tasks`,
-   `https://www.googleapis.com/auth/gmail.modify`, `https://www.googleapis.com/auth/drive.readonly`.
+   `https://www.googleapis.com/auth/gmail.modify`, `https://www.googleapis.com/auth/drive.readonly`,
+   `https://www.googleapis.com/auth/spreadsheets.readonly`.
 5. **Clients → Create client → Web application:**
    - Authorized JavaScript origin: `http://localhost:3000`
    - Authorized redirect URI: `http://localhost:3000/api/connections/google/callback`
@@ -90,6 +91,25 @@ Trigger.dev tasks in `src/trigger/knowledge.ts`. See
 - Embeddings use `OPENAI_EMBEDDING_MODEL` (default `text-embedding-3-small`).
 - Internal reindex (after changing the embedding model or chunking): trigger the
   `knowledge-reindex` task from the Trigger.dev dashboard with `{}` or `{ "workspaceId": "…" }`.
+
+### Finance (ELISE Finance, imports, Google Sheets)
+
+Finance tables, the private `finance-imports` bucket and the Finance capability for every
+workspace are created by migration `20260930000013_finance.sql`. See
+[ADR-010](docs/decisions/ADR-010-finance.md).
+
+- **ELISE Finance:** My Elise → Finance, or chat ("Registrá USD 25 de OpenAI en Software").
+  Amounts are exact decimals; totals are always per currency (nothing is converted).
+- **Imports (CSV / .xlsx, up to 20 MB):** Finance → Sources → Import. Columns are mapped (rules
+  plus an AI suggestion), every row is validated and previewed, probable duplicates are skipped
+  unless you include them, and one import can be undone. Imports over 500 rows run on
+  Trigger.dev (`finance-import` task).
+- **Google Sheets:** on `/connections`, press **Allow** on the Google Sheets row of a Google
+  account (scope `spreadsheets.readonly`, incremental: other capabilities keep working, no
+  reconnect). Then Finance → Sources → **Connect Google Sheet** (the sheet stays the source of
+  truth; ELISE syncs hourly on Trigger.dev and on **Sync now**) or **Import from Google Sheets**
+  (rows become ELISE Finance transactions). Recent spreadsheets are listed when Drive is also
+  allowed; otherwise paste the spreadsheet link.
 
 ### Schedules and Morning Brief (Trigger.dev)
 
@@ -204,6 +224,14 @@ database is needed.
   resume, edit, delete. Partial failures complete with a warning; late briefs are skipped
   instead of arriving in the afternoon. Optional browser notification (asked in context, no
   content in the preview).
+- **Finance:** income and expenses in ELISE Finance, from the UI or chat ("Anotá 48.000 pesos de
+  supermercado con Visa", "¿Cuánto gasté en software este mes?", "compará este mes con el
+  anterior"). Every total, comparison and insight is computed by ELISE per currency, and USD and
+  ARS are never added together. When the currency isn't clear, ELISE asks. You can
+  import CSV/XLSX with a mapping, preview and undo, or connect Google Sheets read-only; results
+  keep their source (ELISE Finance / each sheet), and a sheet that was also imported isn't counted
+  twice. The Morning Brief can include an optional Finance block (off by default; notifications
+  never show amounts).
 - Dark / light / system theme; Spanish and English UI; responsive desktop + mobile navigation.
 
 ## Structure

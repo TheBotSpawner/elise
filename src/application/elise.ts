@@ -15,6 +15,7 @@ import { AppError } from "@/core/errors";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { EMAIL_TOOLS } from "@/core/tools/email";
+import { FINANCE_TOOLS } from "@/core/tools/finance";
 import { GOAL_TOOLS } from "@/core/tools/goals";
 import { HABIT_TOOLS } from "@/core/tools/habits";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
@@ -24,6 +25,7 @@ import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 import { getEmbeddingProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
+import { EliseFinanceProvider } from "@/infrastructure/providers/elise-native/finance";
 import { EliseGoalsProvider } from "@/infrastructure/providers/elise-native/goals";
 import { EliseHabitsProvider } from "@/infrastructure/providers/elise-native/habits";
 import { EliseListsProvider } from "@/infrastructure/providers/elise-native/lists";
@@ -38,6 +40,7 @@ import {
 } from "@/infrastructure/providers/google/credentials";
 import { GmailProvider } from "@/infrastructure/providers/google/gmail";
 import { GoogleHttp } from "@/infrastructure/providers/google/http";
+import { GoogleSheetsFinanceProvider } from "@/infrastructure/providers/google/sheets-finance";
 import { GoogleTasksProvider } from "@/infrastructure/providers/google/tasks";
 import { NotionClient } from "@/infrastructure/providers/notion/client";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
@@ -62,6 +65,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...GOAL_TOOLS,
   ...LIST_TOOLS,
   ...NOTE_TOOLS,
+  ...FINANCE_TOOLS,
 );
 
 /**
@@ -219,6 +223,22 @@ function providerFactory(
           }),
         ),
       );
+    },
+    finance(binding) {
+      if (binding.providerKey === "elise_native") {
+        return new EliseFinanceProvider(
+          auth.db,
+          auth.workspaceId,
+          auth.userId,
+          binding.connectionId,
+          auth.profile.locale,
+        );
+      }
+      // Connected Google Sheets: read-only, from the rows the last sync mirrored.
+      if (binding.providerKey === "google") {
+        return new GoogleSheetsFinanceProvider(auth.db, auth.workspaceId, binding.connectionId);
+      }
+      throw unsupported("finance", binding);
     },
     // ELISE's own index, whatever the source; always this workspace's.
     knowledge() {

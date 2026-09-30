@@ -4,6 +4,7 @@ import type { ToolDefinition } from "../agents/tools";
 import { AppError } from "../errors";
 import {
   BRIEF_BLOCKS,
+  DEFAULT_BRIEF_BLOCKS,
   briefCapabilities,
   nextOccurrence,
   scheduleInputSchema,
@@ -72,7 +73,7 @@ export const proposeScheduleTool: ToolDefinition = {
         ? { kind: "once", at: `${p.date}T${p.time}` }
         : { kind: "weekly", days: p.days, time: p.time },
       timezone: env.ctx.timezone,
-      configuration: { blocks: p.blocks ?? [...BRIEF_BLOCKS] },
+      configuration: { blocks: p.blocks ?? [...DEFAULT_BRIEF_BLOCKS] },
       instructions: p.instructions ?? null,
       delivery: { notify: p.notify },
     });

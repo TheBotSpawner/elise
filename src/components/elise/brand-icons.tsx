@@ -103,6 +103,20 @@ export function GoogleDriveIcon({ size = 32, ...props }: Props) {
   );
 }
 
+export function GoogleSheetsIcon({ size = 32, ...props }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden {...props}>
+      <path fill="#0F9D58" d="M29 3H12a4 4 0 0 0-4 4v34a4 4 0 0 0 4 4h24a4 4 0 0 0 4-4V14z" />
+      <path fill="#87CEAC" d="M29 3v8a3 3 0 0 0 3 3h8z" />
+      <path
+        fill="#F1F1F1"
+        d="M15 21h18v15H15zm2.5 2.5v3.8h5.3v-3.8zm7.7 0v3.8h5.3v-3.8zm-7.7 6.2v3.8h5.3v-3.8zm7.7 0v3.8h5.3v-3.8z"
+        fillRule="evenodd"
+      />
+    </svg>
+  );
+}
+
 export function NotionIcon({ size = 32, ...props }: Props) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden {...props}>

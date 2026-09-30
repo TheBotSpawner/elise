@@ -11,6 +11,8 @@ import type {
   BriefWarning,
   MorningBrief,
 } from "@/core/briefs/morning-brief";
+import { useInsightText } from "@/features/chat/finance-cards";
+import { useMoney } from "@/features/finance/format";
 import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
@@ -279,6 +281,10 @@ export function BriefView({
         </Section>
       )}
 
+      {brief.finance && (brief.finance.month.length > 0 || brief.finance.yesterday.length > 0) && (
+        <FinanceSection finance={brief.finance} />
+      )}
+
       {brief.goals && brief.goals.length > 0 && (
         <Section label={t.brief.goals}>
           <ul className="flex flex-col gap-1.5 text-[14px]">
@@ -295,5 +301,59 @@ export function BriefView({
         </Section>
       )}
     </article>
+  );
+}
+
+/** Month so far per currency, yesterday's largest expenses, grounded observations. */
+function FinanceSection({ finance }: { finance: NonNullable<MorningBrief["finance"]> }) {
+  const { t } = useI18n();
+  const money = useMoney();
+  const insight = useInsightText();
+  return (
+    <Section label={t.brief.finance}>
+      <div className="flex flex-col gap-3 text-[14px]">
+        {finance.month.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-[12.5px] text-faint">{t.brief.monthSoFar}</span>
+            <ul className="flex flex-col gap-1">
+              {finance.month.map((c) => (
+                <li
+                  key={c.currency}
+                  className="flex flex-wrap items-baseline justify-between gap-x-3"
+                >
+                  <span className="font-medium">{c.currency}</span>
+                  <span className="font-mono text-[13px] text-muted">
+                    <span className="text-success">+{money(c.income, c.currency)}</span>
+                    {" · "}−{money(c.expense, c.currency)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {finance.yesterday.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-[12.5px] text-faint">{t.brief.yesterdaySpending}</span>
+            <ul className="flex flex-col gap-1">
+              {finance.yesterday.map((y, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate">{y.label}</span>
+                  <span className="shrink-0 font-mono text-[13px] text-muted">
+                    {money(y.amount, y.currency)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {finance.insights.length > 0 && (
+          <ul className="flex flex-col gap-1 text-[13.5px] text-muted">
+            {finance.insights.map((i, n) => (
+              <li key={n}>{insight(i)}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Section>
   );
 }

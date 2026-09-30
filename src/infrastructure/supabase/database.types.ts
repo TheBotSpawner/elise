@@ -648,6 +648,165 @@ export type KnowledgeSyncRunRow = {
   created_at: Ts;
 };
 
+type Source = "user_ui" | "ai" | "schedule" | "import" | "system";
+
+export type FinanceSettingsRow = {
+  workspace_id: string;
+  default_currency: string | null;
+  reporting_currency: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type FinanceAccountRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  account_type:
+    "cash" | "bank" | "credit_card" | "debit_card" | "digital_wallet" | "business" | "other";
+  currency: string | null;
+  status: "active" | "archived";
+  metadata: Json;
+  source: Source;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type FinanceCategoryRow = {
+  id: string;
+  workspace_id: string;
+  parent_category_id: string | null;
+  name: string;
+  category_type: "income" | "expense" | "both";
+  status: "active" | "archived";
+  source: Source;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+/** `amount` is numeric: always read as text (`amount::text`) and written as a decimal string. */
+export type FinanceTransactionRow = {
+  id: string;
+  workspace_id: string;
+  transaction_type: "income" | "expense";
+  amount: string;
+  currency: string;
+  transaction_date: string;
+  description: string | null;
+  counterparty: string | null;
+  account_id: string | null;
+  category_id: string | null;
+  subcategory: string | null;
+  payment_method: string | null;
+  project: string | null;
+  entity_id: string | null;
+  status: "completed" | "pending" | "cancelled";
+  notes: string | null;
+  source: Source;
+  import_id: string | null;
+  import_row_number: number | null;
+  external_reference: string | null;
+  fingerprint: string;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type ImportRow = {
+  id: string;
+  workspace_id: string;
+  import_type: "finance_transactions";
+  source_type: "csv" | "xlsx" | "google_sheets";
+  source_reference: string;
+  source_label: string | null;
+  connection_id: string | null;
+  file_path: string | null;
+  file_hash: string | null;
+  status:
+    "uploading" | "uploaded" | "importing" | "completed" | "failed" | "rolled_back" | "cancelled";
+  mapping_config: Json;
+  total_rows: number;
+  valid_rows: number;
+  invalid_rows: number;
+  duplicate_rows: number;
+  imported_rows: number;
+  error_code: string | null;
+  runtime_job_id: string | null;
+  created_by_user_id: string | null;
+  started_at: Ts | null;
+  completed_at: Ts | null;
+  rolled_back_at: Ts | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type ImportRowRow = {
+  id: string;
+  workspace_id: string;
+  import_id: string;
+  source_row_number: number;
+  raw_data: Json;
+  normalized_data: Json | null;
+  status: "imported" | "invalid" | "duplicate";
+  error_details: Json | null;
+  created_resource_type: string | null;
+  created_resource_id: string | null;
+  created_at: Ts;
+};
+
+export type FinanceSourceRow = {
+  id: string;
+  workspace_id: string;
+  source_type: "google_sheets";
+  connection_id: string | null;
+  display_name: string;
+  spreadsheet_id: string;
+  sheet_id: number;
+  sheet_title: string;
+  mapping_config: Json;
+  include_in_totals: boolean;
+  status: "idle" | "syncing" | "ready" | "needs_attention" | "disconnected" | "archived";
+  row_count: number;
+  invalid_rows: number;
+  last_synced_at: Ts | null;
+  last_error_code: string | null;
+  next_sync_at: Ts | null;
+  sync_started_at: Ts | null;
+  runtime_job_id: string | null;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type FinanceSourceRowRow = {
+  id: string;
+  workspace_id: string;
+  source_id: string;
+  row_key: string;
+  row_number: number;
+  transaction_type: "income" | "expense";
+  amount: string;
+  currency: string;
+  transaction_date: string;
+  description: string | null;
+  counterparty: string | null;
+  account_name: string | null;
+  category_name: string | null;
+  subcategory: string | null;
+  payment_method: string | null;
+  project: string | null;
+  status: "completed" | "pending" | "cancelled";
+  notes: string | null;
+  fingerprint: string;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -775,6 +934,42 @@ export type Database = {
         | "content"
       >;
       knowledge_sync_runs: Table<KnowledgeSyncRunRow, "workspace_id" | "source_id" | "trigger">;
+      finance_settings: Table<FinanceSettingsRow, "workspace_id">;
+      finance_accounts: Table<FinanceAccountRow, "workspace_id" | "name">;
+      finance_categories: Table<FinanceCategoryRow, "workspace_id" | "name">;
+      finance_transactions: Table<
+        FinanceTransactionRow,
+        | "workspace_id"
+        | "transaction_type"
+        | "amount"
+        | "currency"
+        | "transaction_date"
+        | "fingerprint"
+      >;
+      imports: Table<
+        ImportRow,
+        "workspace_id" | "import_type" | "source_type" | "source_reference"
+      >;
+      import_rows: Table<
+        ImportRowRow,
+        "workspace_id" | "import_id" | "source_row_number" | "status"
+      >;
+      finance_sources: Table<
+        FinanceSourceRow,
+        "workspace_id" | "display_name" | "spreadsheet_id" | "sheet_id" | "sheet_title"
+      >;
+      finance_source_rows: Table<
+        FinanceSourceRowRow,
+        | "workspace_id"
+        | "source_id"
+        | "row_key"
+        | "row_number"
+        | "transaction_type"
+        | "amount"
+        | "currency"
+        | "transaction_date"
+        | "fingerprint"
+      >;
     };
     Views: Record<never, never>;
     Functions: {

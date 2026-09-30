@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import {
   BRIEF_BLOCKS,
+  DEFAULT_BRIEF_BLOCKS,
   FUTURE_BRIEF_BLOCKS,
   type BriefBlock,
   type ScheduleInput,
@@ -27,7 +28,7 @@ export function defaultBrief(timezone: string, name: string): ScheduleInput {
     definition: { kind: "weekly", days: [1, 2, 3, 4, 5], time: "07:30" },
     timezone,
     configuration: {
-      blocks: [...BRIEF_BLOCKS],
+      blocks: [...DEFAULT_BRIEF_BLOCKS],
       sources: { calendar: "all", email: "all", tasks: "all" },
     },
     instructions: null,

@@ -32,7 +32,7 @@ export const MY_ELISE: { key: CapabilityKey; href: string | null; icon: LucideIc
   { key: "lists", href: "/my-elise/lists", icon: ListChecks },
   { key: "goals", href: "/my-elise/goals", icon: Target },
   { key: "notes", href: "/my-elise/notes", icon: StickyNote },
-  { key: "finance", href: null, icon: Wallet },
+  { key: "finance", href: "/my-elise/finance", icon: Wallet },
 ];
 
 export type ActiveSection = SectionKey | "myElise" | "settings" | "approvals" | null;

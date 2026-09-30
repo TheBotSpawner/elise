@@ -147,7 +147,27 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       archive: ARCHIVE,
     },
   },
-  finance: { key: "finance", status: "planned", operations: {} },
+  // Everyday bookkeeping is automatic; archiving asks when ELISE proposes it, and undoing a
+  // whole import always asks. Connected sheets are read-only (their binding grants "read").
+  finance: {
+    key: "finance",
+    status: "available",
+    operations: {
+      getSummary: READ,
+      query: READ,
+      listTransactions: READ,
+      getTransaction: READ,
+      listAccounts: READ,
+      listCategories: READ,
+      createTransaction: WRITE,
+      updateTransaction: WRITE,
+      createAccount: WRITE,
+      updateAccount: WRITE,
+      createCategory: WRITE,
+      archiveTransaction: ARCHIVE,
+      undoImport: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
+    },
+  },
   web_search: { key: "web_search", status: "planned", operations: {} },
   voice: { key: "voice", status: "planned", operations: {} },
   // Proposing a Schedule from chat changes nothing: the user confirms on a card.

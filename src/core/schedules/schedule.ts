@@ -83,7 +83,10 @@ export const BRIEF_BLOCKS = [
   "tasks",
   "habits",
   "goals",
+  "finance",
 ] as const;
+/** Finance is personal: a brief includes it only when the user turns it on. */
+export const DEFAULT_BRIEF_BLOCKS = BRIEF_BLOCKS.filter((b) => b !== "finance");
 /** Prepared for later capabilities; never enabled until they exist. */
 export const FUTURE_BRIEF_BLOCKS = ["news"] as const;
 export type BriefBlock = (typeof BRIEF_BLOCKS)[number];
@@ -93,7 +96,7 @@ export const morningBriefConfigSchema = z
     blocks: z
       .array(z.enum(BRIEF_BLOCKS))
       .min(1)
-      .default([...BRIEF_BLOCKS])
+      .default([...DEFAULT_BRIEF_BLOCKS])
       .transform((b) => [...new Set(b)]),
     /**
      * Which accounts to read per capability: "all" resolves the enabled accounts at run time;
@@ -121,8 +124,8 @@ export type Delivery = z.infer<typeof deliverySchema>;
 /** Capabilities a Morning Brief uses, for validation and display. */
 export function briefCapabilities(
   config: MorningBriefConfig,
-): ("calendar" | "email" | "tasks" | "habits" | "goals")[] {
-  const caps = new Set<"calendar" | "email" | "tasks" | "habits" | "goals">();
+): ("calendar" | "email" | "tasks" | "habits" | "goals" | "finance")[] {
+  const caps = new Set<"calendar" | "email" | "tasks" | "habits" | "goals" | "finance">();
   for (const b of config.blocks) caps.add(b === "needs_reply" ? "email" : b);
   return [...caps];
 }
