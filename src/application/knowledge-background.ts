@@ -8,6 +8,7 @@ import { getEmbeddingProvider } from "@/infrastructure/ai";
 import { TriggerDevBackgroundRuntime } from "@/infrastructure/background/trigger/runtime";
 import {
   isNeedsAttention,
+  parseMarkdown,
   parseDocument,
   PARSER_VERSION,
 } from "@/infrastructure/knowledge/parsers";
@@ -52,8 +53,19 @@ function ingestionPorts(auth: AuthContext): IngestionPorts {
     fetcher: {
       async fetch(v) {
         switch (v.sourceType) {
-          case "upload":
           case "note": {
+            // The note row is the source of truth: always index its latest text.
+            const { data: note } = await createAdminClient()
+              .from("notes")
+              .select("title, content, status")
+              .eq("id", v.externalId)
+              .eq("workspace_id", v.workspaceId)
+              .maybeSingle();
+            if (!note || note.status !== "active")
+              throw new AppError("NOT_FOUND", "The note no longer exists");
+            return { doc: parseMarkdown(note.title, note.content || note.title) };
+          }
+          case "upload": {
             if (!v.storagePath || !v.mimeType)
               throw new AppError("NOT_FOUND", "The original file is missing");
             const data = await downloadOriginal(v.workspaceId, v.storagePath);

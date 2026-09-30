@@ -51,7 +51,7 @@ describe("tenancy bootstrap", () => {
     expect(profile.rows[0]).toEqual({ display_name: "bob", timezone: "UTC" });
   });
 
-  it("provisions ELISE Native as a connected provider with a default Tasks binding", async () => {
+  it("provisions ELISE Native as the default provider of every native capability", async () => {
     const rows = await db.query<{
       provider_key: string;
       capability_key: string;
@@ -59,12 +59,16 @@ describe("tenancy bootstrap", () => {
     }>(
       `select c.provider_key, b.capability_key, b.is_default
        from public.capability_bindings b join public.provider_connections c on c.id = b.connection_id
-       where b.workspace_id = $1`,
+       where b.workspace_id = $1 order by b.capability_key`,
       [alice.workspaceId],
     );
-    expect(rows.rows).toEqual([
-      { provider_key: "elise_native", capability_key: "tasks", is_default: true },
-    ]);
+    expect(rows.rows).toEqual(
+      ["goals", "habits", "lists", "notes", "tasks"].map((capability_key) => ({
+        provider_key: "elise_native",
+        capability_key,
+        is_default: true,
+      })),
+    );
   });
 });
 
@@ -575,5 +579,100 @@ describe("knowledge", () => {
       "select public, file_size_limit from storage.buckets where id = 'knowledge-originals'",
     );
     expect(bucket.rows[0]).toMatchObject({ public: false, file_size_limit: 26214400 });
+  });
+});
+
+describe("my elise native", () => {
+  const as = <T>(u: { userId: string }, sql: string, args: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, args));
+
+  it("keeps habits, goals, lists and notes inside their workspace", async () => {
+    const habit = (
+      await as<{ id: string }>(
+        alice,
+        "insert into public.habits (workspace_id, name, frequency_type, target_value) values ($1, 'Run', 'weekly', 3) returning id",
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    await as(
+      alice,
+      "insert into public.notes (workspace_id, title, content) values ($1, 'ELISE ideas', 'proactive meeting preparation')",
+      [alice.workspaceId],
+    );
+    for (const table of ["habits", "notes", "goals", "lists"]) {
+      expect((await as(bob, `select id from public.${table}`)).rows).toHaveLength(0);
+    }
+    await expect(
+      as(
+        bob,
+        "insert into public.habit_entries (workspace_id, habit_id, entry_date) values ($1, $2, '2026-09-30')",
+        [bob.workspaceId, habit],
+      ),
+    ).rejects.toThrow(/same workspace/);
+    await expect(as(alice, "delete from public.habits where id = $1", [habit])).rejects.toThrow(
+      /permission denied/,
+    );
+  });
+
+  it("stores one check-in per habit and day", async () => {
+    const habit = (
+      await as<{ id: string }>(
+        alice,
+        "insert into public.habits (workspace_id, name, frequency_type) values ($1, 'Gym', 'weekly') returning id",
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    const insert = () =>
+      as(
+        alice,
+        "insert into public.habit_entries (workspace_id, habit_id, entry_date) values ($1, $2, '2026-09-30')",
+        [alice.workspaceId, habit],
+      );
+    await insert();
+    await expect(insert()).rejects.toThrow(/duplicate key/);
+  });
+
+  it("links goals only to records of the same workspace", async () => {
+    const goal = (
+      await as<{ id: string }>(
+        alice,
+        "insert into public.goals (workspace_id, title) values ($1, 'Half marathon') returning id",
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    const own = (
+      await as<{ id: string }>(
+        alice,
+        "insert into public.habits (workspace_id, name, frequency_type) values ($1, 'Running', 'weekly') returning id",
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    const foreign = (
+      await as<{ id: string }>(
+        bob,
+        "insert into public.habits (workspace_id, name, frequency_type) values ($1, 'Bob run', 'weekly') returning id",
+        [bob.workspaceId],
+      )
+    ).rows[0]!.id;
+    await as(
+      alice,
+      "insert into public.goal_links (workspace_id, goal_id, resource_type, resource_id) values ($1, $2, 'habit', $3)",
+      [alice.workspaceId, goal, own],
+    );
+    await expect(
+      as(
+        alice,
+        "insert into public.goal_links (workspace_id, goal_id, resource_type, resource_id) values ($1, $2, 'habit', $3)",
+        [alice.workspaceId, goal, foreign],
+      ),
+    ).rejects.toThrow(/same workspace/);
+  });
+
+  it("finds notes by full text", async () => {
+    const found = await as<{ title: string }>(
+      alice,
+      "select title from public.notes where fts @@ to_tsquery('simple', 'meeting | preparation')",
+    );
+    expect(found.rows.map((r) => r.title)).toContain("ELISE ideas");
   });
 });

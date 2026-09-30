@@ -73,7 +73,7 @@ export async function gatherBrief(
 
   const today = toLocalDateTime(ctx.now, ctx.timezone).slice(0, 10);
   const want = new Set(config.blocks);
-  const [events, unread, needsReply, waiting, tasks] = await Promise.all([
+  const [events, unread, needsReply, waiting, tasks, habits, goals] = await Promise.all([
     want.has("calendar")
       ? call("calendar", "calendar.listEvents", { from: today, limit: 50 }, config.sources.calendar)
       : undefined,
@@ -104,6 +104,8 @@ export async function gatherBrief(
     want.has("tasks")
       ? call("tasks", "tasks.list", { status: "open", limit: 50 }, config.sources.tasks)
       : undefined,
+    want.has("habits") ? call("habits", "habits.list", {}, "all") : undefined,
+    want.has("goals") ? call("goals", "goals.list", { status: "active" }, "all") : undefined,
   ]);
 
   if (failed === attempted && attempted > 0) {
@@ -122,6 +124,8 @@ export async function gatherBrief(
       needsReply: needsReply?.kind === "email_followups" ? needsReply.items : undefined,
       waitingOnOthers: waiting?.kind === "email_followups" ? waiting.items : undefined,
       tasks: tasks?.kind === "task_list" ? tasks.tasks : undefined,
+      habits: habits?.kind === "habits" ? habits.progress : undefined,
+      goals: goals?.kind === "goals" ? goals.goals : undefined,
       warnings,
     },
     approvalId,

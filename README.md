@@ -3,7 +3,7 @@
 One persistent intelligence that coordinates your digital world through chat, capabilities and
 replaceable providers.
 
-**Status:** pre-MVP — Slice 1 (Foundation), Slice 2 (Google Calendar + Tasks), Gmail + Email Copilot, Schedules + Morning Brief (Trigger.dev) and Knowledge (uploads, Google Drive, Notion) implemented. See [What works today](#what-works-today).
+**Status:** pre-MVP — Slice 1 (Foundation), Slice 2 (Google Calendar + Tasks), Gmail + Email Copilot, Schedules + Morning Brief (Trigger.dev), Knowledge (uploads, Google Drive, Notion) and My Elise Native (Habits, Goals, Lists, Notes) implemented. See [What works today](#what-works-today).
 
 ## Stack
 
@@ -181,6 +181,14 @@ database is needed.
   resolve once, verify the payload hash, and revalidate before executing.
 - Actions, tool executions, AI runs and audit events are recorded; logs are structured and
   redacted.
+- **My Elise — Habits, Goals, Lists, Notes:** the same data from the UI and from Chat ("create
+  a habit to run 3 times a week", "mark gym done", "link my running habit to the half marathon
+  goal", "add eggs and coffee to the shopping list", "save this as a note in Firbot"). Habit
+  progress, streaks and goal percentages are computed by ELISE (never by the model); habits
+  support quantities (2 liters/day, 20 km/week). Notes filed in a Knowledge Space are indexed
+  and citable, re-indexed on every edit. CSV import with mapping preview for Habits, Goals and
+  Lists. Morning Brief can include Habits and Goals. See
+  [ADR-008](docs/decisions/ADR-008-my-elise-native.md).
 - **Knowledge:** Spaces (nested: Work › Firbot › RSFA) fed by uploads, Google Drive folders/files
   and Notion pages. Background reading → structure-aware chunks → embeddings → hybrid search
   (vector + full-text, scoped to the Space first). Answers cite their sources `[n]` with a

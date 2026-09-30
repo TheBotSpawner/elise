@@ -402,6 +402,114 @@ export type ScheduledResultRow = {
   created_at: Ts;
 };
 
+type NativeSource = "user_ui" | "ai" | "schedule" | "import" | "system";
+
+export type HabitRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  frequency_type: "daily" | "weekly" | "specific_days";
+  target_value: number;
+  unit: string | null;
+  preferred_days: number[];
+  active: boolean;
+  start_date: string;
+  metadata: Json;
+  source: NativeSource;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type HabitEntryRow = {
+  id: string;
+  workspace_id: string;
+  habit_id: string;
+  entry_date: string;
+  value: number;
+  status: "done" | "skipped";
+  notes: string | null;
+  source: NativeSource;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type GoalRow = {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string | null;
+  status: "active" | "completed" | "paused" | "cancelled";
+  target_date: string | null;
+  progress_type: "binary" | "numeric" | "percentage";
+  progress_mode: "manual" | "linked" | "hybrid";
+  start_value: number | null;
+  current_value: number | null;
+  target_value: number | null;
+  direction: "increase" | "decrease";
+  metric: string | null;
+  parent_goal_id: string | null;
+  completed_at: Ts | null;
+  source: NativeSource;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type GoalLinkRow = {
+  id: string;
+  workspace_id: string;
+  goal_id: string;
+  resource_type: "habit" | "task" | "goal" | "note" | "entity";
+  resource_id: string;
+  relationship_type: "supports" | "milestone" | "related";
+  created_at: Ts;
+};
+
+export type ListRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  status: "active" | "archived";
+  source: NativeSource;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type ListItemRow = {
+  id: string;
+  workspace_id: string;
+  list_id: string;
+  content: string;
+  checked: boolean;
+  position: number;
+  notes: string | null;
+  source: NativeSource;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type NoteRow = {
+  id: string;
+  workspace_id: string;
+  title: string;
+  content: string;
+  space_id: string | null;
+  status: "active" | "archived";
+  source: NativeSource;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
 export type KnowledgeSpaceRow = {
   id: string;
   workspace_id: string;
@@ -622,6 +730,13 @@ export type Database = {
         | "title"
         | "content"
       >;
+      habits: Table<HabitRow, "workspace_id" | "name" | "frequency_type">;
+      habit_entries: Table<HabitEntryRow, "workspace_id" | "habit_id" | "entry_date">;
+      goals: Table<GoalRow, "workspace_id" | "title">;
+      goal_links: Table<GoalLinkRow, "workspace_id" | "goal_id" | "resource_type" | "resource_id">;
+      lists: Table<ListRow, "workspace_id" | "name">;
+      list_items: Table<ListItemRow, "workspace_id" | "list_id" | "content" | "position">;
+      notes: Table<NoteRow, "workspace_id" | "title">;
       knowledge_spaces: Table<KnowledgeSpaceRow, "workspace_id" | "name">;
       knowledge_sources: Table<
         KnowledgeSourceRow,

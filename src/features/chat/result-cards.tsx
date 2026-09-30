@@ -21,6 +21,7 @@ import {
   FollowUpsCard,
 } from "./email-cards";
 import { KnowledgeSourcesCard } from "./knowledge-cards";
+import { GoalsCard, HabitsCard, ListCard, NoteCard } from "./native-cards";
 
 const RISE = {
   initial: { opacity: 0, y: 8 },
@@ -296,6 +297,15 @@ export function DisplayCard({
       return <FollowUpsCard display={display} timezone={timezone} rise={rise} />;
     case "email_changed":
       return <EmailChangedCard display={display} rise={rise} />;
+    case "habits":
+      return <HabitsCard display={display} rise={rise} />;
+    case "goals":
+      return <GoalsCard display={display} rise={rise} />;
+    case "native_list":
+      return <ListCard display={display} rise={rise} />;
+    case "note":
+    case "notes":
+      return <NoteCard display={display} rise={rise} />;
     case "knowledge_evidence":
       return <KnowledgeSourcesCard display={display} rise={rise} />;
     case "schedule_proposal":

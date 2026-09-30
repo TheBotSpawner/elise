@@ -76,9 +76,16 @@ export function isMissed(actionType: ActionType, scheduledFor: Date, now: Date):
 
 // ── Morning Brief configuration ──────────────────────────────────────────────
 
-export const BRIEF_BLOCKS = ["calendar", "email", "needs_reply", "tasks"] as const;
+export const BRIEF_BLOCKS = [
+  "calendar",
+  "email",
+  "needs_reply",
+  "tasks",
+  "habits",
+  "goals",
+] as const;
 /** Prepared for later capabilities; never enabled until they exist. */
-export const FUTURE_BRIEF_BLOCKS = ["news", "habits", "goals"] as const;
+export const FUTURE_BRIEF_BLOCKS = ["news"] as const;
 export type BriefBlock = (typeof BRIEF_BLOCKS)[number];
 
 export const morningBriefConfigSchema = z
@@ -112,8 +119,10 @@ export const deliverySchema = z
 export type Delivery = z.infer<typeof deliverySchema>;
 
 /** Capabilities a Morning Brief uses, for validation and display. */
-export function briefCapabilities(config: MorningBriefConfig): ("calendar" | "email" | "tasks")[] {
-  const caps = new Set<"calendar" | "email" | "tasks">();
+export function briefCapabilities(
+  config: MorningBriefConfig,
+): ("calendar" | "email" | "tasks" | "habits" | "goals")[] {
+  const caps = new Set<"calendar" | "email" | "tasks" | "habits" | "goals">();
   for (const b of config.blocks) caps.add(b === "needs_reply" ? "email" : b);
   return [...caps];
 }

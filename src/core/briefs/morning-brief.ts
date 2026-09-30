@@ -1,6 +1,8 @@
 import type { AIProvider } from "../agents/ai-provider";
 import type { CalendarEvent } from "../capabilities/calendar";
 import { clip, noiseSignals, type EmailMessage, type FollowUp } from "../capabilities/email";
+import type { Goal, GoalProgress } from "../capabilities/goals";
+import type { HabitProgress } from "../capabilities/habits";
 import type { Task } from "../capabilities/tasks";
 import { addDays, toLocalDateTime, zonedDateTimeToUtc } from "../time";
 
@@ -72,10 +74,30 @@ export interface MorningBrief {
   attention: { emails: BriefEmail[]; tasks: BriefTask[] };
   waitingOnYou: { replies: BriefFollowUp[]; overdue: BriefTask[] };
   waitingOnOthers: BriefFollowUp[];
+  /** Habits still open today or at risk this week (computed, never estimated). */
+  habits?: BriefHabit[];
+  /** A few active goals, concise. */
+  goals?: BriefGoal[];
   /** Blocks that were requested but could not be loaded. */
   warnings: BriefWarning[];
   /** AI-written summary (markdown). Null when synthesis was unavailable. */
   narrative: string | null;
+}
+
+export interface BriefHabit {
+  name: string;
+  dueToday: boolean;
+  doneToday: boolean;
+  week: string;
+  atRisk: boolean;
+  streak: string | null;
+}
+
+export interface BriefGoal {
+  title: string;
+  progress: string;
+  targetDate: string | null;
+  openTasks: number;
 }
 
 export interface BriefData {
@@ -86,10 +108,21 @@ export interface BriefData {
   needsReply?: FollowUp[];
   waitingOnOthers?: FollowUp[];
   tasks?: Task[];
+  habits?: HabitProgress[];
+  goals?: { goal: Goal; progress: GoalProgress; openTasks: number }[];
   warnings: BriefWarning[];
 }
 
-const CAPS = { events: 12, emails: 5, replies: 5, waiting: 3, tasks: 6, overdue: 5 };
+const CAPS = {
+  events: 12,
+  emails: 5,
+  replies: 5,
+  waiting: 3,
+  tasks: 6,
+  overdue: 5,
+  habits: 6,
+  goals: 3,
+};
 
 const minutesBetween = (a: string, b: string) =>
   Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000);
@@ -227,9 +260,46 @@ export function assembleBrief(data: BriefData): MorningBrief {
       overdue: overdue.slice(0, CAPS.overdue).map(briefTask),
     },
     waitingOnOthers: (data.waitingOnOthers ?? []).slice(0, CAPS.waiting).map(briefFollowUp),
+    ...(data.habits ? { habits: briefHabits(data.habits) } : {}),
+    ...(data.goals ? { goals: briefGoals(data.goals) } : {}),
     warnings: data.warnings,
     narrative: null,
   };
+}
+
+/**
+ * Habits worth a line this morning: at risk of missing the weekly target first, then the ones
+ * still open today. Done-for-today habits are left out unless nothing else is due.
+ */
+function briefHabits(progress: HabitProgress[]): BriefHabit[] {
+  const rows = progress.map((p) => ({
+    name: p.name,
+    dueToday:
+      p.today.scheduled && !p.today.met && (p.frequency !== "weekly" || p.week.remaining > 0),
+    doneToday: p.today.met,
+    week: `${p.week.done}/${p.week.goal}${p.frequency === "weekly" && p.unit ? ` ${p.unit}` : ""}`,
+    atRisk: p.week.atRisk,
+    streak: p.streak.count >= 3 ? `${p.streak.count} ${p.streak.unit}` : null,
+  }));
+  const relevant = rows
+    .filter((r) => r.atRisk || r.dueToday)
+    .sort((a, b) => Number(b.atRisk) - Number(a.atRisk) || Number(b.dueToday) - Number(a.dueToday));
+  return relevant.slice(0, CAPS.habits);
+}
+
+function briefGoals(
+  goals: { goal: Goal; progress: GoalProgress; openTasks: number }[],
+): BriefGoal[] {
+  return goals
+    .filter((g) => g.goal.status === "active")
+    .sort((a, b) => (a.goal.targetDate ?? "9999").localeCompare(b.goal.targetDate ?? "9999"))
+    .slice(0, CAPS.goals)
+    .map(({ goal, progress, openTasks }) => ({
+      title: goal.title,
+      progress: progress.percent === null ? progress.basis : `${progress.percent}%`,
+      targetDate: goal.targetDate,
+      openTasks,
+    }));
 }
 
 /** True when there is nothing worth telling. */
@@ -240,7 +310,9 @@ export function isEmptyBrief(b: MorningBrief): boolean {
     b.attention.tasks.length === 0 &&
     b.waitingOnYou.replies.length === 0 &&
     b.waitingOnYou.overdue.length === 0 &&
-    b.waitingOnOthers.length === 0
+    b.waitingOnOthers.length === 0 &&
+    !b.habits?.length &&
+    !b.goals?.length
   );
 }
 
@@ -288,6 +360,8 @@ function forModel(b: MorningBrief) {
       with: w,
       since: since.slice(0, 10),
     })),
+    habits: b.habits,
+    goals: b.goals,
     warnings: b.warnings,
   };
 }

@@ -4,6 +4,22 @@ import type { CapabilityDefinition, CapabilityKey, OperationDefinition } from ".
  * Capability registry. Operation defaults follow docs/architecture/08 §15.
  * Capabilities without operations are planned for later MVP slices.
  */
+const READ: OperationDefinition = {
+  kind: "read",
+  risk: "low",
+  defaultApproval: "allow_automatically",
+};
+const WRITE: OperationDefinition = {
+  kind: "write",
+  risk: "low",
+  defaultApproval: "allow_automatically",
+};
+const ARCHIVE: OperationDefinition = {
+  kind: "destructive",
+  risk: "medium",
+  defaultApproval: "ask_when_uncertain",
+};
+
 const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
   tasks: {
     key: "tasks",
@@ -72,10 +88,64 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       overview: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
     },
   },
-  habits: { key: "habits", status: "planned", operations: {} },
-  lists: { key: "lists", status: "planned", operations: {} },
-  goals: { key: "goals", status: "planned", operations: {} },
-  notes: { key: "notes", status: "planned", operations: {} },
+  // Everyday native writes are automatic; archiving something significant asks when ELISE
+  // proposes it (a user acting in the UI is the confirmation).
+  habits: {
+    key: "habits",
+    status: "available",
+    operations: {
+      list: READ,
+      getProgress: READ,
+      create: WRITE,
+      update: WRITE,
+      checkIn: WRITE,
+      pause: WRITE,
+      archive: ARCHIVE,
+    },
+  },
+  lists: {
+    key: "lists",
+    status: "available",
+    operations: {
+      list: READ,
+      get: READ,
+      create: WRITE,
+      rename: WRITE,
+      addItem: WRITE,
+      updateItem: WRITE,
+      checkItem: WRITE,
+      uncheckItem: WRITE,
+      removeItem: WRITE,
+      archive: ARCHIVE,
+    },
+  },
+  goals: {
+    key: "goals",
+    status: "available",
+    operations: {
+      list: READ,
+      getProgress: READ,
+      create: WRITE,
+      update: WRITE,
+      linkResource: WRITE,
+      unlinkResource: WRITE,
+      complete: WRITE,
+      pause: WRITE,
+      archive: ARCHIVE,
+    },
+  },
+  notes: {
+    key: "notes",
+    status: "available",
+    operations: {
+      list: READ,
+      get: READ,
+      search: READ,
+      create: WRITE,
+      update: WRITE,
+      archive: ARCHIVE,
+    },
+  },
   finance: { key: "finance", status: "planned", operations: {} },
   web_search: { key: "web_search", status: "planned", operations: {} },
   voice: { key: "voice", status: "planned", operations: {} },

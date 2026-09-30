@@ -208,6 +208,8 @@ describe("schedule timing", () => {
       "email",
       "needs_reply",
       "tasks",
+      "habits",
+      "goals",
     ]);
     expect(
       scheduleInputSchema.safeParse({

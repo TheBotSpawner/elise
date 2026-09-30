@@ -84,7 +84,9 @@ function setup(opts: { firbotStatus?: "connected" | "needs_reauthorization" } = 
   return { ports, ctx, personalMail, firbotMail, tasks };
 }
 
-const all = morningBriefConfigSchema.parse({});
+const all = morningBriefConfigSchema.parse({
+  blocks: ["calendar", "email", "needs_reply", "tasks"],
+});
 
 describe("Morning Brief gathering", () => {
   it("reads calendar, email and tasks across the accounts connected right now", async () => {

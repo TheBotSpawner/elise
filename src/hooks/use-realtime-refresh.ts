@@ -15,7 +15,14 @@ type RealtimeTable =
   | "knowledge_spaces"
   | "knowledge_sources"
   | "knowledge_items"
-  | "knowledge_sync_runs";
+  | "knowledge_sync_runs"
+  | "habits"
+  | "habit_entries"
+  | "goals"
+  | "goal_links"
+  | "lists"
+  | "list_items"
+  | "notes";
 
 /**
  * Subscribes to workspace-scoped row changes (RLS still applies server-side) and calls

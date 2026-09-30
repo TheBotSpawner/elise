@@ -189,6 +189,10 @@ function emailNote(display: ToolDisplay): string | null {
       return `thread "${display.thread.subject}" (thread ${display.thread.id}, latest message ${display.thread.messages.at(-1)?.id ?? "?"})`;
     case "email_draft":
       return `draft ${display.change} "${display.draft.subject}" to ${display.draft.to.map((a) => a.email).join(", ")} (draft ${display.draft.id})`;
+    case "native_list":
+      return `list "${display.list.name}" (list ${display.list.id})`;
+    case "note":
+      return `note ${display.change} "${display.note.title}" (note ${display.note.id})`;
     case "knowledge_evidence":
       return `${display.evidence.length} Knowledge passages${display.enough ? "" : " (not enough evidence)"}: ${[
         ...new Map(

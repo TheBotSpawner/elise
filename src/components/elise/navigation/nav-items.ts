@@ -13,11 +13,11 @@ export const SECTIONS: { key: SectionKey; href: string }[] = [
 
 export const MY_ELISE: { key: CapabilityKey; href: string | null }[] = [
   { key: "tasks", href: "/my-elise/tasks" },
-  { key: "habits", href: null },
-  { key: "lists", href: null },
+  { key: "habits", href: "/my-elise/habits" },
+  { key: "lists", href: "/my-elise/lists" },
+  { key: "goals", href: "/my-elise/goals" },
+  { key: "notes", href: "/my-elise/notes" },
   { key: "finance", href: null },
-  { key: "goals", href: null },
-  { key: "notes", href: null },
 ];
 
 export type ActiveSection = SectionKey | "myElise" | "settings" | "approvals" | null;

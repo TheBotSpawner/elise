@@ -15,11 +15,19 @@ import { AppError } from "@/core/errors";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { EMAIL_TOOLS } from "@/core/tools/email";
+import { GOAL_TOOLS } from "@/core/tools/goals";
+import { HABIT_TOOLS } from "@/core/tools/habits";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
+import { LIST_TOOLS } from "@/core/tools/lists";
+import { NOTE_TOOLS } from "@/core/tools/notes";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 import { getEmbeddingProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
+import { EliseGoalsProvider } from "@/infrastructure/providers/elise-native/goals";
+import { EliseHabitsProvider } from "@/infrastructure/providers/elise-native/habits";
+import { EliseListsProvider } from "@/infrastructure/providers/elise-native/lists";
+import { EliseNotesProvider } from "@/infrastructure/providers/elise-native/notes";
 import { EliseTasksProvider } from "@/infrastructure/providers/elise-native/tasks";
 import { GoogleCalendarProvider } from "@/infrastructure/providers/google/calendar";
 import { googleOAuthConfig } from "@/infrastructure/providers/google/config";
@@ -41,6 +49,7 @@ import {
 import { SupabaseKnowledgeReader } from "@/infrastructure/supabase/repositories/knowledge";
 
 import type { AuthContext } from "./auth-context";
+import { syncNoteToKnowledge } from "./notes-knowledge";
 
 /** Every tool ELISE can use. Exposure per run is filtered by available capabilities. */
 export const toolRegistry = new ToolRegistry().register(
@@ -49,6 +58,10 @@ export const toolRegistry = new ToolRegistry().register(
   ...EMAIL_TOOLS,
   ...SCHEDULE_TOOLS,
   ...KNOWLEDGE_TOOLS,
+  ...HABIT_TOOLS,
+  ...GOAL_TOOLS,
+  ...LIST_TOOLS,
+  ...NOTE_TOOLS,
 );
 
 /**
@@ -181,6 +194,30 @@ function providerFactory(
       return new GmailProvider(
         { connectionId: binding.connectionId, label: binding.label, account: binding.accountLabel },
         googleHttp(binding.connectionId),
+      );
+    },
+    habits(binding) {
+      if (binding.providerKey !== "elise_native") throw unsupported("habits", binding);
+      return new EliseHabitsProvider(auth.db, auth.workspaceId, auth.userId);
+    },
+    goals(binding) {
+      if (binding.providerKey !== "elise_native") throw unsupported("goals", binding);
+      return new EliseGoalsProvider(auth.db, auth.workspaceId, auth.userId);
+    },
+    lists(binding) {
+      if (binding.providerKey !== "elise_native") throw unsupported("lists", binding);
+      return new EliseListsProvider(auth.db, auth.workspaceId, auth.userId);
+    },
+    notes(binding) {
+      if (binding.providerKey !== "elise_native") throw unsupported("notes", binding);
+      // Every change to a note keeps its Knowledge representation in step.
+      return new EliseNotesProvider(auth.db, auth.workspaceId, auth.userId, (note, archived) =>
+        syncNoteToKnowledge(auth.workspaceId, note, archived).catch((error) =>
+          logger.warn("knowledge.note_sync_failed", {
+            note_id: note.id,
+            code: error instanceof AppError ? error.code : "UNKNOWN",
+          }),
+        ),
       );
     },
     // ELISE's own index, whatever the source; always this workspace's.

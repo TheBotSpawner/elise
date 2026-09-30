@@ -9,6 +9,10 @@ import type {
   EmailThread,
   FollowUp,
 } from "../capabilities/email";
+import type { Goal, GoalProgress, GoalsProvider } from "../capabilities/goals";
+import type { HabitProgress, HabitsProvider } from "../capabilities/habits";
+import type { ListsProvider, NativeList } from "../capabilities/lists";
+import type { Note, NotesProvider } from "../capabilities/notes";
 import { getCapability } from "../capabilities/registry";
 import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
@@ -37,6 +41,10 @@ export interface CapabilityProviders {
   email: EmailProvider;
   /** ELISE's own index, whatever source fed it. */
   knowledge: KnowledgeReader;
+  habits: HabitsProvider;
+  goals: GoalsProvider;
+  lists: ListsProvider;
+  notes: NotesProvider;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -105,6 +113,12 @@ export type ToolDisplay =
       followUp: "needs_reply" | "waiting_on_others";
       items: FollowUp[];
     }
+  /** Native data, computed by ELISE (progress is never the model's arithmetic). */
+  | { kind: "habits"; progress: HabitProgress[] }
+  | { kind: "goals"; goals: { goal: Goal; progress: GoalProgress; openTasks: number }[] }
+  | { kind: "native_list"; list: NativeList }
+  | { kind: "note"; note: Note; change: "created" | "updated" | "archived" }
+  | { kind: "notes"; notes: Note[] }
   | {
       /** Evidence behind a Knowledge answer: what the citations [n] point to. */
       kind: "knowledge_evidence";

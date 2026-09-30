@@ -256,6 +256,44 @@ export function BriefView({
           </ul>
         </Section>
       )}
+
+      {brief.habits && brief.habits.length > 0 && (
+        <Section label={t.brief.habits}>
+          <ul className="flex flex-col gap-1.5 text-[14px]">
+            {brief.habits.map((h) => (
+              <li key={h.name} className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 truncate">{h.name}</span>
+                <span
+                  className={
+                    h.atRisk
+                      ? "shrink-0 text-[12.5px] text-approval-text"
+                      : "shrink-0 text-[12.5px] text-faint"
+                  }
+                >
+                  {h.week}
+                  {h.atRisk ? ` · ${t.brief.atRisk}` : h.dueToday ? ` · ${t.brief.dueToday}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {brief.goals && brief.goals.length > 0 && (
+        <Section label={t.brief.goals}>
+          <ul className="flex flex-col gap-1.5 text-[14px]">
+            {brief.goals.map((g) => (
+              <li key={g.title} className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 truncate">{g.title}</span>
+                <span className="shrink-0 text-[12.5px] text-faint">
+                  {g.progress}
+                  {g.openTasks > 0 && ` · ${t.brief.openTasks(g.openTasks)}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
     </article>
   );
 }

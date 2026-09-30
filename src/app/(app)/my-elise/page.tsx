@@ -17,11 +17,11 @@ import { cn } from "@/lib/utils";
 
 const MODULES: { key: CapabilityKey; icon: LucideIcon; href: string }[] = [
   { key: "tasks", icon: CheckSquare, href: "/my-elise/tasks" },
-  { key: "habits", icon: Repeat, href: "" },
-  { key: "lists", icon: ListChecks, href: "" },
+  { key: "habits", icon: Repeat, href: "/my-elise/habits" },
+  { key: "lists", icon: ListChecks, href: "/my-elise/lists" },
+  { key: "goals", icon: Flag, href: "/my-elise/goals" },
+  { key: "notes", icon: StickyNote, href: "/my-elise/notes" },
   { key: "finance", icon: Wallet, href: "" },
-  { key: "goals", icon: Flag, href: "" },
-  { key: "notes", icon: StickyNote, href: "" },
 ];
 
 /** ELISE Native modules, grouped so the primary navigation stays small. */
