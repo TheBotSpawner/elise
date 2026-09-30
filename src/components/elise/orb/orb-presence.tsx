@@ -1,7 +1,7 @@
 "use client";
 
 import { LayoutGroup } from "motion/react";
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { OrbState } from "./orb-states";
 
@@ -15,6 +15,8 @@ interface OrbPresence {
   docked: boolean;
   setState(state: OrbState): void;
   setDocked(docked: boolean): void;
+  /** Live audio level (0..1) while ELISE listens or speaks; negative when there is none. */
+  level: { current: number };
 }
 
 const OrbPresenceContext = createContext<OrbPresence | null>(null);
@@ -25,7 +27,8 @@ export const ORB_FLIGHT = { duration: 0.48, ease: [0.22, 1, 0.36, 1] as const };
 export function OrbPresenceProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<OrbState>("idle");
   const [docked, setDocked] = useState(false);
-  const value = useMemo(() => ({ state, docked, setState, setDocked }), [state, docked]);
+  const level = useRef(-1);
+  const value = useMemo(() => ({ state, docked, setState, setDocked, level }), [state, docked]);
   return (
     <OrbPresenceContext.Provider value={value}>
       <LayoutGroup>{children}</LayoutGroup>

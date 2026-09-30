@@ -71,6 +71,15 @@ export interface ActionLog {
       reason: ApprovalReason;
     },
   ): Promise<{ id: string }>;
+  /**
+   * The same request (tool, pinned input, account) already waiting for the user's approval.
+   * Asking again — "yes, do it", said instead of pressing Approve — must not create a
+   * second approval for the same action.
+   */
+  findPendingApproval?(
+    ctx: ToolContext,
+    payloadHash: string,
+  ): Promise<{ approvalId: string; actionId: string } | null>;
   recordToolExecution(
     ctx: ToolContext,
     execution: {
@@ -301,6 +310,19 @@ export async function executeToolCall(
   const inputHash = await sha256(
     stableStringify({ tool: tool.name, input: pinned, connectionId: binding.connectionId }),
   );
+  if (decision.kind === "require_approval" && ports.log.findPendingApproval) {
+    const pending = await ports.log.findPendingApproval(ctx, inputHash);
+    if (pending)
+      return trace(binding, pending.actionId, {
+        status: "approval_required",
+        approvalId: pending.approvalId,
+        actionId: pending.actionId,
+        summary,
+        reason: decision.reason,
+        preview,
+      });
+  }
+
   const recorded = await ports.log.recordAction(ctx, {
     toolName: tool.name,
     capability: tool.capability,

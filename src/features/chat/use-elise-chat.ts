@@ -6,6 +6,12 @@ import type { ChatStreamEvent } from "@/application/chat-protocol";
 import { resolveOrbState, type OrbState } from "@/components/elise/orb/orb-states";
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { PublicError } from "@/core/errors";
+import {
+  threadUrl,
+  type ThreadRef,
+  type TurnModality,
+  type VoiceTurnMeta,
+} from "@/core/interaction";
 import { applyOps, emptyWorkspace, type WorkspaceState } from "@/core/workspace/model";
 import { applyAppearance } from "@/lib/theme";
 
@@ -13,9 +19,20 @@ import type { ChatMessage } from "./types";
 
 type RunState = "idle" | "thinking" | "using_tools" | "approving";
 
-/** Streams a chat turn from /api/chat (NDJSON) and keeps the conversation state. */
+export interface SendOptions {
+  modality?: TurnModality;
+  voice?: VoiceTurnMeta;
+}
+
+type StreamListener = (event: ChatStreamEvent | { type: "finished"; failed: boolean }) => void;
+
+/**
+ * Streams a turn from /api/chat (NDJSON) and keeps the interaction's state. Typed and spoken
+ * turns go through here alike (ADR-014); voice listens to the same stream to speak the reply.
+ */
 export function useEliseChat(initial: {
-  conversationId?: string;
+  /** A History conversation or a voice session; none for a new interaction. */
+  thread?: ThreadRef;
   messages?: ChatMessage[];
   /** A new conversation started from a Knowledge Space. */
   spaceId?: string;
@@ -28,19 +45,31 @@ export function useEliseChat(initial: {
   const [outOfSync, setOutOfSync] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
   const [lastOutcome, setLastOutcome] = useState<"success" | "error" | null>(null);
-  const conversationId = useRef(initial.conversationId);
+  const thread = useRef<ThreadRef | null>(initial.thread ?? null);
   const abort = useRef<AbortController | null>(null);
-  /** Read when acting (the id arrives with the first streamed event). */
-  const getConversationId = useCallback(() => conversationId.current ?? null, []);
+  /** Read when acting (the thread arrives with the first streamed event). */
+  const getThread = useCallback(() => thread.current, []);
+  const listeners = useRef(new Set<StreamListener>());
+  const subscribe = useCallback((fn: StreamListener) => {
+    listeners.current.add(fn);
+    return () => void listeners.current.delete(fn);
+  }, []);
+  /** A turn sent while another still streams (e.g. the user interrupted ELISE): sent next. */
+  const queued = useRef<{ text: string; options: SendOptions } | null>(null);
 
   const patchAssistant = useCallback((id: string, patch: (m: ChatMessage) => ChatMessage) => {
     setMessages((all) => all.map((m) => (m.id === id ? patch(m) : m)));
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async function run(text: string, options: SendOptions = {}): Promise<void> {
       const message = text.trim();
-      if (!message || abort.current) return;
+      if (!message) return;
+      if (abort.current) {
+        queued.current = { text: message, options };
+        return;
+      }
+      const emit = (e: Parameters<StreamListener>[0]) => listeners.current.forEach((fn) => fn(e));
 
       const assistantId = crypto.randomUUID();
       setMessages((all) => [
@@ -49,6 +78,7 @@ export function useEliseChat(initial: {
           id: crypto.randomUUID(),
           role: "user",
           content: message,
+          ...(options.modality === "voice" ? { modality: "voice" as const } : {}),
           tools: [],
           fresh: true,
           createdAt: new Date().toISOString(),
@@ -74,9 +104,13 @@ export function useEliseChat(initial: {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            conversationId: conversationId.current,
+            ...(thread.current?.kind === "conversation"
+              ? { conversationId: thread.current.id }
+              : {}),
+            ...(thread.current?.kind === "session" ? { sessionId: thread.current.id } : {}),
             message,
-            ...(!conversationId.current && initial.spaceId ? { spaceId: initial.spaceId } : {}),
+            ...(!thread.current && initial.spaceId ? { spaceId: initial.spaceId } : {}),
+            ...(options.modality === "voice" ? { modality: "voice", voice: options.voice } : {}),
           }),
           signal: controller.signal,
         });
@@ -103,12 +137,13 @@ export function useEliseChat(initial: {
           for (const line of lines) {
             if (!line.trim()) continue;
             const event = JSON.parse(line) as ChatStreamEvent;
+            emit(event);
             switch (event.type) {
               case "conversation":
-                if (!conversationId.current) {
-                  conversationId.current = event.conversationId;
-                  // Keep the URL shareable/reloadable without remounting the chat.
-                  window.history.replaceState(null, "", `/chat/${event.conversationId}`);
+                if (!thread.current) {
+                  thread.current = event.thread;
+                  // Keep the URL reloadable without remounting (a voice session reopens on Home).
+                  window.history.replaceState(null, "", threadUrl(event.thread));
                 }
                 break;
               case "status":
@@ -188,6 +223,10 @@ export function useEliseChat(initial: {
         setRunState("idle");
         setLastOutcome(failed ? "error" : "success");
         abort.current = null;
+        emit({ type: "finished", failed: Boolean(failed) });
+        const next = queued.current;
+        queued.current = null;
+        if (next) void run(next.text, next.options);
       }
     },
     [patchAssistant, initial.spaceId],
@@ -239,7 +278,8 @@ export function useEliseChat(initial: {
     setWorkspace,
     outOfSync,
     clearOutOfSync: () => setOutOfSync(false),
-    getConversationId,
+    getThread,
+    subscribe,
     send,
     stop,
     busy: runState === "thinking" || runState === "using_tools",

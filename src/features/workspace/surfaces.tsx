@@ -6,6 +6,7 @@ import {
   FileText,
   History,
   Link2,
+  Mic,
   ListChecks,
   Mail,
   Settings2,
@@ -443,9 +444,15 @@ function RecallBody({
     <ol className="flex flex-col gap-3">
       {p.results.map((r) => (
         <li key={r.interactionId} className="flex flex-col gap-1">
-          <p className="flex items-baseline gap-2">
+          <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            {r.modality === "voice" && (
+              <span className="flex shrink-0 items-center gap-1 text-[12px] text-faint">
+                <Mic className="size-3" aria-hidden />
+                {t.voice.historyItem} ·
+              </span>
+            )}
             <span className="font-mono text-[12px] text-accent-text">{f.date(r.date)}</span>
-            <span className="min-w-0 truncate text-[14px]">{r.title}</span>
+            <span className="min-w-0 basis-full truncate text-[14px] sm:basis-auto">{r.title}</span>
           </p>
           {(r.summary ?? r.excerpts[0]?.text) && (
             <p className={cn(TEXT, "line-clamp-3 text-muted")}>
@@ -722,7 +729,6 @@ export function SurfaceBody({
             approvalId={ap.approvalId}
             summary={ap.summary}
             reason={ap.reason}
-            tool={ap.tool}
             preview={ap.preview as ToolDisplay | undefined}
             timezone={timezone}
             autoFocus={handlers.busy}

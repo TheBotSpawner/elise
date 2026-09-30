@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
-import { useState, type KeyboardEvent } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { SendIcon, StopIcon } from "@/components/elise/icons";
 import { AttachToKnowledge } from "@/features/knowledge/attach-dialog";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 /**
  * Input dock (reference: 720 × 60 pill, radius 30; mobile 56 / 28). Shared between Home and the
  * conversation so it can glide from the hero to the bottom dock (layoutId, motion spec).
- * Voice isn't wired yet, so its button is not shown. Attaching asks what to do with the file.
+ * The microphone starts a voice session (ADR-014). Attaching asks what to do with the file.
  */
 export function Composer({
   placeholder,
@@ -20,6 +20,7 @@ export function Composer({
   onStop,
   sendLabel,
   stopLabel,
+  voice,
   className,
 }: {
   placeholder: string;
@@ -29,6 +30,8 @@ export function Composer({
   onStop: () => void;
   sendLabel: string;
   stopLabel: string;
+  /** The microphone control, when voice is available. */
+  voice?: ReactNode;
   className?: string;
 }) {
   const [draft, setDraft] = useState("");
@@ -74,6 +77,7 @@ export function Composer({
         placeholder={placeholder}
         className="[field-sizing:content] max-h-40 min-h-11 min-w-0 flex-1 resize-none bg-transparent py-[11px] text-base leading-[22px] caret-accent outline-none placeholder:text-muted"
       />
+      {voice}
       {busy ? (
         <button
           type="button"

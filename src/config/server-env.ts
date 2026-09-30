@@ -11,6 +11,9 @@ const serverEnvSchema = z.object({
   OPENAI_MODEL_FAST: z.string().min(1).default("gpt-5-nano"),
   /** Knowledge embeddings (1536 dimensions are stored). Changing it requires a reindex. */
   OPENAI_EMBEDDING_MODEL: z.string().min(1).default("text-embedding-3-small"),
+  /** Voice (ADR-014): speech-to-text for completed utterances, and streamed text-to-speech. */
+  OPENAI_TRANSCRIBE_MODEL: z.string().min(1).default("gpt-transcribe"),
+  OPENAI_TTS_MODEL: z.string().min(1).default("gpt-4o-mini-tts"),
   NOTION_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   NOTION_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),

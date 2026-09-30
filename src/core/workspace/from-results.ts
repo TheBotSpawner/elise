@@ -235,6 +235,7 @@ function recallSurface(d: Display<"recall_results">, opts: PresentOptions) {
         summary: r.summary ? clip(r.summary, 1200) : null,
         excerpts: r.excerpts.slice(0, 2).map((e) => ({ text: clip(e.text, 500), at: e.at })),
         url: safe(r.url),
+        modality: r.modality,
       })),
     },
     opts,
@@ -295,8 +296,51 @@ function threadSurface(d: Display<"email_thread">, opts: PresentOptions) {
   );
 }
 
+/** The list a result is about; an empty one is nothing worth showing. */
+function isEmptyResult(d: ToolDisplay): boolean {
+  const lists: unknown[] = [];
+  switch (d.kind) {
+    case "habits":
+      lists.push(d.progress);
+      break;
+    case "goals":
+      lists.push(d.goals);
+      break;
+    case "notes":
+      lists.push(d.notes);
+      break;
+    case "event_list":
+      lists.push(d.events);
+      break;
+    case "calendars":
+      lists.push(d.calendars);
+      break;
+    case "task_lists":
+      lists.push(d.lists);
+      break;
+    case "finance_transactions":
+      lists.push(d.transactions);
+      break;
+    case "finance_accounts":
+      lists.push(d.accounts);
+      break;
+    case "finance_categories":
+      lists.push(d.categories);
+      break;
+    case "structured_records":
+      lists.push(d.records);
+      break;
+    case "structured_sources":
+      lists.push(d.sources);
+      break;
+    default:
+      return false;
+  }
+  return lists.every((l) => Array.isArray(l) && l.length === 0);
+}
+
 function resultSurface(display: ToolDisplay, opts: PresentOptions, capability: string) {
-  if (JSON.stringify(display).length > MAX_RESULT_BYTES) return null;
+  if (isEmptyResult(display) || JSON.stringify(display).length > MAX_RESULT_BYTES) return null;
   return draft("result", opts.key, { display }, opts, {
     title: opts.title ?? "",
     source: { capability, label: null },
@@ -430,6 +474,26 @@ export function surfacesFromOutcome(
 /** Ops that present these Surfaces, in order. */
 export function presentOps(drafts: SurfaceDraft[], at: string): WorkspaceOp[] {
   return drafts.map((surface) => ({ op: "present", surface, at }));
+}
+
+/**
+ * A list shown now supersedes single-item cards of things it already contains (the task
+ * created a moment ago, now in "Open items"), so the same item isn't on screen twice.
+ */
+export function supersededOps(
+  state: WorkspaceState,
+  drafts: SurfaceDraft[],
+  at: string,
+): WorkspaceOp[] {
+  const listed = new Set(
+    drafts
+      .filter((d) => d.type === "task_list")
+      .flatMap((d) => (d.payload as SurfacePayloads["task_list"]).items.map((i) => i.id)),
+  );
+  if (!listed.size) return [];
+  return state.surfaces
+    .filter((s) => s.type === "task" && s.ref && listed.has(s.ref.id))
+    .map((s) => ({ op: "dismiss" as const, id: s.id, at }));
 }
 
 /**

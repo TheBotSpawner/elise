@@ -1,14 +1,20 @@
 import { AbortTaskRunError, schedules, task } from "@trigger.dev/sdk";
 import { z } from "zod";
 
-import { indexConversation, sweepRecall } from "@/application/recall-service";
+import { indexConversation, indexVoiceSession, sweepRecall } from "@/application/recall-service";
 
 /**
  * Thin Trigger.dev entry points for Universal Recall (ADR-012). Indexing is idempotent, so
  * retries are safe; the sweep is the backfill and the safety net for missed turns.
  */
 
-const indexPayload = z.object({ workspaceId: z.uuid(), conversationId: z.uuid() });
+const indexPayload = z
+  .object({
+    workspaceId: z.uuid(),
+    conversationId: z.uuid().optional(),
+    sessionId: z.uuid().optional(),
+  })
+  .refine((p) => Boolean(p.conversationId) !== Boolean(p.sessionId));
 
 export const recallIndexTask = task({
   id: "recall-index",
@@ -18,7 +24,10 @@ export const recallIndexTask = task({
   run: async (payload: z.infer<typeof indexPayload>) => {
     const parsed = indexPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid recall payload");
-    return indexConversation(parsed.data.workspaceId, parsed.data.conversationId);
+    const { workspaceId, conversationId, sessionId } = parsed.data;
+    return conversationId
+      ? indexConversation(workspaceId, conversationId)
+      : indexVoiceSession(workspaceId, sessionId!);
   },
 });
 

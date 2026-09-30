@@ -4,6 +4,8 @@ import type { PublicError } from "@/core/errors";
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
+  /** A spoken turn (its transcript is the content). */
+  modality?: "text" | "voice";
   content: string;
   tools: ClientToolTrace[];
   error?: PublicError;

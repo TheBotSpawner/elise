@@ -4,10 +4,15 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import type { VoicePreferences } from "@/application/auth-context";
 import { Orb } from "@/components/elise/orb/orb";
 import { ORB_FLIGHT, ORB_LAYOUT_ID, useOrbPresence } from "@/components/elise/orb/orb-presence";
+import { resolveOrbState, type OrbState } from "@/components/elise/orb/orb-states";
+import { threadUrl, type ThreadRef } from "@/core/interaction";
 import { WORKSPACE_LIMITS, type WorkspaceState } from "@/core/workspace/model";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
+import { useVoice } from "@/features/voice/use-voice";
+import { MicButton, VoiceBar } from "@/features/voice/voice-controls";
 import { LiveWorkspace, SurfaceCard } from "@/features/workspace/live-workspace";
 import type { SurfaceHandlers } from "@/features/workspace/surfaces";
 import { useWorkspaceController } from "@/features/workspace/use-workspace";
@@ -29,7 +34,7 @@ export interface HomeAmbient {
   /** Today's scheduled result, shown as one quiet line — never a modal. */
   brief?: { id: string; read: boolean } | null;
   /** A Live Workspace still active from earlier: one quiet "Continue" line. */
-  resume?: { conversationId: string; description: string } | null;
+  resume?: { thread: ThreadRef; description: string } | null;
 }
 
 /**
@@ -38,7 +43,8 @@ export interface HomeAmbient {
  * bottom and the thread takes over (motion spec "Home → Chat").
  */
 export function ChatSurface({
-  conversationId,
+  thread,
+  voice,
   initialMessages = [],
   timezone,
   userName = "",
@@ -50,7 +56,10 @@ export function ChatSurface({
   /** For Realtime updates of this conversation's Live Workspace. */
   workspaceId: string;
   initialWorkspace?: WorkspaceState;
-  conversationId?: string;
+  /** The interaction being continued: a History conversation or a voice session. */
+  thread?: ThreadRef;
+  /** The user's voice preferences (ADR-014). */
+  voice: VoicePreferences;
   initialMessages?: ChatMessage[];
   timezone: string;
   userName?: string;
@@ -67,25 +76,46 @@ export function ChatSurface({
     send,
     stop,
     busy,
-    orbState,
+    orbState: chatOrbState,
+    subscribe,
     trackApproval,
     markApprovalResolved,
     workspace,
     setWorkspace,
     outOfSync,
     clearOutOfSync,
-    getConversationId,
+    getThread,
   } = useEliseChat({
-    conversationId,
+    thread,
     messages: initialMessages,
     spaceId: space?.id,
     workspace: initialWorkspace,
   });
   const empty = messages.length === 0;
+  // Voice is another way into the same ELISE (ADR-014): same send, same stream, same Surfaces.
+  const voiceSession = useVoice({ prefs: voice, send, subscribe, level: presence.level });
+  const voiceOn = voice.enabled && voiceSession.supported;
+  const phase = voiceSession.state.phase;
+  const voiceOrb: OrbState[] =
+    phase === "listening"
+      ? ["listening"]
+      : phase === "speaking"
+        ? ["speaking"]
+        : phase === "transcribing"
+          ? ["thinking"]
+          : [];
+  const orbState = resolveOrbState([...voiceOrb, chatOrbState]);
+  const voiceHandlers = {
+    start: voiceSession.start,
+    end: voiceSession.end,
+    interrupt: voiceSession.interrupt,
+    finishNow: voiceSession.finishNow,
+    toggleMute: voiceSession.toggleMute,
+  };
   const controller = useWorkspaceController({
     workspace,
     setWorkspace,
-    getConversationId,
+    getThread,
     busy,
     workspaceId,
     outOfSync,
@@ -164,8 +194,13 @@ export function ChatSurface({
   const confirmationSlot = (
     <div
       aria-live="polite"
-      className="pointer-events-none absolute inset-x-0 bottom-full mb-3 flex flex-col gap-2"
+      className={cn(
+        "pointer-events-none absolute inset-x-0 flex flex-col gap-2",
+        // On the idle Home the headline sits above the input: show it below on larger screens.
+        empty ? "bottom-full mb-3 md:top-full md:bottom-auto md:mt-3 md:mb-0" : "bottom-full mb-3",
+      )}
     >
+      {voiceOn && <VoiceBar state={voiceSession.state} handlers={voiceHandlers} />}
       <AnimatePresence initial={false}>
         {confirmations.map((s) => (
           <div key={s.id} className="pointer-events-auto">
@@ -193,6 +228,7 @@ export function ChatSurface({
       onStop={stop}
       sendLabel={t.chat.send}
       stopLabel={t.chat.stop}
+      voice={voiceOn ? <MicButton state={voiceSession.state} handlers={voiceHandlers} /> : null}
     />
   );
 
@@ -205,7 +241,36 @@ export function ChatSurface({
           transition={ORB_FLIGHT}
           className="mt-11 shrink-0 md:-mt-2"
         >
-          <Orb state={orbState} size="fill" className="size-[300px] md:size-[440px]" />
+          {voiceOn ? (
+            // The Orb is ELISE's voice presence: tap it to talk.
+            <button
+              type="button"
+              onClick={
+                phase === "idle"
+                  ? voiceHandlers.start
+                  : phase === "listening"
+                    ? voiceHandlers.finishNow
+                    : voiceHandlers.interrupt
+              }
+              aria-label={
+                phase === "idle"
+                  ? t.voice.start
+                  : phase === "listening"
+                    ? t.voice.finish
+                    : t.voice.interrupt
+              }
+              className="block rounded-full focus-visible:outline-none"
+            >
+              <Orb
+                state={orbState}
+                size="fill"
+                levelSource={presence.level}
+                className="size-[300px] md:size-[440px]"
+              />
+            </button>
+          ) : (
+            <Orb state={orbState} size="fill" className="size-[300px] md:size-[440px]" />
+          )}
         </motion.div>
         <AnimatePresence>
           <motion.div
@@ -234,7 +299,8 @@ export function ChatSurface({
             {ambient && <Ambient ambient={ambient} />}
           </motion.div>
         </AnimatePresence>
-        <div className="fixed inset-x-4 bottom-7 z-30 md:static md:mt-9 md:w-[720px]">
+        <div className="fixed inset-x-4 bottom-7 z-30 md:relative md:inset-auto md:mt-9 md:w-[720px]">
+          {confirmationSlot}
           {composer}
         </div>
       </main>
@@ -278,6 +344,10 @@ export function ChatSurface({
           }}
           after={active && !wide ? workspaceView("stack") : undefined}
         />
+        {!split && voiceOn && phase !== "idle" && (
+          // Room for the voice bar above the dock, so it never covers the last Surface.
+          <div aria-hidden className="h-16 shrink-0" />
+        )}
         {split && <div className="flex-1" />}
         {split && (
           <div className="sticky bottom-0 z-30 bg-[linear-gradient(transparent,var(--bg)_28%)] pt-8 pb-9">
@@ -404,7 +474,7 @@ function Ambient({ ambient }: { ambient: HomeAmbient }) {
     items.unshift({
       label: t.workspace.resumeLabel,
       text: t.workspace.resume(resume.description),
-      href: `/chat/${resume.conversationId}`,
+      href: threadUrl(resume.thread),
     });
   if (items.length === 0 && !brief) return null;
   return (

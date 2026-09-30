@@ -24,6 +24,10 @@ export type UserProfileRow = {
   onboarding_status: "pending" | "completed" | "skipped";
   theme: "system" | "dark" | "light";
   accent: "cyan" | "blue" | "violet" | "green" | "amber";
+  voice_enabled: boolean;
+  voice_output: boolean;
+  voice_language: "auto" | "es" | "en";
+  voice_name: "marin" | "cedar" | "coral" | "sage" | "ash" | "verse";
   created_at: Ts;
   updated_at: Ts;
 };
@@ -140,6 +144,7 @@ export type AiRunRow = {
   workspace_id: string;
   user_id: string;
   conversation_id: string | null;
+  interaction_session_id: string | null;
   ai_provider: string;
   model_key: string;
   skill_key: string;
@@ -891,7 +896,8 @@ export type LiveWorkspaceRow = {
   id: string;
   workspace_id: string;
   user_id: string;
-  conversation_id: string;
+  conversation_id: string | null;
+  session_id: string | null;
   intent: Json | null;
   surfaces: Json;
   focus_id: string | null;
@@ -923,7 +929,7 @@ export type Database = {
         "workspace_id" | "capability_key" | "connection_id"
       >;
       conversations: Table<ConversationRow, "workspace_id" | "user_id">;
-      live_workspaces: Table<LiveWorkspaceRow, "workspace_id" | "user_id" | "conversation_id">;
+      live_workspaces: Table<LiveWorkspaceRow, "workspace_id" | "user_id">;
       messages: Table<MessageRow, "conversation_id" | "workspace_id" | "role" | "content">;
       ai_runs: Table<AiRunRow, "workspace_id" | "user_id" | "ai_provider" | "model_key">;
       task_lists: Table<TaskListRow, "workspace_id" | "name">;

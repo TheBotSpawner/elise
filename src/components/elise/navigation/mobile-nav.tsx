@@ -30,7 +30,7 @@ export function MobileHeader({
 }) {
   const { t } = useI18n();
   const pathname = usePathname();
-  const { state: orbState, docked } = useOrbPresence();
+  const { state: orbState, docked, level } = useOrbPresence();
   const [open, setOpen] = useState(false);
 
   // Close the overlay after navigating.
@@ -64,7 +64,7 @@ export function MobileHeader({
           )}
         </button>
         <Link href="/" className="flex items-center gap-1" aria-label="ELISE">
-          {docked && <Orb state={orbState} size={36} />}
+          {docked && <Orb state={orbState} size={36} levelSource={level} />}
           <span className="pl-[0.34em] text-xs font-medium tracking-[0.34em]">ELISE</span>
         </Link>
         {docked ? (

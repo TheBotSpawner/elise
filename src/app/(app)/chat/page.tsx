@@ -1,8 +1,9 @@
-import { MessagesSquare, Plus, Search } from "lucide-react";
+import { Mic, MessagesSquare, Plus, Search } from "lucide-react";
 import Link from "next/link";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { listConversations } from "@/application/conversations-service";
+import { listVoiceSessions } from "@/application/interaction-thread";
 import { searchRecall, sessionSummaries } from "@/application/recall-service";
 import { EmptyState, PageContainer, PageHeader } from "@/components/shared/page";
 import { buttonVariants } from "@/components/ui/button";
@@ -47,6 +48,9 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
           at: c.lastMessageAt,
         }));
       })();
+
+  // Voice sessions have no thread of their own; they're listed here to review or delete.
+  const voiceSessions = query ? [] : await listVoiceSessions(auth).catch(() => []);
 
   const newChat = (
     <Link href="/" className={buttonVariants({ size: "sm" })}>
@@ -104,6 +108,35 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
             </li>
           ))}
         </ul>
+      )}
+      {voiceSessions.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-2 flex items-center gap-2 px-1 type-label text-faint">
+            <Mic className="size-3.5" aria-hidden />
+            {t.voice.history}
+          </h2>
+          <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
+            {voiceSessions.map((v) => (
+              <li key={v.id} className="flex items-center gap-2 pr-2 hover:bg-surface-2">
+                <Link
+                  href={`/?session=${v.id}`}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-4 py-3 pl-4"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm">{v.title || t.voice.historyItem}</span>
+                    {v.summary && (
+                      <span className="block truncate text-[12.5px] text-faint">{v.summary}</span>
+                    )}
+                  </span>
+                  <time className="shrink-0 font-mono text-xs text-muted" dateTime={v.at}>
+                    {format.format(new Date(v.at))}
+                  </time>
+                </Link>
+                <DeleteConversationButton id={v.id} title={v.title || t.voice.historyItem} voice />
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </PageContainer>
   );

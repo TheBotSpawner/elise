@@ -6,6 +6,15 @@ import { isSupabaseConfigured } from "@/config/env";
 import { AppError } from "@/core/errors";
 import { createClient, type ServerSupabase } from "@/infrastructure/supabase/server";
 
+/** Voice preferences (ADR-014); allowlisted in the database. */
+export interface VoicePreferences {
+  enabled: boolean;
+  /** Speak replies aloud (voice input still works with it off). */
+  speak: boolean;
+  language: "auto" | "es" | "en";
+  voice: "marin" | "cedar" | "coral" | "sage" | "ash" | "verse";
+}
+
 export interface AuthContext {
   db: ServerSupabase;
   userId: string;
@@ -18,6 +27,7 @@ export interface AuthContext {
     onboardingStatus: "pending" | "completed" | "skipped";
     theme: "system" | "dark" | "light";
     accent: "cyan" | "blue" | "violet" | "green" | "amber";
+    voice: VoicePreferences;
   };
 }
 
@@ -64,6 +74,12 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
       onboardingStatus: profile.onboarding_status,
       theme: profile.theme,
       accent: profile.accent,
+      voice: {
+        enabled: profile.voice_enabled,
+        speak: profile.voice_output,
+        language: profile.voice_language,
+        voice: profile.voice_name,
+      },
     },
   };
 });

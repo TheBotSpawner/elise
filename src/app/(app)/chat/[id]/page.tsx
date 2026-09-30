@@ -14,15 +14,16 @@ export default async function ConversationPage({ params }: PageProps<"/chat/[id]
   const [messages, workspace] = await Promise.all([
     loadConversation(auth, id),
     // The Live Workspace survives refreshes and navigation; a failure never blocks the chat.
-    loadWorkspace(auth, id).catch(() => undefined),
+    loadWorkspace(auth, { kind: "conversation", id }).catch(() => undefined),
   ]);
   if (!messages) notFound();
 
   return (
     <ChatSurface
       key={id}
-      conversationId={id}
+      thread={{ kind: "conversation", id }}
       initialMessages={messages}
+      voice={auth.profile.voice}
       timezone={auth.profile.timezone}
       workspaceId={auth.workspaceId}
       initialWorkspace={workspace}

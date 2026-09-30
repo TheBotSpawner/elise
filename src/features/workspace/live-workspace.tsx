@@ -242,6 +242,24 @@ export function SurfaceCard({
   const attention = surface.state === "attention";
   const framed = !SELF_FRAMED.has(surface.type);
   const stateLabel = t.workspace.states[surface.state];
+  const motionProps = {
+    layout: reduced ? false : ("position" as const),
+    initial: reduced ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.985 },
+    animate: { opacity: 1, y: 0, scale: 1 },
+    exit: reduced ? { opacity: 0 } : { opacity: 0, scale: 0.985, transition: { duration: 0.16 } },
+    transition: { duration: 0.28, ease: EASE },
+  };
+  // An approval is already a complete card (what, why, decide): no second frame around it.
+  if (surface.type === "approval")
+    return (
+      <motion.article
+        {...motionProps}
+        aria-label={`${t.workspace.types.approval}: ${surface.title}`}
+        className={cn("min-w-0", className)}
+      >
+        <SurfaceBody surface={surface} timezone={timezone} handlers={handlers} large={primary} />
+      </motion.article>
+    );
   return (
     <motion.article
       layout={reduced ? false : "position"}
@@ -443,7 +461,8 @@ function DetailView({ detail, timezone }: { detail: SurfaceDetail; timezone: str
         month: "short",
         hour: "2-digit",
         minute: "2-digit",
-        timeZone: timezone,
+        // Turn times arrive as the user's local wall-clock ("YYYY-MM-DDTHH:mm").
+        timeZone: "UTC",
       });
       return detail.turns.length ? (
         <ol className="flex flex-col gap-3 border-l border-border pl-4">
@@ -451,9 +470,9 @@ function DetailView({ detail, timezone }: { detail: SurfaceDetail; timezone: str
             <li key={i} className="flex flex-col gap-0.5">
               <p className="flex items-baseline gap-2 type-label text-faint">
                 <span className={turn.who === "ELISE" ? "text-accent-text" : "text-fg"}>
-                  {turn.who === "ELISE" ? "ELISE" : "—"}
+                  {turn.who === "ELISE" ? "ELISE" : t.workspace.you}
                 </span>
-                <span>{f.format(new Date(turn.at))}</span>
+                <span>{f.format(new Date(`${turn.at.slice(0, 16)}:00Z`))}</span>
               </p>
               <p className="text-[14px] leading-[1.6] whitespace-pre-wrap">{turn.text}</p>
             </li>

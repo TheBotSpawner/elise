@@ -12,6 +12,7 @@ import {
 } from "@/core/agents/tools";
 import type { CapabilityKey } from "@/core/capabilities/types";
 import { AppError } from "@/core/errors";
+import type { ThreadRef } from "@/core/interaction";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { EMAIL_TOOLS } from "@/core/tools/email";
@@ -360,7 +361,7 @@ export function toolContext(
   auth: AuthContext,
   origin: ActionOrigin,
   aiRunId: string | null = null,
-  conversationId: string | null = null,
+  thread: ThreadRef | null = null,
 ): ToolContext {
   return {
     workspaceId: auth.workspaceId,
@@ -370,7 +371,8 @@ export function toolContext(
     now: new Date(),
     origin,
     aiRunId,
-    ...(conversationId ? { conversationId } : {}),
+    ...(thread?.kind === "conversation" ? { conversationId: thread.id } : {}),
+    ...(thread?.kind === "session" ? { interactionSessionId: thread.id } : {}),
   };
 }
 

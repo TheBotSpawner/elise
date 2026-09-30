@@ -13,6 +13,7 @@ import {
   type SurfaceDetail,
 } from "@/application/workspace-service";
 import { toPublicError, type PublicError } from "@/core/errors";
+import type { ThreadRef } from "@/core/interaction";
 import { ACTION_IDS, SURFACE_SIZES, type WorkspaceState } from "@/core/workspace/model";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: PublicError };
@@ -25,13 +26,15 @@ async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
   }
 }
 
-const conversation = z.uuid();
+/** Which interaction: a History conversation or a voice session (ownership checked on use). */
+const threadSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("conversation"), id: z.uuid() }).strict(),
+  z.object({ kind: z.literal("session"), id: z.uuid() }).strict(),
+]);
 const id = z.string().min(1).max(120);
 
-export async function getWorkspaceAction(conversationId: string): Promise<Result<WorkspaceState>> {
-  return run(async () =>
-    loadWorkspace(await requireAuthContext(), conversation.parse(conversationId)),
-  );
+export async function getWorkspaceAction(thread: ThreadRef): Promise<Result<WorkspaceState>> {
+  return run(async () => loadWorkspace(await requireAuthContext(), threadSchema.parse(thread)));
 }
 
 const userOp = z.discriminatedUnion("op", [
@@ -46,23 +49,23 @@ const userOp = z.discriminatedUnion("op", [
 ]);
 
 export async function workspaceOpAction(
-  conversationId: string,
+  thread: ThreadRef,
   op: z.input<typeof userOp>,
 ): Promise<Result<WorkspaceState>> {
   return run(async () =>
-    applyUserOp(await requireAuthContext(), conversation.parse(conversationId), userOp.parse(op)),
+    applyUserOp(await requireAuthContext(), threadSchema.parse(thread), userOp.parse(op)),
   );
 }
 
 export async function presentFromHistoryAction(
-  conversationId: string,
+  thread: ThreadRef,
   messageId: string,
   callId: string,
 ): Promise<Result<WorkspaceState>> {
   return run(async () =>
     presentFromHistory(
       await requireAuthContext(),
-      conversation.parse(conversationId),
+      threadSchema.parse(thread),
       z.uuid().parse(messageId),
       z.string().min(1).max(200).parse(callId),
     ),
@@ -70,7 +73,7 @@ export async function presentFromHistoryAction(
 }
 
 export async function surfaceActionAction(
-  conversationId: string,
+  thread: ThreadRef,
   surfaceId: string,
   action: string,
   itemId: string | null,
@@ -78,7 +81,7 @@ export async function surfaceActionAction(
   return run(async () =>
     runSurfaceAction(
       await requireAuthContext(),
-      conversation.parse(conversationId),
+      threadSchema.parse(thread),
       id.parse(surfaceId),
       z.enum(ACTION_IDS).parse(action),
       z.string().max(1000).nullable().parse(itemId),
@@ -87,14 +90,14 @@ export async function surfaceActionAction(
 }
 
 export async function surfaceDetailAction(
-  conversationId: string,
+  thread: ThreadRef,
   surfaceId: string,
   itemId: string | null,
 ): Promise<Result<SurfaceDetail>> {
   return run(async () =>
     loadSurfaceDetail(
       await requireAuthContext(),
-      conversation.parse(conversationId),
+      threadSchema.parse(thread),
       id.parse(surfaceId),
       z.string().max(1000).nullable().parse(itemId),
     ),

@@ -33,7 +33,7 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
   const { t } = useI18n();
   const pathname = usePathname();
   const active = activeSection(pathname);
-  const { state: orbState, docked } = useOrbPresence();
+  const { state: orbState, docked, level } = useOrbPresence();
   // The nav is hidden below md; only fly the Orb into it where it is visible.
   const desktop = useIsDesktop();
   const [scrolled, setScrolled] = useState(false);
@@ -62,7 +62,7 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
             transition={ORB_FLIGHT}
             className="-mr-1.5 -ml-3 size-10"
           >
-            <Orb state={orbState} size={40} />
+            <Orb state={orbState} size={40} levelSource={level} />
           </motion.div>
         ) : (
           <span

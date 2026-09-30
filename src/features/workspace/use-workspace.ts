@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { ToolDisplay } from "@/core/agents/tools";
+import type { ThreadRef } from "@/core/interaction";
 import { approvalDecidedOps } from "@/core/workspace/from-results";
 import {
   applyOp,
@@ -35,7 +36,7 @@ type UserOp = Parameters<typeof workspaceOpAction>[1];
 export function useWorkspaceController({
   workspace,
   setWorkspace,
-  getConversationId,
+  getThread,
   busy,
   workspaceId,
   outOfSync,
@@ -44,7 +45,7 @@ export function useWorkspaceController({
 }: {
   workspace: WorkspaceState;
   setWorkspace: (update: WorkspaceState | ((s: WorkspaceState) => WorkspaceState)) => void;
-  getConversationId: () => string | null;
+  getThread: () => ThreadRef | null;
   busy: boolean;
   workspaceId: string | null;
   outOfSync: boolean;
@@ -62,15 +63,15 @@ export function useWorkspaceController({
   const inFlight = useRef(0);
 
   const refetch = useCallback(async () => {
-    const id = getConversationId();
+    const id = getThread();
     if (!id || inFlight.current || queue.current.length) return;
     const result = await getWorkspaceAction(id);
     if (result.ok) setWorkspace(result.value);
-  }, [getConversationId, setWorkspace]);
+  }, [getThread, setWorkspace]);
 
   const persist = useCallback(
     async (op: UserOp) => {
-      const id = getConversationId();
+      const id = getThread();
       if (!id) return;
       inFlight.current++;
       try {
@@ -79,7 +80,7 @@ export function useWorkspaceController({
         inFlight.current--;
       }
     },
-    [getConversationId],
+    [getThread],
   );
 
   // After a turn: send what the user did meanwhile, then converge on the server's state.
@@ -132,7 +133,7 @@ export function useWorkspaceController({
 
   const runAction = useCallback(
     async (surface: Surface, action: ActionId, itemId: string | null) => {
-      const id = getConversationId();
+      const id = getThread();
       // Not while a turn streams: its own saves would race this one.
       if (!id || pending || busy) return;
       setPending(`${surface.id}:${itemId ?? action}`);
@@ -151,17 +152,17 @@ export function useWorkspaceController({
         setPending(null);
       }
     },
-    [busy, getConversationId, pending, setWorkspace, t],
+    [busy, getThread, pending, setWorkspace, t],
   );
 
   const loadDetail = useCallback(
     async (surface: Surface, itemId: string | null) => {
-      const id = getConversationId();
+      const id = getThread();
       if (!id) return null;
       const result = await surfaceDetailAction(id, surface.id, itemId);
       return result.ok ? result.value : { kind: "error" as const, error: result.error };
     },
-    [getConversationId],
+    [getThread],
   );
 
   /** Re-present a result from earlier in the thread (or focus it if still shown). */
@@ -175,13 +176,13 @@ export function useWorkspaceController({
           ?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
-      const id = getConversationId();
+      const id = getThread();
       if (!id || !messageId || busy) return;
       const result = await presentFromHistoryAction(id, messageId, callId);
       if (result.ok) setWorkspace(result.value);
       else toast.error(t.errors.codes[result.error.code]);
     },
-    [busy, focus, getConversationId, setWorkspace, t, workspace.surfaces],
+    [busy, focus, getThread, setWorkspace, t, workspace.surfaces],
   );
 
   const approvalResolved = useCallback(

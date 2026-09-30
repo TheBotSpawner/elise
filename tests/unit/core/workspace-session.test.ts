@@ -49,7 +49,11 @@ function fakeAuth() {
 describe("workspace session (one chat turn)", () => {
   it("buffers ops until the stream opens, then streams every change and saves it", async () => {
     const { auth, saved } = fakeAuth();
-    const session = new WorkspaceSession(auth, "conv-1", emptyWorkspace());
+    const session = new WorkspaceSession(
+      auth,
+      { kind: "conversation", id: "conv-1" },
+      emptyWorkspace(),
+    );
     session.apply([{ op: "turn", at: AT }]);
     const streamed: { ops: WorkspaceOp[]; version: number }[] = [];
     session.attach(
@@ -74,7 +78,11 @@ describe("workspace session (one chat turn)", () => {
 
   it("completing a visible task updates it in place instead of adding a duplicate", () => {
     const { auth } = fakeAuth();
-    const session = new WorkspaceSession(auth, "conv-1", emptyWorkspace());
+    const session = new WorkspaceSession(
+      auth,
+      { kind: "conversation", id: "conv-1" },
+      emptyWorkspace(),
+    );
     session.present("tasks.list", "call-1", {
       status: "succeeded",
       display: { kind: "task_list", tasks: [task("t1"), task("t2")] },
@@ -97,7 +105,11 @@ describe("workspace session (one chat turn)", () => {
 
   it("attributes orchestration steps to the tool call running now", () => {
     const { auth } = fakeAuth();
-    const session = new WorkspaceSession(auth, "conv-1", emptyWorkspace());
+    const session = new WorkspaceSession(
+      auth,
+      { kind: "conversation", id: "conv-1" },
+      emptyWorkspace(),
+    );
     const steps: [string, string | null][] = [];
     session.attach(
       () => {},

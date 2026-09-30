@@ -12,7 +12,10 @@ export type BackgroundJob =
   | { type: "finance.import"; payload: { workspaceId: string; importId: string } }
   | { type: "finance.sync"; payload: { workspaceId: string; sourceId: string } }
   | { type: "structured.bulk"; payload: { workspaceId: string; jobId: string } }
-  | { type: "recall.index"; payload: { workspaceId: string; conversationId: string } }
+  | {
+      type: "recall.index";
+      payload: { workspaceId: string; conversationId?: string; sessionId?: string };
+    }
   | { type: "recall.backfill"; payload: { workspaceId: string } };
 
 export interface BackgroundRuntime {

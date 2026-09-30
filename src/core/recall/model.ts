@@ -45,6 +45,8 @@ export interface RecallReader {
     from?: Date | null;
     to?: Date | null;
     excludeConversationId?: string | null;
+    /** A voice session in progress (it has no conversation). */
+    excludeSessionId?: string | null;
     limit: number;
   }): Promise<{ hits: RecallHit[]; semantic: boolean }>;
   sessions(ids: string[]): Promise<RecallSession[]>;
@@ -53,6 +55,7 @@ export interface RecallReader {
     to?: Date | null;
     limit: number;
     excludeConversationId?: string | null;
+    excludeSessionId?: string | null;
   }): Promise<RecallSession[]>;
   /** Turns of one session: around a moment, or the latest ones. */
   turns(sessionId: string, q: { around?: string | null; limit: number }): Promise<RecallTurn[]>;
@@ -118,7 +121,12 @@ export function groupRecall(hits: RecallHit[], sessions: RecallSession[]): Recal
           .map((h) => ({ text: clip(h.content, RECALL.excerptChars), at: h.startedAt })),
         topics: s.topics,
         modality: s.modality,
-        url: s.conversationId ? `/chat/${s.conversationId}` : null,
+        // A voice session has no History thread: it reopens on Home.
+        url: s.conversationId
+          ? `/chat/${s.conversationId}`
+          : s.modality === "voice"
+            ? `/?session=${s.id}`
+            : null,
         relevance: {
           score: best[0]!.score + (list.length - 1) * 0.002,
           keyword: list.some((h) => h.keywordMatched),

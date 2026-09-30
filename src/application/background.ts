@@ -26,7 +26,9 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
   const db = createAdminClient();
   const { data: profile } = await db
     .from("user_profiles")
-    .select("display_name, preferred_language, timezone, onboarding_status, theme, accent")
+    .select(
+      "display_name, preferred_language, timezone, onboarding_status, theme, accent, voice_enabled, voice_output, voice_language, voice_name",
+    )
     .eq("id", userId)
     .maybeSingle();
   if (!profile) throw new AppError("AUTH_ERROR", "The schedule owner no longer exists");
@@ -42,6 +44,12 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
       onboardingStatus: profile.onboarding_status,
       theme: profile.theme,
       accent: profile.accent,
+      voice: {
+        enabled: profile.voice_enabled,
+        speak: profile.voice_output,
+        language: profile.voice_language,
+        voice: profile.voice_name,
+      },
     },
   };
 }

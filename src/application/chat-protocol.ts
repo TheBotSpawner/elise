@@ -5,6 +5,7 @@
 import type { ApprovalReason } from "@/core/agents/policy";
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { PublicError } from "@/core/errors";
+import type { ThreadRef } from "@/core/interaction";
 import type { WorkspaceOp } from "@/core/workspace/model";
 
 /** Tool outcome as the UI needs it (model-facing output stripped). */
@@ -37,7 +38,8 @@ export interface ClientToolTrace {
 }
 
 export type ChatStreamEvent =
-  | { type: "conversation"; conversationId: string; runId: string }
+  /** Where this turn lives: a History conversation, or a voice session (ADR-014). */
+  | { type: "conversation"; thread: ThreadRef; runId: string }
   | { type: "status"; state: "thinking" | "using_tools" }
   | { type: "text"; delta: string }
   | { type: "tool_started"; callId: string; name: string; parentId?: string }

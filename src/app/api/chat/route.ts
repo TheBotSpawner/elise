@@ -11,11 +11,23 @@ export const maxDuration = 60;
 const bodySchema = z
   .object({
     conversationId: z.uuid().optional(),
+    /** A voice session in progress (ADR-014). */
+    sessionId: z.uuid().optional(),
     message: z.string().trim().min(1).max(8000),
     /** Knowledge Space a new conversation starts in ("Ask ELISE" from a Space). */
     spaceId: z.uuid().optional(),
+    /** A spoken turn: its transcript is ordinary user input, with no extra authority. */
+    modality: z.enum(["text", "voice"]).optional(),
+    voice: z
+      .object({
+        durationMs: z.number().int().min(0).max(120_000),
+        language: z.enum(["es", "en"]).nullable(),
+      })
+      .strict()
+      .optional(),
   })
-  .strict();
+  .strict()
+  .refine((b) => !(b.conversationId && b.sessionId), "One thread at a time");
 
 const STATUS: Partial<Record<AppError["code"], number>> = {
   AUTH_ERROR: 401,

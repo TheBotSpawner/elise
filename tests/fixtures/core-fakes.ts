@@ -190,6 +190,12 @@ export class InMemoryActionLog implements ActionLog {
     });
     return { id };
   }
+  /** Approvals decided in a test (the fake has no status column). */
+  decided = new Set<string>();
+  async findPendingApproval(_ctx: ToolContext, payloadHash: string) {
+    const a = this.approvals.find((x) => x.payloadHash === payloadHash && !this.decided.has(x.id));
+    return a ? { approvalId: a.id, actionId: a.actionId } : null;
+  }
   async recordToolExecution(_ctx: ToolContext, e: Parameters<ActionLog["recordToolExecution"]>[1]) {
     this.executions.push({ toolName: e.toolName, status: e.status });
   }

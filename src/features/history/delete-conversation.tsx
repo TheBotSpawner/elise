@@ -6,9 +6,18 @@ import { toast } from "sonner";
 
 import { useI18n } from "@/lib/i18n/client";
 
-import { deleteConversationAction } from "./actions";
+import { deleteConversationAction, deleteVoiceSessionAction } from "./actions";
 
-export function DeleteConversationButton({ id, title }: { id: string; title: string }) {
+export function DeleteConversationButton({
+  id,
+  title,
+  voice = false,
+}: {
+  id: string;
+  title: string;
+  /** A voice session (no History thread of its own). */
+  voice?: boolean;
+}) {
   const { t } = useI18n();
   const [pending, startTransition] = useTransition();
   return (
@@ -18,9 +27,12 @@ export function DeleteConversationButton({ id, title }: { id: string; title: str
       title={t.chat.deleteConversation}
       disabled={pending}
       onClick={() => {
-        if (!window.confirm(t.chat.deleteConfirm(title))) return;
+        if (!window.confirm(voice ? t.voice.deleteConfirm(title) : t.chat.deleteConfirm(title)))
+          return;
         startTransition(async () => {
-          const result = await deleteConversationAction(id);
+          const result = voice
+            ? await deleteVoiceSessionAction(id)
+            : await deleteConversationAction(id);
           if (result.ok) toast.success(t.chat.deleted);
           else toast.error(t.errors.codes[result.error.code]);
         });

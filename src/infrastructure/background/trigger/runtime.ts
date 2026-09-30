@@ -34,7 +34,10 @@ const TASKS: Record<
   },
   "recall.index": {
     id: "recall-index",
-    tag: (p) => `conversation:${(p as { conversationId: string }).conversationId}`,
+    tag: (p) => {
+      const t = p as { conversationId?: string; sessionId?: string };
+      return t.conversationId ? `conversation:${t.conversationId}` : `session:${t.sessionId}`;
+    },
   },
   "recall.backfill": {
     id: "recall-backfill",

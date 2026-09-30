@@ -14,6 +14,8 @@ export interface ConversationSummary {
 export interface StoredChatMessage {
   id: string;
   role: "user" | "assistant";
+  /** Spoken turns keep their modality (the transcript is the content). */
+  modality?: "text" | "voice";
   content: string;
   tools: ClientToolTrace[];
   error?: AssistantMessageMetadata["error"];
@@ -59,10 +61,11 @@ export async function loadConversation(
   if (error) throw new AppError("INTERNAL_ERROR", "Could not load messages", { cause: error });
 
   const messages = data.map((m) => {
-    const meta = (m.metadata ?? {}) as AssistantMessageMetadata;
+    const meta = (m.metadata ?? {}) as AssistantMessageMetadata & { modality?: "text" | "voice" };
     return {
       id: m.id,
       role: m.role as "user" | "assistant",
+      ...(meta.modality === "voice" ? { modality: "voice" as const } : {}),
       content: m.content,
       tools: meta.tools ?? [],
       error: meta.error,
@@ -70,6 +73,33 @@ export async function loadConversation(
     };
   });
 
+  return withApprovalState(auth, messages);
+}
+
+/**
+ * Deleting a conversation from History archives it: it leaves every list, and a database
+ * trigger removes it from Recall in the same transaction (no orphan excerpts or embeddings).
+ */
+export async function archiveConversation(auth: AuthContext, id: string): Promise<void> {
+  const { data, error } = await auth.db
+    .from("conversations")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("workspace_id", auth.workspaceId)
+    .eq("user_id", auth.userId)
+    .is("archived_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error)
+    throw new AppError("INTERNAL_ERROR", "Could not delete the conversation", { cause: error });
+  if (!data) throw new AppError("NOT_FOUND", "Conversation not found");
+}
+
+/** Approval cards reflect their current (not historical) state. */
+export async function withApprovalState(
+  auth: AuthContext,
+  messages: StoredChatMessage[],
+): Promise<StoredChatMessage[]> {
   const approvalIds = messages.flatMap((m) =>
     m.tools.flatMap((t) =>
       t.outcome?.status === "approval_required" ? [t.outcome.approvalId] : [],
@@ -100,23 +130,4 @@ export async function loadConversation(
     }
   }
   return messages;
-}
-
-/**
- * Deleting a conversation from History archives it: it leaves every list, and a database
- * trigger removes it from Recall in the same transaction (no orphan excerpts or embeddings).
- */
-export async function archiveConversation(auth: AuthContext, id: string): Promise<void> {
-  const { data, error } = await auth.db
-    .from("conversations")
-    .update({ archived_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("workspace_id", auth.workspaceId)
-    .eq("user_id", auth.userId)
-    .is("archived_at", null)
-    .select("id")
-    .maybeSingle();
-  if (error)
-    throw new AppError("INTERNAL_ERROR", "Could not delete the conversation", { cause: error });
-  if (!data) throw new AppError("NOT_FOUND", "Conversation not found");
 }

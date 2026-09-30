@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Mic } from "lucide-react";
 import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import Markdown from "react-markdown";
@@ -79,7 +79,11 @@ export function MessageThread({
               </p>
             )}
             {m.role === "user" ? (
-              <UserMessage content={m.content} animate={Boolean(m.fresh)} />
+              <UserMessage
+                content={m.content}
+                animate={Boolean(m.fresh)}
+                spoken={m.modality === "voice"}
+              />
             ) : (
               <AssistantMessage
                 message={m}
@@ -96,14 +100,29 @@ export function MessageThread({
   );
 }
 
-function UserMessage({ content, animate }: { content: string; animate: boolean }) {
+function UserMessage({
+  content,
+  animate,
+  spoken,
+}: {
+  content: string;
+  animate: boolean;
+  spoken: boolean;
+}) {
+  const { t } = useI18n();
   return (
     <motion.div
       initial={animate ? { opacity: 0, y: 8 } : false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, ease: EASE }}
-      className="flex justify-end"
+      className="flex flex-col items-end gap-1"
     >
+      {spoken && (
+        <span className="flex items-center gap-1 type-label text-faint">
+          <Mic className="size-3" aria-hidden />
+          {t.voice.spoken}
+        </span>
+      )}
       <p className="max-w-[75%] rounded-[18px_18px_6px_18px] bg-surface-2 px-4 py-[11px] text-[15px] leading-[1.5] whitespace-pre-wrap md:max-w-[520px] md:px-[18px] md:py-3 md:leading-[1.55]">
         {content}
       </p>

@@ -1,14 +1,11 @@
 import "server-only";
 
 import { serverEnv } from "@/config/server-env";
-import {
-  buildContextPackage,
-  MAX_HISTORY_MESSAGES,
-  type HistoryMessage,
-} from "@/core/agents/context";
+import { buildContextPackage } from "@/core/agents/context";
 import type { ToolCallOutcome } from "@/core/agents/executor";
 import { runElise, toolNotes } from "@/core/agents/runtime";
 import { AppError, toPublicError } from "@/core/errors";
+import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
 import { intentForTool } from "@/core/workspace/from-results";
 import { describeWorkspace } from "@/core/workspace/registry";
@@ -30,16 +27,21 @@ import {
   toolContext,
   toolRegistry,
 } from "./elise";
-import { listSpaces } from "./knowledge-service";
+import { openThread } from "./interaction-thread";
 import { queueRecallIndex, searchRecall } from "./recall-service";
 import { structuredSourcesForChat } from "./structured-service";
 import { openWorkspaceSession, toClientOutcome } from "./workspace-service";
 
 export interface ChatTurnInput {
   conversationId?: string;
+  /** A voice session in progress (ADR-014). */
+  sessionId?: string;
   message: string;
   requestId: string;
   spaceId?: string;
+  /** Spoken turns run the same ELISE; only how the reply is shaped differs. */
+  modality?: TurnModality;
+  voice?: VoiceTurnMeta;
 }
 
 /**
@@ -56,30 +58,29 @@ export async function startChatTurn(
   const { bindings } = await ports.bindings();
   const capabilities = availableCapabilities(bindings);
 
-  const conversationId =
-    input.conversationId ?? (await createConversation(auth, input.message, input.spaceId));
-  const history = input.conversationId ? await loadHistory(auth, conversationId) : [];
-  const activeSpace = await loadActiveSpace(auth, conversationId);
+  const modality: TurnModality = input.modality ?? "text";
+  const thread = await openThread(auth, {
+    conversationId: input.conversationId,
+    sessionId: input.sessionId,
+    modality,
+    firstMessage: input.message,
+    spaceId: input.spaceId,
+  });
+  const [history, activeSpace] = await Promise.all([thread.history(), thread.activeSpace()]);
   const [structuredSources, recallEvidence] = await Promise.all([
     capabilities.has("structured") ? structuredSourcesForChat(auth) : [],
-    recallIntent(input.message) ? prefetchRecall(auth, input.message, conversationId) : null,
+    recallIntent(input.message) ? prefetchRecall(auth, input.message, thread.ref) : null,
   ]);
 
-  const { error: insertError } = await auth.db.from("messages").insert({
-    conversation_id: conversationId,
-    workspace_id: auth.workspaceId,
-    role: "user",
-    content: input.message,
-  });
-  if (insertError)
-    throw new AppError("NOT_FOUND", "Conversation not found", { cause: insertError });
+  await thread.addUserTurn(input.message, modality, input.voice);
 
   const { data: run, error: runError } = await auth.db
     .from("ai_runs")
     .insert({
       workspace_id: auth.workspaceId,
       user_id: auth.userId,
-      conversation_id: conversationId,
+      conversation_id: thread.ref.kind === "conversation" ? thread.ref.id : null,
+      interaction_session_id: thread.ref.kind === "session" ? thread.ref.id : null,
       ai_provider: ai.id,
       model_key: serverEnv().OPENAI_MODEL,
       request_id: input.requestId,
@@ -91,7 +92,7 @@ export async function startChatTurn(
   const runId = run.id;
 
   // The interaction's Live Workspace: untouched Surfaces decay at the start of each turn.
-  const workspace = await openWorkspaceSession(auth, conversationId, !input.conversationId);
+  const workspace = await openWorkspaceSession(auth, thread.ref, thread.isNew);
   workspace.apply([{ op: "turn", at: new Date().toISOString() }]);
 
   const context = buildContextPackage({
@@ -105,6 +106,7 @@ export async function startChatTurn(
     structuredSources,
     recallEvidence,
     workspace: describeWorkspace(workspace.state(), auth.profile.timezone),
+    modality,
   });
   const encoder = new TextEncoder();
 
@@ -112,7 +114,7 @@ export async function startChatTurn(
     async start(controller) {
       const send = (event: ChatStreamEvent) =>
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
-      send({ type: "conversation", conversationId, runId: runId });
+      send({ type: "conversation", thread: thread.ref, runId });
       workspace.attach(
         (ops, version) => send({ type: "workspace", ops, version }),
         (step, parent) => {
@@ -157,7 +159,7 @@ export async function startChatTurn(
           ai,
           ports,
           ctx: {
-            ...toolContext(auth, "ai", runId, conversationId),
+            ...toolContext(auth, "ai", runId, thread.ref),
             knowledgeSpaceId: activeSpace?.id ?? null,
             workspace,
           },
@@ -272,19 +274,8 @@ export async function startChatTurn(
       }
 
       async function persistAssistant(text: string, metadata: AssistantMessageMetadata) {
-        const { data } = await auth.db
-          .from("messages")
-          .insert({
-            conversation_id: conversationId,
-            workspace_id: auth.workspaceId,
-            role: "assistant",
-            content: text,
-            run_id: runId,
-            metadata: JSON.parse(JSON.stringify(metadata)) as Json,
-          })
-          .select("id")
-          .single();
-        if (!failure) send({ type: "done", messageId: data?.id ?? null });
+        const messageId = await thread.addAssistantTurn(text, modality, metadata);
+        if (!failure) send({ type: "done", messageId });
       }
 
       async function finishRun() {
@@ -302,13 +293,10 @@ export async function startChatTurn(
               ...(model ? { model_key: model } : {}),
             })
             .eq("id", runId),
-          auth.db
-            .from("conversations")
-            .update({ last_message_at: new Date().toISOString() })
-            .eq("id", conversationId),
+          thread.touch(),
         ]);
-        // Recall indexing never delays or fails the chat.
-        queueRecallIndex(auth.workspaceId, conversationId);
+        // Recall indexing never delays or fails the chat (spoken turns included).
+        queueRecallIndex(auth.workspaceId, thread.ref);
         logger.info("ai_run.finished", {
           run_id: runId,
           request_id: input.requestId,
@@ -320,6 +308,8 @@ export async function startChatTurn(
           input_tokens: usage?.inputTokens,
           output_tokens: usage?.outputTokens,
           response_chars: finalText.length,
+          modality,
+          thread: thread.ref.kind,
         });
       }
     },
@@ -341,55 +331,15 @@ async function enforceRateLimit(auth: AuthContext) {
   }
 }
 
-async function createConversation(
-  auth: AuthContext,
-  firstMessage: string,
-  spaceId?: string,
-): Promise<string> {
-  const title = firstMessage.replace(/\s+/g, " ").trim().slice(0, 80);
-  const { data, error } = await auth.db
-    .from("conversations")
-    .insert({
-      workspace_id: auth.workspaceId,
-      user_id: auth.userId,
-      title,
-      // The Space is re-validated on every turn (loadActiveSpace); this is only a reference.
-      active_context: spaceId ? { knowledgeSpaceId: spaceId } : {},
-    })
-    .select("id")
-    .single();
-  if (error)
-    throw new AppError("INTERNAL_ERROR", "Could not start the conversation", { cause: error });
-  return data.id;
-}
-
-/** The conversation's Knowledge Space, if it has one and it is still an active Space here. */
-async function loadActiveSpace(
-  auth: AuthContext,
-  conversationId: string,
-): Promise<{ id: string; path: string } | null> {
-  const { data } = await auth.db
-    .from("conversations")
-    .select("active_context")
-    .eq("id", conversationId)
-    .eq("workspace_id", auth.workspaceId)
-    .maybeSingle();
-  const spaceId = (data?.active_context as { knowledgeSpaceId?: string } | null)?.knowledgeSpaceId;
-  if (!spaceId) return null;
-  const spaces = await listSpaces(auth).catch(() => []);
-  const space = spaces.find((s) => s.id === spaceId);
-  return space ? { id: space.id, path: space.path } : null;
-}
-
 /** Bounded, best-effort: a slow or failing index never blocks the turn. */
 async function prefetchRecall(
   auth: AuthContext,
   message: string,
-  conversationId: string,
+  thread: ThreadRef,
 ): Promise<RecallResult[] | null> {
   try {
     return await Promise.race([
-      searchRecall(auth, message, conversationId, 3),
+      searchRecall(auth, message, thread, 3),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
     ]);
   } catch (error) {
@@ -398,21 +348,4 @@ async function prefetchRecall(
     });
     return null;
   }
-}
-
-async function loadHistory(auth: AuthContext, conversationId: string): Promise<HistoryMessage[]> {
-  const { data, error } = await auth.db
-    .from("messages")
-    .select("role, content, metadata")
-    .eq("conversation_id", conversationId)
-    .eq("workspace_id", auth.workspaceId)
-    .in("role", ["user", "assistant"])
-    .order("created_at", { ascending: false })
-    .limit(MAX_HISTORY_MESSAGES);
-  if (error) throw new AppError("NOT_FOUND", "Conversation not found", { cause: error });
-  return data.reverse().map((m) => ({
-    role: m.role as "user" | "assistant",
-    content: m.content,
-    toolNotes: ((m.metadata as AssistantMessageMetadata | null)?.toolNotes ?? []).slice(0, 10),
-  }));
 }

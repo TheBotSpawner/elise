@@ -17,6 +17,7 @@ export function Orb({
   state = "idle",
   size = 160,
   level = -1,
+  levelSource,
   className,
 }: {
   state?: OrbState;
@@ -24,15 +25,17 @@ export function Orb({
   size?: number | "fill";
   /** Live audio level 0..1 while listening/speaking; negative = simulated. */
   level?: number;
+  /** A live level read every frame (microphone or ELISE's voice), without re-rendering. */
+  levelSource?: { readonly current: number };
   className?: string;
 }) {
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const input = useRef({ state, size, level });
+  const input = useRef({ state, size, level, levelSource });
 
   useEffect(() => {
-    input.current = { state, size, level };
-  }, [state, size, level]);
+    input.current = { state, size, level, levelSource };
+  }, [state, size, level, levelSource]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -63,7 +66,8 @@ export function Orb({
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       if (!visible || document.hidden) return;
-      const { state: s, size, level: lv } = input.current;
+      const { state: s, size, level: fixed, levelSource: source } = input.current;
+      const lv = source ? source.current : fixed;
       const px = size === "fill" ? canvas.clientWidth : size;
       if (!px) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);

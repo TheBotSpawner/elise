@@ -52,6 +52,8 @@ export interface ToolContext {
   knowledgeSpaceId?: string | null;
   /** The conversation this run belongs to (Recall skips it: it's already in context). */
   conversationId?: string | null;
+  /** Or the voice session it belongs to (ADR-014). */
+  interactionSessionId?: string | null;
   /** The interaction's Live Workspace, when the request has one (ADR-013). */
   workspace?: WorkspacePort;
 }

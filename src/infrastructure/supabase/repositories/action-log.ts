@@ -110,6 +110,21 @@ export class SupabaseActionLog implements ActionLog {
     return data;
   }
 
+  async findPendingApproval(ctx: ToolContext, payloadHash: string) {
+    const { data } = await this.db
+      .from("approvals")
+      .select("id, action_id")
+      .eq("workspace_id", ctx.workspaceId)
+      .eq("user_id", ctx.userId)
+      .eq("payload_hash", payloadHash)
+      .eq("status", "pending")
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data ? { approvalId: data.id, actionId: data.action_id } : null;
+  }
+
   async recordToolExecution(
     ctx: ToolContext,
     e: Parameters<ActionLog["recordToolExecution"]>[1],

@@ -154,7 +154,7 @@ export const WORKSPACE_LIMITS = {
   decayTurns: 4,
   staleAfterMs: 15 * 60_000,
   /** Transient confirmations disappear after this (UI timer). */
-  transientMs: 6_000,
+  transientMs: 9_000,
   ttlMs: 12 * 3_600_000,
 } as const;
 

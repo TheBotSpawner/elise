@@ -1,6 +1,7 @@
 import "server-only";
 
 import { toAppError } from "@/core/errors";
+import type { ThreadRef } from "@/core/interaction";
 import { indexSession, summarizeWithAI, type IndexPorts } from "@/core/recall/indexer";
 import { groupRecall, RECALL, type RecallResult, type RecallTurn } from "@/core/recall/model";
 import { getAIProvider, getEmbeddingProvider } from "@/infrastructure/ai";
@@ -185,27 +186,47 @@ export async function indexConversation(workspaceId: string, conversationId: str
 }
 
 /**
- * After a chat turn: index in the background. Without Trigger.dev it runs detached in this
+ * A voice session (no History thread): its turns are already in interaction_turns, so it is
+ * indexed directly. Archived sessions are never indexed.
+ */
+export async function indexVoiceSession(workspaceId: string, sessionId: string) {
+  const db = createAdminClient();
+  const { data: s } = await db
+    .from("interaction_sessions")
+    .select("id, user_id, status, conversation_id")
+    .eq("id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (!s || s.status !== "active" || s.conversation_id) return null;
+  const counts = await indexSession(ports(db, workspaceId, s.user_id), s.id);
+  logger.info("recall.indexed", { session_id: sessionId, modality: "voice", ...counts });
+  return counts;
+}
+
+/**
+ * After a turn: index in the background. Without Trigger.dev it runs detached in this
  * process; the periodic sweep catches anything that didn't finish.
  */
-export function queueRecallIndex(workspaceId: string, conversationId: string) {
+export function queueRecallIndex(workspaceId: string, thread: ThreadRef) {
   const run = async () => {
     if (isBackgroundConfigured()) {
       await new TriggerDevBackgroundRuntime().enqueue({
         type: "recall.index",
-        payload: { workspaceId, conversationId },
-        // One job per conversation per minute is plenty; the sweep covers the rest.
-        idempotencyKey: `recall:${conversationId}:${Math.floor(Date.now() / 60_000)}`,
+        payload:
+          thread.kind === "conversation"
+            ? { workspaceId, conversationId: thread.id }
+            : { workspaceId, sessionId: thread.id },
+        // One job per thread per minute is plenty; the sweep covers the rest.
+        idempotencyKey: `recall:${thread.id}:${Math.floor(Date.now() / 60_000)}`,
       });
+    } else if (thread.kind === "conversation") {
+      await indexConversation(workspaceId, thread.id);
     } else {
-      await indexConversation(workspaceId, conversationId);
+      await indexVoiceSession(workspaceId, thread.id);
     }
   };
   void run().catch((error) =>
-    logger.warn("recall.queue_failed", {
-      conversation_id: conversationId,
-      code: toAppError(error).code,
-    }),
+    logger.warn("recall.queue_failed", { kind: thread.kind, code: toAppError(error).code }),
   );
 }
 
@@ -248,7 +269,34 @@ export async function sweepRecall(opts: { workspaceId?: string | null; limit: nu
       logger.warn("recall.index_failed", { conversation_id: c.id, code: toAppError(error).code });
     }
   }
-  const result = { processed, failed, remaining: Math.max(0, due.length - processed - failed) };
+  // Voice sessions behind their last activity.
+  let v = db
+    .from("interaction_sessions")
+    .select("id, workspace_id, indexed_through, last_activity_at")
+    .is("conversation_id", null)
+    .eq("status", "active")
+    .order("last_activity_at", { ascending: false })
+    .limit(500);
+  if (opts.workspaceId) v = v.eq("workspace_id", opts.workspaceId);
+  const { data: voice } = await v;
+  const voiceDue = (voice ?? []).filter(
+    (s) =>
+      !s.indexed_through || Date.parse(s.indexed_through) < Date.parse(s.last_activity_at) - 1000,
+  );
+  for (const s of voiceDue.slice(0, Math.max(0, opts.limit - processed - failed))) {
+    try {
+      await indexVoiceSession(s.workspace_id, s.id);
+      processed++;
+    } catch (error) {
+      failed++;
+      logger.warn("recall.index_failed", { session_id: s.id, code: toAppError(error).code });
+    }
+  }
+  const result = {
+    processed,
+    failed,
+    remaining: Math.max(0, due.length + voiceDue.length - processed - failed),
+  };
   logger.info("recall.sweep", { workspace_id: opts.workspaceId ?? "all", ...result });
   return result;
 }
@@ -257,7 +305,7 @@ export async function sweepRecall(opts: { workspaceId?: string | null; limit: nu
 export async function searchRecall(
   auth: AuthContext,
   query: string,
-  excludeConversationId: string | null = null,
+  exclude: ThreadRef | null = null,
   limit: number = RECALL.maxResults,
 ): Promise<RecallResult[]> {
   const reader = new SupabaseRecallReader(
@@ -268,7 +316,8 @@ export async function searchRecall(
   );
   const { hits } = await reader.search({
     text: query,
-    excludeConversationId,
+    excludeConversationId: exclude?.kind === "conversation" ? exclude.id : null,
+    excludeSessionId: exclude?.kind === "session" ? exclude.id : null,
     limit: RECALL.candidates,
   });
   const sessions = await reader.sessions([...new Set(hits.map((h) => h.sessionId))]);

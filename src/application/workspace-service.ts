@@ -3,10 +3,12 @@ import "server-only";
 import { executeToolCall, type ToolCallOutcome } from "@/core/agents/executor";
 import type { ToolDisplay } from "@/core/agents/tools";
 import { AppError, toAppError, toPublicError } from "@/core/errors";
+import type { ThreadRef } from "@/core/interaction";
 import {
   approvalDecidedOps,
   presentOps,
   reconcileOps,
+  supersededOps,
   surfacesFromOutcome,
 } from "@/core/workspace/from-results";
 import {
@@ -37,6 +39,7 @@ import { SupabaseKnowledgeReader } from "@/infrastructure/supabase/repositories/
 import type { AuthContext } from "./auth-context";
 import type { AssistantMessageMetadata, ClientToolOutcome } from "./chat-protocol";
 import { createExecutorPorts, toolContext } from "./elise";
+import { ownSession } from "./interaction-thread";
 
 /**
  * Live Workspace persistence and operations (ADR-013). The row is the author's own (RLS); its
@@ -63,16 +66,19 @@ const fromRow = (r: Row): WorkspaceState =>
     version: r.version,
   });
 
-/** The conversation's workspace, restored (stale snapshots marked, approvals reconciled). */
+/** A workspace belongs to a conversation or to a voice session (ADR-014). */
+const column = (t: ThreadRef) => (t.kind === "conversation" ? "conversation_id" : "session_id");
+
+/** The interaction's workspace, restored (stale snapshots marked, approvals reconciled). */
 export async function loadWorkspace(
   auth: AuthContext,
-  conversationId: string,
+  thread: ThreadRef,
   now = new Date(),
 ): Promise<WorkspaceState> {
   const { data } = await auth.db
     .from("live_workspaces")
     .select("intent, surfaces, focus_id, turn, next_handle, version, expires_at")
-    .eq("conversation_id", conversationId)
+    .eq(column(thread), thread.id)
     .eq("user_id", auth.userId)
     .maybeSingle();
   if (!data || Date.parse(data.expires_at) <= now.getTime()) return emptyWorkspace();
@@ -100,17 +106,14 @@ async function reconcileApprovals(auth: AuthContext, state: WorkspaceState, now:
   return ops.length ? applyOps(state, ops) : state;
 }
 
-export async function saveWorkspace(
-  auth: AuthContext,
-  conversationId: string,
-  state: WorkspaceState,
-) {
+export async function saveWorkspace(auth: AuthContext, thread: ThreadRef, state: WorkspaceState) {
   const now = new Date();
   const { error } = await auth.db.from("live_workspaces").upsert(
     {
       workspace_id: auth.workspaceId,
       user_id: auth.userId,
-      conversation_id: conversationId,
+      conversation_id: thread.kind === "conversation" ? thread.id : null,
+      session_id: thread.kind === "session" ? thread.id : null,
       intent: (state.intent ?? null) as unknown as Json,
       surfaces: state.surfaces as unknown as Json,
       focus_id: state.focusId,
@@ -120,29 +123,28 @@ export async function saveWorkspace(
       updated_at: now.toISOString(),
       expires_at: new Date(now.getTime() + WORKSPACE_LIMITS.ttlMs).toISOString(),
     },
-    { onConflict: "conversation_id" },
+    { onConflict: column(thread) },
   );
   if (error) throw new AppError("INTERNAL_ERROR", "Could not save the workspace", { cause: error });
 }
 
 /** Product analytics without content: types and counts only (docs/engineering/18 §841). */
-function observe(before: WorkspaceState, after: WorkspaceState, conversationId: string) {
+function observe(before: WorkspaceState, after: WorkspaceState, thread: ThreadRef) {
+  const at = { thread: thread.kind };
   const had = new Set(before.surfaces.map((s) => s.id));
   const has = new Set(after.surfaces.map((s) => s.id));
   for (const s of after.surfaces)
-    if (!had.has(s.id))
-      logger.info("workspace.surface_presented", { conversation_id: conversationId, type: s.type });
+    if (!had.has(s.id)) logger.info("workspace.surface_presented", { ...at, type: s.type });
   for (const s of before.surfaces)
-    if (!has.has(s.id))
-      logger.info("workspace.surface_removed", { conversation_id: conversationId, type: s.type });
+    if (!has.has(s.id)) logger.info("workspace.surface_removed", { ...at, type: s.type });
   if (after.focusId && after.focusId !== before.focusId)
     logger.info("workspace.surface_focused", {
-      conversation_id: conversationId,
+      ...at,
       type: after.surfaces.find((s) => s.id === after.focusId)?.type,
     });
   if (after.intent?.id !== before.intent?.id && after.intent)
     logger.info("workspace.intent_started", {
-      conversation_id: conversationId,
+      ...at,
       kind: after.intent.kind,
     });
 }
@@ -160,7 +162,7 @@ export class WorkspaceSession implements WorkspacePort {
 
   constructor(
     private readonly auth: AuthContext,
-    private readonly conversationId: string,
+    private readonly thread: ThreadRef,
     private value: WorkspaceState,
   ) {}
 
@@ -186,12 +188,12 @@ export class WorkspaceSession implements WorkspacePort {
     const after = applyOps(before, ops);
     if (after === before) return;
     this.value = after;
-    observe(before, after, this.conversationId);
+    observe(before, after, this.thread);
     if (this.emit) this.emit(ops, after.version);
     else this.buffered.push(...ops);
     const snapshot = after;
     this.saving = this.saving
-      .then(() => saveWorkspace(this.auth, this.conversationId, snapshot))
+      .then(() => saveWorkspace(this.auth, this.thread, snapshot))
       .catch((error) => logger.warn("workspace.save_failed", { code: toAppError(error).code }));
   }
 
@@ -212,7 +214,11 @@ export class WorkspaceSession implements WorkspacePort {
           key: callId,
           intentId: this.value.intent?.id ?? null,
         });
-    this.apply([...reconciled, ...presentOps(drafts, at)]);
+    this.apply([
+      ...reconciled,
+      ...supersededOps(this.value, drafts, at),
+      ...presentOps(drafts, at),
+    ]);
     return reconciled.length
       ? reconciled.map((o) => (o.op === "update" ? o.id : "")).filter(Boolean)
       : drafts.map((d) => d.id);
@@ -223,22 +229,22 @@ export class WorkspaceSession implements WorkspacePort {
   }
 }
 
-export async function openWorkspaceSession(
-  auth: AuthContext,
-  conversationId: string,
-  isNew: boolean,
-) {
-  const state = isNew ? emptyWorkspace() : await loadWorkspace(auth, conversationId);
-  return new WorkspaceSession(auth, conversationId, state);
+export async function openWorkspaceSession(auth: AuthContext, thread: ThreadRef, isNew: boolean) {
+  const state = isNew ? emptyWorkspace() : await loadWorkspace(auth, thread);
+  return new WorkspaceSession(auth, thread, state);
 }
 
 // ── Operations requested by the UI (same validation, same persistence) ──────
 
-async function ownConversation(auth: AuthContext, conversationId: string) {
+async function ownThread(auth: AuthContext, thread: ThreadRef) {
+  if (thread.kind === "session") {
+    await ownSession(auth, thread.id);
+    return;
+  }
   const { data } = await auth.db
     .from("conversations")
     .select("id")
-    .eq("id", conversationId)
+    .eq("id", thread.id)
     .eq("user_id", auth.userId)
     .is("archived_at", null)
     .maybeSingle();
@@ -247,16 +253,16 @@ async function ownConversation(auth: AuthContext, conversationId: string) {
 
 async function mutate(
   auth: AuthContext,
-  conversationId: string,
+  thread: ThreadRef,
   ops: (s: WorkspaceState) => WorkspaceOp[],
 ) {
-  await ownConversation(auth, conversationId);
-  const before = await loadWorkspace(auth, conversationId);
+  await ownThread(auth, thread);
+  const before = await loadWorkspace(auth, thread);
   const list = ops(before);
   const after = applyOps(before, list);
   if (after !== before) {
-    observe(before, after, conversationId);
-    await saveWorkspace(auth, conversationId, after);
+    observe(before, after, thread);
+    await saveWorkspace(auth, thread, after);
   }
   return after;
 }
@@ -267,9 +273,9 @@ export type UserWorkspaceOp =
   | { op: "resize"; id: string; size: SurfaceSize }
   | { op: "approval_decided"; approvalId: string; decision: "approved" | "rejected" };
 
-export function applyUserOp(auth: AuthContext, conversationId: string, op: UserWorkspaceOp) {
+export function applyUserOp(auth: AuthContext, thread: ThreadRef, op: UserWorkspaceOp) {
   const at = new Date().toISOString();
-  return mutate(auth, conversationId, (s) => {
+  return mutate(auth, thread, (s) => {
     switch (op.op) {
       case "focus":
         return [{ op: "focus", id: op.id, at }];
@@ -294,17 +300,26 @@ export function applyUserOp(auth: AuthContext, conversationId: string, op: UserW
 /** Brings back a result from earlier in the thread, from the server's own stored copy. */
 export async function presentFromHistory(
   auth: AuthContext,
-  conversationId: string,
+  thread: ThreadRef,
   messageId: string,
   callId: string,
 ) {
-  const { data } = await auth.db
-    .from("messages")
-    .select("metadata")
-    .eq("id", messageId)
-    .eq("conversation_id", conversationId)
-    .eq("role", "assistant")
-    .maybeSingle();
+  const { data } =
+    thread.kind === "conversation"
+      ? await auth.db
+          .from("messages")
+          .select("metadata")
+          .eq("id", messageId)
+          .eq("conversation_id", thread.id)
+          .eq("role", "assistant")
+          .maybeSingle()
+      : await auth.db
+          .from("interaction_turns")
+          .select("metadata")
+          .eq("id", messageId)
+          .eq("session_id", thread.id)
+          .eq("role", "assistant")
+          .maybeSingle();
   const trace = ((data?.metadata ?? {}) as AssistantMessageMetadata).tools?.find(
     (t) => t.callId === callId,
   );
@@ -312,7 +327,7 @@ export async function presentFromHistory(
   const outcome = trace.outcome;
   const at = new Date().toISOString();
   let focus: string | null = null;
-  const state = await mutate(auth, conversationId, (s) => {
+  const state = await mutate(auth, thread, (s) => {
     const drafts = surfacesFromOutcome(trace.name, outcome, {
       key: callId,
       intentId: s.intent?.id ?? null,
@@ -326,13 +341,13 @@ export async function presentFromHistory(
 /** Runs a Surface's direct action: the registry builds the call, the executor decides. */
 export async function runSurfaceAction(
   auth: AuthContext,
-  conversationId: string,
+  thread: ThreadRef,
   surfaceId: string,
   action: ActionId,
   itemId: string | null,
 ): Promise<{ state: WorkspaceState; outcome: ClientToolOutcome }> {
-  await ownConversation(auth, conversationId);
-  const current = await loadWorkspace(auth, conversationId);
+  await ownThread(auth, thread);
+  const current = await loadWorkspace(auth, thread);
   const surface = current.surfaces.find((s) => s.id === surfaceId);
   if (!surface) throw new AppError("NOT_FOUND", "That item is no longer shown");
   const call = toolForAction(surface, action, itemId);
@@ -342,13 +357,13 @@ export async function runSurfaceAction(
     });
 
   const ports = createExecutorPorts(auth);
-  const outcome = await executeToolCall(ports, toolContext(auth, "user_ui", null, conversationId), {
+  const outcome = await executeToolCall(ports, toolContext(auth, "user_ui", null, thread), {
     name: call.name,
     args: call.args,
   });
   logger.info("workspace.surface_action", { type: surface.type, action, status: outcome.status });
   const at = new Date().toISOString();
-  const state = await mutate(auth, conversationId, (s) => {
+  const state = await mutate(auth, thread, (s) => {
     const reconciled = reconcileOps(s, outcome, at);
     return reconciled.length
       ? reconciled
@@ -396,16 +411,16 @@ export type SurfaceDetail =
  */
 export async function loadSurfaceDetail(
   auth: AuthContext,
-  conversationId: string,
+  thread: ThreadRef,
   surfaceId: string,
   itemId: string | null,
 ): Promise<SurfaceDetail> {
-  await ownConversation(auth, conversationId);
-  const state = await loadWorkspace(auth, conversationId);
+  await ownThread(auth, thread);
+  const state = await loadWorkspace(auth, thread);
   const surface = state.surfaces.find((s) => s.id === surfaceId);
   if (!surface) throw new AppError("NOT_FOUND", "That item is no longer shown");
   const ports = createExecutorPorts(auth);
-  const ctx = toolContext(auth, "user_ui", null, conversationId);
+  const ctx = toolContext(auth, "user_ui", null, thread);
   const read = async (name: string, args: unknown) => {
     const o = await executeToolCall(ports, ctx, { name, args });
     if (o.status !== "succeeded")
@@ -468,7 +483,7 @@ function pickRef(
 export async function activeWorkspace(auth: AuthContext) {
   const { data } = await auth.db
     .from("live_workspaces")
-    .select("conversation_id, intent, surfaces, updated_at, expires_at")
+    .select("conversation_id, session_id, intent, surfaces, updated_at, expires_at")
     .eq("user_id", auth.userId)
     .eq("workspace_id", auth.workspaceId)
     .gt("expires_at", new Date().toISOString())
@@ -478,8 +493,11 @@ export async function activeWorkspace(auth: AuthContext) {
   if (!data || Date.now() - Date.parse(data.updated_at) > 2 * 3_600_000) return null;
   const state = parseWorkspace({ intent: data.intent, surfaces: data.surfaces });
   if (!state.surfaces.length || !state.intent) return null;
+  const thread: ThreadRef = data.conversation_id
+    ? { kind: "conversation", id: data.conversation_id }
+    : { kind: "session", id: data.session_id! };
   return {
-    conversationId: data.conversation_id,
+    thread,
     description: state.intent.description,
     kind: state.intent.kind,
   };
@@ -501,7 +519,7 @@ export async function markResourceSurfaces(
   const db = createAdminClient();
   const { data } = await db
     .from("live_workspaces")
-    .select("conversation_id, intent, surfaces, focus_id, turn, next_handle, version")
+    .select("id, intent, surfaces, focus_id, turn, next_handle, version")
     .eq("workspace_id", workspaceId)
     .contains("surfaces", [{ ref: { resource, id } }])
     .limit(20);
@@ -522,7 +540,7 @@ export async function markResourceSurfaces(
           version: next.version,
           updated_at: at,
         })
-        .eq("conversation_id", row.conversation_id)
+        .eq("id", row.id)
         .eq("workspace_id", workspaceId);
   }
 }

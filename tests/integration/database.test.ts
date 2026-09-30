@@ -1066,3 +1066,103 @@ describe("live workspace", () => {
     expect(left.rows).toHaveLength(0);
   });
 });
+
+describe("voice sessions", () => {
+  const as = <T>(u: { userId: string }, sql: string, args: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, args));
+
+  const voiceSession = async (u: { userId: string; workspaceId: string }) =>
+    (
+      await db.query<{ id: string }>(
+        `insert into public.interaction_sessions (workspace_id, user_id, modality, title) values ($1, $2, 'voice', 'Onboarding') returning id`,
+        [u.workspaceId, u.userId],
+      )
+    ).rows[0]!.id;
+
+  it("voice turns are written by the server only and read by their author", async () => {
+    const s = await voiceSession(alice);
+    await db.query(
+      `insert into public.interaction_turns (workspace_id, session_id, role, modality, content) values ($1, $2, 'user', 'voice', 'We decided to redesign onboarding')`,
+      [alice.workspaceId, s],
+    );
+    expect(
+      (await as(alice, `select content from public.interaction_turns where session_id = $1`, [s]))
+        .rows,
+    ).toHaveLength(1);
+    expect(
+      (await as(bob, `select content from public.interaction_turns where session_id = $1`, [s]))
+        .rows,
+    ).toHaveLength(0);
+    await expect(
+      as(
+        alice,
+        `insert into public.interaction_turns (workspace_id, session_id, role, content) values ($1, $2, 'user', 'x')`,
+        [alice.workspaceId, s],
+      ),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("a voice session owns its Live Workspace; nobody else's session can be used", async () => {
+    const s = await voiceSession(alice);
+    await as(
+      alice,
+      `insert into public.live_workspaces (workspace_id, user_id, session_id) values ($1, $2, $3)`,
+      [alice.workspaceId, alice.userId, s],
+    );
+    await expect(
+      as(
+        bob,
+        `insert into public.live_workspaces (workspace_id, user_id, session_id) values ($1, $2, $3)`,
+        [bob.workspaceId, bob.userId, s],
+      ),
+    ).rejects.toThrow();
+    // Exactly one thread: a conversation or a session.
+    await expect(
+      db.query(`insert into public.live_workspaces (workspace_id, user_id) values ($1, $2)`, [
+        alice.workspaceId,
+        alice.userId,
+      ]),
+    ).rejects.toThrow(/one_thread/);
+  });
+
+  it("deleting a voice session forgets transcripts, Recall and workspace", async () => {
+    const s = await voiceSession(alice);
+    await db.query(
+      `insert into public.interaction_turns (workspace_id, session_id, role, modality, content) values ($1, $2, 'user', 'voice', 'secret plan')`,
+      [alice.workspaceId, s],
+    );
+    await db.query(
+      `insert into public.recall_chunks (workspace_id, user_id, session_id, chunk_index, started_at, ended_at, content, content_hash)
+       values ($1, $2, $3, 0, now(), now(), 'User: secret plan', 'h')`,
+      [alice.workspaceId, alice.userId, s],
+    );
+    await db.query(
+      `insert into public.live_workspaces (workspace_id, user_id, session_id) values ($1, $2, $3)`,
+      [alice.workspaceId, alice.userId, s],
+    );
+    await db.query(`update public.interaction_sessions set status = 'archived' where id = $1`, [s]);
+    for (const table of ["interaction_turns", "recall_chunks", "live_workspaces"])
+      expect(
+        (await db.query(`select 1 from public.${table} where session_id = $1`, [s])).rows,
+        table,
+      ).toHaveLength(0);
+    const row = await db.query<{ title: string | null }>(
+      `select title from public.interaction_sessions where id = $1`,
+      [s],
+    );
+    expect(row.rows[0]!.title).toBeNull();
+  });
+
+  it("accepts only supported voice preferences", async () => {
+    await as(
+      alice,
+      `update public.user_profiles set voice_language = 'en', voice_name = 'cedar' where id = $1`,
+      [alice.userId],
+    );
+    await expect(
+      as(alice, `update public.user_profiles set voice_name = 'cloned-ceo' where id = $1`, [
+        alice.userId,
+      ]),
+    ).rejects.toThrow(/check/);
+  });
+});

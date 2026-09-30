@@ -1,6 +1,7 @@
 import { requireAuthContext } from "@/application/auth-context";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { SettingsForm } from "@/features/settings/settings-form";
+import { VoiceSettings } from "@/features/settings/voice-settings";
 import { getT } from "@/lib/i18n/server";
 
 export default async function SettingsPage() {
@@ -18,6 +19,9 @@ export default async function SettingsPage() {
           timezone: auth.profile.timezone,
         }}
       />
+      <div className="mt-6">
+        <VoiceSettings initial={auth.profile.voice} />
+      </div>
     </PageContainer>
   );
 }

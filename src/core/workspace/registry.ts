@@ -139,6 +139,8 @@ export const PAYLOADS = {
           summary: text(1200).nullable(),
           excerpts: z.array(z.object({ text: text(500), at: text(40) })).max(2),
           url: href.nullable(),
+          /** A spoken interaction shows it ("Voice interaction · Sep 30"). */
+          modality: z.enum(["text", "voice", "proactive", "live"]).optional(),
         }),
       )
       .max(5),

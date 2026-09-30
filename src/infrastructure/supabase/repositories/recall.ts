@@ -63,6 +63,7 @@ export class SupabaseRecallReader implements RecallReader {
     from?: Date | null;
     to?: Date | null;
     excludeConversationId?: string | null;
+    excludeSessionId?: string | null;
     limit: number;
   }) {
     let embedding: string | null = null;
@@ -85,7 +86,7 @@ export class SupabaseRecallReader implements RecallReader {
       p_embedding_model: model,
       p_from: q.from?.toISOString() ?? null,
       p_to: q.to?.toISOString() ?? null,
-      p_exclude_session: await this.sessionOf(q.excludeConversationId),
+      p_exclude_session: q.excludeSessionId ?? (await this.sessionOf(q.excludeConversationId)),
       p_limit: q.limit,
     });
     if (error) throw error;
@@ -121,6 +122,7 @@ export class SupabaseRecallReader implements RecallReader {
     to?: Date | null;
     limit: number;
     excludeConversationId?: string | null;
+    excludeSessionId?: string | null;
   }) {
     let query = this.db
       .from("interaction_sessions")
@@ -132,6 +134,7 @@ export class SupabaseRecallReader implements RecallReader {
     if (q.to) query = query.lt("started_at", q.to.toISOString());
     if (q.excludeConversationId)
       query = query.or(`conversation_id.is.null,conversation_id.neq.${q.excludeConversationId}`);
+    if (q.excludeSessionId) query = query.neq("id", q.excludeSessionId);
     const { data } = await query.order("last_activity_at", { ascending: false }).limit(q.limit);
     return ((data ?? []) as SessionRow[]).map(toSession);
   }
