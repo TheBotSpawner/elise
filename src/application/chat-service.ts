@@ -30,6 +30,7 @@ import {
 import { openThread } from "./interaction-thread";
 import { queueRecallIndex, searchRecall } from "./recall-service";
 import { structuredSourcesForChat } from "./structured-service";
+import { webSearchConfigured } from "./web-service";
 import { openWorkspaceSession, toClientOutcome } from "./workspace-service";
 
 export interface ChatTurnInput {
@@ -59,6 +60,7 @@ export async function startChatTurn(
   const capabilities = availableCapabilities(bindings);
 
   const modality: TurnModality = input.modality ?? "text";
+  const web = webSearchConfigured();
   const thread = await openThread(auth, {
     conversationId: input.conversationId,
     sessionId: input.sessionId,
@@ -107,6 +109,7 @@ export async function startChatTurn(
     recallEvidence,
     workspace: describeWorkspace(workspace.state(), auth.profile.timezone),
     modality,
+    web,
   });
   const encoder = new TextEncoder();
 
@@ -165,7 +168,9 @@ export async function startChatTurn(
           },
           instructions: context.instructions,
           input: context.input,
-          tools: toolRegistry.available(capabilities),
+          tools: toolRegistry
+            .available(capabilities)
+            .filter((t) => web || t.capability !== "web_search"),
         })) {
           switch (event.type) {
             case "status":

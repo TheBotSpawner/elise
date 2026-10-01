@@ -84,11 +84,10 @@ export const BRIEF_BLOCKS = [
   "habits",
   "goals",
   "finance",
+  "news",
 ] as const;
-/** Finance is personal: a brief includes it only when the user turns it on. */
-export const DEFAULT_BRIEF_BLOCKS = BRIEF_BLOCKS.filter((b) => b !== "finance");
-/** Prepared for later capabilities; never enabled until they exist. */
-export const FUTURE_BRIEF_BLOCKS = ["news"] as const;
+/** Finance is personal and News needs topics: both are opt-in. */
+export const DEFAULT_BRIEF_BLOCKS = BRIEF_BLOCKS.filter((b) => b !== "finance" && b !== "news");
 export type BriefBlock = (typeof BRIEF_BLOCKS)[number];
 
 export const morningBriefConfigSchema = z
@@ -110,6 +109,11 @@ export const morningBriefConfigSchema = z
       })
       .strict()
       .default({ calendar: "all", email: "all", tasks: "all" }),
+    /**
+     * News block (ADR-015): the topics to follow, comma-separated ("AI, Power Automate,
+     * UiPath"). Only these — never inferred interests.
+     */
+    newsTopics: z.string().trim().max(300).default(""),
   })
   .strict();
 
@@ -124,9 +128,12 @@ export type Delivery = z.infer<typeof deliverySchema>;
 /** Capabilities a Morning Brief uses, for validation and display. */
 export function briefCapabilities(
   config: MorningBriefConfig,
-): ("calendar" | "email" | "tasks" | "habits" | "goals" | "finance")[] {
-  const caps = new Set<"calendar" | "email" | "tasks" | "habits" | "goals" | "finance">();
-  for (const b of config.blocks) caps.add(b === "needs_reply" ? "email" : b);
+): ("calendar" | "email" | "tasks" | "habits" | "goals" | "finance" | "web_search")[] {
+  const caps = new Set<
+    "calendar" | "email" | "tasks" | "habits" | "goals" | "finance" | "web_search"
+  >();
+  for (const b of config.blocks)
+    caps.add(b === "needs_reply" ? "email" : b === "news" ? "web_search" : b);
   return [...caps];
 }
 
@@ -156,3 +163,15 @@ export type RunStatus =
   | "cancelled"
   | "missed"
   | "skipped";
+
+/** The topics of a News block: up to four, trimmed, de-duplicated. */
+export function newsTopics(config: MorningBriefConfig): string[] {
+  return [
+    ...new Set(
+      config.newsTopics
+        .split(/[,;\n]/)
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 2),
+    ),
+  ].slice(0, 4);
+}

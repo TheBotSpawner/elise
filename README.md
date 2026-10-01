@@ -162,6 +162,16 @@ npm run dev                         # http://localhost:3000
 Without Supabase variables the app still builds and starts; `/login` explains what is missing.
 Without `OPENAI_API_KEY`, everything works except chat, which reports that AI is not configured.
 
+### Web Search + Research
+
+Web search needs no connection: with `OPENAI_API_KEY` set, ELISE uses OpenAI's hosted web search
+(`OPENAI_WEB_SEARCH_MODEL`, default `gpt-4.1-mini`). Set `TAVILY_API_KEY` to use Tavily instead
+(faster, built for agents); `WEB_SEARCH_PROVIDER` forces one. ELISE reads pages itself through
+an SSRF-protected fetcher (public http(s) only, every resolved IP and redirect checked), cites
+every web claim, and caps usage per workspace per day (`WEB_LIMITS`: 300 searches, 600 page
+reads). See [ADR-015](docs/decisions/ADR-015-web-search-research.md). Morning Brief News is the
+"News (your topics)" block of a Morning Brief, with the topics you type.
+
 ## Environment variables
 
 | Variable                                                           | Required  | Purpose                                                 |
@@ -179,6 +189,10 @@ Without `OPENAI_API_KEY`, everything works except chat, which reports that AI is
 | `TRIGGER_PROJECT_REF`                                              | no        | Overrides the project ref in `trigger.config.ts`        |
 | `OPENAI_EMBEDDING_MODEL`                                           | no        | Knowledge embeddings (default `text-embedding-3-small`) |
 | `NOTION_OAUTH_CLIENT_ID`, `NOTION_OAUTH_CLIENT_SECRET`             | Notion    | Notion public integration for Knowledge                 |
+| `OPENAI_TRANSCRIBE_MODEL`, `OPENAI_TTS_MODEL`                      | no        | Voice (defaults `gpt-transcribe` / `gpt-4o-mini-tts`)   |
+| `OPENAI_WEB_SEARCH_MODEL`                                          | no        | Web search via OpenAI (default `gpt-4.1-mini`)          |
+| `TAVILY_API_KEY`                                                   | no        | Use Tavily for web search (faster; else OpenAI)         |
+| `WEB_SEARCH_PROVIDER`                                              | no        | Force `openai` or `tavily`                              |
 
 ## Scripts
 

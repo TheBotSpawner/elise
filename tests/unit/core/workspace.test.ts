@@ -778,6 +778,25 @@ function meetingSetup(opts: { emailFails?: boolean; noCalendar?: boolean } = {})
     tasks,
     knowledge: knowledgeReader(),
     history: recallReader(),
+    web_search: {
+      search: async () => [
+        {
+          url: "https://rsfa.co.nz/about",
+          title: "About RSFA",
+          domain: "rsfa.co.nz",
+          snippet: "RSFA is a financial advisory firm.",
+          publishedAt: null,
+          retrievedAt: NOW.toISOString(),
+          kind: "web",
+          provider: "fake",
+          rank: 0,
+        },
+      ],
+      open: async () => {
+        throw new Error("not used");
+      },
+      saveToKnowledge: async () => ({ itemId: "x", space: "x" }),
+    },
   };
   ports.providers = {
     get: ((capability: string) => byCapability[capability]) as ProviderFactory["get"],
@@ -850,8 +869,13 @@ describe("meeting prep", () => {
         "history.search",
         "knowledge.search",
         "tasks.list",
+        "web.search",
       ].sort(),
     );
+    // Public context about the outside company reaches the brief, labelled as such…
+    expect(JSON.stringify(out.output)).toContain("publicWebAboutCompany");
+    // …but never crowds out private context on screen (lowest priority under capacity).
+    expect(types).not.toContain("web_results");
     // Links come only from real sources.
     const links = ws.value.surfaces.find((s) => s.type === "links")!.payload as {
       links: { url: string }[];
@@ -873,6 +897,8 @@ describe("meeting prep", () => {
     );
     expect(ws.value.surfaces.some((s) => s.type === "email_list")).toBe(false);
     expect(ws.steps.some((s) => s.tool === "email.search" && s.status === "failed")).toBe(true);
+    // With less private context, the public company Surface has room to show.
+    expect(ws.value.surfaces.some((s) => s.type === "web_results")).toBe(true);
   });
 
   it("without a calendar it says so instead of guessing", async () => {

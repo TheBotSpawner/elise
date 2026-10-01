@@ -285,6 +285,32 @@ export function BriefView({
         <FinanceSection finance={brief.finance} />
       )}
 
+      {brief.news && brief.news.length > 0 && (
+        <Section label={t.brief.news}>
+          <ul className="flex flex-col gap-2.5 text-[14px]">
+            {brief.news.map((n) => (
+              <li key={n.sources[0]?.url ?? n.headline} className="flex flex-col gap-0.5">
+                <span>{n.headline}</span>
+                <span className="flex flex-wrap gap-x-2 text-[12.5px] text-faint">
+                  <span>{n.topic}</span>
+                  {n.sources.map((src) => (
+                    <a
+                      key={src.url}
+                      href={src.url}
+                      target="_blank"
+                      rel="noopener noreferrer nofollow"
+                      className="text-accent-text hover:underline"
+                    >
+                      {src.domain}
+                    </a>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
       {brief.goals && brief.goals.length > 0 && (
         <Section label={t.brief.goals}>
           <ul className="flex flex-col gap-1.5 text-[14px]">

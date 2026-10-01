@@ -11,7 +11,11 @@ import {
 } from "@/core/briefs/morning-brief";
 import { AppError, toAppError } from "@/core/errors";
 import type { ActionHandler } from "@/core/schedules/runner";
-import { morningBriefConfigSchema, type MorningBriefConfig } from "@/core/schedules/schedule";
+import {
+  morningBriefConfigSchema,
+  newsTopics,
+  type MorningBriefConfig,
+} from "@/core/schedules/schedule";
 import { toLocalDateTime } from "@/core/time";
 
 import type { AuthContext } from "./auth-context";
@@ -136,6 +140,16 @@ export async function gatherBrief(
         : undefined,
     ]);
 
+  // News (ADR-015): recent events for the user's own topics only; no topics, no news.
+  const topics = want.has("news") ? newsTopics(config) : [];
+  if (want.has("news") && !topics.length) warnings.push({ block: "news", code: "NEEDS_TOPICS" });
+  const news = await Promise.all(
+    topics.map(async (topic) => {
+      const d = await call("news", "web.searchNews", { query: topic, recency: "day" }, "all");
+      return { topic, events: d?.kind === "web_news" ? d.events : [] };
+    }),
+  );
+
   if (failed === attempted && attempted > 0) {
     // Nothing could be loaded: retry later if it looks transient, otherwise fail clearly.
     if (retryable.every(Boolean)) {
@@ -161,6 +175,7 @@ export async function gatherBrief(
             yesterday: yesterday?.kind === "finance_transactions" ? yesterday.transactions : [],
           }
         : undefined,
+      ...(topics.length ? { news } : {}),
       warnings,
     },
     approvalId,

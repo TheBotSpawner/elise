@@ -1166,3 +1166,27 @@ describe("voice sessions", () => {
     ).rejects.toThrow(/check/);
   });
 });
+
+describe("web usage", () => {
+  it("is counted per workspace by the server; members can read it, nobody else can write it", async () => {
+    await db.query("select * from public.record_web_usage($1, 1, 0)", [alice.workspaceId]);
+    const after = await db.query<{ searches: number; fetches: number }>(
+      "select * from public.record_web_usage($1, 0, 2)",
+      [alice.workspaceId],
+    );
+    expect(after.rows[0]).toMatchObject({ searches: 1, fetches: 2 });
+    const mine = await asUser(db, alice.userId, () =>
+      db.query("select searches from public.web_usage"),
+    );
+    expect(mine.rows).toHaveLength(1);
+    const theirs = await asUser(db, bob.userId, () =>
+      db.query("select searches from public.web_usage"),
+    );
+    expect(theirs.rows).toHaveLength(0);
+    await expect(
+      asUser(db, alice.userId, () =>
+        db.query("select * from public.record_web_usage($1, -5, 0)", [alice.workspaceId]),
+      ),
+    ).rejects.toThrow(/permission denied/);
+  });
+});

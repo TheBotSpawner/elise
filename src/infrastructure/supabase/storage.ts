@@ -56,6 +56,20 @@ export async function uploadedSize(workspaceId: string, path: string): Promise<n
   return file ? Number((file.metadata as { size?: number } | null)?.size ?? 0) : null;
 }
 
+/** Writes a document the server produced itself (e.g. a saved web page) to Knowledge storage. */
+export async function uploadOriginal(
+  workspaceId: string,
+  path: string,
+  bytes: Uint8Array,
+  contentType: string,
+) {
+  assertOwned(workspaceId, path);
+  const { error } = await createAdminClient()
+    .storage.from(KNOWLEDGE_BUCKET)
+    .upload(path, bytes, { contentType, upsert: false });
+  if (error) throw new AppError("INTERNAL_ERROR", "Could not store the document", { cause: error });
+}
+
 export async function downloadOriginal(workspaceId: string, path: string): Promise<Uint8Array> {
   assertOwned(workspaceId, path);
   const { data, error } = await createAdminClient().storage.from(KNOWLEDGE_BUCKET).download(path);

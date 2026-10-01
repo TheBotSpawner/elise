@@ -34,6 +34,7 @@ import {
   removeOriginals,
   signedDownloadUrl,
   uploadedSize,
+  uploadOriginal,
 } from "@/infrastructure/supabase/storage";
 
 import type { AuthContext } from "./auth-context";
@@ -895,4 +896,68 @@ export async function purgeConnectionKnowledge(workspaceId: string, connectionId
 
 export function knowledgeSetup() {
   return { backgroundAvailable: isBackgroundConfigured(), notionAvailable: isNotionConfigured() };
+}
+
+/**
+ * "Save this source to Knowledge" (ADR-015): only on the user's request. The page becomes a
+ * Markdown document in the Space, with its URL and retrieval date, ingested like an upload.
+ */
+export async function saveWebPageToKnowledge(
+  auth: AuthContext,
+  spaceId: string,
+  page: {
+    url: string;
+    title: string;
+    domain: string;
+    publishedAt: string | null;
+    retrievedAt: string;
+    text: string;
+  },
+): Promise<{ itemId: string }> {
+  await ownSpace(auth, spaceId);
+  const sourceId = await uploadSource(auth, spaceId);
+  const admin = createAdminClient();
+  const title = (page.title || page.domain).slice(0, 500);
+  const markdown = [
+    `# ${title}`,
+    "",
+    `Source: ${page.url}`,
+    `Retrieved: ${page.retrievedAt.slice(0, 10)}${page.publishedAt ? ` · Published: ${page.publishedAt.slice(0, 10)}` : ""}`,
+    "",
+    page.text,
+  ].join("\n");
+  const bytes = new TextEncoder().encode(markdown);
+  const { data: item, error } = await admin
+    .from("knowledge_items")
+    .insert({
+      workspace_id: auth.workspaceId,
+      space_id: spaceId,
+      source_id: sourceId,
+      item_type: "file",
+      external_id: crypto.randomUUID(),
+      title,
+      source_url: page.url,
+      mime_type: "text/markdown",
+      metadata: json({
+        web: {
+          url: page.url,
+          domain: page.domain,
+          retrievedAt: page.retrievedAt,
+          publishedAt: page.publishedAt,
+        },
+      }),
+      created_by_user_id: auth.userId,
+    })
+    .select("id")
+    .single();
+  if (error) throw new AppError("INTERNAL_ERROR", "Could not save the page", { cause: error });
+  const target = await newUploadVersion(auth, item.id, 1, {
+    name: `${page.domain}.md`,
+    size: bytes.length,
+    mimeType: "text/markdown",
+  });
+  await uploadOriginal(auth.workspaceId, target.path, bytes, "text/markdown");
+  await completeUploads(auth, [target.versionId]);
+  await audit(auth, "knowledge.web_saved", "knowledge_item", item.id, { domain: page.domain });
+  return { itemId: item.id };
 }

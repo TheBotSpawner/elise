@@ -451,6 +451,115 @@ export function surfacesFromOutcome(
     }
     case "setting_changed":
       return one(settingsSurface(d.changes, opts));
+    case "web_results":
+      return d.results.length
+        ? one(
+            draft(
+              "web_results",
+              opts.key,
+              {
+                query: clip(d.query, 300),
+                retrievedAt: d.retrievedAt,
+                results: d.results
+                  .filter((r) => safe(r.url))
+                  .slice(0, 8)
+                  .map((r) => ({
+                    title: clip(r.title || r.domain, 300),
+                    url: r.url,
+                    domain: clip(r.domain, 200),
+                    snippet: clip(r.snippet, 400),
+                    publishedAt: r.publishedAt,
+                    inspected: r.inspected,
+                    passages: r.passages.slice(0, 3).map((p) => clip(p, 700)),
+                  })),
+              },
+              opts,
+              {
+                title: opts.title ?? d.query,
+                source: { capability: "web_search", label: null },
+                ref: null,
+              },
+            ),
+          )
+        : [];
+    case "web_news":
+      return d.events.length
+        ? one(
+            draft(
+              "web_news",
+              opts.key,
+              {
+                query: clip(d.query, 200),
+                recency: d.recency,
+                retrievedAt: d.retrievedAt,
+                events: d.events
+                  .slice(0, 6)
+                  .map((e) => ({
+                    headline: clip(e.headline, 300),
+                    items: e.items
+                      .filter((i) => safe(i.url))
+                      .slice(0, 4)
+                      .map((i) => ({
+                        ...i,
+                        title: clip(i.title, 300),
+                        domain: clip(i.domain, 200),
+                        snippet: clip(i.snippet, 300),
+                      })),
+                  }))
+                  .filter((e) => e.items.length),
+              },
+              opts,
+              {
+                title: opts.title ?? d.query,
+                source: { capability: "web_search", label: null },
+                ref: null,
+              },
+            ),
+          )
+        : [];
+    case "web_page":
+      return safe(d.page.url)
+        ? one(
+            draft(
+              "web_source",
+              d.page.url,
+              {
+                ...d.page,
+                title: clip(d.page.title, 300),
+                domain: clip(d.page.domain, 200),
+                siteName: d.page.siteName ? clip(d.page.siteName, 200) : null,
+                passages: d.page.passages.slice(0, 3).map((p) => clip(p, 700)),
+              },
+              opts,
+              {
+                title: d.page.title,
+                source: { capability: "web_search", label: d.page.siteName ?? d.page.domain },
+                ref: { resource: "web_page", id: d.page.url },
+              },
+            ),
+          )
+        : [];
+    case "web_research":
+      return one(
+        draft(
+          "web_research",
+          `${opts.intentId ?? null}:${d.question}`,
+          {
+            question: clip(d.question, 300),
+            retrievedAt: d.retrievedAt,
+            subquestions: d.subquestions.slice(0, 4).map((s) => ({
+              question: clip(s.question, 200),
+              status: s.status,
+              sources: s.sources
+                .filter((x) => safe(x.url))
+                .slice(0, 4)
+                .map((x) => ({ ...x, title: clip(x.title, 200), domain: clip(x.domain, 200) })),
+            })),
+          },
+          opts,
+          { title: d.question, source: { capability: "web_search", label: null }, ref: null },
+        ),
+      );
     case "schedule_proposal":
       return one(
         draft(
@@ -567,6 +676,7 @@ const INTENT_BY_CAPABILITY: Record<string, IntentKind> = {
   goals: "planning",
   lists: "planning",
   notes: "planning",
+  web: "research",
   settings: "settings",
   appearance: "settings",
   notifications: "settings",

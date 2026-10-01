@@ -167,28 +167,36 @@ export function ChatSurface({
   );
 
   // Keep the view pinned to the bottom unless the user scrolled up; then offer "New reply".
-  const [pinned, setPinned] = useState(true);
+  // A ref, not state: nothing renders from it.
+  const pinnedRef = useRef(true);
   const [unseen, setUnseen] = useState(false);
+  const unseenRef = useRef(unseen);
   useEffect(() => {
+    unseenRef.current = unseen;
+  }, [unseen]);
+  useEffect(() => {
+    // Only the user scrolling up unpins; content growing below (a Surface, streamed text)
+    // must not, or "New reply" shows while the user is simply reading along.
+    let lastY = window.scrollY;
     const onScroll = () => {
-      const atBottom =
-        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
-      setPinned(atBottom);
-      if (atBottom) setUnseen(false);
+      const y = window.scrollY;
+      if (window.innerHeight + y >= document.documentElement.scrollHeight - 80) {
+        pinnedRef.current = true;
+        setUnseen(false);
+      } else if (y < lastY) pinnedRef.current = false;
+      lastY = y;
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
   const lastContent = messages.at(-1);
   const signature = `${messages.length}:${lastContent?.content.length ?? 0}:${lastContent?.tools.length ?? 0}:${wide ? 0 : workspace.surfaces.length}`;
-  const pinnedRef = useRef(pinned);
-  useEffect(() => {
-    pinnedRef.current = pinned;
-  }, [pinned]);
   useEffect(() => {
     if (empty) return;
     if (pinnedRef.current) window.scrollTo({ top: document.documentElement.scrollHeight });
-    else setUnseen(true);
+    // Set once, not on every streamed commit: a setState per token here chained nested
+    // updates past React's limit ("Maximum update depth").
+    else if (!unseenRef.current) setUnseen(true);
   }, [signature, empty]);
 
   const confirmationSlot = (

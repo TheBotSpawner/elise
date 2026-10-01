@@ -418,6 +418,7 @@ function ExpandedContent({
     surface.type === "recall" ||
     surface.type === "knowledge_source" ||
     surface.type === "document" ||
+    surface.type === "web_source" ||
     (surface.type === "knowledge_result" && itemId);
   const [detail, setDetail] = useState<SurfaceDetail | null | "loading">(
     wantsDetail ? "loading" : null,

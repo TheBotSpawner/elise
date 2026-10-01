@@ -174,30 +174,51 @@ export function relatedTasks(tasks: Task[], keywords: string[]): Task[] {
 const clip = (s: string | null | undefined, n: number) =>
   !s ? "" : s.length > n ? `${s.slice(0, n - 1)}…` : s;
 
-type Source = "calendar" | "email" | "recall" | "knowledge" | "tasks";
+type Source = "calendar" | "email" | "recall" | "knowledge" | "tasks" | "web";
 const STEP_TOOL: Record<Source, string> = {
   calendar: "calendar.listEvents",
   email: "email.search",
   recall: "history.search",
   knowledge: "knowledge.search",
   tasks: "tasks.list",
+  web: "web.search",
 };
 
+/**
+ * The outside company worth a quick public look: a participant's organization domain that is
+ * neither a free-mail provider nor the user's own (ADR-015). One, at most.
+ */
+export function externalCompany(e: CalendarEvent): string | null {
+  const own = new Set(
+    e.attendees.filter((a) => a.self).map((a) => a.email.split("@")[1]?.toLowerCase()),
+  );
+  for (const a of others(e)) {
+    const domain = a.email.split("@")[1]?.toLowerCase();
+    const label = domain?.split(".")[0];
+    if (domain && label && !own.has(domain) && !FREE_MAIL.test(label)) return domain;
+  }
+  return null;
+}
+
 /** Runs one source as an activity step; a failure is reported, never thrown. */
+const SELF_REPORTING: ReadonlySet<Source> = new Set(["web"]);
+
 async function step<T>(
   env: ToolRunEnv,
   source: Source,
   run: () => Promise<{ value: T; outcome: ToolCallOutcome | null }>,
 ): Promise<{ value: T | null; problem: string | null }> {
   const id = `${source}:${crypto.randomUUID().slice(0, 8)}`;
-  env.ctx.workspace?.activity({ id, tool: STEP_TOOL[source], status: "running" });
+  // Web tools report their own steps (search, reading pages): no second line for them.
+  const workspace = SELF_REPORTING.has(source) ? undefined : env.ctx.workspace;
+  workspace?.activity({ id, tool: STEP_TOOL[source], status: "running" });
   try {
     const { value, outcome } = await run();
     if (outcome && outcome.status !== "succeeded") {
       const unavailable =
         outcome.status === "failed" &&
         ["CAPABILITY_UNAVAILABLE", "AUTH_ERROR", "PERMISSION_DENIED"].includes(outcome.error.code);
-      env.ctx.workspace?.activity({
+      workspace?.activity({
         id,
         tool: STEP_TOOL[source],
         status: unavailable ? "unavailable" : "failed",
@@ -207,10 +228,10 @@ async function step<T>(
         problem: `${source}: ${outcome.status === "failed" ? (unavailable ? "not connected or not allowed" : outcome.error.code) : outcome.status}`,
       };
     }
-    env.ctx.workspace?.activity({ id, tool: STEP_TOOL[source], status: "done" });
+    workspace?.activity({ id, tool: STEP_TOOL[source], status: "done" });
     return { value, problem: null };
   } catch {
-    env.ctx.workspace?.activity({ id, tool: STEP_TOOL[source], status: "failed" });
+    workspace?.activity({ id, tool: STEP_TOOL[source], status: "failed" });
     return { value: null, problem: `${source}: failed` };
   }
 }
@@ -370,6 +391,29 @@ export const prepareMeetingTool: ToolDefinition = {
     ]);
     for (const r of [email, recall, knowledge, tasks]) if (r.problem) unavailable.push(r.problem);
 
+    // 2b. Public context about the outside company, after the private context and below it.
+    const company = externalCompany(event);
+    const webStep = company
+      ? await step(env, "web", async () => {
+          const outcome = await invoke(env, "web.search", {
+            query: `${company} company`,
+            inspect: false,
+          });
+          const d = displayOf(outcome, "web_results");
+          if (d)
+            for (const s of surfacesFromOutcome("web.search", outcome, {
+              key: `${intentId}:web`,
+              intentId,
+              // Below every private source: public context never crowds out the relationship.
+              priority: 33,
+              title: company,
+            }))
+              present(s);
+          return { value: d?.results.slice(0, 4) ?? [], outcome };
+        })
+      : null;
+    if (webStep?.problem) unavailable.push(webStep.problem);
+
     // 3. The person, for a one-to-one with email history (no entity system yet: attendee data only).
     const messages = email.value ?? [];
     if (people.length === 1 && messages.length) {
@@ -481,9 +525,19 @@ export const prepareMeetingTool: ToolDefinition = {
           due: t.dueDate,
           source: t.provenance.source,
         })),
+        ...(webStep?.value?.length
+          ? {
+              publicWebAboutCompany: webStep.value.map((r) => ({
+                title: r.title,
+                url: r.url,
+                domain: r.domain,
+                untrustedSnippet: clip(r.snippet, 240),
+              })),
+            }
+          : {}),
         unavailable,
         instructions:
-          "The workspace already shows the meeting and every source found. Now call ui.present {type:'summary'} with the brief: facts (only what the calendar says), context (from earlier conversations, email and documents — attribute each), changes (what changed recently, if the evidence shows it), open_items, questions worth discussing, suggestions (clearly yours), material. Never invent the meeting's purpose: if the evidence doesn't show it, say so. Omit empty sections. Then reply in one or two sentences — don't repeat the Surfaces — and name any unavailable source.",
+          "Private context comes first; public web results about the company are background only — label them as public and cite them as links. The workspace already shows the meeting and every source found. Now call ui.present {type:'summary'} with the brief: facts (only what the calendar says), context (from earlier conversations, email and documents — attribute each), changes (what changed recently, if the evidence shows it), open_items, questions worth discussing, suggestions (clearly yours), material. Never invent the meeting's purpose: if the evidence doesn't show it, say so. Omit empty sections. Then reply in one or two sentences — don't repeat the Surfaces — and name any unavailable source.",
       },
     };
   },

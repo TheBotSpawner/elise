@@ -184,7 +184,20 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       bulkUpdate: { kind: "write", risk: "high", defaultApproval: "always_ask" },
     },
   },
-  web_search: { key: "web_search", status: "planned", operations: {} },
+  // The current external world (ADR-015): server-provided, no user connection. Reading the
+  // public web is a read; saving a page to Knowledge is an explicit, recorded write.
+  web_search: {
+    key: "web_search",
+    status: "available",
+    internal: true,
+    operations: {
+      search: READ,
+      searchNews: READ,
+      open: READ,
+      research: READ,
+      saveToKnowledge: WRITE,
+    },
+  },
   voice: { key: "voice", status: "planned", operations: {} },
   // Proposing a Schedule from chat changes nothing: the user confirms on a card. Pausing or
   // resuming one is a reversible, audited write.

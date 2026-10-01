@@ -27,6 +27,7 @@ import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { SETTINGS_TOOLS } from "@/core/tools/settings";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { WEB_TOOLS } from "@/core/tools/web";
 import { WORKSPACE_TOOLS } from "@/core/tools/workspace";
 
 export const NATIVE_BINDING: CapabilityBinding = {
@@ -238,6 +239,7 @@ export function makePorts(
       ...SETTINGS_TOOLS,
       ...WORKSPACE_TOOLS,
       ...MEETING_TOOLS,
+      ...WEB_TOOLS,
     ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>

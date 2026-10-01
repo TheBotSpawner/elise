@@ -36,6 +36,7 @@ import type { KnowledgeReader } from "../knowledge/model";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
 import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
+import type { WebCapability } from "../web/model";
 import type { WorkspacePort } from "../workspace/port";
 
 export type ActionOrigin = "ai" | "user_ui" | "schedule" | "system";
@@ -75,6 +76,8 @@ export interface CapabilityProviders {
   history: RecallReader;
   /** ELISE's own settings for this user. */
   settings: SettingsStore;
+  /** The public web: search, read, and save to Knowledge when asked (ADR-015). */
+  web_search: WebCapability;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -162,6 +165,66 @@ export type ToolDisplay =
   | { kind: "finance_categories"; categories: FinanceCategory[] }
   /** Past interactions found by Recall (surface-ready, not UI-coupled). */
   | { kind: "recall_results"; query: string; results: RecallResult[] }
+  /** Web evidence (ADR-015): what was found and read, with provenance and dates. */
+  | {
+      kind: "web_results";
+      query: string;
+      retrievedAt: string;
+      results: {
+        title: string;
+        url: string;
+        domain: string;
+        snippet: string;
+        publishedAt: string | null;
+        inspected: boolean;
+        passages: string[];
+      }[];
+    }
+  | {
+      kind: "web_news";
+      query: string;
+      recency: "day" | "week" | "month" | "year";
+      retrievedAt: string;
+      events: {
+        headline: string;
+        items: {
+          title: string;
+          url: string;
+          domain: string;
+          publishedAt: string | null;
+          snippet: string;
+        }[];
+      }[];
+    }
+  | {
+      kind: "web_page";
+      page: {
+        url: string;
+        title: string;
+        domain: string;
+        siteName: string | null;
+        publishedAt: string | null;
+        retrievedAt: string;
+        passages: string[];
+        truncated: boolean;
+      };
+    }
+  | {
+      kind: "web_research";
+      question: string;
+      retrievedAt: string;
+      subquestions: {
+        question: string;
+        status: "searching" | "done" | "gap" | "failed";
+        sources: {
+          title: string;
+          url: string;
+          domain: string;
+          publishedAt: string | null;
+          inspected: boolean;
+        }[];
+      }[];
+    }
   /** ELISE changed its own appearance: the UI applies it at once. */
   | {
       kind: "appearance";

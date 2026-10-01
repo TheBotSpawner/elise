@@ -14,6 +14,10 @@ const serverEnvSchema = z.object({
   /** Voice (ADR-014): speech-to-text for completed utterances, and streamed text-to-speech. */
   OPENAI_TRANSCRIBE_MODEL: z.string().min(1).default("gpt-transcribe"),
   OPENAI_TTS_MODEL: z.string().min(1).default("gpt-4o-mini-tts"),
+  /** Web (ADR-015): "openai" (hosted web search) or "tavily"; default: tavily if its key is set. */
+  WEB_SEARCH_PROVIDER: z.enum(["openai", "tavily"]).optional(),
+  OPENAI_WEB_SEARCH_MODEL: z.string().min(1).default("gpt-4.1-mini"),
+  TAVILY_API_KEY: z.string().min(1).optional(),
   NOTION_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   NOTION_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),

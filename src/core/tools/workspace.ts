@@ -100,6 +100,15 @@ function knownUrls(state: WorkspaceState): Set<string> {
       for (const src of (p as SurfacePayloads["knowledge_result"]).sources) add(src.url);
     if (s.type === "knowledge_source" || s.type === "document") add(p.url);
     if (s.type === "links") for (const l of (p as SurfacePayloads["links"]).links) add(l.url);
+    if (s.type === "web_source") add(p.url);
+    if (s.type === "web_results")
+      for (const r of (p as SurfacePayloads["web_results"]).results) add(r.url);
+    if (s.type === "web_news")
+      for (const e of (p as SurfacePayloads["web_news"]).events)
+        for (const i of e.items) add(i.url);
+    if (s.type === "web_research")
+      for (const q of (p as SurfacePayloads["web_research"]).subquestions)
+        for (const x of q.sources) add(x.url);
   }
   return urls;
 }

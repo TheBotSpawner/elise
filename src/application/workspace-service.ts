@@ -40,6 +40,7 @@ import type { AuthContext } from "./auth-context";
 import type { AssistantMessageMetadata, ClientToolOutcome } from "./chat-protocol";
 import { createExecutorPorts, toolContext } from "./elise";
 import { ownSession } from "./interaction-thread";
+import { webCapability } from "./web-service";
 
 /**
  * Live Workspace persistence and operations (ADR-013). The row is the author's own (RLS); its
@@ -442,6 +443,11 @@ export async function loadSurfaceDetail(
       } | null;
       return { kind: "turns", turns: out?.untrustedTurns ?? [] };
     }
+    if (ref?.resource === "web_page") {
+      // Read again through the same safe fetcher (cached briefly); the text is untrusted.
+      const page = await webCapability(auth).open(ref.id);
+      return { kind: "text", text: page.text.slice(0, 6000) };
+    }
     if (ref?.resource === "knowledge_item") {
       const reader = new SupabaseKnowledgeReader(auth.db, auth.workspaceId, getEmbeddingProvider);
       const version = await reader.versionText(ref.id, null);
@@ -470,6 +476,10 @@ function pickRef(
     const p = payload as SurfacePayloads["recall"];
     const r = p.results.find((i) => i.interactionId === itemId) ?? p.results[0];
     return r ? { resource: "interaction", id: r.interactionId } : null;
+  }
+  if (type === "web_results" && itemId) {
+    const p = payload as SurfacePayloads["web_results"];
+    return p.results.some((r) => r.url === itemId) ? { resource: "web_page", id: itemId } : null;
   }
   if (type === "knowledge_result") {
     const p = payload as SurfacePayloads["knowledge_result"];

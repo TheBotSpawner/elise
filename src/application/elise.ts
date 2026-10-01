@@ -28,6 +28,7 @@ import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { SETTINGS_TOOLS } from "@/core/tools/settings";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { WEB_TOOLS } from "@/core/tools/web";
 import { WORKSPACE_TOOLS } from "@/core/tools/workspace";
 import { getEmbeddingProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
@@ -65,6 +66,7 @@ import type { AuthContext } from "./auth-context";
 import { syncNoteToKnowledge } from "./notes-knowledge";
 import { settingsStore } from "./settings-service";
 import { startStructuredBulk } from "./structured-bulk";
+import { webCapability } from "./web-service";
 
 /** Every tool ELISE can use. Exposure per run is filtered by available capabilities. */
 export const toolRegistry = new ToolRegistry().register(
@@ -83,6 +85,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...SETTINGS_TOOLS,
   ...WORKSPACE_TOOLS,
   ...MEETING_TOOLS,
+  ...WEB_TOOLS,
 );
 
 /**
@@ -291,6 +294,10 @@ function providerFactory(
     },
     settings() {
       return settingsStore(auth);
+    },
+    // The public web: server-provided, per-workspace limits (ADR-015).
+    web_search() {
+      return webCapability(auth);
     },
   };
 

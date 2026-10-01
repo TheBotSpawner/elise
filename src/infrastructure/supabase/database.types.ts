@@ -929,6 +929,10 @@ export type Database = {
         "workspace_id" | "capability_key" | "connection_id"
       >;
       conversations: Table<ConversationRow, "workspace_id" | "user_id">;
+      web_usage: Table<
+        { workspace_id: string; day: string; searches: number; fetches: number; updated_at: Ts },
+        "workspace_id"
+      >;
       live_workspaces: Table<LiveWorkspaceRow, "workspace_id" | "user_id">;
       messages: Table<MessageRow, "conversation_id" | "workspace_id" | "role" | "content">;
       ai_runs: Table<AiRunRow, "workspace_id" | "user_id" | "ai_provider" | "model_key">;
@@ -1096,6 +1100,10 @@ export type Database = {
     };
     Views: Record<never, never>;
     Functions: {
+      record_web_usage: {
+        Args: { p_workspace_id: string; p_searches: number; p_fetches: number };
+        Returns: { searches: number; fetches: number }[];
+      };
       search_recall_chunks: {
         Args: {
           p_workspace_id: string;

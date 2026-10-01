@@ -8,7 +8,6 @@ import { Input, Label, Select } from "@/components/ui/input";
 import {
   BRIEF_BLOCKS,
   DEFAULT_BRIEF_BLOCKS,
-  FUTURE_BRIEF_BLOCKS,
   type BriefBlock,
   type ScheduleInput,
 } from "@/core/schedules/schedule";
@@ -30,6 +29,7 @@ export function defaultBrief(timezone: string, name: string): ScheduleInput {
     configuration: {
       blocks: [...DEFAULT_BRIEF_BLOCKS],
       sources: { calendar: "all", email: "all", tasks: "all" },
+      newsTopics: "",
     },
     instructions: null,
     delivery: { notify: "in_app" },
@@ -209,16 +209,22 @@ export function ScheduleForm({
               {t.schedules.blocks[b]}
             </label>
           ))}
-          {FUTURE_BRIEF_BLOCKS.map((b) => (
-            <span
-              key={b}
-              className="flex h-11 items-center justify-between rounded-xl border border-dashed border-border px-3.5 text-sm text-faint"
-            >
-              {t.schedules.blocks[b]}
-              <span className="type-label">{t.schedules.form.soon}</span>
-            </span>
-          ))}
         </div>
+        {v.configuration.blocks.includes("news") && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            <Label htmlFor="schedule-news-topics">{t.schedules.form.newsTopics}</Label>
+            <Input
+              id="schedule-news-topics"
+              value={v.configuration.newsTopics ?? ""}
+              maxLength={300}
+              placeholder={t.schedules.form.newsTopicsPlaceholder}
+              onChange={(e) =>
+                setV({ ...v, configuration: { ...v.configuration, newsTopics: e.target.value } })
+              }
+            />
+            <p className="text-[12.5px] text-faint">{t.schedules.form.newsTopicsHint}</p>
+          </div>
+        )}
       </fieldset>
 
       <div className="flex flex-col gap-1.5">

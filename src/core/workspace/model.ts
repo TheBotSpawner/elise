@@ -21,6 +21,10 @@ export const SURFACE_TYPES = [
   "settings",
   "approval",
   "summary",
+  "web_results",
+  "web_source",
+  "web_news",
+  "web_research",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
@@ -56,6 +60,7 @@ export const ACTION_IDS = [
   "view_interaction",
   "undo",
   "resume",
+  "save",
   "expand",
 ] as const;
 export type ActionId = (typeof ACTION_IDS)[number];
@@ -78,7 +83,8 @@ export interface SurfaceRef {
     | "approval"
     | "schedule"
     | "structured_bulk"
-    | "settings";
+    | "settings"
+    | "web_page";
   id: string;
 }
 

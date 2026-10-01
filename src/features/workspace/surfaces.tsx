@@ -14,13 +14,16 @@ import {
   Sparkles,
   User,
   Video,
+  Globe,
+  Newspaper,
+  Telescope,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useSyncExternalStore, type ReactNode } from "react";
 
 import type { ToolDisplay } from "@/core/agents/tools";
-import type { ActionId, Surface, SurfaceType } from "@/core/workspace/model";
+import { isSafeHref, type ActionId, type Surface, type SurfaceType } from "@/core/workspace/model";
 import type { SurfacePayloads } from "@/core/workspace/registry";
 import { isOpen } from "@/core/workspace/registry";
 import { ApprovalCard, type ApprovalPhase } from "@/features/chat/approval-card";
@@ -51,6 +54,10 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   settings: Settings2,
   approval: ShieldCheck,
   summary: Sparkles,
+  web_results: Globe,
+  web_source: Globe,
+  web_news: Newspaper,
+  web_research: Telescope,
   result: Sparkles,
 };
 
@@ -178,7 +185,11 @@ export function SurfaceActions({
             handlers.onPrompt(
               a.id === "draft_reply"
                 ? t.workspace.prompts.draftReply(title)
-                : t.workspace.prompts.summarize(title),
+                : a.id === "save"
+                  ? t.workspace.prompts.saveSource(
+                      (surface.payload as { url?: string }).url ?? title,
+                    )
+                  : t.workspace.prompts.summarize(title),
             )
           }
         >
@@ -625,6 +636,35 @@ function SettingsBody({ p }: { p: SurfacePayloads["settings"] }) {
   );
 }
 
+const MD_LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+
+/** `[site](url)` in a summary item becomes a link when the URL is safe; text otherwise. */
+function withLinks(item: string) {
+  const parts: ReactNode[] = [];
+  let last = 0;
+  for (const m of item.matchAll(MD_LINK)) {
+    parts.push(item.slice(last, m.index));
+    parts.push(
+      isSafeHref(m[2]!) ? (
+        <a
+          key={m.index}
+          href={m[2]}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          className="text-accent-text underline underline-offset-2"
+        >
+          {m[1]}
+        </a>
+      ) : (
+        m[1]
+      ),
+    );
+    last = m.index + m[0].length;
+  }
+  parts.push(item.slice(last));
+  return parts;
+}
+
 function SummaryBody({ p, large }: { p: SurfacePayloads["summary"]; large: boolean }) {
   const { t } = useI18n();
   return (
@@ -653,7 +693,7 @@ function SummaryBody({ p, large }: { p: SurfacePayloads["summary"]; large: boole
                   aria-hidden
                   className="mt-[9px] size-1 shrink-0 rounded-full bg-border-strong"
                 />
-                <span>{item}</span>
+                <span>{withLinks(item)}</span>
               </li>
             ))}
           </ul>
@@ -761,6 +801,14 @@ export function SurfaceBody({
         </div>
       );
     }
+    case "web_results":
+      return <WebResultsBody p={p} timezone={timezone} large={large} />;
+    case "web_source":
+      return <WebSourceBody p={p} timezone={timezone} />;
+    case "web_news":
+      return <WebNewsBody p={p} timezone={timezone} large={large} />;
+    case "web_research":
+      return <WebResearchBody p={p} timezone={timezone} />;
     case "result": {
       const rp = surface.payload as SurfacePayloads["result"];
       return <DisplayCard display={rp.display as unknown as ToolDisplay} timezone={timezone} />;
@@ -770,3 +818,206 @@ export function SurfaceBody({
 
 /** Types whose card already is the whole UI (approval, schedule proposal, generic results). */
 export const SELF_FRAMED: ReadonlySet<SurfaceType> = new Set(["approval", "result", "schedule"]);
+
+// ── Web (ADR-015): public evidence, always with its site and date ────────────
+
+/** A source line: title (opens the page), site, date, and whether ELISE read the page. */
+function SourceLine({
+  title,
+  url,
+  domain,
+  publishedAt,
+  inspected,
+  timezone,
+}: {
+  title: string;
+  url: string;
+  domain: string;
+  publishedAt: string | null;
+  inspected?: boolean;
+  timezone: string;
+}) {
+  const { t } = useI18n();
+  const f = useFormat(timezone);
+  return (
+    <span className="flex min-w-0 flex-col">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer nofollow"
+        className="min-w-0 truncate text-[14px] hover:text-accent-text hover:underline"
+      >
+        {title}
+      </a>
+      <span className="flex min-w-0 items-center gap-1.5 truncate text-[12px] text-faint">
+        <Globe className="size-3 shrink-0" aria-hidden />
+        <span className="truncate">{domain}</span>
+        {publishedAt && <span className="font-mono">· {f.date(publishedAt)}</span>}
+        {inspected !== undefined && (
+          <span>· {inspected ? t.workspace.web.read : t.workspace.web.snippet}</span>
+        )}
+      </span>
+    </span>
+  );
+}
+
+function RetrievedAt({ at, timezone }: { at: string; timezone: string }) {
+  const { t } = useI18n();
+  const f = useFormat(timezone);
+  return (
+    <p className="text-[11.5px] text-faint">
+      {t.workspace.web.retrieved(`${f.date(at)} ${f.time(at)}`)}
+    </p>
+  );
+}
+
+function WebResultsBody({
+  p,
+  timezone,
+  large,
+}: {
+  p: SurfacePayloads["web_results"];
+  timezone: string;
+  large: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <ol className="flex flex-col gap-2.5">
+        {p.results.slice(0, large ? 8 : 5).map((r) => (
+          <li key={r.url} className="flex flex-col gap-1">
+            <SourceLine {...r} timezone={timezone} />
+            {(r.passages[0] ?? r.snippet) && (
+              <p className={cn(TEXT, "line-clamp-2 text-muted")}>{r.passages[0] ?? r.snippet}</p>
+            )}
+          </li>
+        ))}
+      </ol>
+      <RetrievedAt at={p.retrievedAt} timezone={timezone} />
+    </div>
+  );
+}
+
+function WebSourceBody({ p, timezone }: { p: SurfacePayloads["web_source"]; timezone: string }) {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col gap-2">
+      <SourceLine
+        title={p.title}
+        url={p.url}
+        domain={p.siteName ?? p.domain}
+        publishedAt={p.publishedAt}
+        timezone={timezone}
+      />
+      {p.passages.map((passage, i) => (
+        <blockquote key={i} className={cn(TEXT, "border-l border-accent-line pl-3 text-muted")}>
+          {passage}
+        </blockquote>
+      ))}
+      {p.truncated && <p className="text-[11.5px] text-faint">{t.workspace.web.truncated}</p>}
+      <RetrievedAt at={p.retrievedAt} timezone={timezone} />
+    </div>
+  );
+}
+
+function WebNewsBody({
+  p,
+  timezone,
+  large,
+}: {
+  p: SurfacePayloads["web_news"];
+  timezone: string;
+  large: boolean;
+}) {
+  const { t } = useI18n();
+  const f = useFormat(timezone);
+  return (
+    <div className="flex flex-col gap-3">
+      <ol className="flex flex-col gap-3">
+        {p.events.slice(0, large ? 6 : 4).map((e) => (
+          <li key={e.items[0]!.url} className="flex flex-col gap-1">
+            <p className="flex items-baseline gap-2">
+              {e.items[0]!.publishedAt && (
+                <span className="shrink-0 font-mono text-[12px] text-accent-text">
+                  {f.date(e.items[0]!.publishedAt)}
+                </span>
+              )}
+              <a
+                href={e.items[0]!.url}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className="min-w-0 text-[14px] hover:text-accent-text hover:underline"
+              >
+                {e.headline}
+              </a>
+            </p>
+            {e.items[0]!.snippet && (
+              <p className={cn(TEXT, "line-clamp-2 text-muted")}>{e.items[0]!.snippet}</p>
+            )}
+            <p className="flex flex-wrap gap-x-2 text-[12px] text-faint">
+              {e.items.map((it) => (
+                <a
+                  key={it.url}
+                  href={it.url}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="hover:underline"
+                >
+                  {it.domain}
+                </a>
+              ))}
+              {e.items.length > 1 && <span>· {t.workspace.web.outlets(e.items.length)}</span>}
+            </p>
+          </li>
+        ))}
+      </ol>
+      <RetrievedAt at={p.retrievedAt} timezone={timezone} />
+    </div>
+  );
+}
+
+function WebResearchBody({
+  p,
+  timezone,
+}: {
+  p: SurfacePayloads["web_research"];
+  timezone: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col gap-4">
+      <ol className="flex flex-col gap-3">
+        {p.subquestions.map((s) => (
+          <li key={s.question} className="flex flex-col gap-1.5">
+            <p className="flex items-center gap-2 text-[14px]">
+              <span
+                aria-hidden
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  s.status === "searching"
+                    ? "animate-pulse bg-accent"
+                    : s.status === "done"
+                      ? "bg-accent/60"
+                      : "bg-approval",
+                )}
+              />
+              <span className="min-w-0">{s.question}</span>
+              <span className="ml-auto shrink-0 text-[12px] text-faint">
+                {t.workspace.web.status[s.status]}
+              </span>
+            </p>
+            {s.sources.length > 0 && (
+              <ul className="flex flex-col gap-1.5 pl-3.5">
+                {s.sources.map((src) => (
+                  <li key={src.url}>
+                    <SourceLine {...src} timezone={timezone} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ol>
+      <RetrievedAt at={p.retrievedAt} timezone={timezone} />
+    </div>
+  );
+}

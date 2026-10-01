@@ -98,6 +98,18 @@ export function useEliseChat(initial: {
       const controller = new AbortController();
       abort.current = controller;
       let failed: PublicError | undefined;
+      // Text deltas are applied once per frame: a long answer arriving in a burst (after a
+      // research run) committed one render per token and hit React's nested-update limit.
+      let pendingText = "";
+      let frame = 0;
+      const flushText = () => {
+        cancelAnimationFrame(frame);
+        frame = 0;
+        if (!pendingText) return;
+        const delta = pendingText;
+        pendingText = "";
+        patchAssistant(assistantId, (m) => ({ ...m, content: m.content + delta }));
+      };
 
       try {
         const response = await fetch("/api/chat", {
@@ -150,7 +162,8 @@ export function useEliseChat(initial: {
                 setRunState(event.state);
                 break;
               case "text":
-                patchAssistant(assistantId, (m) => ({ ...m, content: m.content + event.delta }));
+                pendingText += event.delta;
+                if (!frame) frame = requestAnimationFrame(flushText);
                 break;
               case "tool_started":
                 patchAssistant(assistantId, (m) => ({
@@ -219,6 +232,7 @@ export function useEliseChat(initial: {
           };
         }
       } finally {
+        flushText();
         patchAssistant(assistantId, (m) => ({ ...m, streaming: false, error: failed }));
         setRunState("idle");
         setLastOutcome(failed ? "error" : "success");

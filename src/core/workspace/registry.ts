@@ -196,11 +196,86 @@ export const PAYLOADS = {
             "material",
           ]),
           heading: text(120),
-          items: z.array(text(400)).min(1).max(8),
+          // Room for a markdown source link ([site](url)), rendered as a safe link.
+          items: z.array(text(600)).min(1).max(8),
         }),
       )
       .min(1)
       .max(7),
+  }),
+  web_results: z.object({
+    query: text(300),
+    retrievedAt: text(40),
+    results: z
+      .array(
+        z.object({
+          title: text(300),
+          url: href,
+          domain: text(200),
+          snippet: text(400),
+          publishedAt: text(40).nullable(),
+          inspected: z.boolean(),
+          passages: z.array(text(700)).max(3),
+        }),
+      )
+      .max(8),
+  }),
+  web_source: z.object({
+    url: href,
+    title: text(300),
+    domain: text(200),
+    siteName: text(200).nullable(),
+    publishedAt: text(40).nullable(),
+    retrievedAt: text(40),
+    passages: z.array(text(700)).max(3),
+    truncated: z.boolean(),
+  }),
+  web_news: z.object({
+    query: text(200),
+    recency: z.enum(["day", "week", "month", "year"]),
+    retrievedAt: text(40),
+    events: z
+      .array(
+        z.object({
+          headline: text(300),
+          items: z
+            .array(
+              z.object({
+                title: text(300),
+                url: href,
+                domain: text(200),
+                publishedAt: text(40).nullable(),
+                snippet: text(300),
+              }),
+            )
+            .min(1)
+            .max(4),
+        }),
+      )
+      .max(6),
+  }),
+  web_research: z.object({
+    question: text(300),
+    retrievedAt: text(40),
+    subquestions: z
+      .array(
+        z.object({
+          question: text(200),
+          status: z.enum(["searching", "done", "gap", "failed"]),
+          sources: z
+            .array(
+              z.object({
+                title: text(200),
+                url: href,
+                domain: text(200),
+                publishedAt: text(40).nullable(),
+                inspected: z.boolean(),
+              }),
+            )
+            .max(4),
+        }),
+      )
+      .max(4),
   }),
   /** Any other tool result, rendered by its existing card. */
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
@@ -390,6 +465,47 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     priority: 90,
     actions: () => [],
     describe: (p) => p.sections.map((s) => s.heading).join(" · "),
+  },
+  web_results: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 62,
+    actions: () => [expand],
+    describe: (p) =>
+      p.results.map((r, i) => `${i + 1}) ${q(r.title)} · ${r.domain} (${r.url})`).join("; "),
+  },
+  web_source: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 64,
+    actions: (p) => [...link("open", p.url), { id: "save", kind: "prompt" }, expand],
+    describe: (p) => `${q(p.title)} · ${p.domain} (${p.url})`,
+  },
+  web_news: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 63,
+    actions: () => [expand],
+    describe: (p) =>
+      p.events
+        .map(
+          (e, i) =>
+            `${i + 1}) ${q(e.headline)} — ${e.items.map((it) => it.domain).join(", ")} (${e.items[0]?.url})`,
+        )
+        .join("; "),
+  },
+  web_research: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 80,
+    actions: () => [expand],
+    describe: (p) =>
+      p.subquestions
+        .map(
+          (s, i) =>
+            `${i + 1}) ${q(s.question)} [${s.status}]: ${s.sources.map((x) => x.url).join(" ")}`,
+        )
+        .join("; "),
   },
   result: {
     sizes: ["small", "medium", "large"],
