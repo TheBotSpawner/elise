@@ -396,6 +396,7 @@ export const es: Dictionary = {
       linksCount: (n: number) => `${n} ${n === 1 ? "fuente" : "fuentes"}`,
       suggested: "sugerida",
       progress: "Progreso de estudio",
+      thisSection: "Esta sección",
     },
   },
   native: {
@@ -575,6 +576,39 @@ export const es: Dictionary = {
   },
   knowledge: {
     title: "Conocimiento",
+    breadcrumb: "Ubicación",
+    sections: {
+      title: "Secciones",
+      new: "Nueva sección",
+      createFirst: "Crear primera sección",
+      empty: "Organizá este Espacio en materias, clientes, proyectos u otros temas específicos.",
+      createTitle: (space: string) => `Nueva sección en ${space}`,
+      createBody:
+        "Una parte de este Espacio con sus propias fuentes. También usa el material general del Espacio.",
+      name: "Nombre",
+      namePlaceholder: "Administración, RSFA, Onboarding…",
+      purposeQuestion: "¿Para qué vas a usar esta sección?",
+      purpose: "Uso",
+      purposes: { study: "Estudio", client: "Cliente", project: "Proyecto", general: "General" },
+      purposeHints: {
+        study: "Una materia: orales, quizzes, progreso y temas flojos.",
+        client: "Un cliente o cuenta: resúmenes, reuniones, compromisos y personas.",
+        project: "Un proyecto: sus documentos, tareas y novedades.",
+        general: "Cualquier otro tema. Podés cambiarlo después.",
+      },
+      create: "Crear sección",
+      generalSources: "Fuentes generales",
+      generalSourcesHint: "Material de todo el Espacio. Cada sección también lo usa.",
+      sectionSourcesHint: (space: string) =>
+        `El material propio de esta sección. ELISE también usa las fuentes generales de ${space} cuando hacen falta.`,
+      context: "Contexto conectado",
+      contextHint:
+        "Dónde vive el mundo de esta sección: mails, tareas, personas, Notion, sitios. Guía dónde busca ELISE; nunca da acceso.",
+      move: "Mover",
+      moveTitle: (title: string) => `Mover “${title}”`,
+      moveTo: "Mover a",
+      moved: "Movido",
+    },
     subtitle: "Lo que ELISE entiende de tus documentos, organizado en Espacios.",
     emptyTitle: "Dale a ELISE algo para entender.",
     emptyBody:
@@ -1481,7 +1515,7 @@ export const es: Dictionary = {
       },
       switch: "Cambiar de contexto",
       clear: "Quitar contexto",
-      manage: "Administrar contextos",
+      manage: "Espacios y secciones",
       since: (d: string) => `Desde ${d}`,
       basis: {
         user: "la fecha que diste",

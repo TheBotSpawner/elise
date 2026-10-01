@@ -4,8 +4,8 @@ import type { KnowledgeEvidence, ToolDefinition, ToolRunEnv } from "../agents/to
 import { clip } from "../capabilities/email";
 import { AppError } from "../errors";
 import { compactDiff, diffParagraphs } from "../knowledge/diff";
-import { withDescendants, type KnowledgeHit, type SpaceInfo } from "../knowledge/model";
-import { citationLabel, RETRIEVAL, selectEvidence } from "../knowledge/retrieval";
+import { scopeSpaces, type KnowledgeHit, type SpaceInfo } from "../knowledge/model";
+import { citationLabel, preferPrimary, RETRIEVAL, selectEvidence } from "../knowledge/retrieval";
 
 /**
  * Knowledge tools (docs/architecture/09 §31-37, 72). Scope first — the active Space, or the
@@ -33,7 +33,10 @@ const spaceField = z
   .describe('A Knowledge Space by name (e.g. "RSFA"). Omit to use the conversation\'s Space.');
 
 interface Scope {
+  /** The Spaces themselves (with their Sections): what listing and overviews cover. */
   spaceIds: string[] | null;
+  /** What search covers: also a Section's inherited parent Space (ADR-018). */
+  searchIds: string[] | null;
   names: string[];
 }
 
@@ -61,12 +64,14 @@ async function resolveScope(
         { recovery: "review" },
       );
     }
+    const scoped = scopeSpaces(
+      spaces,
+      loose.map((s) => s.id),
+    );
     return {
       spaces,
-      spaceIds: withDescendants(
-        spaces,
-        loose.map((s) => s.id),
-      ),
+      spaceIds: scoped.primary,
+      searchIds: scoped.spaceIds,
       names: loose.map((s) => s.path),
     };
   }
@@ -74,9 +79,10 @@ async function resolveScope(
     ? spaces.find((s) => s.id === env.ctx.knowledgeSpaceId)
     : undefined;
   if (active && !opts.everywhere) {
-    return { spaces, spaceIds: withDescendants(spaces, [active.id]), names: [active.path] };
+    const scoped = scopeSpaces(spaces, [active.id]);
+    return { spaces, spaceIds: scoped.primary, searchIds: scoped.spaceIds, names: [active.path] };
   }
-  return { spaces, spaceIds: null, names: ["All Knowledge"] };
+  return { spaces, spaceIds: null, searchIds: null, names: ["All Knowledge"] };
 }
 
 /**
@@ -93,9 +99,11 @@ async function contextScope(env: ToolRunEnv, spaces: SpaceInfo[]) {
     const spaceIds = links.filter((l) => l.type === "knowledge_space").map((l) => l.resourceId!);
     const itemIds = links.filter((l) => l.type === "knowledge_item").map((l) => l.resourceId!);
     if (!spaceIds.length && !itemIds.length) return null;
+    const scoped = spaceIds.length ? scopeSpaces(spaces, spaceIds) : null;
     return {
-      name: profile!.name,
-      spaceIds: spaceIds.length ? withDescendants(spaces, spaceIds) : null,
+      name: profile!.section ? `${profile!.section.parentName} › ${profile!.name}` : profile!.name,
+      spaceIds: scoped?.spaceIds ?? null,
+      primary: scoped?.primary ?? null,
       itemIds: itemIds.length && !spaceIds.length ? itemIds : null,
     };
   } catch {
@@ -155,7 +163,9 @@ export const searchKnowledgeTool: ToolDefinition = {
       reader(env).search({ text: q.query, spaceIds, itemIds, limit: RETRIEVAL.candidates });
     let { hits, semantic } = byContext
       ? await search(byContext.spaceIds, byContext.itemIds)
-      : await search(scope.spaceIds, q.itemId ? [q.itemId] : null);
+      : await search(scope.searchIds, q.itemId ? [q.itemId] : null);
+    // Section first: its own passages ahead of what it inherits from the parent Space.
+    hits = preferPrimary(hits, byContext ? byContext.primary : scope.spaceIds);
     if (byContext) {
       if (selectEvidence(hits).length) {
         scope = { ...scope, names: [`${byContext.name} (context)`] };

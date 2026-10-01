@@ -1,6 +1,5 @@
 import {
   CheckSquare,
-  Compass,
   Target,
   ListChecks,
   Repeat,
@@ -34,7 +33,6 @@ export const MY_ELISE: { key: CapabilityKey; href: string | null; icon: LucideIc
   { key: "goals", href: "/my-elise/goals", icon: Target },
   { key: "notes", href: "/my-elise/notes", icon: StickyNote },
   { key: "finance", href: "/my-elise/finance", icon: Wallet },
-  { key: "contexts", href: "/my-elise/contexts", icon: Compass },
 ];
 
 export type ActiveSection = SectionKey | "myElise" | "settings" | "approvals" | null;

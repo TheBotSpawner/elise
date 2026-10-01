@@ -44,6 +44,16 @@ export function isEvidence(hit: KnowledgeHit): boolean {
  * Keeps the strongest passages within the budget, at most two per document so one long file
  * cannot crowd out the others.
  */
+/** Inherited (parent Space) passages weigh a little less than the Section's own. */
+export const INHERITED_WEIGHT = 0.85;
+
+/** Section-first ordering: same evidence, the Section's own sources ahead on near-ties. */
+export function preferPrimary(hits: readonly KnowledgeHit[], primary: readonly string[] | null) {
+  if (!primary) return [...hits];
+  const own = new Set(primary);
+  return hits.map((h) => (own.has(h.spaceId) ? h : { ...h, score: h.score * INHERITED_WEIGHT }));
+}
+
 export function selectEvidence(hits: readonly KnowledgeHit[]): KnowledgeHit[] {
   const perItem = new Map<string, number>();
   const selected: KnowledgeHit[] = [];

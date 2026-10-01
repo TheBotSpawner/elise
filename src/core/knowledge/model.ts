@@ -166,6 +166,22 @@ export function withDescendants(
   return [...out];
 }
 
+/**
+ * Where a scope searches (ADR-018): the Spaces asked for with their Sections (primary), plus —
+ * for a Section — its parent Space's own general sources (inherited, secondary). Sibling
+ * Sections are never pulled in, and retrieval still decides what is relevant.
+ */
+export function scopeSpaces(
+  spaces: readonly SpaceInfo[],
+  rootIds: readonly string[],
+): { spaceIds: string[]; primary: string[] } {
+  const primary = withDescendants(spaces, rootIds);
+  const inherited = rootIds
+    .map((id) => spaces.find((s) => s.id === id)?.parentId)
+    .filter((p): p is string => Boolean(p) && !primary.includes(p!));
+  return { spaceIds: [...new Set([...primary, ...inherited])], primary };
+}
+
 export function spacePaths(
   spaces: readonly { id: string; name: string; parentId: string | null }[],
 ): SpaceInfo[] {

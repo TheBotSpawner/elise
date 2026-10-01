@@ -21,6 +21,14 @@ import {
   updateSpace,
   type UploadTarget,
 } from "@/application/knowledge-service";
+import {
+  assertSectionPlacement,
+  createSection,
+  ensureSectionProfile,
+  moveItem,
+  setSectionPurpose,
+} from "@/application/sections-service";
+import { SECTION_PURPOSES } from "@/core/contexts/model";
 import { toPublicError, type PublicError } from "@/core/errors";
 
 export type KnowledgeResult<T = null> = { ok: true; value: T } | { ok: false; error: PublicError };
@@ -56,15 +64,59 @@ export interface SpaceFields {
 }
 
 export async function createSpaceAction(input: SpaceFields & { parentId: string | null }) {
-  return run(async () =>
-    createSpace(await requireAuthContext(), {
+  return run(async () => {
+    const auth = await requireAuthContext();
+    const fields = {
       name: input.name,
       description: input.description ?? null,
       icon: input.icon ?? null,
       color: input.color ?? null,
-      parentId: input.parentId ? id.parse(input.parentId) : null,
-    }),
+    };
+    // Inside a Space, a new Space is a Section (ADR-018) — always with its context.
+    return input.parentId
+      ? (
+          await createSection(auth, {
+            ...fields,
+            parentId: id.parse(input.parentId),
+            purpose: "general",
+          })
+        ).id
+      : createSpace(auth, fields);
+  });
+}
+
+const sectionInput = z
+  .object({
+    parentId: id,
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(1000).nullable(),
+    icon: z.string().nullable(),
+    color: z.string().nullable(),
+    purpose: z.enum(SECTION_PURPOSES),
+  })
+  .strict();
+
+/** "+ New section": the Section and its context, in one step. */
+export async function createSectionAction(input: z.input<typeof sectionInput>) {
+  return run(async () => {
+    const q = sectionInput.parse(input);
+    return createSection(await requireAuthContext(), q);
+  });
+}
+
+export async function setSectionPurposeAction(spaceId: string, purpose: string) {
+  return run(async () =>
+    setSectionPurpose(
+      await requireAuthContext(),
+      id.parse(spaceId),
+      z.enum(SECTION_PURPOSES).parse(purpose),
+    ),
   );
+}
+
+/** An uploaded document moves between a Space and its Sections; nothing is copied. */
+export async function moveItemAction(itemId: string, spaceId: string) {
+  return run(async () => moveItem(await requireAuthContext(), id.parse(itemId), id.parse(spaceId)));
 }
 
 /** Name, description, icon and color; the service validates each (curated icons/colors). */
@@ -80,11 +132,14 @@ export async function updateSpaceAction(spaceId: string, input: SpaceFields) {
 }
 
 export async function moveSpaceAction(spaceId: string, parentId: string | null) {
-  return run(async () =>
-    updateSpace(await requireAuthContext(), id.parse(spaceId), {
-      parentId: parentId ? id.parse(parentId) : null,
-    }),
-  );
+  return run(async () => {
+    const auth = await requireAuthContext();
+    const target = parentId ? id.parse(parentId) : null;
+    // One visible level: only into a top-level Space, and only a Space without Sections.
+    await assertSectionPlacement(auth, id.parse(spaceId), target);
+    await updateSpace(auth, spaceId, { parentId: target });
+    if (target) await ensureSectionProfile(auth, spaceId);
+  });
 }
 
 export async function archiveSpaceAction(spaceId: string) {

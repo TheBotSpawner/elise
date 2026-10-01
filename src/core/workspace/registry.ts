@@ -315,6 +315,11 @@ export const PAYLOADS = {
   context_proposal: z.object({
     name: text(80),
     kind: z.enum(CONTEXT_KINDS),
+    /** The Space it becomes a Section of (ADR-018), when there is one. */
+    space: z
+      .object({ id: text(100), name: text(120) })
+      .nullable()
+      .default(null),
     description: text(400).nullable(),
     aliases: z.array(text(80)).max(12),
     suggestions: z
@@ -727,6 +732,7 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
           kind: p.kind,
           name: p.name,
           ...(p.description ? { description: p.description } : {}),
+          ...(p.space ? { space: p.space.id } : {}),
           aliases: p.aliases,
           links: p.suggestions
             .filter((s) => chosen.has(s.id))

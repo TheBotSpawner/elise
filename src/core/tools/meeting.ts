@@ -6,7 +6,7 @@ import type { KnowledgeEvidence, ToolDefinition, ToolRunEnv } from "../agents/to
 import type { CalendarEvent } from "../capabilities/calendar";
 import type { EmailMessage } from "../capabilities/email";
 import type { Task } from "../capabilities/tasks";
-import { contextForEvent, contextSignals, taskMatches } from "../contexts/model";
+import { activeContextOf, contextForEvent, contextSignals, taskMatches } from "../contexts/model";
 import type { RecallResult } from "../recall/model";
 import { addDays, isIsoDate, toLocalDateTime, todayIn } from "../time";
 import {
@@ -291,12 +291,7 @@ export const prepareMeetingTool: ToolDefinition = {
       w?.apply([
         {
           op: "context",
-          context: {
-            id: profile.id,
-            name: profile.name,
-            kind: profile.kind,
-            accent: profile.accent,
-          },
+          context: activeContextOf(profile),
           at,
         },
       ]);

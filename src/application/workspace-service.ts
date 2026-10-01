@@ -73,6 +73,23 @@ const fromRow = (r: Row, context: WorkspaceState["context"] = null): WorkspaceSt
  * The active context, read again from its profile (ADR-016 §6): a renamed profile shows its
  * new name, an archived or deleted one is simply no longer active.
  */
+async function sectionParentName(auth: AuthContext, spaceId: string): Promise<string | null> {
+  const { data: space } = await auth.db
+    .from("knowledge_spaces")
+    .select("parent_space_id")
+    .eq("id", spaceId)
+    .eq("workspace_id", auth.workspaceId)
+    .maybeSingle();
+  if (!space?.parent_space_id) return null;
+  const { data: parent } = await auth.db
+    .from("knowledge_spaces")
+    .select("name")
+    .eq("id", space.parent_space_id)
+    .eq("workspace_id", auth.workspaceId)
+    .maybeSingle();
+  return parent?.name ?? null;
+}
+
 async function activeContextOf(
   auth: AuthContext,
   id: string | null,
@@ -81,13 +98,22 @@ async function activeContextOf(
   if (!id) return null;
   const { data } = await auth.db
     .from("context_profiles")
-    .select("id, name, kind, accent, status")
+    .select("id, name, kind, accent, status, knowledge_space_id")
     .eq("id", id)
     .eq("workspace_id", auth.workspaceId)
     .maybeSingle();
-  return data && data.status === "active"
-    ? { id: data.id, name: data.name, kind: data.kind, accent: data.accent, turn }
+  if (!data || data.status !== "active") return null;
+  // A Section's context reads "UTN › Administración" (ADR-018).
+  const parent = data.knowledge_space_id
+    ? await sectionParentName(auth, data.knowledge_space_id)
     : null;
+  return {
+    id: data.id,
+    name: parent ? `${parent} › ${data.name}` : data.name,
+    kind: data.kind,
+    accent: data.accent,
+    turn,
+  };
 }
 
 /** A workspace belongs to a conversation or to a voice session (ADR-014). */

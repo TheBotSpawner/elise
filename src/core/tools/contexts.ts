@@ -17,6 +17,8 @@ import {
   findPeople,
   isFreeMailDomain,
   isResourceLink,
+  activeContextOf,
+  contextLabel,
   nameKey,
   normalizeLinkValue,
   taskMatches,
@@ -75,9 +77,16 @@ export async function findProfile(
   const all = (await s.list()).filter(
     (p) => p.status === "active" && (!opts.kind || p.kind === opts.kind),
   );
-  const key = nameKey(ref);
+  const key = nameKey(ref.replace(/\s*[›>/]\s*/g, " "));
+  // A Section is also known by its path: "UTN Administración", "UTN › Administración".
+  const pathKey = (p: ContextProfile) =>
+    p.section ? nameKey(`${p.section.parentName} ${p.name}`) : null;
   const exact = all.filter(
-    (p) => p.id === ref || nameKey(p.name) === key || p.aliases.some((a) => nameKey(a) === key),
+    (p) =>
+      p.id === ref ||
+      nameKey(p.name) === key ||
+      pathKey(p) === key ||
+      p.aliases.some((a) => nameKey(a) === key),
   );
   const loose = exact.length
     ? exact
@@ -86,13 +95,13 @@ export async function findProfile(
   if (loose.length > 1)
     throw new AppError(
       "VALIDATION_ERROR",
-      `Several contexts match "${ref}": ${loose.map((p) => p.name).join(", ")}. Ask which one.`,
+      `Several match "${ref}": ${loose.map(contextLabel).join(", ")}. Ask which one (pass "Space › Section").`,
       { recovery: "review" },
     );
   throw new AppError(
     "NOT_FOUND",
     all.length
-      ? `No context called "${ref}". Contexts: ${all.map((p) => `${p.name} (${p.kind})`).join(", ")}`
+      ? `No context called "${ref}". Contexts: ${all.map((p) => `${contextLabel(p)} (${p.kind})`).join(", ")}`
       : "There are no contexts yet. Offer to create one (contexts.propose).",
     { recovery: "review" },
   );
@@ -139,7 +148,7 @@ export async function activateContext(
   env.ctx.workspace?.apply([
     {
       op: "context",
-      context: { id: p.id, name: p.name, kind: p.kind, accent: p.accent },
+      context: activeContextOf(p),
       at: new Date().toISOString(),
     },
   ]);
@@ -227,6 +236,15 @@ const proposeInput = z
     kind: z.enum(CONTEXT_KINDS),
     description: z.string().trim().max(400).optional(),
     aliases: z.array(z.string().trim().min(1).max(80)).max(6).default([]),
+    space: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        'The top-level Knowledge Space it belongs in, which makes it a Section there ("Firbot Solutions" for a client, "UTN" for a subject). Only a Space the user named or one that obviously fits; omit otherwise.',
+      ),
     hints: z
       .object({
         spaces: z
@@ -486,10 +504,14 @@ export const proposeContextTool: ToolDefinition = {
         },
         display: { kind: "context_profile", overview: overviewPayload(existing), change: "shown" },
       };
-    const { suggestions, problems } = await discoverLinks(env, q);
+    const [{ suggestions, problems }, parent] = await Promise.all([
+      discoverLinks(env, q),
+      q.space ? parentSpace(env, q.space) : Promise.resolve(null),
+    ]);
     const proposal: SurfacePayloads["context_proposal"] = {
       name: clip(q.name, 80),
       kind: q.kind,
+      space: parent,
       description: q.description ? clip(q.description, 400) : null,
       aliases: q.aliases.map((a) => clip(a, 80)),
       suggestions,
@@ -500,6 +522,7 @@ export const proposeContextTool: ToolDefinition = {
         proposal: {
           name: q.name,
           kind: q.kind,
+          ...(parent ? { section: `${parent.name} › ${q.name}` } : {}),
           suggestions: suggestions.map((s) => ({
             id: s.id,
             type: s.type,
@@ -582,6 +605,15 @@ const createInput = z
     name: z.string().trim().min(1).max(80),
     description: z.string().trim().max(1000).optional(),
     aliases: z.array(z.string().trim().min(1).max(80)).max(12).default([]),
+    space: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        'The top-level Knowledge Space it belongs in, which makes it a Section there ("Firbot Solutions" for a client, "UTN" for a subject). Only a Space the user named or one that obviously fits; omit otherwise.',
+      ),
     instructions: z
       .string()
       .trim()
@@ -594,6 +626,26 @@ const createInput = z
     links: z.array(linkInput).max(40).default([]),
   })
   .strict();
+
+/**
+ * The top-level Space a new context becomes a Section of (ADR-018). Unknown or ambiguous names
+ * are refused with the options, never guessed.
+ */
+async function parentSpace(env: ToolRunEnv, name: string): Promise<{ id: string; name: string }> {
+  const roots = (await env.providers.get("knowledge", env.binding).spaces()).filter(
+    (s) => !s.parentId,
+  );
+  const key = nameKey(name);
+  const hits = roots.filter((s) => s.id === name || nameKey(s.name) === key);
+  if (hits.length === 1) return { id: hits[0]!.id, name: hits[0]!.name };
+  throw new AppError(
+    "NOT_FOUND",
+    roots.length
+      ? `No top-level Knowledge Space called "${name}". Spaces: ${roots.map((s) => s.name).join(", ")}`
+      : "There are no Knowledge Spaces yet: omit space (or create the Space first).",
+    { recovery: "review" },
+  );
+}
 
 /** After creating from a proposal: the proposal says so (no second Create). */
 function markProposalCreated(env: ToolRunEnv, name: string, id: string) {
@@ -633,8 +685,10 @@ export const createContextTool: ToolDefinition = {
   },
   async run(raw, env) {
     const q = createInput.parse(raw);
+    const parent = q.space ? await parentSpace(env, q.space) : null;
     const profile = await store(env).create({
       kind: q.kind,
+      parentSpaceId: parent?.id ?? null,
       name: q.name,
       description: q.description ?? null,
       aliases: q.aliases,
@@ -651,7 +705,7 @@ export const createContextTool: ToolDefinition = {
         created: true,
         context: profileForModel(profile),
         instructions:
-          "Say it's created and what it's linked to, in one or two sentences. It can be edited in My Elise › Contexts.",
+          'Say it\'s created and what it\'s linked to, in one or two sentences. A Section is managed in Knowledge (its Space › Section page); say "section", not "context profile".',
       },
       display: { kind: "context_profile", overview: overviewPayload(profile), change: "created" },
       target: { type: "context_profile", id: profile.id },

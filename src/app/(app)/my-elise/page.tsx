@@ -1,6 +1,5 @@
 import {
   CheckSquare,
-  Compass,
   Target,
   ListChecks,
   Repeat,
@@ -24,7 +23,6 @@ const MODULES: { key: CapabilityKey; icon: LucideIcon; href: string }[] = [
   { key: "goals", icon: Target, href: "/my-elise/goals" },
   { key: "notes", icon: StickyNote, href: "/my-elise/notes" },
   { key: "finance", icon: Wallet, href: "/my-elise/finance" },
-  { key: "contexts", icon: Compass, href: "/my-elise/contexts" },
   { key: "shortcuts", icon: Zap, href: "/my-elise/shortcuts" },
 ];
 

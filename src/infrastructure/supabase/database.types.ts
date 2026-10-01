@@ -932,6 +932,8 @@ export type ContextProfileRow = {
   study_target_date: string | null;
   study_objective: string | null;
   study_level: string | null;
+  /** The Section this profile belongs to (ADR-018), or null for a standalone profile. */
+  knowledge_space_id: string | null;
   source: "user_ui" | "ai" | "system";
   created_by_user_id: string | null;
   created_at: Ts;

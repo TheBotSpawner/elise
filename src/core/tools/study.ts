@@ -5,7 +5,7 @@ import { nameKey, type ContextProfile, type ContextStore } from "../contexts/mod
 import { AppError } from "../errors";
 import { activateContext, findProfile, threadOf } from "./contexts";
 import { clip, present } from "./orchestration";
-import { withDescendants, type KnowledgeHit, type KnowledgeReader } from "../knowledge/model";
+import { scopeSpaces, type KnowledgeHit, type KnowledgeReader } from "../knowledge/model";
 import { evaluateAnswer, extractConcepts, generateQuestion, quizChoice } from "../study/ai";
 import {
   DEFAULT_PREFERENCES,
@@ -58,20 +58,26 @@ async function sessionFor(env: ToolRunEnv, id: string | undefined): Promise<Stud
 // ── Material and scope ───────────────────────────────────────────────────────
 
 interface Material {
+  /** Searched: the subject's Spaces and Sections, plus a Section's parent (inherited). */
   spaceIds: string[] | null;
   itemIds: string[] | null;
   documents: { itemId: string; title: string }[];
 }
 
-/** The subject's linked Knowledge (Spaces with their sub-Spaces, and documents). */
+/**
+ * The subject's Knowledge: its Section (or linked Spaces) with their own documents first, and
+ * the parent Space's general material searched as inherited context (ADR-018).
+ */
 async function material(env: ToolRunEnv, profile: ContextProfile): Promise<Material | null> {
   const links = profile.links.filter((l) => l.confirmed && l.resourceId);
   const spaceLinks = links.filter((l) => l.type === "knowledge_space").map((l) => l.resourceId!);
   const itemLinks = links.filter((l) => l.type === "knowledge_item").map((l) => l.resourceId!);
   if (!spaceLinks.length && !itemLinks.length) return null;
   const reader = knowledge(env);
-  const spaces = spaceLinks.length ? withDescendants(await reader.spaces(), spaceLinks) : null;
-  const overview = spaces ? (await reader.overview(spaces, 50)).items : [];
+  const scoped = spaceLinks.length ? scopeSpaces(await reader.spaces(), spaceLinks) : null;
+  const spaces = scoped?.spaceIds ?? null;
+  // The subject's own documents are what a session covers; inherited ones only inform it.
+  const overview = scoped ? (await reader.overview(scoped.primary, 50)).items : [];
   const items = await Promise.all(itemLinks.slice(0, 10).map((id) => reader.getItem(id)));
   return {
     spaceIds: spaces,

@@ -1,6 +1,14 @@
 "use client";
 
-import { MessageSquare, MoreHorizontal, Pencil, Plus, Upload } from "lucide-react";
+import {
+  FolderInput,
+  LayoutGrid,
+  MessageSquare,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Upload,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
@@ -12,8 +20,12 @@ import type {
   SourceView,
   SpaceSummary,
 } from "@/application/knowledge-service";
+import type { sectionDetail } from "@/application/sections-service";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Select } from "@/components/ui/input";
+import { SECTION_PURPOSES, type SectionPurpose } from "@/core/contexts/model";
+import { ContextEditor } from "@/features/contexts/contexts-view";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -21,13 +33,16 @@ import { cn } from "@/lib/utils";
 import {
   archiveSpaceAction,
   deleteItemAction,
+  moveItemAction,
   removeSourceAction,
   retryItemAction,
+  setSectionPurposeAction,
   syncNowAction,
   type KnowledgeResult,
 } from "./actions";
 import { SpaceGlyph } from "./appearance";
 import { UPLOAD_ACCEPT } from "./constants";
+import { SectionDialog } from "./section-dialog";
 import { AddSourceDialog, CreateSpaceDialog, type AddSourceView } from "./space-dialogs";
 import { SourceIcon, SourceOptions, useRelative } from "./ui";
 import { uploadFiles, uploadVersion } from "./upload";
@@ -44,9 +59,12 @@ const DOT: Record<string, string> = {
 const SOURCE_ORDER: SourceView["sourceType"][] = ["upload", "google_drive", "notion", "note"];
 const RECENT = 8;
 
+export type SectionCard = SpaceSummary & { purpose: SectionPurpose | null };
+
 export function SpaceView({
   space,
-  subspaces,
+  sections,
+  section,
   sources,
   items,
   accounts,
@@ -57,7 +75,10 @@ export function SpaceView({
   initialAdd = null,
 }: {
   space: SpaceSummary;
-  subspaces: SpaceSummary[];
+  /** A Space's Sections (ADR-018); always empty inside a Section (one level). */
+  sections: SectionCard[];
+  /** Inside a Section: its context (purpose, links, study progress). */
+  section: Awaited<ReturnType<typeof sectionDetail>>;
   sources: SourceView[];
   items: ItemView[];
   accounts: KnowledgeAccount[];
@@ -75,7 +96,16 @@ export function SpaceView({
   const [adding, setAdding] = useState<AddSourceView | null>(initialAdd);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingSpace, setEditingSpace] = useState(false);
-  const [creatingSub, setCreatingSub] = useState(false);
+  const [creatingSection, setCreatingSection] = useState(false);
+  const [moving, setMoving] = useState<ItemView | null>(null);
+  const isSection = Boolean(space.parentId);
+  const parent = isSection ? allSpaces.find((s) => s.id === space.parentId) : undefined;
+  // Where an uploaded document can go: within this Space and its Sections, never elsewhere.
+  const moveTargets = isSection
+    ? allSpaces.filter(
+        (s) => s.id === space.parentId || (s.parentId === space.parentId && s.id !== space.id),
+      )
+    : allSpaces.filter((s) => s.parentId === space.id);
   const [showAll, setShowAll] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -122,20 +152,29 @@ export function SpaceView({
   return (
     <div className="flex flex-col gap-10">
       <header className="flex flex-col gap-3">
-        <nav className="text-[13px] text-muted">
+        <nav aria-label={t.knowledge.breadcrumb} className="text-[13px] text-muted">
           <Link href="/knowledge" className="hover:text-fg">
             {t.knowledge.title}
           </Link>
-          {space.path
-            .split(" › ")
-            .slice(0, -1)
-            .map((p) => ` › ${p}`)}
+          {parent && (
+            <>
+              {" › "}
+              <Link href={`/knowledge/spaces/${parent.id}`} className="hover:text-fg">
+                {parent.name}
+              </Link>
+            </>
+          )}
         </nav>
         <div className="flex flex-col gap-1.5">
           <h1 className="flex items-center gap-3 text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
             <SpaceGlyph icon={space.icon} color={space.color} size="lg" />
             {space.name}
           </h1>
+          {section && (
+            <p className="type-label text-faint">
+              {t.knowledge.sections.purposes[section.purpose]}
+            </p>
+          )}
           {space.description && (
             <p className="max-w-2xl text-[15px] text-muted">{space.description}</p>
           )}
@@ -149,6 +188,12 @@ export function SpaceView({
             <Plus />
             {t.knowledge.addSource}
           </Button>
+          {!isSection && (
+            <Button variant="secondary" onClick={() => setCreatingSection(true)}>
+              <Plus />
+              {t.knowledge.sections.new}
+            </Button>
+          )}
           <Button variant="ghost" onClick={() => setEditingSpace(true)}>
             <Pencil />
             {t.knowledge.editSpace}
@@ -168,32 +213,57 @@ export function SpaceView({
         )}
       </header>
 
-      {subspaces.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h2 className="type-label text-faint">{t.knowledge.spaces}</h2>
-          <ul className="flex flex-wrap gap-1.5">
-            {subspaces.map((c) => (
-              <li key={c.id}>
-                <Link
-                  href={`/knowledge/spaces/${c.id}`}
-                  className="flex h-9 items-center gap-2 rounded-full bg-surface-2 pr-4 pl-1.5 text-[13.5px] text-muted hover:text-fg"
-                >
-                  <SpaceGlyph icon={c.icon} color={c.color} size="sm" className="rounded-full" />
-                  {c.name}
-                </Link>
-              </li>
-            ))}
-          </ul>
+      {!isSection && (
+        <section className="flex flex-col gap-3">
+          <h2 className="type-label text-faint">{t.knowledge.sections.title}</h2>
+          {sections.length === 0 ? (
+            <div className="flex flex-col items-start gap-3 rounded-2xl border border-dashed border-border p-5">
+              <p className="flex items-center gap-2 text-[14px] text-muted">
+                <LayoutGrid className="size-4 shrink-0 text-faint" aria-hidden />
+                {t.knowledge.sections.empty}
+              </p>
+              <Button size="sm" variant="secondary" onClick={() => setCreatingSection(true)}>
+                <Plus />
+                {t.knowledge.sections.createFirst}
+              </Button>
+            </div>
+          ) : (
+            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {sections.map((c) => (
+                <li key={c.id}>
+                  <Link
+                    href={`/knowledge/spaces/${c.id}`}
+                    className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/50"
+                  >
+                    <SpaceGlyph icon={c.icon} color={c.color} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14.5px] font-medium">{c.name}</span>
+                      <span className="block truncate text-[12.5px] text-muted">
+                        {c.purpose && `${t.knowledge.sections.purposes[c.purpose]} · `}
+                        {t.knowledge.itemCount(c.counts.ready + c.counts.processing)}
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
           <h2 className="flex items-center gap-2 type-label text-faint">
-            {t.knowledge.sources}
+            {isSection ? t.knowledge.sources : t.knowledge.sections.generalSources}
             {uploading && <span className="text-accent-text">· {t.knowledge.uploading}</span>}
           </h2>
-          <p className="text-[13px] text-muted">{t.knowledge.sourcesHint}</p>
+          <p className="text-[13px] text-muted">
+            {isSection
+              ? t.knowledge.sections.sectionSourcesHint(parent?.name ?? "")
+              : sections.length
+                ? t.knowledge.sections.generalSourcesHint
+                : t.knowledge.sourcesHint}
+          </p>
         </div>
         <input
           ref={fileInput}
@@ -377,6 +447,17 @@ export function SpaceView({
                         {t.knowledge.retry}
                       </Button>
                     )}
+                    {item.sourceType === "upload" && moveTargets.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={pending}
+                        onClick={() => setMoving(item)}
+                      >
+                        <FolderInput />
+                        {t.knowledge.sections.move}
+                      </Button>
+                    )}
                     {item.sourceType === "upload" && item.status !== "processing" && (
                       <Button
                         size="sm"
@@ -417,6 +498,55 @@ export function SpaceView({
         )}
       </section>
 
+      {section && (
+        <section className="flex flex-col gap-4 border-t border-border pt-8">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-medium">{t.knowledge.sections.context}</h2>
+              <p className="text-[13px] text-muted">{t.knowledge.sections.contextHint}</p>
+            </div>
+            <label className="flex items-center gap-2 text-[13px] text-muted">
+              {t.knowledge.sections.purpose}
+              <Select
+                value={section.purpose}
+                disabled={pending}
+                className="w-auto"
+                onChange={(e) => act(() => setSectionPurposeAction(space.id, e.target.value))}
+              >
+                {SECTION_PURPOSES.map((p) => (
+                  <option key={p} value={p}>
+                    {t.knowledge.sections.purposes[p]}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
+          <ContextEditor
+            key={section.profile.id + section.profile.kind}
+            profile={section.profile}
+            catalog={section.catalog}
+            progress={section.progress}
+            embedded
+          />
+        </section>
+      )}
+
+      <MoveItemDialog
+        item={moving}
+        targets={moveTargets}
+        onClose={() => setMoving(null)}
+        onMoved={() => {
+          setMoving(null);
+          router.refresh();
+        }}
+      />
+      {!isSection && (
+        <SectionDialog
+          open={creatingSection}
+          onClose={() => setCreatingSection(false)}
+          parent={{ id: space.id, name: space.name, color: space.color }}
+        />
+      )}
       <AddSourceDialog
         view={adding}
         onView={setAdding}
@@ -437,43 +567,27 @@ export function SpaceView({
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         space={space}
-        onNewSubspace={() => {
-          setSettingsOpen(false);
-          setCreatingSub(true);
-        }}
-      />
-      <CreateSpaceDialog
-        open={creatingSub}
-        onClose={() => setCreatingSub(false)}
-        parent={{ id: space.id, name: space.name }}
-        notionAvailable={notionAvailable}
       />
     </div>
   );
 }
 
-/** Nest or archive: kept out of the way until asked for (editing is "Edit Space"). */
+/** Archive, kept out of the way until asked for (Sections are created from the page). */
 function SpaceSettingsDialog({
   open,
   onClose,
   space,
-  onNewSubspace,
 }: {
   open: boolean;
   onClose: () => void;
   space: SpaceSummary;
-  onNewSubspace: () => void;
 }) {
   const { t } = useI18n();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   return (
     <Dialog open={open} onClose={onClose} busy={pending} title={t.knowledge.settings}>
-      <div className="flex flex-wrap justify-between gap-2">
-        <Button variant="ghost" onClick={onNewSubspace} disabled={pending}>
-          <Plus />
-          {t.knowledge.newSubspace}
-        </Button>
+      <div className="flex flex-wrap justify-end gap-2">
         <Button
           variant="ghost"
           className="hover:text-danger-text"
@@ -489,6 +603,66 @@ function SpaceSettingsDialog({
         >
           {t.knowledge.archive}
         </Button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Moves an uploaded document to the Space or one of its Sections (nothing is copied). */
+function MoveItemDialog({
+  item,
+  targets,
+  onClose,
+  onMoved,
+}: {
+  item: ItemView | null;
+  targets: SpaceSummary[];
+  onClose: () => void;
+  onMoved: () => void;
+}) {
+  const { t } = useI18n();
+  const [target, setTarget] = useState("");
+  const [pending, startTransition] = useTransition();
+  const choice = target || targets[0]?.id || "";
+  return (
+    <Dialog
+      open={Boolean(item)}
+      onClose={onClose}
+      busy={pending}
+      title={t.knowledge.sections.moveTitle(item?.title ?? "")}
+    >
+      <div className="flex flex-col gap-4">
+        <Select
+          aria-label={t.knowledge.sections.moveTo}
+          value={choice}
+          onChange={(e) => setTarget(e.target.value)}
+        >
+          {targets.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.path}
+            </option>
+          ))}
+        </Select>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} disabled={pending}>
+            {t.knowledge.cancel}
+          </Button>
+          <Button
+            disabled={pending || !choice || !item}
+            onClick={() =>
+              startTransition(async () => {
+                const r = await moveItemAction(item!.id, choice);
+                if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+                else {
+                  toast.success(t.knowledge.sections.moved);
+                  onMoved();
+                }
+              })
+            }
+          >
+            {t.knowledge.sections.move}
+          </Button>
+        </div>
       </div>
     </Dialog>
   );

@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { nameKey } from "@/core/contexts/model";
 import { AppError } from "@/core/errors";
 import {
   SPACE_COLORS,
@@ -220,6 +221,24 @@ export async function updateSpace(
       cause: error,
       recovery: "review",
     });
+  // A Section's context is the same thing seen from intelligence: it follows (ADR-018).
+  const name = input.name !== undefined ? nameSchema.parse(input.name).slice(0, 80) : undefined;
+  const synced = {
+    ...(name ? { name, name_key: nameKey(name).slice(0, 80) } : {}),
+    ...(input.description !== undefined
+      ? { description: descriptionSchema.parse(input.description) }
+      : {}),
+    ...(input.icon !== undefined ? { icon: appearanceSchema.shape.icon.parse(input.icon) } : {}),
+    ...(input.color !== undefined
+      ? { accent: appearanceSchema.shape.color.parse(input.color) }
+      : {}),
+  };
+  if (Object.keys(synced).length)
+    await auth.db
+      .from("context_profiles")
+      .update(synced)
+      .eq("knowledge_space_id", spaceId)
+      .eq("workspace_id", auth.workspaceId);
 }
 
 /** Archive: the Space and its sub-Spaces leave Knowledge; sources stop syncing. */
@@ -256,6 +275,12 @@ export async function archiveSpace(auth: AuthContext, spaceId: string) {
     .from("knowledge_items")
     .update({ status: "archived", archived_at: now })
     .in("space_id", [...ids])
+    .eq("workspace_id", auth.workspaceId);
+  // Archived Sections take their context with them (kept, restorable — never deleted).
+  await auth.db
+    .from("context_profiles")
+    .update({ status: "archived", archived_at: now })
+    .in("knowledge_space_id", [...ids])
     .eq("workspace_id", auth.workspaceId);
   await audit(auth, "knowledge.space_archived", "knowledge_space", spaceId, { spaces: ids.size });
 }
@@ -381,7 +406,7 @@ function validateFile(file: unknown) {
   return { ...parsed.data, mimeType };
 }
 
-async function uploadSource(auth: AuthContext, spaceId: string): Promise<string> {
+export async function uploadSource(auth: AuthContext, spaceId: string): Promise<string> {
   const { data: existing } = await auth.db
     .from("knowledge_sources")
     .select("id")

@@ -152,8 +152,10 @@ export function CreateSpaceDialog({
       if (suggested) setLook(suggested);
     }
   };
-  // A Space can't move under itself or one of its own sub-Spaces.
+  // One visible level (ADR-018): a Space becomes a Section only under a top-level Space, and
+  // only while it has no Sections of its own.
   const blocked = space ? new Set(withDescendants(allSpaces, [space.id])) : new Set<string>();
+  const hasSections = space ? allSpaces.some((x) => x.parentId === space.id) : false;
 
   return (
     <Dialog
@@ -224,7 +226,7 @@ export function CreateSpaceDialog({
                 }}
               />
             </div>
-            {editing && (
+            {editing && !hasSections && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="space-parent">{t.knowledge.parent}</Label>
                 <Select
@@ -234,7 +236,7 @@ export function CreateSpaceDialog({
                 >
                   <option value="">{t.knowledge.topLevel}</option>
                   {allSpaces
-                    .filter((x) => !blocked.has(x.id))
+                    .filter((x) => !blocked.has(x.id) && !x.parentId)
                     .map((x) => (
                       <option key={x.id} value={x.id}>
                         {x.path}

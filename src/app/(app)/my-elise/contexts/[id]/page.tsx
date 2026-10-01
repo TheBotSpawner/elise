@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
@@ -15,6 +15,8 @@ export default async function ContextPage({ params }: PageProps<"/my-elise/conte
   const auth = await requireAuthContext();
   const profile = await getContextProfile(auth, id);
   if (!profile) notFound();
+  // A Section's context lives in its Section (ADR-018); old links keep working.
+  if (profile.section) redirect(`/knowledge/spaces/${profile.section.spaceId}`);
   const [catalog, concepts] = await Promise.all([
     contextCatalog(auth, async () => {
       // Task lists of every connected provider, read through the executor.

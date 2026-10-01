@@ -198,10 +198,16 @@ export function ContextEditor({
   profile,
   catalog,
   progress,
+  embedded = false,
 }: {
   profile: ContextProfile;
   catalog: DiscoveryCatalog;
   progress: { counts: Record<string, number>; total: number } | null;
+  /**
+   * Inside a Section page (ADR-018): the Section owns name, appearance and archive; this shows
+   * only the context that lives there — links, preferences, study details and progress.
+   */
+  embedded?: boolean;
 }) {
   const { t } = useI18n();
   const c = t.myElise.contexts;
@@ -278,14 +284,16 @@ export function ContextEditor({
 
   return (
     <div className="flex flex-col gap-8">
-      <Link
-        href="/my-elise/contexts"
-        className="inline-flex w-fit items-center gap-1.5 text-[13px] text-muted hover:text-fg"
-      >
-        <ArrowLeft className="size-3.5" aria-hidden />
-        {c.back}
-      </Link>
-      <header className="flex items-center gap-3">
+      {!embedded && (
+        <Link
+          href="/my-elise/contexts"
+          className="inline-flex w-fit items-center gap-1.5 text-[13px] text-muted hover:text-fg"
+        >
+          <ArrowLeft className="size-3.5" aria-hidden />
+          {c.back}
+        </Link>
+      )}
+      <header className={cn("flex items-center gap-3", embedded && "hidden")}>
         <SpaceGlyph icon={form.icon} color={form.accent} size="lg" />
         <div className="min-w-0">
           <h1 className="truncate text-[28px] leading-tight font-light tracking-[-0.02em]">
@@ -305,14 +313,16 @@ export function ContextEditor({
           save();
         }}
       >
-        <label className={FIELD}>
-          <span className={LABEL}>{c.name}</span>
-          <Input
-            value={form.name}
-            maxLength={80}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-          />
-        </label>
+        {!embedded && (
+          <label className={FIELD}>
+            <span className={LABEL}>{c.name}</span>
+            <Input
+              value={form.name}
+              maxLength={80}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </label>
+        )}
         <label className={FIELD}>
           <span className={LABEL}>{c.aliases}</span>
           <Input
@@ -321,15 +331,17 @@ export function ContextEditor({
           />
           <span className="text-[12px] text-faint">{c.aliasesHint}</span>
         </label>
-        <label className={cn(FIELD, "md:col-span-2")}>
-          <span className={LABEL}>{c.description}</span>
-          <textarea
-            className={AREA}
-            maxLength={1000}
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-          />
-        </label>
+        {!embedded && (
+          <label className={cn(FIELD, "md:col-span-2")}>
+            <span className={LABEL}>{c.description}</span>
+            <textarea
+              className={AREA}
+              maxLength={1000}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+          </label>
+        )}
         <label className={cn(FIELD, "md:col-span-2")}>
           <span className={LABEL}>{c.instructions}</span>
           <textarea
@@ -368,14 +380,16 @@ export function ContextEditor({
             </label>
           </>
         )}
-        <div className={cn(FIELD, "md:col-span-2")}>
-          <span className={LABEL}>{c.appearance}</span>
-          <AppearancePicker
-            icon={form.icon}
-            color={form.accent}
-            onChange={(next) => setForm({ ...form, icon: next.icon, accent: next.color })}
-          />
-        </div>
+        {!embedded && (
+          <div className={cn(FIELD, "md:col-span-2")}>
+            <span className={LABEL}>{c.appearance}</span>
+            <AppearancePicker
+              icon={form.icon}
+              color={form.accent}
+              onChange={(next) => setForm({ ...form, icon: next.icon, accent: next.color })}
+            />
+          </div>
+        )}
         <div className="md:col-span-2">
           <Button type="submit" disabled={pending || !form.name.trim()}>
             {c.save}
@@ -399,20 +413,25 @@ export function ContextEditor({
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[14px]">{l.label}</span>
                 {!l.confirmed && <span className="text-[12px] text-faint">{c.suggested}</span>}
-                <button
-                  type="button"
-                  aria-label={`${c.removeLink}: ${l.label}`}
-                  disabled={pending}
-                  onClick={() =>
-                    act(
-                      () => updateContextAction(profile.id, { removeLinkIds: [l.id] }),
-                      () => router.refresh(),
-                    )
-                  }
-                  className="grid size-8 place-items-center rounded-full text-muted hover:bg-active hover:text-fg"
-                >
-                  <X className="size-4" aria-hidden />
-                </button>
+                {/* The Section's own Space is part of it, not a link to remove. */}
+                {l.id.startsWith("section:") ? (
+                  <span className="text-[12px] text-faint">{c.thisSection}</span>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label={`${c.removeLink}: ${l.label}`}
+                    disabled={pending}
+                    onClick={() =>
+                      act(
+                        () => updateContextAction(profile.id, { removeLinkIds: [l.id] }),
+                        () => router.refresh(),
+                      )
+                    }
+                    className="grid size-8 place-items-center rounded-full text-muted hover:bg-active hover:text-fg"
+                  >
+                    <X className="size-4" aria-hidden />
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -494,7 +513,9 @@ export function ContextEditor({
         </section>
       )}
 
-      <section className="flex flex-wrap gap-2 border-t border-border pt-6">
+      <section
+        className={cn("flex flex-wrap gap-2 border-t border-border pt-6", embedded && "hidden")}
+      >
         <Button
           variant="secondary"
           disabled={pending}

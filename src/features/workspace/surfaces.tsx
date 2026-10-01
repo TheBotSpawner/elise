@@ -1174,6 +1174,11 @@ function ContextProposalBody({
     <div className="flex flex-col gap-3">
       <p className="flex flex-wrap items-center gap-2">
         <Chip tone="accent">{c.kinds[p.kind]}</Chip>
+        {p.space && (
+          <span className="text-[13px]">
+            {p.space.name} › {p.name}
+          </span>
+        )}
         {p.aliases.length > 0 && (
           <span className="text-[13px] text-muted">{p.aliases.join(", ")}</span>
         )}

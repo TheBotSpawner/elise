@@ -1,7 +1,9 @@
 import "server-only";
 
 import {
+  activeContextOf,
   CONTEXT_LIMITS,
+  purposeOf,
   domainOfEmail,
   isResourceLink,
   nameKey,
@@ -63,24 +65,63 @@ const toLink = (r: ContextLinkRow): ContextLink => ({
   confirmed: r.confirmed,
 });
 
-const toProfile = (r: ContextProfileRow, links: ContextLinkRow[]): ContextProfile => ({
-  id: r.id,
-  kind: r.kind,
-  name: r.name,
-  description: r.description,
-  aliases: r.aliases ?? [],
-  icon: r.icon,
-  accent: r.accent,
-  status: r.status,
-  instructions: r.instructions,
-  study:
-    r.kind === "study"
-      ? { targetDate: r.study_target_date, objective: r.study_objective, level: r.study_level }
-      : null,
-  links: links.filter((l) => l.context_profile_id === r.id).map(toLink),
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-});
+/** A Section's own Space, always part of where its context lives (never stored as a link). */
+export const SECTION_LINK_PREFIX = "section:";
+
+type SpaceNames = Map<string, { name: string; parentId: string | null }>;
+
+function sectionOf(r: ContextProfileRow, spaces: SpaceNames): ContextProfile["section"] {
+  const space = r.knowledge_space_id ? spaces.get(r.knowledge_space_id) : undefined;
+  const parent = space?.parentId ? spaces.get(space.parentId) : undefined;
+  return space && parent
+    ? { spaceId: r.knowledge_space_id!, parentId: space.parentId!, parentName: parent.name }
+    : null;
+}
+
+const toProfile = (
+  r: ContextProfileRow,
+  links: ContextLinkRow[],
+  spaces: SpaceNames = new Map(),
+): ContextProfile =>
+  withSectionLink({
+    id: r.id,
+    kind: r.kind,
+    name: r.name,
+    description: r.description,
+    aliases: r.aliases ?? [],
+    icon: r.icon,
+    accent: r.accent,
+    status: r.status,
+    instructions: r.instructions,
+    study:
+      r.kind === "study"
+        ? { targetDate: r.study_target_date, objective: r.study_objective, level: r.study_level }
+        : null,
+    links: links.filter((l) => l.context_profile_id === r.id).map(toLink),
+    section: sectionOf(r, spaces),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  });
+
+function withSectionLink(p: ContextProfile): ContextProfile {
+  const s = p.section;
+  if (!s || p.links.some((l) => l.type === "knowledge_space" && l.resourceId === s.spaceId))
+    return p;
+  return {
+    ...p,
+    links: [
+      {
+        id: `${SECTION_LINK_PREFIX}${s.spaceId}`,
+        type: "knowledge_space",
+        resourceId: s.spaceId,
+        value: null,
+        label: `${s.parentName} › ${p.name}`,
+        confirmed: true,
+      },
+      ...p.links,
+    ],
+  };
+}
 
 const toEntity = (r: EntityRow): Entity => ({
   id: r.id,
@@ -113,16 +154,30 @@ async function loadProfiles(
   const { data: rows, error } = await q.order("name");
   if (error) throw new AppError("INTERNAL_ERROR", "Could not load contexts", { cause: error });
   if (!rows?.length) return [];
-  const { data: links } = await auth.db
-    .from("context_links")
-    .select("*")
-    .eq("workspace_id", auth.workspaceId)
-    .in(
-      "context_profile_id",
-      rows.map((r) => r.id),
-    )
-    .order("created_at");
-  return rows.map((r) => toProfile(r, links ?? []));
+  const [{ data: links }, { data: spaces }] = await Promise.all([
+    auth.db
+      .from("context_links")
+      .select("*")
+      .eq("workspace_id", auth.workspaceId)
+      .in(
+        "context_profile_id",
+        rows.map((r) => r.id),
+      )
+      .order("created_at"),
+    rows.some((r) => r.knowledge_space_id)
+      ? auth.db
+          .from("knowledge_spaces")
+          .select("id, name, parent_space_id")
+          .eq("workspace_id", auth.workspaceId)
+          .eq("status", "active")
+      : Promise.resolve({
+          data: [] as { id: string; name: string; parent_space_id: string | null }[],
+        }),
+  ]);
+  const names: SpaceNames = new Map(
+    (spaces ?? []).map((s) => [s.id, { name: s.name, parentId: s.parent_space_id }]),
+  );
+  return rows.map((r) => toProfile(r, links ?? [], names));
 }
 
 /** A person for a confirmed `person` link: reused by email, never merged by name. */
@@ -293,6 +348,7 @@ export async function createContextProfile(
       icon: input.icon ?? null,
       accent: input.accent ?? null,
       ...(input.kind === "study" ? studyColumns(input.study) : {}),
+      knowledge_space_id: input.sectionSpaceId ?? null,
       source: origin,
       created_by_user_id: auth.userId,
     })
@@ -347,14 +403,22 @@ export async function updateContextProfile(
       .eq("id", id)
       .eq("workspace_id", auth.workspaceId);
     if (error) dbError(error, `A context called “${patch.name}”`);
+    // A Section's name is its Space's name: one name, two views of it.
+    if (patch.name && current.section)
+      await auth.db
+        .from("knowledge_spaces")
+        .update({ name: patch.name.trim().slice(0, 80) })
+        .eq("id", current.section.spaceId)
+        .eq("workspace_id", auth.workspaceId);
   }
-  if (patch.removeLinkIds?.length)
+  const removable = patch.removeLinkIds?.filter((x) => !x.startsWith(SECTION_LINK_PREFIX));
+  if (removable?.length)
     await auth.db
       .from("context_links")
       .delete()
       .eq("context_profile_id", id)
       .eq("workspace_id", auth.workspaceId)
-      .in("id", patch.removeLinkIds);
+      .in("id", removable);
   if (patch.addLinks?.length)
     await insertLinks(
       auth,
@@ -470,12 +534,8 @@ export async function listContextProfiles(auth: AuthContext, includeArchived = f
 /** For the context indicator: names and kinds only; never blocks the page. */
 export async function contextOptions(auth: AuthContext) {
   try {
-    return (await loadProfiles(auth)).map((p) => ({
-      id: p.id,
-      name: p.name,
-      kind: p.kind,
-      accent: p.accent,
-    }));
+    // A Section reads "UTN › Administración" wherever contexts are listed.
+    return (await loadProfiles(auth)).map(activeContextOf);
   } catch {
     return [];
   }
@@ -573,7 +633,33 @@ export function contextStore(
   return {
     list: () => loadProfiles(auth),
     entities: () => listEntities(auth),
-    create: (input) => createContextProfile(auth, input, "ai"),
+    create: async (input) => {
+      if (!input.parentSpaceId) return createContextProfile(auth, input, "ai");
+      // ELISE creating "RSFA" in "Firbot Solutions" makes a Section there (ADR-018).
+      const { createSection, sectionProfile } = await import("./sections-service");
+      const { id } = await createSection(auth, {
+        parentId: input.parentSpaceId,
+        name: input.name,
+        description: input.description ?? null,
+        icon: input.icon ?? null,
+        color: input.accent ?? null,
+        purpose: purposeOf(input.kind),
+        kind: input.kind,
+      });
+      const profile = await sectionProfile(auth, id);
+      if (!profile) throw new AppError("INTERNAL_ERROR", "Could not create the Section");
+      return updateContextProfile(
+        auth,
+        profile.id,
+        {
+          ...(input.aliases?.length ? { aliases: input.aliases } : {}),
+          ...(input.instructions ? { instructions: input.instructions } : {}),
+          ...(input.study ? { study: input.study } : {}),
+          addLinks: input.links,
+        },
+        "ai",
+      );
+    },
     update: (id, patch) => updateContextProfile(auth, id, patch, "ai"),
     archive: (id) => setContextArchived(auth, id, true),
     catalog: () => contextCatalog(auth, taskLists),

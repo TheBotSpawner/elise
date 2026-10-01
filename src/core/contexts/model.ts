@@ -58,9 +58,41 @@ export interface ContextProfile {
   instructions: string | null;
   study: { targetDate: string | null; objective: string | null; level: string | null } | null;
   links: ContextLink[];
+  /**
+   * The Knowledge Section this profile is the intelligence of (ADR-018): users see
+   * "UTN › Administración", never a separate context. Null for a standalone profile.
+   */
+  section?: SectionRef | null;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface SectionRef {
+  spaceId: string;
+  parentId: string;
+  parentName: string;
+}
+
+/** What a Section is for, as users choose it; mapped onto the profile's kind. */
+export const SECTION_PURPOSES = ["study", "client", "project", "general"] as const;
+export type SectionPurpose = (typeof SECTION_PURPOSES)[number];
+
+export const kindForPurpose = (p: SectionPurpose): ContextKind => (p === "general" ? "custom" : p);
+
+export const purposeOf = (kind: ContextKind): SectionPurpose =>
+  kind === "custom" ? "general" : kind === "work" ? "client" : kind;
+
+/** How a context reads everywhere: "UTN › Administración" for a Section, else its name. */
+export const contextLabel = (p: Pick<ContextProfile, "name" | "section">) =>
+  p.section ? `${p.section.parentName} › ${p.name}` : p.name;
+
+/** The Live Workspace's active context for a profile. */
+export const activeContextOf = (p: ContextProfile) => ({
+  id: p.id,
+  name: contextLabel(p),
+  kind: p.kind,
+  accent: p.accent,
+});
 
 /** A person or an organization (lightweight entities, ADR-016 §9). */
 export interface Entity {
@@ -93,6 +125,10 @@ export interface NewContext {
   accent?: string | null;
   study?: { targetDate?: string | null; objective?: string | null; level?: string | null } | null;
   links: NewLink[];
+  /** Makes it the profile of this Section (ADR-018). */
+  sectionSpaceId?: string | null;
+  /** Creates it as a new Section of this top-level Space (ADR-018). */
+  parentSpaceId?: string | null;
 }
 
 export interface ContextPatch {
@@ -343,7 +379,12 @@ export function resolveContext(input: {
       const consider = (reason: MatchReason) => {
         if (!best || SCORE[reason] > best.score) best = { score: SCORE[reason], reason };
       };
-      if (containsTerm(text, profile.name)) consider("name");
+      if (containsTerm(text, profile.name)) {
+        consider("name");
+        // "Administración de UTN": the parent Space disambiguates same-named Sections.
+        if (profile.section && containsTerm(text, profile.section.parentName))
+          best = { score: SCORE.name + 20, reason: "name" };
+      }
       if (profile.aliases.some((a) => containsTerm(text, a))) consider("alias");
       if ([...s.domains, ...s.webDomains].some((d) => lower.includes(d))) consider("domain");
       if ([...s.emails].some((e) => lower.includes(e))) consider("domain");
@@ -444,7 +485,10 @@ export function describeActiveContext(profile: ContextProfile): string {
     .map((l) => `${LINK_NAMES[l.type]} ${l.label}`);
   const study = profile.study;
   return [
-    `Active context: ${profile.name} (${profile.kind}) id=${profile.id}`,
+    `Active context: ${contextLabel(profile)} (${profile.kind}) id=${profile.id}`,
+    profile.section
+      ? `It is the "${profile.name}" Section of the "${profile.section.parentName}" Knowledge Space: its own sources come first, the Space's general sources are inherited.`
+      : null,
     profile.aliases.length ? `Aliases: ${profile.aliases.join(", ")}` : null,
     profile.description ? `About: ${profile.description.slice(0, 300)}` : null,
     hints.length ? `Where it lives: ${hints.join("; ")}` : "Where it lives: no linked sources yet",

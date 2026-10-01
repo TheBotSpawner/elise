@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import type { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -1426,5 +1428,102 @@ describe("shortcuts and voice preferences", () => {
         alice.userId,
       ]),
     ).rejects.toThrow();
+  });
+});
+
+describe("knowledge sections", () => {
+  const as = <T>(u: { userId: string }, sql: string, args: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, args));
+  const space = async (u: { workspaceId: string }, name: string, parent: string | null = null) =>
+    (
+      await db.query<{ id: string }>(
+        `insert into public.knowledge_spaces (workspace_id, name, parent_space_id) values ($1, $2, $3) returning id`,
+        [u.workspaceId, name, parent],
+      )
+    ).rows[0]!.id;
+  const profile = (
+    u: { userId: string; workspaceId: string },
+    name: string,
+    section: string | null,
+    kind = "study",
+  ) =>
+    as<{ id: string }>(
+      u,
+      `insert into public.context_profiles (workspace_id, kind, name, name_key, knowledge_space_id)
+       values ($1, $2, $3, lower($3), $4) returning id`,
+      [u.workspaceId, kind, name, section],
+    );
+
+  it("same-named Sections live in different Spaces; standalone names stay unique", async () => {
+    const utn = await space(alice, "UTN-s");
+    const posgrado = await space(alice, "Posgrado-s");
+    const a1 = await space(alice, "Administración", utn);
+    const a2 = await space(alice, "Administración", posgrado);
+    await profile(alice, "Administración", a1);
+    await profile(alice, "Administración", a2);
+    // One context per Section.
+    await expect(profile(alice, "Otra", a1)).rejects.toThrow(/duplicate|unique/);
+    await profile(alice, "Contabilidad-s", null);
+    await expect(profile(alice, "Contabilidad-s", null)).rejects.toThrow(/duplicate|unique/);
+  });
+
+  it("a Section's context belongs to its own workspace and only its members see it", async () => {
+    const theirs = await space(bob, "Bob private");
+    const bobSection = await space(bob, "Inner", theirs);
+    await expect(profile(alice, "Steal", bobSection)).rejects.toThrow();
+    const mine = await space(alice, "Firbot-s");
+    const rsfa = await space(alice, "RSFA-s", mine);
+    await profile(alice, "RSFA-s", rsfa, "client");
+    expect(
+      (
+        await as(bob, "select id from public.context_profiles where knowledge_space_id = $1", [
+          rsfa,
+        ])
+      ).rows,
+    ).toHaveLength(0);
+  });
+
+  it("transitional mapping attaches a standalone context only when it is unambiguous", async () => {
+    const utn = await space(alice, "UTN-m");
+    const legis = await space(alice, "legislacion-m", utn);
+    const other = await space(alice, "sistemas-m", utn);
+    // Exactly one confirmed link to a same-named Section → attached, with its study progress.
+    const p1 = (await profile(alice, "legislacion-m", null)).rows[0]!.id;
+    await as(
+      alice,
+      `insert into public.context_links (workspace_id, context_profile_id, link_type, resource_id, label) values ($1, $2, 'knowledge_space', $3, 'x')`,
+      [alice.workspaceId, p1, legis],
+    );
+    await as(
+      alice,
+      `insert into public.study_concepts (workspace_id, user_id, context_profile_id, label, label_key) values ($1, $2, $3, 'Ley', 'ley')`,
+      [alice.workspaceId, alice.userId, p1],
+    );
+    // A name that doesn't match its linked Section stays standalone.
+    const p2 = (await profile(alice, "Algo distinto-m", null)).rows[0]!.id;
+    await as(
+      alice,
+      `insert into public.context_links (workspace_id, context_profile_id, link_type, resource_id, label) values ($1, $2, 'knowledge_space', $3, 'x')`,
+      [alice.workspaceId, p2, other],
+    );
+    const sql = readFileSync("supabase/migrations/20261002000021_knowledge_sections.sql", "utf8");
+    await db.exec(sql.slice(sql.indexOf("with candidates as")));
+    const rows = (
+      await db.query<{ id: string; knowledge_space_id: string | null }>(
+        "select id, knowledge_space_id from public.context_profiles where id = any($1)",
+        [[p1, p2]],
+      )
+    ).rows;
+    expect(rows.find((r) => r.id === p1)?.knowledge_space_id).toBe(legis);
+    expect(rows.find((r) => r.id === p2)?.knowledge_space_id).toBeNull();
+    // Nothing was lost: links and progress are still there.
+    expect(
+      (await db.query("select id from public.study_concepts where context_profile_id = $1", [p1]))
+        .rows,
+    ).toHaveLength(1);
+    expect(
+      (await db.query("select id from public.context_links where context_profile_id = $1", [p2]))
+        .rows,
+    ).toHaveLength(1);
   });
 });

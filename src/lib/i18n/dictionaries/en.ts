@@ -387,6 +387,7 @@ export const en = {
       linksCount: (n: number) => `${n} ${n === 1 ? "source" : "sources"}`,
       suggested: "suggested",
       progress: "Study progress",
+      thisSection: "This section",
     },
   },
   native: {
@@ -565,6 +566,39 @@ export const en = {
   },
   knowledge: {
     title: "Knowledge",
+    breadcrumb: "Location",
+    sections: {
+      title: "Sections",
+      new: "New section",
+      createFirst: "Create the first section",
+      empty: "Organize this Space into subjects, clients, projects or other specific topics.",
+      createTitle: (space: string) => `New section in ${space}`,
+      createBody:
+        "A part of this Space with its own sources. It also uses the Space's general material.",
+      name: "Name",
+      namePlaceholder: "Administración, RSFA, Onboarding…",
+      purposeQuestion: "What will you use this section for?",
+      purpose: "Purpose",
+      purposes: { study: "Study", client: "Client", project: "Project", general: "General" },
+      purposeHints: {
+        study: "A subject: oral exams, quizzes, progress and weak areas.",
+        client: "A client or account: briefs, meetings, commitments and people.",
+        project: "A project: its documents, tasks and updates.",
+        general: "Any other topic. You can change it later.",
+      },
+      create: "Create section",
+      generalSources: "General sources",
+      generalSourcesHint: "Material for the whole Space. Every section also draws on it.",
+      sectionSourcesHint: (space: string) =>
+        `This section's own material. ELISE also uses ${space}'s general sources when relevant.`,
+      context: "Connected context",
+      contextHint:
+        "Where this section's world lives — email, tasks, people, Notion, websites. It guides where ELISE looks; it never grants access.",
+      move: "Move",
+      moveTitle: (title: string) => `Move “${title}”`,
+      moveTo: "Move to",
+      moved: "Moved",
+    },
     subtitle: "What ELISE understands from your documents, organized in Spaces.",
     emptyTitle: "Give ELISE something to understand.",
     emptyBody:
@@ -1470,7 +1504,7 @@ export const en = {
       },
       switch: "Switch context",
       clear: "Clear context",
-      manage: "Manage contexts",
+      manage: "Spaces and sections",
       since: (d: string) => `Since ${d}`,
       basis: {
         user: "the date you gave",

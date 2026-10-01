@@ -14,7 +14,8 @@ export type ContextOption = Omit<ActiveContext, "turn">;
 
 /**
  * The interaction's active context (ADR-016 §6): a small pill, never a header. Click to
- * switch to another context or clear it; managing contexts lives under My Elise.
+ * switch to another context or clear it. A Section reads "UTN › Administración" (ADR-018);
+ * Sections are managed in Knowledge.
  */
 export function ContextIndicator({
   context,
@@ -56,7 +57,7 @@ export function ContextIndicator({
         aria-label={`${c.label}: ${context.name}. ${c.switch}`}
         disabled={disabled}
         onClick={() => setOpen(!open)}
-        className="inline-flex h-8 max-w-[260px] items-center gap-2 rounded-full border border-border bg-[var(--menu-bg)] px-3 text-[13px] backdrop-blur transition-colors hover:border-border-strong disabled:opacity-60"
+        className="inline-flex h-8 max-w-[320px] items-center gap-2 rounded-full border border-border bg-[var(--menu-bg)] px-3 text-[13px] backdrop-blur transition-colors hover:border-border-strong disabled:opacity-60"
       >
         <span
           aria-hidden
@@ -115,7 +116,7 @@ export function ContextIndicator({
               {c.clear}
             </button>
             <Link
-              href="/my-elise/contexts"
+              href="/knowledge"
               role="menuitem"
               className="rounded-xl px-3 py-2 text-[13px] text-accent-text hover:bg-surface-2"
             >

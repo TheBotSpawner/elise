@@ -275,14 +275,19 @@ database is needed.
   archiving asks first and bulk changes always need approval with count and examples. Renamed
   fields are followed; removed or retyped fields mark the database as needing attention. Record
   content is treated as data. Document questions still go to Knowledge.
-- **Context Profiles:** the areas of your world (a subject, a client, a project) and where each
-  one lives — Knowledge Spaces, email domains, task lists, Notion sources, people, websites.
-  "RSFA es uno de mis clientes" proposes the links found by name (you confirm them on screen);
-  ELISE recognizes the context from what you say ("poneme al día con RSFA", "¿qué le debemos a
-  Rod?"), keeps it for follow-ups, asks when two match, and lets it fade when you move on. A
-  context only tells ELISE where to look first: every source keeps its own permissions and
-  approvals. Managed in My Elise › Contexts. See
-  [ADR-016](docs/decisions/ADR-016-context-profiles-study-work.md).
+- **Spaces and Sections:** Knowledge is organized as Spaces with one level of Sections —
+  "UTN › Administración", "Firbot Solutions › RSFA". "+ New section" sits on every Space page; a
+  Section has its own sources, inherits the Space's general sources at search time (its own come
+  first; sibling Sections are never mixed in), and carries its context: purpose (Study, Client,
+  Project, General), connected email domains, people, task lists, Notion and websites, study
+  progress. ELISE recognizes Sections from what you say ("poneme al día con RSFA", "volvamos a
+  Administración"; asks when two Spaces have a Section with the same name), shows the active one
+  as "Space › Section", and "RSFA es uno de mis clientes en Firbot Solutions" proposes a Section
+  with the links it found (you confirm on screen). A context only tells ELISE where to look
+  first: every source keeps its own permissions and approvals. Uploaded documents can be moved
+  between a Space and its Sections. See
+  [ADR-018](docs/decisions/ADR-018-knowledge-sections.md) (built on
+  [ADR-016](docs/decisions/ADR-016-context-profiles-study-work.md)).
 - **Client / Work Intelligence:** "Poneme al día con RSFA" gathers what changed since your last
   interaction about it (email, meetings, tasks, documents, earlier conversations, linked Notion
   data; public news only if you ask), with quoted commitments ("Rod asked for…"), a timeline,

@@ -5,6 +5,8 @@ import { buildContextPackage } from "@/core/agents/context";
 import type { ToolCallOutcome } from "@/core/agents/executor";
 import { runElise, toolNotes } from "@/core/agents/runtime";
 import {
+  activeContextOf,
+  contextLabel,
   describeActiveContext,
   resolveContext,
   type ContextProfile,
@@ -122,6 +124,19 @@ export async function startChatTurn(
   // The interaction's Live Workspace: untouched Surfaces decay at the start of each turn.
   const workspace = await openWorkspaceSession(auth, thread.ref, thread.isNew);
   workspace.apply([{ op: "turn", at: new Date().toISOString() }]);
+  // "Ask ELISE" from a Section starts the conversation in that Section's context (ADR-018).
+  const sectionContext =
+    thread.isNew && activeSpace
+      ? contexts.profiles.find((p) => p.section?.spaceId === activeSpace.id)
+      : undefined;
+  if (sectionContext) {
+    workspace.apply([
+      { op: "context", context: activeContextOf(sectionContext), at: new Date().toISOString() },
+    ]);
+    await associateInteraction(auth, sectionContext.id, thread.ref, "activated").catch(
+      () => undefined,
+    );
+  }
   // Which area of the user's world this message is about (ADR-016 §5), after the turn's decay.
   const contextHint = await resolveTurnContext(
     auth,
@@ -534,7 +549,7 @@ async function resolveTurnContext(
     workspace.apply([
       {
         op: "context",
-        context: { id: p.id, name: p.name, kind: p.kind, accent: p.accent },
+        context: activeContextOf(p),
         at: new Date().toISOString(),
       },
     ]);
@@ -550,7 +565,7 @@ async function resolveTurnContext(
   }
   if (r.kind === "ambiguous") {
     logger.info("context.resolution_ambiguous", { candidates: r.candidates.length });
-    return `This message may be about several contexts (${r.candidates.map((c) => c.name).join(", ")}). If it matters for the answer, ask which one before using any of them.`;
+    return `This message may be about several contexts (${r.candidates.map(contextLabel).join(", ")}). If it matters for the answer, ask which one before using any of them.`;
   }
   return null;
 }
