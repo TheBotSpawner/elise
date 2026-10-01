@@ -39,6 +39,7 @@ export async function getWorkspaceAction(thread: ThreadRef): Promise<Result<Work
 
 const userOp = z.discriminatedUnion("op", [
   z.object({ op: z.literal("focus"), id: id.nullable() }),
+  z.object({ op: z.literal("context"), contextId: z.uuid().nullable() }),
   z.object({ op: z.literal("dismiss"), id }),
   z.object({ op: z.literal("resize"), id, size: z.enum(SURFACE_SIZES) }),
   z.object({

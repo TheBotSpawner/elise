@@ -907,6 +907,129 @@ export type LiveWorkspaceRow = {
   updated_at: Ts;
   expires_at: Ts;
   created_at: Ts;
+  context_profile_id: string | null;
+  context_turn: number;
+};
+
+type ContextKindCol = "study" | "client" | "project" | "work" | "custom";
+
+export type ContextProfileRow = {
+  id: string;
+  workspace_id: string;
+  kind: ContextKindCol;
+  name: string;
+  name_key: string;
+  description: string | null;
+  aliases: string[];
+  icon: string | null;
+  accent: string | null;
+  status: "active" | "archived";
+  instructions: string | null;
+  study_target_date: string | null;
+  study_objective: string | null;
+  study_level: string | null;
+  source: "user_ui" | "ai" | "system";
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type ContextLinkRow = {
+  id: string;
+  workspace_id: string;
+  context_profile_id: string;
+  link_type: string;
+  resource_id: string | null;
+  value: string | null;
+  label: string;
+  confirmed: boolean;
+  source: "user_ui" | "ai" | "system";
+  metadata: Json;
+  created_at: Ts;
+};
+
+export type EntityRow = {
+  id: string;
+  workspace_id: string;
+  entity_type: "person" | "organization";
+  name: string;
+  name_key: string;
+  aliases: string[];
+  emails: string[];
+  domains: string[];
+  organization_id: string | null;
+  source: "user_ui" | "ai" | "system";
+  confirmed: boolean;
+  metadata: Json;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type ContextInteractionRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  context_profile_id: string;
+  conversation_id: string | null;
+  session_id: string | null;
+  source: "activated" | "study" | "meeting" | "backfill";
+  first_at: Ts;
+  last_at: Ts;
+};
+
+export type StudyConceptRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  context_profile_id: string;
+  label: string;
+  label_key: string;
+  summary: string | null;
+  source_refs: Json;
+  status: "not_reviewed" | "learning" | "understood" | "needs_review";
+  score: number;
+  attempts: number;
+  last_assessment: "strong" | "partial" | "needs_review" | null;
+  last_reviewed_at: Ts | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type StudySessionRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  context_profile_id: string;
+  conversation_id: string | null;
+  session_id: string | null;
+  mode: "review" | "oral_exam" | "quiz";
+  status: "active" | "completed" | "abandoned";
+  scope: Json;
+  preferences: Json;
+  current: Json | null;
+  question_count: number;
+  summary: Json | null;
+  started_at: Ts;
+  last_activity_at: Ts;
+  ended_at: Ts | null;
+};
+
+export type StudyAttemptRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  study_session_id: string;
+  concept_id: string | null;
+  concept_label: string;
+  question: string;
+  answer: string;
+  assessment: "strong" | "partial" | "needs_review";
+  feedback: Json;
+  hints_used: number;
+  source_refs: Json;
+  created_at: Ts;
 };
 
 export type Database = {
@@ -934,6 +1057,34 @@ export type Database = {
         "workspace_id"
       >;
       live_workspaces: Table<LiveWorkspaceRow, "workspace_id" | "user_id">;
+      context_profiles: Table<ContextProfileRow, "workspace_id" | "kind" | "name" | "name_key">;
+      context_links: Table<
+        ContextLinkRow,
+        "workspace_id" | "context_profile_id" | "link_type" | "label"
+      >;
+      entities: Table<EntityRow, "workspace_id" | "entity_type" | "name" | "name_key">;
+      context_interactions: Table<
+        ContextInteractionRow,
+        "workspace_id" | "user_id" | "context_profile_id" | "source"
+      >;
+      study_concepts: Table<
+        StudyConceptRow,
+        "workspace_id" | "user_id" | "context_profile_id" | "label" | "label_key"
+      >;
+      study_sessions: Table<
+        StudySessionRow,
+        "workspace_id" | "user_id" | "context_profile_id" | "mode"
+      >;
+      study_attempts: Table<
+        StudyAttemptRow,
+        | "workspace_id"
+        | "user_id"
+        | "study_session_id"
+        | "concept_label"
+        | "question"
+        | "answer"
+        | "assessment"
+      >;
       messages: Table<MessageRow, "conversation_id" | "workspace_id" | "role" | "content">;
       ai_runs: Table<AiRunRow, "workspace_id" | "user_id" | "ai_provider" | "model_key">;
       task_lists: Table<TaskListRow, "workspace_id" | "name">;
@@ -1115,6 +1266,7 @@ export type Database = {
           p_to?: string | null;
           p_exclude_session?: string | null;
           p_limit?: number;
+          p_context?: string | null;
         };
         Returns: {
           chunk_id: string;

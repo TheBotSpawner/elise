@@ -79,6 +79,30 @@ async function resolveScope(
   return { spaces, spaceIds: null, names: ["All Knowledge"] };
 }
 
+/**
+ * The active context's linked Spaces and documents (ADR-016 §7), when nothing narrower was
+ * asked for. A routing hint, not a wall: an empty result falls back to all Knowledge.
+ */
+async function contextScope(env: ToolRunEnv, spaces: SpaceInfo[]) {
+  if (!env.ctx.context) return null;
+  try {
+    const profile = (await env.providers.get("contexts", env.binding).list()).find(
+      (p) => p.id === env.ctx.context!.id,
+    );
+    const links = profile?.links.filter((l) => l.confirmed) ?? [];
+    const spaceIds = links.filter((l) => l.type === "knowledge_space").map((l) => l.resourceId!);
+    const itemIds = links.filter((l) => l.type === "knowledge_item").map((l) => l.resourceId!);
+    if (!spaceIds.length && !itemIds.length) return null;
+    return {
+      name: profile!.name,
+      spaceIds: spaceIds.length ? withDescendants(spaces, spaceIds) : null,
+      itemIds: itemIds.length && !spaceIds.length ? itemIds : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function toEvidence(hits: KnowledgeHit[]): KnowledgeEvidence[] {
   return hits.map((h, i) => ({
     ref: i + 1,
@@ -121,13 +145,26 @@ export const searchKnowledgeTool: ToolDefinition = {
   },
   async run(raw, env) {
     const q = searchInput.parse(raw);
-    const scope = await resolveScope(env, q);
-    const { hits, semantic } = await reader(env).search({
-      text: q.query,
-      spaceIds: scope.spaceIds,
-      itemIds: q.itemId ? [q.itemId] : null,
-      limit: RETRIEVAL.candidates,
-    });
+    let scope = await resolveScope(env, q);
+    const byContext =
+      !q.space && !q.itemId && !q.everywhere && !scope.spaceIds
+        ? await contextScope(env, scope.spaces)
+        : null;
+    let fallback = false;
+    const search = (spaceIds: string[] | null, itemIds: string[] | null) =>
+      reader(env).search({ text: q.query, spaceIds, itemIds, limit: RETRIEVAL.candidates });
+    let { hits, semantic } = byContext
+      ? await search(byContext.spaceIds, byContext.itemIds)
+      : await search(scope.spaceIds, q.itemId ? [q.itemId] : null);
+    if (byContext) {
+      if (selectEvidence(hits).length) {
+        scope = { ...scope, names: [`${byContext.name} (context)`] };
+      } else {
+        // Nothing in the context's sources: look everywhere, and say so.
+        ({ hits, semantic } = await search(null, null));
+        fallback = true;
+      }
+    }
     const selected = selectEvidence(hits);
     const evidence = toEvidence(selected);
     const enough = evidence.length > 0;
@@ -136,6 +173,11 @@ export const searchKnowledgeTool: ToolDefinition = {
         scope: scope.names,
         enoughEvidence: enough,
         ...(semantic ? {} : { note: "Only keyword matching was available for this search." }),
+        ...(fallback
+          ? {
+              contextNote: `Nothing in the ${byContext!.name} context's sources; these results come from all Knowledge — say so.`,
+            }
+          : {}),
         instructions: enough
           ? "Answer from these passages only and cite them inline as [n] with the document name. If they only partly answer, say what is missing. Say when something comes from general knowledge instead."
           : `The ${scope.spaceIds ? "selected Space" : "user's Knowledge"} does not contain enough evidence. Say so plainly; do not answer from general knowledge as if it came from their files.${scope.spaceIds ? " Offer to search all Knowledge." : ""}`,

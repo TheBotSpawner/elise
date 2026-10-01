@@ -64,6 +64,7 @@ export class SupabaseRecallReader implements RecallReader {
     to?: Date | null;
     excludeConversationId?: string | null;
     excludeSessionId?: string | null;
+    contextId?: string | null;
     limit: number;
   }) {
     let embedding: string | null = null;
@@ -88,6 +89,7 @@ export class SupabaseRecallReader implements RecallReader {
       p_to: q.to?.toISOString() ?? null,
       p_exclude_session: q.excludeSessionId ?? (await this.sessionOf(q.excludeConversationId)),
       p_limit: q.limit,
+      p_context: q.contextId ?? undefined,
     });
     if (error) throw error;
     return {

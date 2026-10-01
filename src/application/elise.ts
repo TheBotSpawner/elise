@@ -15,6 +15,7 @@ import { AppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
+import { CONTEXT_TOOLS } from "@/core/tools/contexts";
 import { EMAIL_TOOLS } from "@/core/tools/email";
 import { FINANCE_TOOLS } from "@/core/tools/finance";
 import { GOAL_TOOLS } from "@/core/tools/goals";
@@ -27,10 +28,11 @@ import { NOTE_TOOLS } from "@/core/tools/notes";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { SETTINGS_TOOLS } from "@/core/tools/settings";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
+import { STUDY_TOOLS } from "@/core/tools/study";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 import { WEB_TOOLS } from "@/core/tools/web";
 import { WORKSPACE_TOOLS } from "@/core/tools/workspace";
-import { getEmbeddingProvider } from "@/infrastructure/ai";
+import { getAIProvider, getEmbeddingProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
 import { EliseFinanceProvider } from "@/infrastructure/providers/elise-native/finance";
 import { EliseGoalsProvider } from "@/infrastructure/providers/elise-native/goals";
@@ -63,9 +65,11 @@ import { SupabaseKnowledgeReader } from "@/infrastructure/supabase/repositories/
 import { SupabaseRecallReader } from "@/infrastructure/supabase/repositories/recall";
 
 import type { AuthContext } from "./auth-context";
+import { contextStore } from "./contexts-service";
 import { syncNoteToKnowledge } from "./notes-knowledge";
 import { settingsStore } from "./settings-service";
 import { startStructuredBulk } from "./structured-bulk";
+import { studyStore } from "./study-service";
 import { webCapability } from "./web-service";
 
 /** Every tool ELISE can use. Exposure per run is filtered by available capabilities. */
@@ -86,6 +90,8 @@ export const toolRegistry = new ToolRegistry().register(
   ...WORKSPACE_TOOLS,
   ...MEETING_TOOLS,
   ...WEB_TOOLS,
+  ...CONTEXT_TOOLS,
+  ...STUDY_TOOLS,
 );
 
 /**
@@ -298,6 +304,34 @@ function providerFactory(
     // The public web: server-provided, per-workspace limits (ADR-015).
     web_search() {
       return webCapability(auth);
+    },
+    // Context Profiles (ADR-016): this workspace's organizational layer, through RLS. Task
+    // lists come from every connected provider, read through the executor like any read.
+    contexts() {
+      return contextStore(auth, async () => {
+        const outcome = await executeToolCall(
+          createExecutorPorts(auth),
+          toolContext(auth, "user_ui"),
+          { name: "tasks.listLists", args: {} },
+        );
+        return outcome.status === "succeeded" && outcome.display?.kind === "task_lists"
+          ? outcome.display.lists.map((l) => ({
+              id: l.id,
+              name: l.name,
+              source: l.provenance.source,
+            }))
+          : [];
+      });
+    },
+    // Study: the user's own sessions and progress, plus AI for questions and evaluation.
+    study() {
+      let ai: ReturnType<typeof getAIProvider> | null = null;
+      try {
+        ai = getAIProvider();
+      } catch {
+        ai = null;
+      }
+      return { store: studyStore(auth), ai };
     },
   };
 

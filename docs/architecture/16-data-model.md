@@ -2661,3 +2661,9 @@ Before merging migration:
 > Connections preserve external ownership.
 >
 > Runs, Actions and Audit preserve what happened.
+
+---
+
+# Implementation note (2026-10-01)
+
+Migration `20261001000019_contexts_study.sql` adds `context_profiles`, `context_links`, `entities`, `context_interactions`, `study_concepts`, `study_sessions` and `study_attempts`, and `live_workspaces.context_profile_id` (ADR-016). §92's "no universal context table yet" is superseded by real usage: Context Profiles organize, they never become a source of truth.

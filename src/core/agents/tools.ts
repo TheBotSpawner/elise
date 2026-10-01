@@ -32,12 +32,15 @@ import type {
 } from "../capabilities/structured";
 import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
+import type { ContextKind, ContextStore } from "../contexts/model";
 import type { KnowledgeReader } from "../knowledge/model";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
 import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
+import type { StudyPort } from "../study/model";
 import type { WebCapability } from "../web/model";
 import type { WorkspacePort } from "../workspace/port";
+import type { SurfacePayloads } from "../workspace/registry";
 
 export type ActionOrigin = "ai" | "user_ui" | "schedule" | "system";
 
@@ -57,6 +60,11 @@ export interface ToolContext {
   interactionSessionId?: string | null;
   /** The interaction's Live Workspace, when the request has one (ADR-013). */
   workspace?: WorkspacePort;
+  /**
+   * The interaction's active context (ADR-016): where to look first. Never an authorization —
+   * every read still resolves its own binding and permissions.
+   */
+  context?: { id: string; name: string; kind: ContextKind } | null;
 }
 
 /** Capability → provider contract. Grows as capabilities are implemented. */
@@ -78,6 +86,10 @@ export interface CapabilityProviders {
   settings: SettingsStore;
   /** The public web: search, read, and save to Knowledge when asked (ADR-015). */
   web_search: WebCapability;
+  /** Context Profiles and people: the organizational layer (ADR-016). */
+  contexts: ContextStore;
+  /** Study sessions and progress, plus AI for questions and evaluation (ADR-016). */
+  study: StudyPort;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -294,7 +306,23 @@ export type ToolDisplay =
       change: "archived" | "read" | "unread";
       count: number;
       source: string;
-    };
+    }
+  /** Contexts, Work and Study (ADR-016): the same shapes their Surfaces render. */
+  | {
+      kind: "context_profile";
+      overview: SurfacePayloads["context_overview"];
+      change: "created" | "updated" | "archived" | "activated" | "shown";
+    }
+  | { kind: "context_proposal"; proposal: SurfacePayloads["context_proposal"] }
+  | {
+      kind: "work_brief";
+      overview: SurfacePayloads["context_overview"];
+      commitments: SurfacePayloads["commitments"];
+      timeline: SurfacePayloads["timeline"];
+    }
+  | { kind: "study_question"; question: SurfacePayloads["study_question"] }
+  | { kind: "study_progress"; progress: SurfacePayloads["study_progress"] }
+  | { kind: "study_summary"; summary: SurfacePayloads["study_summary"] };
 
 export interface StructuredSourceRef {
   id: string;

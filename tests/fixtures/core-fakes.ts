@@ -14,6 +14,7 @@ import { AppError } from "@/core/errors";
 import { makeExternalRef } from "@/core/providers/refs";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
+import { CONTEXT_TOOLS } from "@/core/tools/contexts";
 import { EMAIL_TOOLS } from "@/core/tools/email";
 import { FINANCE_TOOLS } from "@/core/tools/finance";
 import { GOAL_TOOLS } from "@/core/tools/goals";
@@ -26,6 +27,7 @@ import { NOTE_TOOLS } from "@/core/tools/notes";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { SETTINGS_TOOLS } from "@/core/tools/settings";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
+import { STUDY_TOOLS } from "@/core/tools/study";
 import { TASK_TOOLS } from "@/core/tools/tasks";
 import { WEB_TOOLS } from "@/core/tools/web";
 import { WORKSPACE_TOOLS } from "@/core/tools/workspace";
@@ -240,6 +242,8 @@ export function makePorts(
       ...WORKSPACE_TOOLS,
       ...MEETING_TOOLS,
       ...WEB_TOOLS,
+      ...CONTEXT_TOOLS,
+      ...STUDY_TOOLS,
     ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>

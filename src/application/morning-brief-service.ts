@@ -17,9 +17,12 @@ import {
   type MorningBriefConfig,
 } from "@/core/schedules/schedule";
 import { toLocalDateTime } from "@/core/time";
+import { logger } from "@/infrastructure/observability/logger";
 
 import type { AuthContext } from "./auth-context";
+import { listContextProfiles, listEntities } from "./contexts-service";
 import { createExecutorPorts, toolContext } from "./elise";
+import { studyFocus } from "./study-service";
 import { OPEN_LIMIT } from "./tasks-service";
 
 type Source = "all" | string;
@@ -184,6 +187,26 @@ export async function gatherBrief(
   };
 }
 
+/** Context Profiles for "Today's focus"; the brief works without them. */
+async function briefContexts(auth: AuthContext): Promise<BriefData["contexts"] | null> {
+  try {
+    const [profiles, entities] = await Promise.all([listContextProfiles(auth), listEntities(auth)]);
+    if (!profiles.length) return null;
+    const review = await studyFocus(
+      auth,
+      profiles.filter((p) => p.kind === "study").map((p) => p.id),
+    );
+    return {
+      profiles,
+      entities,
+      review: new Map([...review].map(([id, v]) => [id, v.needsReview])),
+    };
+  } catch (error) {
+    logger.warn("brief.contexts_failed", { code: toAppError(error).code });
+    return null;
+  }
+}
+
 /** The Morning Brief action: deterministic gathering + ranking, then one synthesis call. */
 export function morningBriefHandler(deps: {
   authFor(workspaceId: string, userId: string): Promise<AuthContext>;
@@ -195,7 +218,11 @@ export function morningBriefHandler(deps: {
     const ports = createExecutorPorts(auth);
     const ctx: ToolContext = { ...toolContext(auth, "schedule"), timezone: schedule.timezone, now };
 
-    const gathered = await gatherBrief(ports, ctx, config);
+    const [gathered, contexts] = await Promise.all([
+      gatherBrief(ports, ctx, config),
+      briefContexts(auth),
+    ]);
+    if (contexts) gathered.data.contexts = contexts;
     if (gathered.approvalId)
       return { kind: "waiting_for_approval", approvalId: gathered.approvalId };
     if (gathered.failed === gathered.attempted) {

@@ -1861,3 +1861,9 @@ AI Runtime
 > Rules give control.
 >
 > Knowledge gives evidence.
+
+---
+
+# Implementation note (2026-10-01)
+
+Context Profiles, lightweight people/organization entities, the active context of an interaction, Study and Work Intelligence are implemented as described in [ADR-016](../decisions/ADR-016-context-profiles-study-work.md). Entity aliases, emails and domains are arrays on `entities` rather than separate `entity_aliases` / `entity_relationships` tables (§28-37); those can be extracted later without changing the tools.

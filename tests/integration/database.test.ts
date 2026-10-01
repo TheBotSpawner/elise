@@ -1190,3 +1190,172 @@ describe("web usage", () => {
     ).rejects.toThrow(/permission denied/);
   });
 });
+
+describe("context profiles", () => {
+  const as = <T>(u: { userId: string }, sql: string, args: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, args));
+
+  const space = async (u: { workspaceId: string }, name: string) =>
+    (
+      await db.query<{ id: string }>(
+        `insert into public.knowledge_spaces (workspace_id, name) values ($1, $2) returning id`,
+        [u.workspaceId, name],
+      )
+    ).rows[0]!.id;
+
+  const createProfile = async (
+    u: { userId: string; workspaceId: string },
+    name: string,
+    kind = "client",
+  ) =>
+    (
+      await as<{ id: string }>(
+        u,
+        `insert into public.context_profiles (workspace_id, kind, name, name_key) values ($1, $2, $3, lower($3)) returning id`,
+        [u.workspaceId, kind, name],
+      )
+    ).rows[0]!.id;
+
+  it("links only to records of its own workspace, and only valid values", async () => {
+    const rsfa = await createProfile(alice, "RSFA");
+    const mine = await space(alice, "RSFA");
+    const theirs = await space(bob, "Private");
+    await as(
+      alice,
+      `insert into public.context_links (workspace_id, context_profile_id, link_type, resource_id, label) values ($1, $2, 'knowledge_space', $3, 'RSFA')`,
+      [alice.workspaceId, rsfa, mine],
+    );
+    // Pointing at another workspace's Space is refused even though the id exists.
+    await expect(
+      as(
+        alice,
+        `insert into public.context_links (workspace_id, context_profile_id, link_type, resource_id, label) values ($1, $2, 'knowledge_space', $3, 'x')`,
+        [alice.workspaceId, rsfa, theirs],
+      ),
+    ).rejects.toThrow(/invalid context link/);
+    await expect(
+      as(
+        alice,
+        `insert into public.context_links (workspace_id, context_profile_id, link_type, value, label) values ($1, $2, 'email_domain', 'not a domain', 'x')`,
+        [alice.workspaceId, rsfa],
+      ),
+    ).rejects.toThrow(/invalid context link/);
+    // Bob can't link into Alice's profile, nor read it.
+    await expect(
+      as(
+        bob,
+        `insert into public.context_links (workspace_id, context_profile_id, link_type, value, label) values ($1, $2, 'keyword', 'hack', 'hack')`,
+        [bob.workspaceId, rsfa],
+      ),
+    ).rejects.toThrow();
+    expect((await as(bob, "select id from public.context_profiles")).rows).toHaveLength(0);
+    expect((await as(bob, "select id from public.context_links")).rows).toHaveLength(0);
+  });
+
+  it("names are unique per workspace; one email belongs to one person", async () => {
+    await createProfile(alice, "Firbot", "work");
+    await expect(createProfile(alice, "Firbot", "work")).rejects.toThrow(/duplicate|unique/);
+    await createProfile(bob, "Firbot", "work");
+    const person = `insert into public.entities (workspace_id, entity_type, name, name_key, emails) values ($1, 'person', $2, lower($2), $3)`;
+    await as(alice, person, [alice.workspaceId, "Rod Schubert", ["rod@rsfa.co.nz"]]);
+    await expect(
+      as(alice, person, [alice.workspaceId, "Rod S.", ["rod@rsfa.co.nz"]]),
+    ).rejects.toThrow(/only one person/);
+    // Two people named Chris stay two people.
+    await as(alice, person, [alice.workspaceId, "Chris", ["chris@a.com"]]);
+    await as(alice, person, [alice.workspaceId, "Chris", ["chris@b.com"]]);
+  });
+
+  it("study progress is private to its author and only for study contexts", async () => {
+    const subject = await createProfile(alice, "Administracion", "study");
+    const client = await createProfile(alice, "Not a subject");
+    const concept = `insert into public.study_concepts (workspace_id, user_id, context_profile_id, label, label_key) values ($1, $2, $3, 'Weber', 'weber')`;
+    await expect(as(alice, concept, [alice.workspaceId, alice.userId, client])).rejects.toThrow(
+      /study context/,
+    );
+    await as(alice, concept, [alice.workspaceId, alice.userId, subject]);
+    const session = (
+      await as<{ id: string }>(
+        alice,
+        `insert into public.study_sessions (workspace_id, user_id, context_profile_id, mode) values ($1, $2, $3, 'oral_exam') returning id`,
+        [alice.workspaceId, alice.userId, subject],
+      )
+    ).rows[0]!.id;
+    const attempt = `insert into public.study_attempts (workspace_id, user_id, study_session_id, concept_label, question, answer, assessment) values ($1, $2, $3, 'Weber', 'q', 'a', 'partial')`;
+    await as(alice, attempt, [alice.workspaceId, alice.userId, session]);
+    expect((await as(bob, "select id from public.study_concepts")).rows).toHaveLength(0);
+    expect((await as(bob, "select id from public.study_attempts")).rows).toHaveLength(0);
+    await expect(as(bob, attempt, [bob.workspaceId, bob.userId, session])).rejects.toThrow();
+  });
+
+  it("scopes Recall to a context and keeps the active context in its workspace", async () => {
+    const ctx = await createProfile(alice, "Scoped");
+    const make = async (text: string) => {
+      const conv = (
+        await db.query<{ id: string }>(
+          `insert into public.conversations (workspace_id, user_id, title) values ($1, $2, 't') returning id`,
+          [alice.workspaceId, alice.userId],
+        )
+      ).rows[0]!.id;
+      const session = (
+        await db.query<{ id: string }>(
+          `insert into public.interaction_sessions (workspace_id, user_id, modality, conversation_id) values ($1, $2, 'text', $3) returning id`,
+          [alice.workspaceId, alice.userId, conv],
+        )
+      ).rows[0]!.id;
+      await db.query(
+        `insert into public.recall_chunks (workspace_id, user_id, session_id, chunk_index, started_at, ended_at, content, content_hash) values ($1, $2, $3, 0, now(), now(), $4, 'h')`,
+        [alice.workspaceId, alice.userId, session, text],
+      );
+      return { conv, session };
+    };
+    const inside = await make("User: zanzibar pricing inside");
+    const outside = await make("User: zanzibar pricing outside");
+    await as(
+      alice,
+      `insert into public.context_interactions (workspace_id, user_id, context_profile_id, conversation_id, source) values ($1, $2, $3, $4, 'activated')`,
+      [alice.workspaceId, alice.userId, ctx, inside.conv],
+    );
+    const search = (context: string | null) =>
+      as<{ session_id: string }>(
+        alice,
+        `select * from public.search_recall_chunks($1, $2, 'zanzibar', null, 'none', null, null, null, 10, $3)`,
+        [alice.workspaceId, alice.userId, context],
+      );
+    expect((await search(ctx)).rows.map((r) => r.session_id)).toEqual([inside.session]);
+    expect((await search(null)).rows.map((r) => r.session_id).sort()).toEqual(
+      [inside.session, outside.session].sort(),
+    );
+    const foreign = await createProfile(bob, "Foreign");
+    await expect(
+      as(
+        alice,
+        `insert into public.live_workspaces (workspace_id, user_id, conversation_id, context_profile_id) values ($1, $2, $3, $4)`,
+        [alice.workspaceId, alice.userId, outside.conv, foreign],
+      ),
+    ).rejects.toThrow(/same workspace/);
+  });
+
+  it("deleting a context removes only the organizational layer", async () => {
+    const ctx = await createProfile(alice, "Temporary");
+    const task = (
+      await db.query<{ id: string }>(
+        `insert into public.tasks (workspace_id, title) values ($1, 'Keep me') returning id`,
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    await as(
+      alice,
+      `insert into public.context_links (workspace_id, context_profile_id, link_type, value, label) values ($1, $2, 'keyword', 'temp', 'temp')`,
+      [alice.workspaceId, ctx],
+    );
+    await as(alice, `delete from public.context_profiles where id = $1`, [ctx]);
+    expect(
+      (await db.query(`select id from public.context_links where context_profile_id = $1`, [ctx]))
+        .rows,
+    ).toHaveLength(0);
+    expect((await db.query(`select id from public.tasks where id = $1`, [task])).rows).toHaveLength(
+      1,
+    );
+  });
+});

@@ -123,6 +123,15 @@ export function useWorkspaceController({
     [userOp],
   );
 
+  /** The context indicator: switch or clear (validated again on the server). */
+  const setContext = useCallback(
+    (c: Omit<NonNullable<WorkspaceState["context"]>, "turn"> | null) =>
+      userOp({ op: "context", contextId: c?.id ?? null }, (s) =>
+        applyOp(s, { op: "context", context: c, at: new Date().toISOString() }),
+      ),
+    [userOp],
+  );
+
   const expand = useCallback(
     (surface: Surface, itemId: string | null) => {
       setExpanded({ id: surface.id, itemId });
@@ -206,6 +215,7 @@ export function useWorkspaceController({
     expand,
     dismiss,
     focus,
+    setContext,
     runAction,
     loadDetail,
     showFromThread,

@@ -1,5 +1,6 @@
 import { listPendingApprovals } from "@/application/approvals-service";
 import { requireAuthContext } from "@/application/auth-context";
+import { contextOptions } from "@/application/contexts-service";
 import { loadVoiceSession } from "@/application/interaction-thread";
 import { listSpaces } from "@/application/knowledge-service";
 import { latestBrief } from "@/application/schedules-service";
@@ -25,12 +26,13 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
   const restored = voiceSession?.[0]
     ? { messages: voiceSession[0], workspace: voiceSession[1] }
     : null;
-  const [tasks, approvals, brief, resume] = await Promise.all([
+  const [tasks, approvals, brief, resume, contexts] = await Promise.all([
     // Same service and definitions as the Tasks screen, so the counts match what it lists.
     openTasks(auth).catch(() => null) /* ambient context never blocks Home */,
     listPendingApprovals(auth),
     latestBrief(auth).catch(() => null),
     activeWorkspace(auth).catch(() => null),
+    contextOptions(auth),
   ]);
   // Only a Space of this workspace can scope the conversation.
   const space = spaceId
@@ -51,6 +53,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
       timezone={auth.profile.timezone}
       workspaceId={auth.workspaceId}
       userName={auth.profile.displayName ?? ""}
+      contexts={contexts}
       space={
         space ? { id: space.id, path: space.path, icon: space.icon, color: space.color } : null
       }

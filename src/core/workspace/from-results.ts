@@ -348,6 +348,18 @@ function resultSurface(display: ToolDisplay, opts: PresentOptions, capability: s
   });
 }
 
+/** One overview per context: presenting it again (a brief after creation) updates it. */
+export function contextOverviewSurface(
+  overview: SurfacePayloads["context_overview"],
+  opts: PresentOptions,
+) {
+  return draft("context_overview", overview.contextId, overview, opts, {
+    title: overview.name,
+    source: { capability: "contexts", label: overview.name },
+    ref: { resource: "context_profile", id: overview.contextId },
+  });
+}
+
 /** Surfaces for one tool outcome (approvals included). Empty results make no Surface. */
 export function surfacesFromOutcome(
   toolName: string,
@@ -560,6 +572,59 @@ export function surfacesFromOutcome(
           { title: d.question, source: { capability: "web_search", label: null }, ref: null },
         ),
       );
+    case "context_profile":
+      return one(contextOverviewSurface(d.overview, opts));
+    case "context_proposal":
+      return one(
+        draft("context_proposal", d.proposal.name.toLowerCase(), d.proposal, opts, {
+          title: d.proposal.name,
+          source: { capability: "contexts", label: null },
+          ref: null,
+          ...(d.proposal.createdId ? {} : { state: "attention" as const }),
+        }),
+      );
+    case "work_brief":
+      return [
+        contextOverviewSurface(d.overview, opts),
+        d.commitments.items.length
+          ? draft("commitments", `${d.overview.contextId}:commitments`, d.commitments, opts, {
+              title: d.overview.name,
+              source: { capability: "contexts", label: d.overview.name },
+              ref: null,
+            })
+          : null,
+        d.timeline.entries.length
+          ? draft("timeline", `${d.overview.contextId}:timeline`, d.timeline, opts, {
+              title: d.overview.name,
+              source: { capability: "contexts", label: d.overview.name },
+              ref: null,
+            })
+          : null,
+      ].filter((s): s is SurfaceDraft => s !== null);
+    case "study_question":
+      return one(
+        draft("study_question", d.question.sessionId, d.question, opts, {
+          title: d.question.contextName,
+          source: { capability: "study", label: d.question.contextName },
+          ref: { resource: "study_session", id: d.question.sessionId },
+        }),
+      );
+    case "study_progress":
+      return one(
+        draft("study_progress", d.progress.contextId, d.progress, opts, {
+          title: d.progress.contextName,
+          source: { capability: "study", label: d.progress.contextName },
+          ref: { resource: "context_profile", id: d.progress.contextId },
+        }),
+      );
+    case "study_summary":
+      return one(
+        draft("study_summary", `${d.summary.contextName}:${d.summary.at}`, d.summary, opts, {
+          title: d.summary.contextName,
+          source: { capability: "study", label: d.summary.contextName },
+          ref: null,
+        }),
+      );
     case "schedule_proposal":
       return one(
         draft(
@@ -677,6 +742,9 @@ const INTENT_BY_CAPABILITY: Record<string, IntentKind> = {
   lists: "planning",
   notes: "planning",
   web: "research",
+  study: "study",
+  work: "work_brief",
+  contexts: "context_setup",
   settings: "settings",
   appearance: "settings",
   notifications: "settings",
@@ -688,5 +756,7 @@ const INTENT_BY_CAPABILITY: Record<string, IntentKind> = {
 export function intentForTool(toolName: string): IntentKind | null {
   const prefix = toolName.split(".")[0] ?? "";
   if (prefix === "ui") return null;
+  // Switching or looking at a context isn't setting one up.
+  if (/^contexts\.(activate|clear|get|list|findPeople)$/.test(toolName)) return "general";
   return INTENT_BY_CAPABILITY[prefix] ?? "general";
 }

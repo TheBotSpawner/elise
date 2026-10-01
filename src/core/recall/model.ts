@@ -47,6 +47,8 @@ export interface RecallReader {
     excludeConversationId?: string | null;
     /** A voice session in progress (it has no conversation). */
     excludeSessionId?: string | null;
+    /** Only interactions known to belong to this context (ADR-016 §8). */
+    contextId?: string | null;
     limit: number;
   }): Promise<{ hits: RecallHit[]; semantic: boolean }>;
   sessions(ids: string[]): Promise<RecallSession[]>;

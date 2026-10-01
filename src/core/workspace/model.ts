@@ -25,6 +25,13 @@ export const SURFACE_TYPES = [
   "web_source",
   "web_news",
   "web_research",
+  "context_overview",
+  "context_proposal",
+  "commitments",
+  "timeline",
+  "study_question",
+  "study_progress",
+  "study_summary",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
@@ -42,6 +49,9 @@ export const INTENT_KINDS = [
   "planning",
   "communication",
   "settings",
+  "study",
+  "work_brief",
+  "context_setup",
   "general",
 ] as const;
 export type IntentKind = (typeof INTENT_KINDS)[number];
@@ -61,6 +71,14 @@ export const ACTION_IDS = [
   "undo",
   "resume",
   "save",
+  "hint",
+  "next",
+  "reveal",
+  "end_session",
+  "review_weak",
+  "create_task",
+  "research",
+  "create_context",
   "expand",
 ] as const;
 export type ActionId = (typeof ACTION_IDS)[number];
@@ -84,7 +102,9 @@ export interface SurfaceRef {
     | "schedule"
     | "structured_bulk"
     | "settings"
-    | "web_page";
+    | "web_page"
+    | "context_profile"
+    | "study_session";
   id: string;
 }
 
@@ -131,10 +151,23 @@ export interface ActiveIntent {
   startedAt: string;
 }
 
+/**
+ * The area of the user's world this interaction is about (ADR-016 §6): separate from the
+ * intent, ephemeral, and never an authorization. `turn` is when it was last used.
+ */
+export interface ActiveContext {
+  id: string;
+  name: string;
+  kind: "study" | "client" | "project" | "work" | "custom";
+  accent: string | null;
+  turn: number;
+}
+
 export interface WorkspaceState {
   version: number;
   turn: number;
   intent: ActiveIntent | null;
+  context: ActiveContext | null;
   surfaces: Surface[];
   focusId: string | null;
   nextHandle: number;
@@ -152,6 +185,11 @@ export type WorkspaceOp =
   | { op: "dismiss"; id: string; at: string }
   | { op: "clear"; at: string }
   | { op: "intent"; intent: ActiveIntent; at: string }
+  /**
+   * The active context: the same id marks it used now; another id switches (the previous
+   * context's Surfaces leave, pending approvals stay); null clears it (Surfaces stay).
+   */
+  | { op: "context"; context: Omit<ActiveContext, "turn"> | null; at: string }
   /** A new user turn: Surfaces nobody has touched for a while decay away. */
   | { op: "turn"; at: string };
 
@@ -162,12 +200,15 @@ export const WORKSPACE_LIMITS = {
   /** Transient confirmations disappear after this (UI timer). */
   transientMs: 9_000,
   ttlMs: 12 * 3_600_000,
+  /** An active context nobody used for this many turns decays away (ADR-016 §6). */
+  contextDecayTurns: 6,
 } as const;
 
 export const emptyWorkspace = (): WorkspaceState => ({
   version: 0,
   turn: 0,
   intent: null,
+  context: null,
   surfaces: [],
   focusId: null,
   nextHandle: 1,
@@ -265,6 +306,26 @@ function reduce(state: WorkspaceState, op: WorkspaceOp): WorkspaceState {
         focusId: kept.some((s) => s.id === state.focusId) ? state.focusId : null,
       };
     }
+    case "context": {
+      const next = op.context;
+      if (!next) return state.context ? { ...state, context: null } : state;
+      if (state.context?.id === next.id) {
+        const same =
+          state.context.turn === state.turn &&
+          state.context.name === next.name &&
+          state.context.accent === next.accent;
+        return same ? state : { ...state, context: { ...next, turn: state.turn } };
+      }
+      // Another context: what belonged to the previous one leaves (approvals stay).
+      const kept = state.context ? state.surfaces.filter(sticky) : state.surfaces;
+      return {
+        ...state,
+        context: { ...next, turn: state.turn },
+        surfaces: kept,
+        intent: state.context ? null : state.intent,
+        focusId: kept.some((s) => s.id === state.focusId) ? state.focusId : null,
+      };
+    }
     case "turn": {
       const turn = state.turn + 1;
       const kept = state.surfaces.filter(
@@ -276,6 +337,10 @@ function reduce(state: WorkspaceState, op: WorkspaceOp): WorkspaceState {
         surfaces: kept,
         focusId: kept.some((s) => s.id === state.focusId) ? state.focusId : null,
         intent: kept.length ? state.intent : null,
+        context:
+          state.context && turn - state.context.turn < WORKSPACE_LIMITS.contextDecayTurns
+            ? state.context
+            : null,
       };
     }
   }

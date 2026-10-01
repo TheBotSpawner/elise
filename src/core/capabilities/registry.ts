@@ -198,6 +198,42 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       saveToKnowledge: WRITE,
     },
   },
+  // Context Profiles (ADR-016): an organizational layer over the user's data. Proposing,
+  // activating and briefing only read (each source under its own permissions); creating or
+  // changing a profile is an audited write; archiving asks when ELISE proposes it.
+  contexts: {
+    key: "contexts",
+    status: "available",
+    internal: true,
+    operations: {
+      list: READ,
+      get: READ,
+      propose: READ,
+      activate: READ,
+      clear: READ,
+      findPeople: READ,
+      brief: READ,
+      create: WRITE,
+      update: WRITE,
+      archive: ARCHIVE,
+    },
+  },
+  // Study Mode (ADR-016): sessions and progress are the user's own learning records.
+  study: {
+    key: "study",
+    status: "available",
+    internal: true,
+    operations: {
+      progress: READ,
+      start: WRITE,
+      answer: WRITE,
+      hint: WRITE,
+      next: WRITE,
+      reveal: WRITE,
+      configure: WRITE,
+      end: WRITE,
+    },
+  },
   voice: { key: "voice", status: "planned", operations: {} },
   // Proposing a Schedule from chat changes nothing: the user confirms on a card. Pausing or
   // resuming one is a reversible, audited write.

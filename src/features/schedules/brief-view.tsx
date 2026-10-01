@@ -180,6 +180,38 @@ export function BriefView({
         empty && <p className="text-muted">{t.brief.nothing}</p>
       )}
 
+      {brief.focus && brief.focus.length > 0 && (
+        <Section label={t.brief.focus}>
+          <ul className="flex flex-col gap-2 text-[14px]">
+            {brief.focus.map((f) => (
+              <li key={f.name} className="flex flex-col gap-0.5">
+                <span className="font-medium">{f.name}</span>
+                <span className="flex flex-wrap gap-x-3 text-[13px] text-muted">
+                  {f.meetings.map((m) => (
+                    <span key={m.start + m.title}>
+                      <span className="font-mono text-[12.5px]">
+                        {time.format(new Date(m.start))}
+                      </span>{" "}
+                      {m.title}
+                    </span>
+                  ))}
+                  {f.tasks > 0 && <span>{t.brief.focusTasks(f.tasks)}</span>}
+                  {f.replies > 0 && <span>{t.brief.focusReplies(f.replies)}</span>}
+                  {f.examDate && (
+                    <span className="text-accent-text">{t.brief.focusExam(f.examDate)}</span>
+                  )}
+                  {f.review.length > 0 && (
+                    <span>
+                      {t.brief.focusReview}: {f.review.join(", ")}
+                    </span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
       {brief.today && (
         <Section label={t.brief.today}>
           {brief.today.events.length === 0 ? (

@@ -10,6 +10,7 @@ import { ORB_FLIGHT, ORB_LAYOUT_ID, useOrbPresence } from "@/components/elise/or
 import { resolveOrbState, type OrbState } from "@/components/elise/orb/orb-states";
 import { threadUrl, type ThreadRef } from "@/core/interaction";
 import { WORKSPACE_LIMITS, type WorkspaceState } from "@/core/workspace/model";
+import { ContextIndicator, type ContextOption } from "@/features/contexts/context-indicator";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
 import { useVoice } from "@/features/voice/use-voice";
 import { MicButton, VoiceBar } from "@/features/voice/voice-controls";
@@ -52,7 +53,10 @@ export function ChatSurface({
   space,
   workspaceId,
   initialWorkspace,
+  contexts = [],
 }: {
+  /** The user's Context Profiles, for switching from the indicator (ADR-016). */
+  contexts?: ContextOption[];
   /** For Realtime updates of this conversation's Live Workspace. */
   workspaceId: string;
   initialWorkspace?: WorkspaceState;
@@ -209,6 +213,16 @@ export function ChatSurface({
       )}
     >
       {voiceOn && <VoiceBar state={voiceSession.state} handlers={voiceHandlers} />}
+      {workspace.context && !empty && (
+        <div>
+          <ContextIndicator
+            context={workspace.context}
+            options={contexts}
+            disabled={busy}
+            onChange={controller.setContext}
+          />
+        </div>
+      )}
       <AnimatePresence initial={false}>
         {confirmations.map((s) => (
           <div key={s.id} className="pointer-events-auto">

@@ -63,6 +63,13 @@ const searchInput = z
     query: z.string().trim().min(2).max(300).describe("What to look for, in the user's words."),
     ...range,
     limit: z.number().int().min(1).max(RECALL.maxResults).default(RECALL.maxResults),
+    context: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe("A context id: search its interactions first (defaults to the active context)."),
   })
   .strict();
 
@@ -80,21 +87,36 @@ export const searchHistoryTool: ToolDefinition = {
     const q = searchInput.parse(raw);
     const w = window(q, env);
     const r = reader(env);
-    const { hits } = await r.search({
-      text: q.query,
-      from: w.from,
-      to: w.to,
-      excludeConversationId: env.ctx.conversationId ?? null,
-      excludeSessionId: env.ctx.interactionSessionId ?? null,
-      limit: RECALL.candidates,
-    });
-    const sessions = await r.sessions([...new Set(hits.map((h) => h.sessionId))]);
-    const results = groupRecall(hits, sessions).slice(0, q.limit);
+    const find = async (contextId: string | null) => {
+      const { hits } = await r.search({
+        text: q.query,
+        from: w.from,
+        to: w.to,
+        excludeConversationId: env.ctx.conversationId ?? null,
+        excludeSessionId: env.ctx.interactionSessionId ?? null,
+        contextId,
+        limit: RECALL.candidates,
+      });
+      const sessions = await r.sessions([...new Set(hits.map((h) => h.sessionId))]);
+      return groupRecall(hits, sessions).slice(0, q.limit);
+    };
+    // The context's own interactions first (ADR-016 §8), then everything if none matched.
+    const contextId = q.context ?? env.ctx.context?.id ?? null;
+    let results = contextId ? await find(contextId) : [];
+    const scoped = results.length > 0;
+    if (!scoped) results = await find(null);
     const chronological = [...results].sort((a, b) => a.date.localeCompare(b.date));
     return {
       output: {
         enough: results.length > 0,
         ...(w.label ? { dates: w.label } : {}),
+        ...(contextId
+          ? {
+              scope: scoped
+                ? "interactions of the context"
+                : "all interactions (none of the context's matched)",
+            }
+          : {}),
         ...(results.length
           ? {
               // Oldest first: earliest idea → later decision → latest update.

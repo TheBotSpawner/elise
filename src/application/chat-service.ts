@@ -4,6 +4,12 @@ import { serverEnv } from "@/config/server-env";
 import { buildContextPackage } from "@/core/agents/context";
 import type { ToolCallOutcome } from "@/core/agents/executor";
 import { runElise, toolNotes } from "@/core/agents/runtime";
+import {
+  describeActiveContext,
+  resolveContext,
+  type ContextProfile,
+  type Entity,
+} from "@/core/contexts/model";
 import { AppError, toPublicError } from "@/core/errors";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
@@ -20,6 +26,7 @@ import type {
   ClientToolOutcome,
   ClientToolTrace,
 } from "./chat-protocol";
+import { associateInteraction, listContextProfiles, listEntities } from "./contexts-service";
 import {
   accountSummaries,
   availableCapabilities,
@@ -30,8 +37,9 @@ import {
 import { openThread } from "./interaction-thread";
 import { queueRecallIndex, searchRecall } from "./recall-service";
 import { structuredSourcesForChat } from "./structured-service";
+import { studyStore } from "./study-service";
 import { webSearchConfigured } from "./web-service";
-import { openWorkspaceSession, toClientOutcome } from "./workspace-service";
+import { openWorkspaceSession, toClientOutcome, type WorkspaceSession } from "./workspace-service";
 
 export interface ChatTurnInput {
   conversationId?: string;
@@ -69,9 +77,15 @@ export async function startChatTurn(
     spaceId: input.spaceId,
   });
   const [history, activeSpace] = await Promise.all([thread.history(), thread.activeSpace()]);
-  const [structuredSources, recallEvidence] = await Promise.all([
+  const [structuredSources, recallEvidence, contexts, studySession] = await Promise.all([
     capabilities.has("structured") ? structuredSourcesForChat(auth) : [],
     recallIntent(input.message) ? prefetchRecall(auth, input.message, thread.ref) : null,
+    loadContexts(auth),
+    thread.isNew
+      ? null
+      : studyStore(auth)
+          .activeSession(thread.ref)
+          .catch(() => null),
   ]);
 
   await thread.addUserTurn(input.message, modality, input.voice);
@@ -96,6 +110,15 @@ export async function startChatTurn(
   // The interaction's Live Workspace: untouched Surfaces decay at the start of each turn.
   const workspace = await openWorkspaceSession(auth, thread.ref, thread.isNew);
   workspace.apply([{ op: "turn", at: new Date().toISOString() }]);
+  // Which area of the user's world this message is about (ADR-016 §5), after the turn's decay.
+  const contextHint = await resolveTurnContext(
+    auth,
+    workspace,
+    thread.ref,
+    input.message,
+    contexts,
+  );
+  const activeProfile = contexts.profiles.find((p) => p.id === workspace.state().context?.id);
 
   const context = buildContextPackage({
     user: auth.profile,
@@ -110,6 +133,12 @@ export async function startChatTurn(
     workspace: describeWorkspace(workspace.state(), auth.profile.timezone),
     modality,
     web,
+    activeContext: activeProfile ? describeActiveContext(activeProfile) : null,
+    contexts: contexts.profiles
+      .filter((p) => p.id !== activeProfile?.id)
+      .map((p) => ({ name: p.name, kind: p.kind })),
+    contextHint,
+    studySession: describeStudy(studySession, contexts.profiles),
   });
   const encoder = new TextEncoder();
 
@@ -165,6 +194,11 @@ export async function startChatTurn(
             ...toolContext(auth, "ai", runId, thread.ref),
             knowledgeSpaceId: activeSpace?.id ?? null,
             workspace,
+            // Live: a context activated by a tool applies to the rest of the run.
+            get context() {
+              const c = workspace.state().context;
+              return c ? { id: c.id, name: c.name, kind: c.kind } : null;
+            },
           },
           instructions: context.instructions,
           input: context.input,
@@ -334,6 +368,72 @@ async function enforceRateLimit(auth: AuthContext) {
       "You're sending messages very quickly. Wait a moment and try again.",
     );
   }
+}
+
+/** Profiles and people for resolution; contexts never block a turn. */
+async function loadContexts(
+  auth: AuthContext,
+): Promise<{ profiles: ContextProfile[]; entities: Entity[] }> {
+  try {
+    const [profiles, entities] = await Promise.all([listContextProfiles(auth), listEntities(auth)]);
+    return { profiles, entities };
+  } catch (error) {
+    logger.warn("context.load_failed", {
+      code: error instanceof AppError ? error.code : "UNKNOWN",
+    });
+    return { profiles: [], entities: [] };
+  }
+}
+
+/**
+ * One clear match activates (or keeps) the context; two comparable ones become a question for
+ * the model to ask; nothing matching leaves the active context to decay on its own.
+ */
+async function resolveTurnContext(
+  auth: AuthContext,
+  workspace: WorkspaceSession,
+  thread: ThreadRef,
+  message: string,
+  contexts: { profiles: ContextProfile[]; entities: Entity[] },
+): Promise<string | null> {
+  if (!contexts.profiles.length) return null;
+  const active = workspace.state().context;
+  const r = resolveContext({ message, ...contexts, activeId: active?.id ?? null });
+  if (r.kind === "match") {
+    const p = r.profile;
+    workspace.apply([
+      {
+        op: "context",
+        context: { id: p.id, name: p.name, kind: p.kind, accent: p.accent },
+        at: new Date().toISOString(),
+      },
+    ]);
+    if (p.id !== active?.id) {
+      logger.info("context.resolved_automatically", {
+        reason: r.reason,
+        explicit: r.explicit,
+        kind: p.kind,
+      });
+      await associateInteraction(auth, p.id, thread, "activated").catch(() => undefined);
+    }
+    return null;
+  }
+  if (r.kind === "ambiguous") {
+    logger.info("context.resolution_ambiguous", { candidates: r.candidates.length });
+    return `This message may be about several contexts (${r.candidates.map((c) => c.name).join(", ")}). If it matters for the answer, ask which one before using any of them.`;
+  }
+  return null;
+}
+
+/** The pending study question, for the model: the question only, never its key points. */
+function describeStudy(
+  session: Awaited<ReturnType<ReturnType<typeof studyStore>["activeSession"]>>,
+  profiles: ContextProfile[],
+): string | null {
+  if (!session?.current) return null;
+  const subject = profiles.find((p) => p.id === session.contextId)?.name ?? "the subject";
+  const c = session.current;
+  return `Study session in progress (${session.mode} · ${subject} · ${session.scope.label}, id ${session.id}). Question ${c.number} is waiting for the user's answer: "${c.question.replace(/"/g, "'")}" (about ${c.conceptLabel}). Feedback ${session.preferences.feedback === "end" ? "only at the end" : "after each answer"}. If this message answers it, call study.answer with the user's words; if it's something else, handle that and the session stays open.`;
 }
 
 /** Bounded, best-effort: a slow or failing index never blocks the turn. */

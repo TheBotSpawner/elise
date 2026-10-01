@@ -26,6 +26,11 @@ export interface AITurnRequest {
   input: AIInputItem[];
   tools: AIToolSpec[];
   tier: ModelTier;
+  /**
+   * How much the model should deliberate, for reasoning models (ignored by others). Bounded
+   * structured side tasks (a study question, an evaluation) use "minimal"/"low" for latency.
+   */
+  reasoning?: "minimal" | "low" | "medium";
   signal?: AbortSignal;
 }
 

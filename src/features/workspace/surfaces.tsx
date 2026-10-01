@@ -17,10 +17,17 @@ import {
   Globe,
   Newspaper,
   Telescope,
+  Compass,
+  FolderPlus,
+  Handshake,
+  Clock,
+  GraduationCap,
+  Sprout,
+  NotebookPen,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 import type { ToolDisplay } from "@/core/agents/tools";
 import { isSafeHref, type ActionId, type Surface, type SurfaceType } from "@/core/workspace/model";
@@ -58,6 +65,13 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   web_source: Globe,
   web_news: Newspaper,
   web_research: Telescope,
+  context_overview: Compass,
+  context_proposal: FolderPlus,
+  commitments: Handshake,
+  timeline: Clock,
+  study_question: GraduationCap,
+  study_progress: Sprout,
+  study_summary: NotebookPen,
   result: Sparkles,
 };
 
@@ -189,7 +203,11 @@ export function SurfaceActions({
                   ? t.workspace.prompts.saveSource(
                       (surface.payload as { url?: string }).url ?? title,
                     )
-                  : t.workspace.prompts.summarize(title),
+                  : a.id === "research"
+                    ? t.workspace.prompts.research(title)
+                    : a.id === "review_weak"
+                      ? t.workspace.prompts.reviewWeak(title)
+                      : t.workspace.prompts.summarize(title),
             )
           }
         >
@@ -809,6 +827,20 @@ export function SurfaceBody({
       return <WebNewsBody p={p} timezone={timezone} large={large} />;
     case "web_research":
       return <WebResearchBody p={p} timezone={timezone} />;
+    case "context_overview":
+      return <ContextOverviewBody p={p} timezone={timezone} />;
+    case "context_proposal":
+      return <ContextProposalBody surface={surface} p={p} handlers={handlers} />;
+    case "commitments":
+      return <CommitmentsBody surface={surface} p={p} timezone={timezone} handlers={handlers} />;
+    case "timeline":
+      return <TimelineBody p={p} timezone={timezone} large={large} />;
+    case "study_question":
+      return <StudyQuestionBody surface={surface} p={p} handlers={handlers} />;
+    case "study_progress":
+      return <StudyProgressBody p={p} timezone={timezone} />;
+    case "study_summary":
+      return <StudySummaryBody p={p} />;
     case "result": {
       const rp = surface.payload as SurfacePayloads["result"];
       return <DisplayCard display={rp.display as unknown as ToolDisplay} timezone={timezone} />;
@@ -1018,6 +1050,566 @@ function WebResearchBody({
         ))}
       </ol>
       <RetrievedAt at={p.retrievedAt} timezone={timezone} />
+    </div>
+  );
+}
+
+// ── Contexts and Work (ADR-016): provenance stays visible, nothing is invented ──
+
+function Chip({
+  children,
+  tone = "plain",
+}: {
+  children: ReactNode;
+  tone?: "plain" | "accent" | "warn";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[12px]",
+        tone === "accent" && "border-accent-line bg-accent-soft text-accent-text",
+        tone === "warn" && "border-approval-line bg-approval-bg text-approval-text",
+        tone === "plain" && "border-border text-muted",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ContextOverviewBody({
+  p,
+  timezone,
+}: {
+  p: SurfacePayloads["context_overview"];
+  timezone: string;
+}) {
+  const { t } = useI18n();
+  const f = useFormat(timezone);
+  const c = t.workspace.context;
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="flex flex-wrap items-center gap-2">
+        <Chip tone="accent">{c.kinds[p.kind]}</Chip>
+        {p.baseline && (
+          <span className="text-[13px] text-muted">
+            {c.since(f.date(p.baseline.since))} · {c.basis[p.baseline.basis]}
+          </span>
+        )}
+      </p>
+      {p.description && <p className={cn(TEXT, "text-muted")}>{p.description}</p>}
+      {p.sources.length > 0 && (
+        <ul aria-label={c.links} className="flex flex-wrap gap-1.5">
+          {p.sources.map((s) => (
+            <li key={s.source}>
+              <Chip tone={s.status === "unavailable" || s.status === "failed" ? "warn" : "plain"}>
+                {c.sources[s.source] ?? s.source}
+                {s.status === "ok" ? (
+                  <span className="font-mono text-fg">{s.count}</span>
+                ) : (
+                  <span>· {c.sourceStatus[s.status]}</span>
+                )}
+              </Chip>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-col gap-1">
+        <p className="type-label text-faint">{c.links}</p>
+        {p.links.length ? (
+          <ul className="flex flex-wrap gap-1.5">
+            {p.links
+              .filter((l) => l.confirmed)
+              .slice(0, 10)
+              .map((l) => (
+                <li key={`${l.type}:${l.label}`} className="text-[12.5px] text-muted">
+                  <Chip>
+                    <span className="text-faint">{c.linkTypes[l.type] ?? l.type}</span>
+                    <span className="max-w-[200px] truncate text-fg">{l.label}</span>
+                  </Chip>
+                </li>
+              ))}
+          </ul>
+        ) : (
+          <p className="text-[13px] text-faint">{c.noLinks}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContextProposalBody({
+  surface,
+  p,
+  handlers,
+}: {
+  surface: Surface;
+  p: SurfacePayloads["context_proposal"];
+  handlers: SurfaceHandlers;
+}) {
+  const { t } = useI18n();
+  const c = t.workspace.context;
+  // Likely links start selected; possible and uncertain ones only if the user ticks them.
+  const [chosen, setChosen] = useState<Set<string>>(
+    () => new Set(p.suggestions.filter((x) => x.confidence === "high").map((x) => x.id)),
+  );
+  const pending = handlers.pending?.startsWith(`${surface.id}:`) ?? false;
+  if (p.createdId)
+    return (
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-2 text-[14px] text-success">
+          <Check className="size-4" aria-hidden />
+          {c.proposal.created}
+        </p>
+        <ActionLink href={`/my-elise/contexts/${p.createdId}`}>
+          {t.workspace.actions.open}
+        </ActionLink>
+      </div>
+    );
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="flex flex-wrap items-center gap-2">
+        <Chip tone="accent">{c.kinds[p.kind]}</Chip>
+        {p.aliases.length > 0 && (
+          <span className="text-[13px] text-muted">{p.aliases.join(", ")}</span>
+        )}
+      </p>
+      <p className="text-[13px] text-muted">
+        {p.suggestions.length ? c.proposal.intro : c.proposal.none}
+      </p>
+      {p.suggestions.length > 0 && (
+        <ul className="flex flex-col">
+          {p.suggestions.map((x) => {
+            const on = chosen.has(x.id);
+            return (
+              <li key={x.id}>
+                <label className="flex cursor-pointer items-center gap-3 rounded-xl px-1 py-1.5 hover:bg-surface-2">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() =>
+                      setChosen((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(x.id)) next.delete(x.id);
+                        else next.add(x.id);
+                        return next;
+                      })
+                    }
+                    className="size-4 accent-[var(--color-accent)]"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px]">{x.label}</span>
+                    <span className="block truncate text-[12px] text-faint">
+                      {c.linkTypes[x.type] ?? x.type}
+                      {x.detail &&
+                      x.type !== "email_domain" &&
+                      x.type !== "person" &&
+                      x.type !== "calendar_keyword"
+                        ? ` · ${x.detail}`
+                        : ""}
+                      {x.detail &&
+                      (x.type === "email_domain" ||
+                        x.type === "person" ||
+                        x.type === "calendar_keyword")
+                        ? ` · ${c.proposal.seen(x.detail)}`
+                        : ""}
+                    </span>
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 text-[12px]",
+                      x.confidence === "high" ? "text-accent-text" : "text-faint",
+                    )}
+                  >
+                    {c.proposal.confidence[x.confidence]}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="flex justify-end pt-1">
+        <button
+          type="button"
+          disabled={pending || handlers.pending !== null || handlers.busy}
+          onClick={() => handlers.onAction(surface, "create_context", [...chosen].join(",") || "")}
+          className="inline-flex h-9 items-center gap-1.5 rounded-full bg-fg px-4 text-[13.5px] font-medium text-bg transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {pending && <span className="size-1.5 animate-pulse rounded-full bg-bg" aria-hidden />}
+          {t.workspace.actions.create_context}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CommitmentsBody({
+  surface,
+  p,
+  timezone,
+  handlers,
+}: {
+  surface: Surface;
+  p: SurfacePayloads["commitments"];
+  timezone: string;
+  handlers: SurfaceHandlers;
+}) {
+  const { t } = useI18n();
+  const f = useFormat(timezone);
+  const c = t.workspace.context.commitments;
+  return (
+    <div className="flex flex-col gap-3">
+      <ul className="flex flex-col gap-3">
+        {p.items.map((item) => {
+          const pending = handlers.pending === `${surface.id}:${item.id}`;
+          return (
+            <li key={item.id} className="flex flex-col gap-1">
+              <p className="flex items-center gap-2">
+                <Chip
+                  tone={
+                    item.direction === "theirs"
+                      ? "accent"
+                      : item.direction === "waiting"
+                        ? "warn"
+                        : "plain"
+                  }
+                >
+                  {c[item.direction]}
+                </Chip>
+                {item.who && <span className="truncate text-[12.5px] text-muted">{item.who}</span>}
+              </p>
+              {/* Quoted from the source: untrusted text, shown as text. */}
+              <blockquote className={cn(TEXT, "border-l-2 border-border pl-3")}>
+                “{item.text}”
+              </blockquote>
+              <p className="flex flex-wrap items-center justify-between gap-2">
+                <span className="truncate text-[12px] text-faint">
+                  {item.source.label}
+                  {item.source.date ? ` · ${f.date(item.source.date)}` : ""}
+                </span>
+                <ActionButton
+                  disabled={pending || handlers.pending !== null || handlers.busy}
+                  onClick={() => handlers.onAction(surface, "create_task", item.id)}
+                >
+                  {t.workspace.actions.create_task}
+                </ActionButton>
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-[11.5px] text-faint">{c.note}</p>
+    </div>
+  );
+}
+
+function TimelineBody({
+  p,
+  timezone,
+  large,
+}: {
+  p: SurfacePayloads["timeline"];
+  timezone: string;
+  large: boolean;
+}) {
+  const { t } = useI18n();
+  const f = useFormat(timezone);
+  const c = t.workspace.context.timeline;
+  return (
+    <ol className="flex flex-col">
+      {p.entries.slice(0, large ? 12 : 7).map((e) => (
+        <li
+          key={`${e.kind}:${e.at}:${e.title}`}
+          className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-3 border-l border-border py-1.5 pl-3"
+        >
+          <span
+            className={cn("font-mono text-[12px]", e.upcoming ? "text-accent-text" : "text-faint")}
+          >
+            {f.date(e.at)}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[13.5px]">{e.title}</span>
+            <span className="block truncate text-[12px] text-faint">
+              {e.upcoming ? `${c.upcoming} · ` : ""}
+              {c.kinds[e.kind]}
+              {e.detail ? ` · ${e.detail}` : ""}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ── Study (ADR-016): the question, never its answer, until the user answers ──
+
+const ASSESSMENT_TONE = {
+  strong: "border-success/40 text-success",
+  partial: "border-accent-line text-accent-text",
+  needs_review: "border-approval-line bg-approval-bg text-approval-text",
+} as const;
+
+function SourceExcerpts({ sources }: { sources: SurfacePayloads["study_question"]["sources"] }) {
+  const { t } = useI18n();
+  if (!sources.length) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="type-label text-faint">{t.workspace.study.sources}</p>
+      <ul className="flex flex-col gap-2">
+        {sources.map((s, i) => (
+          <li key={`${s.itemId}:${i}`} className="flex flex-col gap-0.5">
+            <Link
+              href={`/knowledge/items/${s.itemId}`}
+              className="truncate text-[12.5px] text-accent-text hover:underline"
+            >
+              {s.title}
+              {s.section ? ` · ${s.section}` : ""}
+              {s.page ? ` · p. ${s.page}` : ""}
+            </Link>
+            <p className={cn(TEXT, "line-clamp-4 text-muted")}>{s.excerpt}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function FeedbackLists({
+  feedback,
+}: {
+  feedback: NonNullable<SurfacePayloads["study_question"]["feedback"]>;
+}) {
+  const { t } = useI18n();
+  const s = t.workspace.study;
+  const rows = [
+    { label: s.correct, items: feedback.correct },
+    { label: s.missing, items: feedback.missing },
+    { label: s.incorrect, items: feedback.incorrect },
+  ].filter((r) => r.items.length);
+  return (
+    <div className="flex flex-col gap-2">
+      {rows.map((r) => (
+        <div key={r.label} className="flex flex-col gap-0.5">
+          <p className="type-label text-faint">{r.label}</p>
+          <ul className="flex flex-col gap-0.5">
+            {r.items.map((x) => (
+              <li key={x} className={cn(TEXT, "flex gap-2")}>
+                <span
+                  aria-hidden
+                  className="mt-[9px] size-1 shrink-0 rounded-full bg-border-strong"
+                />
+                <span>{x}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {feedback.explanation && <p className={cn(TEXT, "text-muted")}>{feedback.explanation}</p>}
+    </div>
+  );
+}
+
+function StudyQuestionBody({
+  surface,
+  p,
+  handlers,
+}: {
+  surface: Surface;
+  p: SurfacePayloads["study_question"];
+  handlers: SurfaceHandlers;
+}) {
+  const { t } = useI18n();
+  const s = t.workspace.study;
+  const busy = handlers.pending !== null || handlers.busy;
+  const act = (id: ActionId) => () => handlers.onAction(surface, id, null);
+  const has = (id: ActionId) => surface.actions.some((a) => a.id === id);
+  return (
+    <div className="flex flex-col gap-4">
+      {p.previous && (
+        <section
+          aria-label={s.previous}
+          className="flex flex-col gap-2 rounded-2xl border border-border bg-surface-2/60 p-3"
+        >
+          <p className="flex flex-wrap items-center gap-2">
+            <span className="type-label text-faint">{s.previous}</span>
+            {p.previous.assessment && (
+              <span
+                className={cn(
+                  "inline-flex h-6 items-center rounded-full border px-2 text-[12px]",
+                  ASSESSMENT_TONE[p.previous.assessment],
+                )}
+              >
+                {s.assessment[p.previous.assessment]}
+              </span>
+            )}
+          </p>
+          <p className="line-clamp-2 text-[12.5px] text-faint">{p.previous.question}</p>
+          <p className={cn(TEXT, "italic")}>“{p.previous.answer}”</p>
+          {p.previous.feedback ? (
+            <FeedbackLists feedback={p.previous.feedback} />
+          ) : (
+            <p className="text-[12.5px] text-faint">{s.feedbackAtEnd}</p>
+          )}
+          {p.previous.sources.length > 0 && (
+            <details className="group">
+              <summary className="cursor-pointer text-[12.5px] text-accent-text">
+                {s.sources}
+              </summary>
+              <div className="pt-2">
+                <SourceExcerpts sources={p.previous.sources} />
+              </div>
+            </details>
+          )}
+        </section>
+      )}
+      <div className="flex flex-col gap-2">
+        <p className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-faint">
+          <span className="font-mono text-accent-text">{s.question(p.number)}</span>
+          <span aria-hidden>·</span>
+          <span>{s.modes[p.mode]}</span>
+          <span aria-hidden>·</span>
+          <span className="truncate">{p.scope}</span>
+        </p>
+        <p className="text-lg leading-snug font-light tracking-[-0.01em] md:text-xl">
+          {p.question}
+        </p>
+        <p className="text-[12.5px] text-faint">
+          {s.about} {p.conceptLabel}
+        </p>
+      </div>
+      {p.options && (
+        <ol className="flex flex-col gap-1.5">
+          {p.options.map((o, i) => (
+            <li
+              key={o}
+              className="flex gap-2 rounded-xl border border-border px-3 py-2 text-[14px]"
+            >
+              <span className="font-mono text-faint">{String.fromCharCode(97 + i)})</span>
+              <span>{o}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {p.hints.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="type-label text-faint">{s.hints}</p>
+          <ol className="flex flex-col gap-1">
+            {p.hints.map((h, i) => (
+              <li key={h} className={cn(TEXT, "flex gap-2 text-muted")}>
+                <span className="font-mono text-faint">{i + 1}.</span>
+                <span>{h}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {p.state === "answered" && p.feedback && <FeedbackLists feedback={p.feedback} />}
+      {p.sources.length ? (
+        <SourceExcerpts sources={p.sources} />
+      ) : (
+        p.state === "asking" && <p className="text-[12px] text-faint">{s.sourcesHidden}</p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {has("hint") && (
+          <ActionButton disabled={busy} onClick={act("hint")}>
+            {t.workspace.actions.hint}
+          </ActionButton>
+        )}
+        {has("reveal") && (
+          <ActionButton disabled={busy} onClick={act("reveal")}>
+            {t.workspace.actions.reveal}
+          </ActionButton>
+        )}
+        {has("next") && (
+          <ActionButton disabled={busy} onClick={act("next")}>
+            {t.workspace.actions.next}
+          </ActionButton>
+        )}
+        {has("end_session") && (
+          <ActionButton disabled={busy} onClick={act("end_session")}>
+            {t.workspace.actions.end_session}
+          </ActionButton>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StudyProgressBody({
+  p,
+  timezone,
+}: {
+  p: SurfacePayloads["study_progress"];
+  timezone: string;
+}) {
+  const { t } = useI18n();
+  const f = useFormat(timezone);
+  const s = t.workspace.study;
+  const order = ["needs_review", "learning", "understood", "not_reviewed"] as const;
+  return (
+    <div className="flex flex-col gap-3">
+      <ul className="grid grid-cols-2 gap-2">
+        {order.map((k) => (
+          <li key={k} className="flex flex-col rounded-xl border border-border px-3 py-2">
+            <span className="font-mono text-[15px]">{p.counts[k]}</span>
+            <span className="text-[12px] text-faint">{s.status[k]}</span>
+          </li>
+        ))}
+      </ul>
+      {p.targetDate && <Chip tone="accent">{s.exam(f.date(p.targetDate))}</Chip>}
+      {p.weak.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="type-label text-faint">{s.weak}</p>
+          <p className={TEXT}>{p.weak.join(" · ")}</p>
+        </div>
+      )}
+      {p.strong.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="type-label text-faint">{s.strong}</p>
+          <p className={cn(TEXT, "text-muted")}>{p.strong.join(" · ")}</p>
+        </div>
+      )}
+      {p.sessionQuestions > 0 && (
+        <p className="text-[12px] text-faint">{s.thisSession(p.sessionQuestions)}</p>
+      )}
+    </div>
+  );
+}
+
+function StudySummaryBody({ p }: { p: SurfacePayloads["study_summary"] }) {
+  const { t } = useI18n();
+  const s = t.workspace.study.summary;
+  const sections = [
+    { label: s.strong, items: p.strong, tone: "text-success" },
+    { label: s.review, items: p.review, tone: "text-approval-text" },
+    { label: s.mistakes, items: p.mistakes, tone: "text-fg" },
+    { label: s.next, items: p.nextReview, tone: "text-accent-text" },
+  ].filter((x) => x.items.length);
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-[13px] text-muted">
+        {s.questions(p.questions)}
+        {p.covered.length ? ` · ${s.covered}: ${p.covered.join(", ")}` : ""}
+      </p>
+      <div className="grid gap-4 md:grid-cols-2">
+        {sections.map((x) => (
+          <section key={x.label} className="flex flex-col gap-1.5">
+            <h3 className={cn("type-label", x.tone)}>{x.label}</h3>
+            <ul className="flex flex-col gap-1">
+              {x.items.map((item) => (
+                <li key={item} className={cn(TEXT, "flex gap-2")}>
+                  <span
+                    aria-hidden
+                    className="mt-[9px] size-1 shrink-0 rounded-full bg-border-strong"
+                  />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }

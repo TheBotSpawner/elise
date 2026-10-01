@@ -1,10 +1,12 @@
 import { z } from "zod";
 
+import { displayOf, invoke, runStep } from "./orchestration";
 import type { ToolCallOutcome } from "../agents/executor";
 import type { KnowledgeEvidence, ToolDefinition, ToolRunEnv } from "../agents/tools";
 import type { CalendarEvent } from "../capabilities/calendar";
 import type { EmailMessage } from "../capabilities/email";
 import type { Task } from "../capabilities/tasks";
+import { contextForEvent, contextSignals, taskMatches } from "../contexts/model";
 import type { RecallResult } from "../recall/model";
 import { addDays, isIsoDate, toLocalDateTime, todayIn } from "../time";
 import {
@@ -200,51 +202,29 @@ export function externalCompany(e: CalendarEvent): string | null {
   return null;
 }
 
-/** Runs one source as an activity step; a failure is reported, never thrown. */
+/** Web tools report their own steps (search, reading pages): no second line for them. */
 const SELF_REPORTING: ReadonlySet<Source> = new Set(["web"]);
 
-async function step<T>(
+const step = <T>(
   env: ToolRunEnv,
   source: Source,
   run: () => Promise<{ value: T; outcome: ToolCallOutcome | null }>,
-): Promise<{ value: T | null; problem: string | null }> {
-  const id = `${source}:${crypto.randomUUID().slice(0, 8)}`;
-  // Web tools report their own steps (search, reading pages): no second line for them.
-  const workspace = SELF_REPORTING.has(source) ? undefined : env.ctx.workspace;
-  workspace?.activity({ id, tool: STEP_TOOL[source], status: "running" });
+) => runStep(env, source, STEP_TOOL[source], run, SELF_REPORTING.has(source));
+
+/**
+ * The Context Profile a meeting belongs to (ADR-016 §16): attendee emails and domains, linked
+ * people, the title. One clear match scopes the prep to that context; otherwise none.
+ */
+async function meetingContext(env: ToolRunEnv, event: CalendarEvent) {
   try {
-    const { value, outcome } = await run();
-    if (outcome && outcome.status !== "succeeded") {
-      const unavailable =
-        outcome.status === "failed" &&
-        ["CAPABILITY_UNAVAILABLE", "AUTH_ERROR", "PERMISSION_DENIED"].includes(outcome.error.code);
-      workspace?.activity({
-        id,
-        tool: STEP_TOOL[source],
-        status: unavailable ? "unavailable" : "failed",
-      });
-      return {
-        value: null,
-        problem: `${source}: ${outcome.status === "failed" ? (unavailable ? "not connected or not allowed" : outcome.error.code) : outcome.status}`,
-      };
-    }
-    workspace?.activity({ id, tool: STEP_TOOL[source], status: "done" });
-    return { value, problem: null };
+    const store = env.providers.get("contexts", env.binding);
+    const [profiles, entities] = await Promise.all([store.list(), store.entities()]);
+    const profile = contextForEvent(profiles, entities, event);
+    return profile ? { profile, signals: contextSignals(profile, entities), store } : null;
   } catch {
-    workspace?.activity({ id, tool: STEP_TOOL[source], status: "failed" });
-    return { value: null, problem: `${source}: failed` };
+    return null;
   }
 }
-
-function invoke(env: ToolRunEnv, name: string, args: unknown): Promise<ToolCallOutcome> {
-  if (!env.invoke) throw new Error("Nested reads are unavailable");
-  return env.invoke(name, args);
-}
-
-const displayOf = <K extends string>(o: ToolCallOutcome, kind: K) =>
-  o.status === "succeeded" && o.display?.kind === kind
-    ? (o.display as Extract<typeof o.display, { kind: K }>)
-    : null;
 
 export const prepareMeetingTool: ToolDefinition = {
   name: "meeting.prepare",
@@ -305,6 +285,33 @@ export const prepareMeetingTool: ToolDefinition = {
     const event = pick.event;
     const intentId = `intent:${surfaceId("meeting", event.id)}`;
     const people = others(event);
+    const scope = await meetingContext(env, event);
+    if (scope) {
+      const { profile } = scope;
+      w?.apply([
+        {
+          op: "context",
+          context: {
+            id: profile.id,
+            name: profile.name,
+            kind: profile.kind,
+            accent: profile.accent,
+          },
+          at,
+        },
+      ]);
+      const thread = env.ctx.conversationId
+        ? { kind: "conversation" as const, id: env.ctx.conversationId }
+        : env.ctx.interactionSessionId
+          ? { kind: "session" as const, id: env.ctx.interactionSessionId }
+          : null;
+      if (thread) await scope.store.associate(profile.id, thread, "meeting").catch(() => undefined);
+    }
+    const linkedDomains = scope
+      ? [...scope.signals.domains].filter(
+          (d) => !people.some((p) => p.email.toLowerCase().endsWith(`@${d}`)),
+        )
+      : [];
     w?.apply([
       {
         op: "intent",
@@ -336,6 +343,9 @@ export const prepareMeetingTool: ToolDefinition = {
           ? people.slice(0, 3).map((p) => ({ from: p.email, after, limit: 5 }))
           : [{ text: clip(event.title, 200), after, limit: 5 }];
         if (people[0]) searches.push({ to: people[0].email, after, limit: 3 });
+        // The context's other addresses (the client's domain), when the meeting has one.
+        for (const domain of linkedDomains.slice(0, 2))
+          searches.push({ from: domain, after, limit: 4 });
         const outcomes = await Promise.all(searches.map((s) => invoke(env, "email.search", s)));
         const failed = outcomes.find((o) => o.status !== "succeeded") ?? null;
         const messages = outcomes.flatMap((o) => displayOf(o, "email_list")?.messages ?? []);
@@ -351,7 +361,11 @@ export const prepareMeetingTool: ToolDefinition = {
         return { value: messages, outcome: null };
       }),
       step(env, "recall", async () => {
-        const outcome = await invoke(env, "history.search", { query: topic, limit: 3 });
+        const outcome = await invoke(env, "history.search", {
+          query: topic,
+          limit: 3,
+          ...(scope ? { context: scope.profile.id } : {}),
+        });
         const d = displayOf(outcome, "recall_results");
         if (d)
           for (const s of surfacesFromOutcome("history.search", outcome, {
@@ -365,7 +379,10 @@ export const prepareMeetingTool: ToolDefinition = {
       step(env, "knowledge", async () => {
         const outcome = await invoke(env, "knowledge.search", {
           query: clip(`${event.title} ${q.about ?? ""}`.trim(), 500),
-          everywhere: true,
+          // The context's Knowledge first; everything otherwise.
+          ...(scope?.signals.spaceIds[0]
+            ? { space: scope.signals.spaceIds[0] }
+            : { everywhere: true }),
         });
         const d = displayOf(outcome, "knowledge_evidence");
         if (d)
@@ -381,10 +398,14 @@ export const prepareMeetingTool: ToolDefinition = {
       }),
       step(env, "tasks", async () => {
         const outcome = await invoke(env, "tasks.list", { status: "open", limit: 200 });
-        const related = relatedTasks(displayOf(outcome, "task_list")?.tasks ?? [], keywords).slice(
-          0,
-          8,
-        );
+        const all = displayOf(outcome, "task_list")?.tasks ?? [];
+        const related = (
+          scope
+            ? all.filter(
+                (t) => taskMatches(scope.signals, t) || relatedTasks([t], keywords).length > 0,
+              )
+            : relatedTasks(all, keywords)
+        ).slice(0, 8);
         present(taskListSurface(related, { key: `${intentId}:tasks`, intentId, priority: 65 }));
         return { value: related, outcome };
       }),
@@ -393,25 +414,28 @@ export const prepareMeetingTool: ToolDefinition = {
 
     // 2b. Public context about the outside company, after the private context and below it.
     const company = externalCompany(event);
-    const webStep = company
-      ? await step(env, "web", async () => {
-          const outcome = await invoke(env, "web.search", {
-            query: `${company} company`,
-            inspect: false,
-          });
-          const d = displayOf(outcome, "web_results");
-          if (d)
-            for (const s of surfacesFromOutcome("web.search", outcome, {
-              key: `${intentId}:web`,
-              intentId,
-              // Below every private source: public context never crowds out the relationship.
-              priority: 33,
-              title: company,
-            }))
-              present(s);
-          return { value: d?.results.slice(0, 4) ?? [], outcome };
-        })
-      : null;
+    const webDomain = scope?.signals.webDomains[0] ?? null;
+    const webStep =
+      company || webDomain
+        ? await step(env, "web", async () => {
+            const outcome = await invoke(env, "web.search", {
+              query: webDomain ? scope!.profile.name : `${company} company`,
+              ...(webDomain ? { domains: [webDomain] } : {}),
+              inspect: false,
+            });
+            const d = displayOf(outcome, "web_results");
+            if (d)
+              for (const s of surfacesFromOutcome("web.search", outcome, {
+                key: `${intentId}:web`,
+                intentId,
+                // Below every private source: public context never crowds out the relationship.
+                priority: 33,
+                title: webDomain ?? company ?? undefined,
+              }))
+                present(s);
+            return { value: d?.results.slice(0, 4) ?? [], outcome };
+          })
+        : null;
     if (webStep?.problem) unavailable.push(webStep.problem);
 
     // 3. The person, for a one-to-one with email history (no entity system yet: attendee data only).
@@ -481,6 +505,7 @@ export const prepareMeetingTool: ToolDefinition = {
     return {
       output: {
         found: true,
+        ...(scope ? { context: { name: scope.profile.name, kind: scope.profile.kind } } : {}),
         meeting: {
           event: event.id,
           title: event.title,
@@ -536,8 +561,7 @@ export const prepareMeetingTool: ToolDefinition = {
             }
           : {}),
         unavailable,
-        instructions:
-          "Private context comes first; public web results about the company are background only — label them as public and cite them as links. The workspace already shows the meeting and every source found. Now call ui.present {type:'summary'} with the brief: facts (only what the calendar says), context (from earlier conversations, email and documents — attribute each), changes (what changed recently, if the evidence shows it), open_items, questions worth discussing, suggestions (clearly yours), material. Never invent the meeting's purpose: if the evidence doesn't show it, say so. Omit empty sections. Then reply in one or two sentences — don't repeat the Surfaces — and name any unavailable source.",
+        instructions: `${scope ? `This meeting belongs to the "${scope.profile.name}" context: its linked sources were searched first; mention it. ` : ""}Private context comes first; public web results about the company are background only — label them as public and cite them as links. The workspace already shows the meeting and every source found. Now call ui.present {type:'summary'} with the brief: facts (only what the calendar says), context (from earlier conversations, email and documents — attribute each), changes (what changed recently, if the evidence shows it), open_items, questions worth discussing, suggestions (clearly yours), material. Never invent the meeting's purpose: if the evidence doesn't show it, say so. Omit empty sections. Then reply in one or two sentences — don't repeat the Surfaces — and name any unavailable source.`,
       },
     };
   },

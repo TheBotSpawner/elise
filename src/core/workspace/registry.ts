@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { TASK_STATUSES } from "../capabilities/tasks";
-import { toLocalDateTime } from "../time";
 import {
   ACTION_IDS,
   INTENT_KINDS,
@@ -17,6 +15,9 @@ import {
   type SurfaceType,
   type WorkspaceState,
 } from "./model";
+import { TASK_STATUSES } from "../capabilities/tasks";
+import { CONTEXT_KINDS, LINK_TYPES } from "../contexts/model";
+import { toLocalDateTime } from "../time";
 
 /**
  * Surface registry (ADR-013), in the spirit of the capability registry: each type declares its
@@ -277,6 +278,175 @@ export const PAYLOADS = {
       )
       .max(4),
   }),
+  // ── Contexts, Work and Study (ADR-016) ──
+  context_overview: z.object({
+    contextId: text(100),
+    name: text(120),
+    kind: z.enum(CONTEXT_KINDS),
+    accent: text(20).nullable(),
+    description: text(400).nullable(),
+    links: z.array(z.object({ type: text(40), label: text(200), confirmed: z.boolean() })).max(16),
+    /** A brief's comparison point ("since your last RSFA interaction on Sep 28"). */
+    baseline: z
+      .object({
+        since: text(40),
+        basis: z.enum(["user", "last_interaction", "last_meeting", "default_window"]),
+      })
+      .nullable(),
+    /** What each source contributed, or that it was unavailable. */
+    sources: z
+      .array(
+        z.object({
+          source: text(30),
+          status: z.enum(["ok", "empty", "unavailable", "failed"]),
+          count: z.number().int().min(0),
+        }),
+      )
+      .max(10),
+  }),
+  context_proposal: z.object({
+    name: text(80),
+    kind: z.enum(CONTEXT_KINDS),
+    description: text(400).nullable(),
+    aliases: z.array(text(80)).max(12),
+    suggestions: z
+      .array(
+        z.object({
+          id: text(20),
+          type: z.enum(LINK_TYPES),
+          resourceId: text(600).nullable(),
+          value: text(320).nullable(),
+          label: text(200),
+          detail: text(200).nullable(),
+          confidence: z.enum(["high", "medium", "low"]),
+          person: z.object({ name: text(200), email: text(320) }).nullable(),
+        }),
+      )
+      .max(16),
+    /** Set once the user created it from this proposal. */
+    createdId: text(100).nullable(),
+  }),
+  commitments: z.object({
+    contextName: text(120),
+    items: z
+      .array(
+        z.object({
+          id: text(20),
+          text: text(240),
+          direction: z.enum(["ours", "theirs", "waiting"]),
+          who: text(200).nullable(),
+          source: z.object({
+            kind: z.enum(["email", "recall", "task"]),
+            label: text(200),
+            date: text(40).nullable(),
+            ref: text(1000).nullable(),
+          }),
+        }),
+      )
+      .max(8),
+  }),
+  timeline: z.object({
+    contextName: text(120),
+    entries: z
+      .array(
+        z.object({
+          at: text(40),
+          kind: z.enum(["meeting", "email", "task", "document", "interaction", "record"]),
+          title: text(300),
+          detail: text(200).nullable(),
+          upcoming: z.boolean(),
+        }),
+      )
+      .max(12),
+  }),
+  study_question: z.object({
+    sessionId: text(100),
+    contextName: text(120),
+    mode: z.enum(["review", "oral_exam", "quiz"]),
+    number: z.number().int().min(1),
+    question: text(600),
+    conceptLabel: text(120),
+    options: z.array(text(200)).max(4).nullable(),
+    /** Hints shown so far (never the ones not asked for). */
+    hints: z.array(text(240)).max(3),
+    state: z.enum(["asking", "answered"]),
+    /** Shown after the answer only, when feedback is per answer. */
+    assessment: z.enum(["strong", "partial", "needs_review"]).nullable(),
+    feedback: z
+      .object({
+        correct: z.array(text(240)).max(5),
+        missing: z.array(text(240)).max(5),
+        incorrect: z.array(text(240)).max(5),
+        explanation: text(800),
+      })
+      .nullable(),
+    /** Excerpts of the material: empty until answered or asked for. */
+    sources: z
+      .array(
+        z.object({
+          itemId: text(100),
+          title: text(300),
+          section: text(300).nullable(),
+          page: z.number().int().nullable(),
+          excerpt: text(600),
+        }),
+      )
+      .max(3),
+    /** The answer just given, with its feedback (when feedback is per answer). */
+    previous: z
+      .object({
+        number: z.number().int().min(1),
+        question: text(600),
+        answer: text(400),
+        assessment: z.enum(["strong", "partial", "needs_review"]).nullable(),
+        feedback: z
+          .object({
+            correct: z.array(text(240)).max(5),
+            missing: z.array(text(240)).max(5),
+            incorrect: z.array(text(240)).max(5),
+            explanation: text(800),
+          })
+          .nullable(),
+        sources: z
+          .array(
+            z.object({
+              itemId: text(100),
+              title: text(300),
+              section: text(300).nullable(),
+              page: z.number().int().nullable(),
+              excerpt: text(600),
+            }),
+          )
+          .max(3),
+      })
+      .nullable(),
+    feedbackMode: z.enum(["each", "end"]),
+    scope: text(200),
+  }),
+  study_progress: z.object({
+    contextId: text(100),
+    contextName: text(120),
+    counts: z.object({
+      not_reviewed: z.number().int().min(0),
+      learning: z.number().int().min(0),
+      understood: z.number().int().min(0),
+      needs_review: z.number().int().min(0),
+    }),
+    weak: z.array(text(120)).max(6),
+    strong: z.array(text(120)).max(6),
+    sessionQuestions: z.number().int().min(0),
+    targetDate: text(10).nullable(),
+  }),
+  study_summary: z.object({
+    contextName: text(120),
+    questions: z.number().int().min(0),
+    covered: z.array(text(120)).max(20),
+    strong: z.array(text(120)).max(20),
+    review: z.array(text(120)).max(20),
+    mistakes: z.array(text(240)).max(5),
+    nextReview: z.array(text(120)).max(5),
+    at: text(40),
+  }),
   /** Any other tool result, rendered by its existing card. */
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
 } satisfies Record<SurfaceType, z.ZodType>;
@@ -507,6 +677,132 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
         )
         .join("; "),
   },
+  context_overview: {
+    sizes: ["small", "medium", "large"],
+    size: "medium",
+    priority: 85,
+    actions: (p) => [
+      { id: "open", kind: "link", href: `/my-elise/contexts/${p.contextId}` },
+      { id: "research", kind: "prompt" },
+    ],
+    describe: (p) =>
+      `${q(p.name)} (${p.kind}, context ${p.contextId})${p.baseline ? ` since ${p.baseline.since.slice(0, 10)} [${p.baseline.basis}]` : ""}${p.sources.length ? ` · sources: ${p.sources.map((s) => `${s.source} ${s.status}${s.count ? ` ${s.count}` : ""}`).join(", ")}` : ""}`,
+  },
+  context_proposal: {
+    sizes: ["medium", "large"],
+    size: "large",
+    priority: 92,
+    actions: (p) => (p.createdId ? [] : [{ id: "create_context", kind: "tool" }]),
+    describe: (p) =>
+      `Proposed context ${q(p.name)} (${p.kind})${p.createdId ? " [created]" : ""}: ${p.suggestions.map((s) => `${s.id}) ${s.label} [${s.confidence}]`).join("; ")}`,
+    // The user's selection (suggestion ids) arrives as itemId; everything else comes from the
+    // stored proposal, never from the browser.
+    tool: (p, action, itemId) => {
+      if (action !== "create_context" || p.createdId) return null;
+      const chosen = new Set((itemId ?? "").split(",").filter(Boolean));
+      return {
+        name: "contexts.create",
+        args: {
+          kind: p.kind,
+          name: p.name,
+          ...(p.description ? { description: p.description } : {}),
+          aliases: p.aliases,
+          links: p.suggestions
+            .filter((s) => chosen.has(s.id))
+            .map((s) => ({
+              type: s.type,
+              ...(s.resourceId ? { resourceId: s.resourceId } : {}),
+              ...(s.value ? { value: s.value } : {}),
+              label: s.label,
+              ...(s.person ? { person: s.person } : {}),
+            })),
+        },
+      };
+    },
+  },
+  commitments: {
+    sizes: ["small", "medium", "large"],
+    size: "medium",
+    priority: 72,
+    actions: (p) => (p.items.length ? [{ id: "create_task", kind: "tool" }] : []),
+    describe: (p) =>
+      p.items
+        .map(
+          (c, i) =>
+            `${i + 1}) [${c.direction}] ${q(c.text)}${c.who ? ` — ${c.who}` : ""} (${c.source.kind} ${q(c.source.label)}${c.source.date ? ` ${c.source.date.slice(0, 10)}` : ""}, item ${c.id})`,
+        )
+        .join("; "),
+    tool: (p, action, itemId) => {
+      const item = p.items.find((c) => c.id === itemId);
+      return action === "create_task" && item
+        ? { name: "tasks.create", args: { title: item.text.slice(0, 200) } }
+        : null;
+    },
+  },
+  timeline: {
+    sizes: ["small", "medium", "large"],
+    size: "medium",
+    priority: 62,
+    actions: () => [expand],
+    describe: (p, tz) =>
+      p.entries
+        .map(
+          (e) =>
+            `${local(e.at, tz).slice(0, 10)} ${e.kind}${e.upcoming ? " (upcoming)" : ""} ${q(e.title)}`,
+        )
+        .join("; "),
+  },
+  study_question: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 96,
+    actions: (p) =>
+      p.state === "asking"
+        ? [
+            ...(p.hints.length < 3 ? [{ id: "hint" as const, kind: "tool" as const }] : []),
+            ...(p.sources.length ? [] : [{ id: "reveal" as const, kind: "tool" as const }]),
+            { id: "next", kind: "tool" },
+            { id: "end_session", kind: "tool" },
+          ]
+        : [
+            { id: "next", kind: "tool" },
+            { id: "end_session", kind: "tool" },
+          ],
+    // The model gets the question, never the key points or hints it hasn't shown.
+    describe: (p) =>
+      `Study session ${p.sessionId} · ${q(p.contextName)} · ${p.mode} · question ${p.number} [${p.state}${p.assessment ? `: ${p.assessment}` : ""}] about ${q(p.conceptLabel)}: ${q(p.question)}`,
+    tool: (p, action) => {
+      const session = { session: p.sessionId };
+      switch (action) {
+        case "hint":
+          return p.state === "asking" ? { name: "study.hint", args: session } : null;
+        case "reveal":
+          return p.state === "asking" ? { name: "study.reveal", args: session } : null;
+        case "next":
+          return { name: "study.next", args: session };
+        case "end_session":
+          return { name: "study.end", args: session };
+        default:
+          return null;
+      }
+    },
+  },
+  study_progress: {
+    sizes: ["small", "medium"],
+    size: "small",
+    priority: 70,
+    actions: (p) => (p.weak.length ? [{ id: "review_weak", kind: "prompt" }] : []),
+    describe: (p) =>
+      `${q(p.contextName)} progress: understood ${p.counts.understood}, learning ${p.counts.learning}, needs review ${p.counts.needs_review}, not reviewed ${p.counts.not_reviewed}${p.weak.length ? ` · weak: ${p.weak.join(", ")}` : ""}`,
+  },
+  study_summary: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 94,
+    actions: (p) => (p.review.length ? [{ id: "review_weak", kind: "prompt" }] : []),
+    describe: (p) =>
+      `${q(p.contextName)} session summary: ${p.questions} questions · strong: ${p.strong.join(", ") || "—"} · review: ${p.review.join(", ") || "—"}`,
+  },
   result: {
     sizes: ["small", "medium", "large"],
     size: "medium",
@@ -613,6 +909,14 @@ const intentSchema = z.object({
   startedAt: text(40),
 });
 
+const contextSchema = z.object({
+  id: text(100),
+  name: text(120),
+  kind: z.enum(CONTEXT_KINDS),
+  accent: text(20).nullable(),
+  turn: z.number().int().min(0),
+});
+
 /** Stored or remote state → a valid workspace; anything malformed is dropped, never trusted. */
 export function parseWorkspace(raw: {
   version?: unknown;
@@ -621,12 +925,14 @@ export function parseWorkspace(raw: {
   surfaces?: unknown;
   focusId?: unknown;
   nextHandle?: unknown;
+  context?: unknown;
 }): WorkspaceState {
   const base = emptyWorkspace();
   const surfaces = Array.isArray(raw.surfaces)
     ? raw.surfaces.map(parseSurface).filter((s): s is Surface => s !== null)
     : [];
   const intent = intentSchema.safeParse(raw.intent);
+  const context = contextSchema.safeParse(raw.context);
   const int = (v: unknown, d: number) =>
     typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : d;
   const handles = surfaces.map((s) => Number(s.handle.slice(1)));
@@ -634,6 +940,7 @@ export function parseWorkspace(raw: {
     version: int(raw.version, base.version),
     turn: int(raw.turn, base.turn),
     intent: intent.success ? intent.data : null,
+    context: context.success ? context.data : null,
     surfaces,
     focusId:
       typeof raw.focusId === "string" && surfaces.some((s) => s.id === raw.focusId)
@@ -660,6 +967,7 @@ export function describeWorkspace(state: WorkspaceState, timezone: string): stri
   });
   return [
     state.intent ? `Active intent: ${state.intent.kind} — ${q(state.intent.description)}` : null,
+    state.context ? `Active context: ${q(state.context.name)} (${state.context.kind})` : null,
     ...lines,
   ]
     .filter(Boolean)

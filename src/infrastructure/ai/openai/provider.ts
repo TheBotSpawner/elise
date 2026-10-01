@@ -50,6 +50,10 @@ export class OpenAIProvider implements AIProvider {
           })),
           stream: true,
           store: false,
+          // Only reasoning models accept an effort; others ignore the hint.
+          ...(request.reasoning && /^(gpt-5|o\d)/.test(model)
+            ? { reasoning: { effort: request.reasoning } }
+            : {}),
         },
         { signal: request.signal },
       );

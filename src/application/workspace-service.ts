@@ -38,6 +38,7 @@ import { SupabaseKnowledgeReader } from "@/infrastructure/supabase/repositories/
 
 import type { AuthContext } from "./auth-context";
 import type { AssistantMessageMetadata, ClientToolOutcome } from "./chat-protocol";
+import { associateInteraction } from "./contexts-service";
 import { createExecutorPorts, toolContext } from "./elise";
 import { ownSession } from "./interaction-thread";
 import { webCapability } from "./web-service";
@@ -57,7 +58,7 @@ type Row = {
   version: number;
 };
 
-const fromRow = (r: Row): WorkspaceState =>
+const fromRow = (r: Row, context: WorkspaceState["context"] = null): WorkspaceState =>
   parseWorkspace({
     intent: r.intent,
     surfaces: r.surfaces,
@@ -65,7 +66,29 @@ const fromRow = (r: Row): WorkspaceState =>
     turn: r.turn,
     nextHandle: r.next_handle,
     version: r.version,
+    context,
   });
+
+/**
+ * The active context, read again from its profile (ADR-016 §6): a renamed profile shows its
+ * new name, an archived or deleted one is simply no longer active.
+ */
+async function activeContextOf(
+  auth: AuthContext,
+  id: string | null,
+  turn: number,
+): Promise<WorkspaceState["context"]> {
+  if (!id) return null;
+  const { data } = await auth.db
+    .from("context_profiles")
+    .select("id, name, kind, accent, status")
+    .eq("id", id)
+    .eq("workspace_id", auth.workspaceId)
+    .maybeSingle();
+  return data && data.status === "active"
+    ? { id: data.id, name: data.name, kind: data.kind, accent: data.accent, turn }
+    : null;
+}
 
 /** A workspace belongs to a conversation or to a voice session (ADR-014). */
 const column = (t: ThreadRef) => (t.kind === "conversation" ? "conversation_id" : "session_id");
@@ -78,12 +101,15 @@ export async function loadWorkspace(
 ): Promise<WorkspaceState> {
   const { data } = await auth.db
     .from("live_workspaces")
-    .select("intent, surfaces, focus_id, turn, next_handle, version, expires_at")
+    .select(
+      "intent, surfaces, focus_id, turn, next_handle, version, expires_at, context_profile_id, context_turn",
+    )
     .eq(column(thread), thread.id)
     .eq("user_id", auth.userId)
     .maybeSingle();
   if (!data || Date.parse(data.expires_at) <= now.getTime()) return emptyWorkspace();
-  const state = restoreWorkspace(fromRow(data), now);
+  const context = await activeContextOf(auth, data.context_profile_id, data.context_turn);
+  const state = restoreWorkspace(fromRow(data, context), now);
   return reconcileApprovals(auth, state, now);
 }
 
@@ -121,6 +147,8 @@ export async function saveWorkspace(auth: AuthContext, thread: ThreadRef, state:
       turn: state.turn,
       next_handle: state.nextHandle,
       version: state.version,
+      context_profile_id: state.context?.id ?? null,
+      context_turn: state.context?.turn ?? 0,
       updated_at: now.toISOString(),
       expires_at: new Date(now.getTime() + WORKSPACE_LIMITS.ttlMs).toISOString(),
     },
@@ -147,6 +175,11 @@ function observe(before: WorkspaceState, after: WorkspaceState, thread: ThreadRe
     logger.info("workspace.intent_started", {
       ...at,
       kind: after.intent.kind,
+    });
+  if (after.context?.id !== before.context?.id)
+    logger.info(after.context ? "context.activated" : "context.cleared", {
+      ...at,
+      ...(after.context ? { kind: after.context.kind } : {}),
     });
 }
 
@@ -270,12 +303,21 @@ async function mutate(
 
 export type UserWorkspaceOp =
   | { op: "focus"; id: string | null }
+  /** The context indicator: switch to another profile, or clear it. */
+  | { op: "context"; contextId: string | null }
   | { op: "dismiss"; id: string }
   | { op: "resize"; id: string; size: SurfaceSize }
   | { op: "approval_decided"; approvalId: string; decision: "approved" | "rejected" };
 
-export function applyUserOp(auth: AuthContext, thread: ThreadRef, op: UserWorkspaceOp) {
+export async function applyUserOp(auth: AuthContext, thread: ThreadRef, op: UserWorkspaceOp) {
   const at = new Date().toISOString();
+  // A context is checked against this workspace's own active profiles before it is used.
+  const context =
+    op.op === "context" && op.contextId ? await activeContextOf(auth, op.contextId, 0) : null;
+  if (op.op === "context" && op.contextId && !context)
+    throw new AppError("NOT_FOUND", "Context not found");
+  if (context && op.op === "context")
+    await associateInteraction(auth, context.id, thread, "activated");
   return mutate(auth, thread, (s) => {
     switch (op.op) {
       case "focus":
@@ -294,6 +336,16 @@ export function applyUserOp(auth: AuthContext, thread: ThreadRef, op: UserWorksp
       }
       case "approval_decided":
         return approvalDecidedOps(s, op.approvalId, op.decision, undefined, at);
+      case "context":
+        return [
+          {
+            op: "context",
+            context: context
+              ? { id: context.id, name: context.name, kind: context.kind, accent: context.accent }
+              : null,
+            at,
+          },
+        ];
     }
   });
 }
@@ -358,23 +410,41 @@ export async function runSurfaceAction(
     });
 
   const ports = createExecutorPorts(auth);
-  const outcome = await executeToolCall(ports, toolContext(auth, "user_ui", null, thread), {
-    name: call.name,
-    args: call.args,
-  });
+  // Tools may present several Surfaces (a study answer updates the question and the
+  // progress): collect them here and apply them with the result, like during a turn.
+  const collected: WorkspaceOp[] = [];
+  const port: WorkspacePort = {
+    state: () => applyOps(current, collected),
+    apply: (ops) => void collected.push(...ops),
+    activity: () => undefined,
+  };
+  const outcome = await executeToolCall(
+    ports,
+    {
+      ...toolContext(auth, "user_ui", null, thread),
+      workspace: port,
+      context: current.context
+        ? { id: current.context.id, name: current.context.name, kind: current.context.kind }
+        : null,
+    },
+    { name: call.name, args: call.args },
+  );
   logger.info("workspace.surface_action", { type: surface.type, action, status: outcome.status });
   const at = new Date().toISOString();
   const state = await mutate(auth, thread, (s) => {
     const reconciled = reconcileOps(s, outcome, at);
-    return reconciled.length
-      ? reconciled
-      : presentOps(
-          surfacesFromOutcome(call.name, outcome, {
-            key: `${surfaceId}:${action}`,
-            intentId: s.intent?.id ?? null,
-          }),
-          at,
-        );
+    return [
+      ...collected,
+      ...(reconciled.length
+        ? reconciled
+        : presentOps(
+            surfacesFromOutcome(call.name, outcome, {
+              key: `${surfaceId}:${action}`,
+              intentId: s.intent?.id ?? null,
+            }),
+            at,
+          )),
+    ];
   });
   return { state, outcome: toClientOutcome(outcome) };
 }

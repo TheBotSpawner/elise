@@ -275,6 +275,25 @@ database is needed.
   archiving asks first and bulk changes always need approval with count and examples. Renamed
   fields are followed; removed or retyped fields mark the database as needing attention. Record
   content is treated as data. Document questions still go to Knowledge.
+- **Context Profiles:** the areas of your world (a subject, a client, a project) and where each
+  one lives — Knowledge Spaces, email domains, task lists, Notion sources, people, websites.
+  "RSFA es uno de mis clientes" proposes the links found by name (you confirm them on screen);
+  ELISE recognizes the context from what you say ("poneme al día con RSFA", "¿qué le debemos a
+  Rod?"), keeps it for follow-ups, asks when two match, and lets it fade when you move on. A
+  context only tells ELISE where to look first: every source keeps its own permissions and
+  approvals. Managed in My Elise › Contexts. See
+  [ADR-016](docs/decisions/ADR-016-context-profiles-study-work.md).
+- **Client / Work Intelligence:** "Poneme al día con RSFA" gathers what changed since your last
+  interaction about it (email, meetings, tasks, documents, earlier conversations, linked Notion
+  data; public news only if you ask), with quoted commitments ("Rod asked for…"), a timeline,
+  and every unavailable source named. Meeting Prep recognizes the client from the attendees and
+  searches its sources first.
+- **Study Mode:** "Tomame oral de Administración sobre las unidades 3 y 4" — one question at a
+  time from your own material, answers evaluated against the passages (Strong / Partial / Needs
+  review, never percentages), progressive hints, the source revealed only after you answer or
+  ask, weak concepts asked again later from another angle, a session summary, and progress kept
+  for next time ("¿qué me costó la última vez?"). Works by voice. The Morning Brief's "Today's
+  focus" mentions a context only when it has something concrete today.
 - Dark / light / system theme; Spanish and English UI; responsive desktop + mobile navigation.
 
 ## Structure

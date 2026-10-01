@@ -17,6 +17,8 @@ export type CapabilityKey =
   | "settings"
   | "workspace"
   | "web_search"
+  | "contexts"
+  | "study"
   | "voice"
   | "schedules";
 
