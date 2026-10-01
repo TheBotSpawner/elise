@@ -24,6 +24,7 @@ import {
   GraduationCap,
   Sprout,
   NotebookPen,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -72,6 +73,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   study_question: GraduationCap,
   study_progress: Sprout,
   study_summary: NotebookPen,
+  shortcut: Zap,
   result: Sparkles,
 };
 
@@ -841,6 +843,8 @@ export function SurfaceBody({
       return <StudyProgressBody p={p} timezone={timezone} />;
     case "study_summary":
       return <StudySummaryBody p={p} />;
+    case "shortcut":
+      return <ShortcutBody surface={surface} p={p} handlers={handlers} />;
     case "result": {
       const rp = surface.payload as SurfacePayloads["result"];
       return <DisplayCard display={rp.display as unknown as ToolDisplay} timezone={timezone} />;
@@ -1240,6 +1244,68 @@ function ContextProposalBody({
           {t.workspace.actions.create_context}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** A Shortcut ELISE proposes (Save) or just saved: its phrases and what it will do. */
+function ShortcutBody({
+  surface,
+  p,
+  handlers,
+}: {
+  surface: Surface;
+  p: SurfacePayloads["shortcut"];
+  handlers: SurfaceHandlers;
+}) {
+  const { t } = useI18n();
+  const sc = t.shortcuts;
+  const pending = handlers.pending?.startsWith(`${surface.id}:`) ?? false;
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="flex flex-wrap gap-1.5">
+        {p.phrases.map((phrase) => (
+          <Chip key={phrase} tone="accent">
+            “{phrase}”
+          </Chip>
+        ))}
+      </p>
+      <ol className="flex flex-col gap-1 text-[13.5px]">
+        {p.steps.map((step, i) => (
+          <li key={i} className="flex gap-2">
+            <span className="w-4 shrink-0 text-faint tabular-nums">{i + 1}.</span>
+            <span>{sc.steps[step.type as keyof typeof sc.steps] ?? step.type}</span>
+          </li>
+        ))}
+      </ol>
+      {(p.contextName || p.requiresConfirmation) && (
+        <p className="text-[12.5px] text-muted">
+          {[p.contextName && sc.forContext(p.contextName), p.requiresConfirmation && sc.asksFirst]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
+      {p.state === "saved" ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="flex items-center gap-2 text-[14px] text-success">
+            <Check className="size-4" aria-hidden />
+            {sc.saved}
+          </p>
+          <ActionLink href="/my-elise/shortcuts">{t.workspace.actions.open}</ActionLink>
+        </div>
+      ) : (
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            disabled={pending || handlers.pending !== null || handlers.busy}
+            onClick={() => handlers.onAction(surface, "save_shortcut", null)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full bg-fg px-4 text-[13.5px] font-medium text-bg transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {pending && <span className="size-1.5 animate-pulse rounded-full bg-bg" aria-hidden />}
+            {t.workspace.actions.save_shortcut}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

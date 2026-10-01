@@ -349,6 +349,19 @@ class FakeSettings implements SettingsStore {
   async setScheduleNotify(id: string, notify: ScheduleSummary["notify"]) {
     this.list = this.list.map((s) => (s.id === id ? { ...s, notify } : s));
   }
+  voiceSettings = {
+    continuous: true,
+    bargeIn: true,
+    wakeEnabled: false,
+    wakePhrase: "elise" as const,
+  };
+  async voice() {
+    return this.voiceSettings;
+  }
+  async updateVoice(patch: Partial<FakeSettings["voiceSettings"]>) {
+    this.voiceSettings = { ...this.voiceSettings, ...patch };
+    return this.voiceSettings;
+  }
   async connections() {
     return [];
   }

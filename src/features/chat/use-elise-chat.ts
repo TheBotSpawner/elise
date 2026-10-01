@@ -12,7 +12,9 @@ import {
   type TurnModality,
   type VoiceTurnMeta,
 } from "@/core/interaction";
+import { WAKE_LABELS, WAKE_PHRASES, type WakePhrase } from "@/core/voice/wake";
 import { applyOps, emptyWorkspace, type WorkspaceState } from "@/core/workspace/model";
+import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { applyAppearance } from "@/lib/theme";
 
 import type { ChatMessage } from "./types";
@@ -194,6 +196,12 @@ export function useEliseChat(initial: {
                   event.outcome.display?.kind === "appearance"
                 )
                   applyAppearance(event.outcome.display);
+                // ELISE changed her wake phrase: the voice session follows without a reload.
+                if (
+                  event.outcome.status === "succeeded" &&
+                  event.outcome.display?.kind === "setting_changed"
+                )
+                  announceVoicePrefs(event.outcome.display.changes);
                 patchAssistant(assistantId, (m) => ({
                   ...m,
                   tools: m.tools.map((t) =>
@@ -301,4 +309,18 @@ export function useEliseChat(initial: {
     trackApproval,
     markApprovalResolved,
   };
+}
+
+function announceVoicePrefs(changes: Extract<ToolDisplay, { kind: "setting_changed" }>["changes"]) {
+  const detail: { wakePhrase?: WakePhrase; wakeEnabled?: boolean } = {};
+  for (const c of changes) {
+    if (c.setting !== "wake_phrase") continue;
+    if (c.subject === "enabled") detail.wakeEnabled = c.to === "on";
+    else {
+      const phrase = WAKE_PHRASES.find((p) => WAKE_LABELS[p] === c.to);
+      if (phrase) detail.wakePhrase = phrase;
+    }
+  }
+  if (Object.keys(detail).length)
+    window.dispatchEvent(new CustomEvent(VOICE_PREFS_EVENT, { detail }));
 }

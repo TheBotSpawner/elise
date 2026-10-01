@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { AIToolSpec } from "./ai-provider";
 import type { ToolCallOutcome } from "./executor";
+import type { MorningBrief } from "../briefs/morning-brief";
 import type { CalendarEvent, CalendarInfo, CalendarProvider } from "../capabilities/calendar";
 import type {
   EmailDraft,
@@ -37,7 +38,10 @@ import type { KnowledgeReader } from "../knowledge/model";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
 import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
+import type { ShortcutStore } from "../shortcuts/model";
 import type { StudyPort } from "../study/model";
+import type { BriefPort } from "../tools/planning";
+import type { WakeStatus } from "../voice/session";
 import type { WebCapability } from "../web/model";
 import type { WorkspacePort } from "../workspace/port";
 import type { SurfacePayloads } from "../workspace/registry";
@@ -65,6 +69,8 @@ export interface ToolContext {
    * every read still resolves its own binding and permissions.
    */
   context?: { id: string; name: string; kind: ContextKind } | null;
+  /** What this device can do for the wake phrase, as the browser reported it (voice turns). */
+  voiceWake?: WakeStatus | null;
 }
 
 /** Capability → provider contract. Grows as capabilities are implemented. */
@@ -90,6 +96,10 @@ export interface CapabilityProviders {
   contexts: ContextStore;
   /** Study sessions and progress, plus AI for questions and evaluation (ADR-016). */
   study: StudyPort;
+  /** The user's Shortcuts (ADR-017). */
+  shortcuts: ShortcutStore;
+  /** Today's Morning Brief, assembled like the scheduled one (ADR-017 §15). */
+  briefs: BriefPort;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -248,7 +258,7 @@ export type ToolDisplay =
   | {
       kind: "setting_changed";
       changes: {
-        setting: "timezone" | "language" | "notifications" | "schedule";
+        setting: "timezone" | "language" | "notifications" | "schedule" | "wake_phrase";
         from: string | null;
         to: string;
         subject?: string;
@@ -322,7 +332,10 @@ export type ToolDisplay =
     }
   | { kind: "study_question"; question: SurfacePayloads["study_question"] }
   | { kind: "study_progress"; progress: SurfacePayloads["study_progress"] }
-  | { kind: "study_summary"; summary: SurfacePayloads["study_summary"] };
+  | { kind: "study_summary"; summary: SurfacePayloads["study_summary"] }
+  /** Continuous voice and Shortcuts (ADR-017). */
+  | { kind: "morning_brief"; brief: MorningBrief }
+  | { kind: "shortcut"; shortcut: SurfacePayloads["shortcut"] };
 
 export interface StructuredSourceRef {
   id: string;

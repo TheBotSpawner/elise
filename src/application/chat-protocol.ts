@@ -61,4 +61,8 @@ export interface AssistantMessageMetadata {
   tools?: ClientToolTrace[];
   toolNotes?: string[];
   error?: PublicError;
+  /** This turn ran a Shortcut (ADR-017 §12): provenance shown in the thread. */
+  shortcut?: { id: string; name: string };
+  /** This turn resolved a pending approval from a spoken answer (ADR-017 §16). */
+  voiceApproval?: { approvalId: string; decision: "approved" | "rejected" };
 }

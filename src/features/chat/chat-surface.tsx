@@ -54,7 +54,10 @@ export function ChatSurface({
   workspaceId,
   initialWorkspace,
   contexts = [],
+  run,
 }: {
+  /** "Run" from My Elise › Shortcuts: this Shortcut's phrase is sent once, as typed. */
+  run?: string | null;
   /** The user's Context Profiles, for switching from the indicator (ADR-016). */
   contexts?: ContextOption[];
   /** For Realtime updates of this conversation's Live Workspace. */
@@ -96,18 +99,33 @@ export function ChatSurface({
     workspace: initialWorkspace,
   });
   const empty = messages.length === 0;
+  const ranRef = useRef(false);
+  useEffect(() => {
+    if (!run || ranRef.current) return;
+    ranRef.current = true;
+    window.history.replaceState(null, "", "/");
+    void send(run);
+  }, [run, send]);
   // Voice is another way into the same ELISE (ADR-014): same send, same stream, same Surfaces.
   const voiceSession = useVoice({ prefs: voice, send, subscribe, level: presence.level });
   const voiceOn = voice.enabled && voiceSession.supported;
   const phase = voiceSession.state.phase;
+  // Asleep, the Orb rests (idle); the wake phrase or a tap brings it back to listening.
   const voiceOrb: OrbState[] =
-    phase === "listening"
+    phase === "listening" ||
+    phase === "user_speaking" ||
+    phase === "interrupted" ||
+    phase === "arming"
       ? ["listening"]
       : phase === "speaking"
         ? ["speaking"]
-        : phase === "transcribing"
-          ? ["thinking"]
-          : [];
+        : phase === "executing"
+          ? ["executing"]
+          : phase === "waiting_approval"
+            ? ["waiting_approval"]
+            : phase === "finalizing_input" || phase === "thinking"
+              ? ["thinking"]
+              : [];
   const orbState = resolveOrbState([...voiceOrb, chatOrbState]);
   const voiceHandlers = {
     start: voiceSession.start,
@@ -212,7 +230,13 @@ export function ChatSurface({
         empty ? "bottom-full mb-3 md:top-full md:bottom-auto md:mt-3 md:mb-0" : "bottom-full mb-3",
       )}
     >
-      {voiceOn && <VoiceBar state={voiceSession.state} handlers={voiceHandlers} />}
+      {voiceOn && (
+        <VoiceBar
+          state={voiceSession.state}
+          handlers={voiceHandlers}
+          wakePhrase={voice.wakePhrase}
+        />
+      )}
       {workspace.context && !empty && (
         <div>
           <ContextIndicator

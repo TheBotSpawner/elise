@@ -28,6 +28,10 @@ export type UserProfileRow = {
   voice_output: boolean;
   voice_language: "auto" | "es" | "en";
   voice_name: "marin" | "cedar" | "coral" | "sage" | "ash" | "verse";
+  voice_continuous: boolean;
+  voice_barge_in: boolean;
+  voice_wake_enabled: boolean;
+  voice_wake_phrase: "elise" | "hey_elise" | "oye_elise" | "liz";
   created_at: Ts;
   updated_at: Ts;
 };
@@ -1032,6 +1036,25 @@ export type StudyAttemptRow = {
   created_at: Ts;
 };
 
+export type ShortcutRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  trigger_phrases: string[];
+  phrase_keys: string[];
+  language: "es" | "en" | null;
+  steps: Json;
+  context_profile_id: string | null;
+  requires_confirmation: boolean;
+  last_run_at: Ts | null;
+  run_count: number;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -1058,6 +1081,10 @@ export type Database = {
       >;
       live_workspaces: Table<LiveWorkspaceRow, "workspace_id" | "user_id">;
       context_profiles: Table<ContextProfileRow, "workspace_id" | "kind" | "name" | "name_key">;
+      shortcuts: Table<
+        ShortcutRow,
+        "workspace_id" | "user_id" | "name" | "trigger_phrases" | "phrase_keys" | "steps"
+      >;
       context_links: Table<
         ContextLinkRow,
         "workspace_id" | "context_profile_id" | "link_type" | "label"

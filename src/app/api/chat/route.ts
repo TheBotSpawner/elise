@@ -22,6 +22,17 @@ const bodySchema = z
       .object({
         durationMs: z.number().int().min(0).max(120_000),
         language: z.enum(["es", "en"]).nullable(),
+        wake: z
+          .enum([
+            "off",
+            "unsupported",
+            "downloadable",
+            "installing",
+            "ready",
+            "listening",
+            "failed",
+          ])
+          .optional(),
       })
       .strict()
       .optional(),

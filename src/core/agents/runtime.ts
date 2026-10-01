@@ -1,5 +1,5 @@
 import { AppError, toPublicError, type PublicError } from "../errors";
-import type { AIInputItem, AIProvider, AIUsage, ModelTier } from "./ai-provider";
+import type { AIInputItem, AIProvider, AITurnRequest, AIUsage, ModelTier } from "./ai-provider";
 import { executeToolCall, type ExecutorPorts, type ToolCallOutcome } from "./executor";
 import { ToolRegistry, type AnyToolDefinition, type ToolContext, type ToolDisplay } from "./tools";
 
@@ -34,6 +34,14 @@ export interface RunInput {
   tier?: ModelTier;
   limits?: RuntimeLimits;
   signal?: AbortSignal;
+  /**
+   * Calls decided deterministically before the model (a Shortcut's steps, ADR-017 §12). They
+   * run through the same executor — validation, resolution, policy, approvals, audit — as if
+   * the model had asked; the model then only writes the answer from their results.
+   */
+  preset?: { name: string; args: unknown }[];
+  /** A latency hint for reasoning models (spoken turns favour speed, ADR-017 §18). */
+  reasoning?: AITurnRequest["reasoning"];
 }
 
 /**
@@ -50,6 +58,23 @@ export async function* runElise(run: RunInput): AsyncGenerator<RuntimeEvent> {
   let model: string | null = null;
 
   try {
+    if (run.preset?.length) {
+      yield { type: "status", state: "using_tools" };
+      for (const [i, call] of run.preset.entries()) {
+        const callId = `preset_${i}`;
+        const args = JSON.stringify(call.args ?? {});
+        items.push({ type: "tool_call", callId, name: call.name, arguments: args });
+        yield { type: "tool_started", callId, name: call.name };
+        const outcome = await executeToolCall(run.ports, run.ctx, {
+          name: call.name,
+          args: call.args,
+          idempotencyKey: run.ctx.aiRunId ? `${run.ctx.aiRunId}:${callId}` : null,
+        });
+        traces.push({ callId, name: call.name, outcome });
+        items.push({ type: "tool_result", callId, output: JSON.stringify(forModel(outcome)) });
+        yield { type: "tool_finished", callId, name: call.name, outcome };
+      }
+    }
     for (let turn = 0; turn < limits.maxModelTurns; turn++) {
       yield { type: "status", state: "thinking" };
       const calls: { callId: string; name: string; arguments: string }[] = [];
@@ -59,6 +84,7 @@ export async function* runElise(run: RunInput): AsyncGenerator<RuntimeEvent> {
         input: items,
         tools: specs,
         tier: run.tier ?? "standard",
+        ...(run.reasoning ? { reasoning: run.reasoning } : {}),
         signal: run.signal,
       })) {
         if (event.type === "text_delta") {

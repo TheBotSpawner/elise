@@ -11,6 +11,8 @@ export type TurnModality = "text" | "voice";
 export interface VoiceTurnMeta {
   durationMs: number;
   language: "es" | "en" | null;
+  /** What this browser can do for the wake phrase (so ELISE never claims it works). */
+  wake?: "off" | "unsupported" | "downloadable" | "installing" | "ready" | "listening" | "failed";
 }
 
 export const threadUrl = (t: ThreadRef) =>

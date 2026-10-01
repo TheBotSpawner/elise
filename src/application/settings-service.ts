@@ -8,9 +8,11 @@ import {
   type Notify,
   type SettingsStore,
   type Theme,
+  type VoiceSettings,
 } from "@/core/capabilities/settings";
 import { AppError } from "@/core/errors";
 import { isValidTimezone } from "@/core/time";
+import { WAKE_PHRASES } from "@/core/voice/wake";
 
 import type { AuthContext } from "./auth-context";
 import { listConnections } from "./connections-service";
@@ -131,5 +133,53 @@ export function settingsStore(auth: AuthContext): SettingsStore {
           capabilities: c.capabilities.filter((x) => x.enabled && x.granted).map((x) => x.key),
         }));
     },
+    voice: () => getVoiceSettings(auth),
+    async updateVoice(patch) {
+      const v = await updateVoiceSettings(auth, patch);
+      await audit(auth, "ai", "settings.voice_changed", {
+        wake_enabled: String(v.wakeEnabled),
+        wake_phrase: v.wakePhrase,
+      });
+      return v;
+    },
   };
+}
+
+/** Voice behavior (ADR-017): allowlisted in the database, validated again here. */
+export async function getVoiceSettings(auth: AuthContext): Promise<VoiceSettings> {
+  const { data, error } = await auth.db
+    .from("user_profiles")
+    .select("voice_continuous, voice_barge_in, voice_wake_enabled, voice_wake_phrase")
+    .eq("id", auth.userId)
+    .single();
+  if (error)
+    throw new AppError("INTERNAL_ERROR", "Could not load voice settings", { cause: error });
+  return {
+    continuous: data.voice_continuous,
+    bargeIn: data.voice_barge_in,
+    wakeEnabled: data.voice_wake_enabled,
+    wakePhrase: data.voice_wake_phrase,
+  };
+}
+
+export async function updateVoiceSettings(
+  auth: AuthContext,
+  patch: Partial<VoiceSettings>,
+): Promise<VoiceSettings> {
+  if (patch.wakePhrase && !(WAKE_PHRASES as readonly string[]).includes(patch.wakePhrase))
+    throw new AppError("VALIDATION_ERROR", "That wake phrase isn't supported", {
+      recovery: "review",
+    });
+  const { error } = await auth.db
+    .from("user_profiles")
+    .update({
+      ...(patch.continuous !== undefined ? { voice_continuous: patch.continuous } : {}),
+      ...(patch.bargeIn !== undefined ? { voice_barge_in: patch.bargeIn } : {}),
+      ...(patch.wakeEnabled !== undefined ? { voice_wake_enabled: patch.wakeEnabled } : {}),
+      ...(patch.wakePhrase ? { voice_wake_phrase: patch.wakePhrase } : {}),
+    })
+    .eq("id", auth.userId);
+  if (error)
+    throw new AppError("INTERNAL_ERROR", "Could not save voice settings", { cause: error });
+  return getVoiceSettings(auth);
 }

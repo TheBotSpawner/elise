@@ -13,6 +13,13 @@ export interface VoicePreferences {
   speak: boolean;
   language: "auto" | "es" | "en";
   voice: "marin" | "cedar" | "coral" | "sage" | "ash" | "verse";
+  /** After a reply, keep listening (ADR-017). */
+  continuous: boolean;
+  /** Speaking over ELISE interrupts her. */
+  bargeIn: boolean;
+  /** A sleeping session wakes on the wake phrase (where the device can detect it). */
+  wakeEnabled: boolean;
+  wakePhrase: "elise" | "hey_elise" | "oye_elise" | "liz";
 }
 
 export interface AuthContext {
@@ -79,6 +86,10 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
         speak: profile.voice_output,
         language: profile.voice_language,
         voice: profile.voice_name,
+        continuous: profile.voice_continuous ?? true,
+        bargeIn: profile.voice_barge_in ?? true,
+        wakeEnabled: profile.voice_wake_enabled ?? false,
+        wakePhrase: profile.voice_wake_phrase ?? "elise",
       },
     },
   };

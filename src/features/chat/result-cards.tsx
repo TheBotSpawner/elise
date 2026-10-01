@@ -9,6 +9,7 @@ import type { ToolDisplay } from "@/core/agents/tools";
 import type { CalendarEvent } from "@/core/capabilities/calendar";
 import type { Task } from "@/core/capabilities/tasks";
 import { addDays, todayIn } from "@/core/time";
+import { BriefView } from "@/features/schedules/brief-view";
 import { ScheduleProposalCard } from "@/features/schedules/proposal-card";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -347,6 +348,19 @@ export function DisplayCard({
       return null;
     case "schedule_proposal":
       return <ScheduleProposalCard display={display} rise={rise} />;
+    case "morning_brief":
+      return (
+        <motion.section {...rise} aria-label={t.chat.resultLabel} className={CARD}>
+          <BriefView
+            brief={display.brief}
+            createdAt={`${display.brief.date}T12:00:00Z`}
+            unread={false}
+          />
+        </motion.section>
+      );
+    case "shortcut":
+      // Shown as its Surface in the workspace; the trace line is enough here.
+      return null;
 
     case "availability":
       return (

@@ -1,12 +1,11 @@
 "use client";
 
-import { VOICE_LIMITS } from "@/core/voice/providers";
-
 /**
- * Browser microphone for one voice session (ADR-014). Opened only by an explicit user action;
- * records one utterance at a time and ends it on sustained silence (energy-based end of turn).
- * The level it reports is the real input amplitude (the Orb reacts to it). Audio stays in
- * memory until it is uploaded for transcription, then it is dropped.
+ * Browser microphone for one voice session (ADR-014, ADR-017). Opened only after the user
+ * started the session; capture only — it decides nothing. The controller reads the input
+ * level every tick (turn taking, barge-in) and asks for the audio of one utterance. A
+ * snapshot is the audio so far, for a speculative transcription, without stopping. Audio stays
+ * in memory until it is uploaded for transcription, then it is dropped.
  */
 
 export type MicProblem = "permission_denied" | "no_microphone" | "not_supported";
@@ -14,17 +13,7 @@ export type MicProblem = "permission_denied" | "no_microphone" | "not_supported"
 export interface Utterance {
   blob: Blob;
   durationMs: number;
-  /** Speech was actually detected (silence isn't sent for transcription). */
-  heardSpeech: boolean;
 }
-
-const TICK_MS = 50;
-/** How long a pause ends the turn once the user has spoken. */
-const END_SILENCE_MS = 900;
-/** Minimum voiced time before a pause can end the turn. */
-const MIN_SPEECH_MS = 250;
-/** Nothing said for this long: the utterance ends empty. */
-const NO_SPEECH_MS = 8_000;
 
 function pickMimeType(): string {
   for (const type of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"])
@@ -38,16 +27,8 @@ export class Microphone {
   private analyser: AnalyserNode | null = null;
   private recorder: MediaRecorder | null = null;
   private chunks: Blob[] = [];
-  private timer: ReturnType<typeof setInterval> | null = null;
   private samples = new Float32Array(2048);
   private startedAt = 0;
-  private voicedMs = 0;
-  private lastVoiceAt = 0;
-  private floor = 0;
-  private floorSamples = 0;
-  private current = 0;
-  private ended = false;
-  onSpeechEnd: (() => void) | null = null;
 
   static supported(): boolean {
     return (
@@ -57,11 +38,13 @@ export class Microphone {
     );
   }
 
-  /** Asks for the microphone (the browser prompts the first time). */
+  /** Asks for the microphone (the browser prompts only the first time). */
   async open(): Promise<void> {
+    if (this.stream) return;
     if (!Microphone.supported()) throw new MicError("not_supported");
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
+        // The browser's echo cancellation keeps ELISE's own voice out of the input.
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
     } catch (error) {
@@ -74,7 +57,8 @@ export class Microphone {
             : "not_supported",
       );
     }
-    this.ctx = new AudioContext();
+    this.ctx ??= new AudioContext();
+    void this.ctx.resume();
     const source = this.ctx.createMediaStreamSource(this.stream);
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 2048;
@@ -89,88 +73,65 @@ export class Microphone {
     return this.recorder?.state === "recording";
   }
 
-  /** Starts one utterance; `onSpeechEnd` fires on the pause that ends it. */
+  /** Starts recording one utterance. */
   begin(): void {
     if (!this.stream || this.recording) return;
     const mimeType = pickMimeType();
     this.chunks = [];
     this.recorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : undefined);
     this.recorder.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
-    this.recorder.start(250);
+    // Small timeslices make snapshots fresh (a snapshot is the chunks so far).
+    this.recorder.start(200);
     this.startedAt = performance.now();
-    this.voicedMs = 0;
-    this.lastVoiceAt = 0;
-    this.floor = 0;
-    this.floorSamples = 0;
-    this.ended = false;
     void this.ctx?.resume();
-    this.timer = setInterval(() => this.tick(), TICK_MS);
   }
 
-  private tick() {
-    if (!this.analyser) return;
+  /** The audio recorded so far, without stopping (null when there's nothing yet). */
+  snapshot(): Blob | null {
+    if (!this.recorder || !this.chunks.length) return null;
+    return new Blob(this.chunks, { type: this.recorder.mimeType || "audio/webm" });
+  }
+
+  /** The raw input RMS (0..~0.5), read by the controller every tick. */
+  rms(): number {
+    if (!this.analyser || !this.stream) return 0;
     this.analyser.getFloatTimeDomainData(this.samples);
     let sum = 0;
     for (const v of this.samples) sum += v * v;
-    const rms = Math.sqrt(sum / this.samples.length);
-    const now = performance.now();
-    const elapsed = now - this.startedAt;
-    // The first moments calibrate the room's noise floor.
-    if (elapsed < 400) {
-      this.floor = (this.floor * this.floorSamples + rms) / ++this.floorSamples;
-    }
-    const threshold = Math.max(0.012, this.floor * 2.5);
-    const voiced = elapsed >= 400 && rms > threshold;
-    if (voiced) {
-      this.voicedMs += TICK_MS;
-      this.lastVoiceAt = now;
-    }
-    this.current = Math.min(1, rms * 9);
-    const heard = this.voicedMs >= MIN_SPEECH_MS;
-    const end =
-      (heard && now - this.lastVoiceAt >= END_SILENCE_MS) ||
-      (!heard && elapsed >= NO_SPEECH_MS) ||
-      elapsed >= VOICE_LIMITS.maxUtteranceMs;
-    if (end && !this.ended) {
-      this.ended = true;
-      this.onSpeechEnd?.();
-    }
+    return Math.sqrt(sum / this.samples.length);
   }
 
-  /** The live input level (0..1). */
+  /** The level shown by the Orb (0..1). */
   level(): number {
-    return this.recording ? this.current : 0;
+    return Math.min(1, this.rms() * 9);
   }
 
   /** Ends the utterance and returns it (nothing is kept here afterwards). */
   finish(): Promise<Utterance> {
     const recorder = this.recorder;
-    this.stopTimer();
     const durationMs = Math.round(performance.now() - this.startedAt);
-    const heardSpeech = this.voicedMs >= MIN_SPEECH_MS;
     if (!recorder || recorder.state === "inactive")
-      return Promise.resolve({ blob: new Blob(), durationMs: 0, heardSpeech: false });
+      return Promise.resolve({ blob: new Blob(), durationMs: 0 });
     return new Promise((resolve) => {
+      recorder.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
       recorder.onstop = () => {
         const blob = new Blob(this.chunks, { type: recorder.mimeType || "audio/webm" });
         this.chunks = [];
         this.recorder = null;
-        resolve({ blob, durationMs, heardSpeech });
+        resolve({ blob, durationMs });
       };
       recorder.stop();
     });
   }
 
-  /** Drops the current utterance without sending it (mute, interrupt, end). */
+  /** Drops the current utterance without sending it (mute, interrupt, a reply that ended). */
   discard(): void {
-    this.stopTimer();
     if (this.recorder && this.recorder.state !== "inactive") {
       this.recorder.onstop = null;
       this.recorder.stop();
     }
     this.recorder = null;
     this.chunks = [];
-    this.current = 0;
   }
 
   /** Releases the microphone entirely: the browser's recording indicator turns off. */
@@ -178,14 +139,15 @@ export class Microphone {
     this.discard();
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
-    void this.ctx?.close();
-    this.ctx = null;
     this.analyser = null;
+    // The audio context is kept (suspended) so waking later needs no new user gesture.
+    void this.ctx?.suspend();
   }
 
-  private stopTimer() {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = null;
+  dispose(): void {
+    this.close();
+    void this.ctx?.close();
+    this.ctx = null;
   }
 }
 

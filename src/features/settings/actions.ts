@@ -9,6 +9,7 @@ import { updatePreferences } from "@/application/settings-service";
 import { toPublicError, type PublicError } from "@/core/errors";
 import { isValidTimezone } from "@/core/time";
 import { VOICES } from "@/core/voice/providers";
+import { WAKE_PHRASES } from "@/core/voice/wake";
 import { LOCALE_COOKIE, LOCALES } from "@/lib/i18n";
 import { ACCENTS, THEME_COOKIE, THEMES } from "@/lib/theme";
 
@@ -63,6 +64,10 @@ const voiceSchema = z
     speak: z.boolean(),
     language: z.enum(["auto", "es", "en"]),
     voice: z.enum(VOICES),
+    continuous: z.boolean(),
+    bargeIn: z.boolean(),
+    wakeEnabled: z.boolean(),
+    wakePhrase: z.enum(WAKE_PHRASES),
   })
   .strict();
 
@@ -80,6 +85,10 @@ export async function setVoicePreferences(
         voice_output: v.speak,
         voice_language: v.language,
         voice_name: v.voice,
+        voice_continuous: v.continuous,
+        voice_barge_in: v.bargeIn,
+        voice_wake_enabled: v.wakeEnabled,
+        voice_wake_phrase: v.wakePhrase,
       })
       .eq("id", auth.userId);
     if (error) throw error;

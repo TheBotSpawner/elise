@@ -24,8 +24,10 @@ import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { NOTE_TOOLS } from "@/core/tools/notes";
+import { PLANNING_TOOLS } from "@/core/tools/planning";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { SETTINGS_TOOLS } from "@/core/tools/settings";
+import { SHORTCUT_TOOLS } from "@/core/tools/shortcuts";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { STUDY_TOOLS } from "@/core/tools/study";
 import { TASK_TOOLS } from "@/core/tools/tasks";
@@ -244,6 +246,8 @@ export function makePorts(
       ...WEB_TOOLS,
       ...CONTEXT_TOOLS,
       ...STUDY_TOOLS,
+      ...PLANNING_TOOLS,
+      ...SHORTCUT_TOOLS,
     ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>

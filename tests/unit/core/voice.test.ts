@@ -4,94 +4,142 @@ import type { AuthContext } from "@/application/auth-context";
 import { WorkspaceSession } from "@/application/workspace-service";
 import { buildContextPackage } from "@/core/agents/context";
 import { groupRecall } from "@/core/recall/model";
-import { initialVoice, micOpen, voiceReducer, type VoiceState } from "@/core/voice/session";
+import type { WakeEngine } from "@/core/voice/device";
+import {
+  initialVoice,
+  micCapturing,
+  voiceReducer,
+  wakeListening,
+  type VoiceEvent,
+  type VoiceState,
+} from "@/core/voice/session";
 import { SentenceChunker, toSpeakable } from "@/core/voice/speech-text";
+import { VOICE_TURN } from "@/core/voice/turn";
 import { emptyWorkspace } from "@/core/workspace/model";
 import {
   VoiceController,
   type MicPort,
   type PlayerPort,
   type Transcriber,
+  type VoicePrefs,
 } from "@/features/voice/voice-controller";
 import { OpenAISpeechInput, OpenAISpeechOutput } from "@/infrastructure/ai/openai/speech";
 
-// ── Session lifecycle ────────────────────────────────────────────────────────
+// ── Session state machine ────────────────────────────────────────────────────
 
-const run = (events: Parameters<typeof voiceReducer>[1][], from: VoiceState = initialVoice) =>
+const START: VoiceEvent = { type: "start", speak: true, bargeIn: true, continuous: true };
+const run = (events: VoiceEvent[], from: VoiceState = initialVoice) =>
   events.reduce(voiceReducer, from);
 
-describe("voice session lifecycle", () => {
-  it("idle → listening → transcribing → thinking → speaking → listening", () => {
-    const phases = [
-      { type: "start", speak: true },
+describe("voice session state machine", () => {
+  it("idle → arming → listening → user_speaking → finalizing → thinking ⇄ executing → speaking → listening", () => {
+    const events: VoiceEvent[] = [
+      START,
       { type: "mic_ready" },
+      { type: "speech_start" },
       { type: "speech_end" },
       { type: "partial", text: "Preparame" },
       { type: "transcript", text: "Preparame para mi reunión" },
+      { type: "tool_started" },
+      { type: "tool_finished" },
       { type: "speaking" },
-      { type: "reply_done" },
-    ] as const;
+      { type: "reply_done", awaitingApproval: false },
+    ];
     const seen: string[] = [];
-    phases.reduce((s, e) => {
+    events.reduce((s, e) => {
       const next = voiceReducer(s, e);
       seen.push(next.phase);
       return next;
     }, initialVoice);
     expect(seen).toEqual([
+      "arming",
       "listening",
-      "listening",
-      "transcribing",
-      "transcribing",
+      "user_speaking",
+      "finalizing_input",
+      "finalizing_input",
+      "thinking",
+      "executing",
       "thinking",
       "speaking",
       "listening",
     ]);
   });
 
-  it("the microphone is open only while listening", () => {
-    const listening = run([{ type: "start", speak: true }]);
-    expect(micOpen(listening)).toBe(true);
-    expect(micOpen(run([{ type: "mute" }], listening))).toBe(false);
-    expect(micOpen(run([{ type: "speech_end" }], listening))).toBe(false);
-    expect(micOpen(run([{ type: "end" }], listening))).toBe(false);
+  it("the microphone indicator is true exactly while ELISE may be capturing", () => {
+    const listening = run([START, { type: "mic_ready" }]);
+    expect(micCapturing(run([START]))).toBe(false); // still asking for permission
+    expect(micCapturing(listening)).toBe(true);
+    expect(micCapturing(run([{ type: "mute" }], listening))).toBe(false);
+    expect(micCapturing(run([{ type: "sleep", reason: "inactivity" }], listening))).toBe(false);
+    expect(micCapturing(run([{ type: "end" }], listening))).toBe(false);
+    const speaking = run(
+      [
+        { type: "speech_start" },
+        { type: "speech_end" },
+        { type: "transcript", text: "hola" },
+        { type: "speaking" },
+      ],
+      listening,
+    );
+    // With barge-in on, the mic stays open while she speaks — and the indicator says so.
+    expect(micCapturing(speaking)).toBe(true);
+    expect(micCapturing({ ...speaking, bargeIn: false })).toBe(false);
   });
 
-  it("interrupting ELISE goes back to listening in the same session", () => {
+  it("barge-in interrupts in the same session; without it, speech over ELISE is ignored", () => {
     const speaking = run([
-      { type: "start", speak: true },
+      START,
+      { type: "mic_ready" },
       { type: "speech_end" },
       { type: "transcript", text: "hola" },
       { type: "speaking" },
     ]);
+    const barged = run([{ type: "barge_in" }, { type: "speech_start" }], speaking);
+    expect(barged.phase).toBe("user_speaking");
+    expect(run([{ type: "barge_in" }], { ...speaking, bargeIn: false }).phase).toBe("speaking");
     expect(run([{ type: "interrupt" }], speaking).phase).toBe("listening");
   });
 
-  it("never invents a transcript: silence listens again, twice pauses the session", () => {
-    const once = run([
-      { type: "start", speak: true },
-      { type: "speech_end" },
-      { type: "transcript", text: "  " },
-    ]);
+  it("never invents a transcript: silence listens again, twice puts the session to sleep", () => {
+    const listening = run([START, { type: "mic_ready" }]);
+    const once = run([{ type: "speech_end" }, { type: "transcript", text: "  " }], listening);
     expect(once).toMatchObject({ phase: "listening", problem: "nothing_heard", misses: 1 });
     const twice = run([{ type: "speech_end" }, { type: "transcript", text: "" }], once);
-    expect(twice).toMatchObject({ phase: "idle", problem: "nothing_heard" });
+    expect(twice).toMatchObject({ phase: "sleeping", sleep: "inactivity" });
   });
 
-  it("failures are explained and never end in a fake answer", () => {
+  it("an approval waiting after the reply listens for the answer; not continuous sleeps", () => {
+    const replying = run([
+      START,
+      { type: "mic_ready" },
+      { type: "speech_end" },
+      { type: "transcript", text: "mandale el mail" },
+    ]);
+    expect(run([{ type: "reply_done", awaitingApproval: true }], replying).phase).toBe(
+      "waiting_approval",
+    );
     expect(
-      run([
-        { type: "start", speak: true },
-        { type: "mic_failed", problem: "permission_denied" },
-      ]),
-    ).toMatchObject({
-      phase: "idle",
+      run([{ type: "reply_done", awaitingApproval: false }], { ...replying, continuous: false })
+        .phase,
+    ).toBe("sleeping");
+    const waiting = run([{ type: "reply_done", awaitingApproval: true }], replying);
+    expect(run([{ type: "speech_start" }], waiting).phase).toBe("user_speaking");
+  });
+
+  it("sleep, wake, offline and failures are explicit states", () => {
+    const listening = run([START, { type: "mic_ready" }]);
+    const asleep = run([{ type: "sleep", reason: "hidden" }], listening);
+    expect(asleep).toMatchObject({ phase: "sleeping", sleep: "hidden" });
+    expect(run([{ type: "wake" }], asleep).phase).toBe("arming");
+    expect(wakeListening(run([{ type: "wake_status", status: "listening" }], asleep))).toBe(true);
+    const offline = run([{ type: "offline" }], listening);
+    expect(offline).toMatchObject({ phase: "offline", problem: "network" });
+    expect(run([{ type: "online" }], offline).phase).toBe("sleeping");
+    expect(run([START, { type: "mic_failed", problem: "permission_denied" }])).toMatchObject({
+      phase: "error",
       problem: "permission_denied",
     });
-    const failed = run([
-      { type: "start", speak: true },
-      { type: "speech_end" },
-      { type: "transcription_failed" },
-    ]);
+    const failed = run([{ type: "speech_end" }, { type: "transcription_failed" }], listening);
     expect(failed).toMatchObject({ phase: "listening", problem: "transcription_failed" });
   });
 });
@@ -133,31 +181,40 @@ describe("spoken text", () => {
   });
 });
 
-// ── The controller with fake audio ───────────────────────────────────────────
+// ── The controller with fake audio and a manual clock ────────────────────────
 
 class FakeMic implements MicPort {
-  opened = false;
-  closed = false;
+  opened = 0;
+  closed = 0;
   began = 0;
-  onSpeechEnd: (() => void) | null = null;
+  recording = false;
+  /** What the microphone hears right now (RMS). */
+  input = 0.002;
   constructor(private readonly fail: Error | null = null) {}
   async open() {
     if (this.fail) throw this.fail;
-    this.opened = true;
+    this.opened++;
   }
   begin() {
     this.began++;
+    this.recording = true;
+  }
+  snapshot() {
+    return this.recording ? new Blob(["snapshot-audio"]) : null;
   }
   async finish() {
-    return {
-      blob: new Blob(["fake-audio"], { type: "audio/webm" }),
-      durationMs: 1800,
-      heardSpeech: true,
-    };
+    this.recording = false;
+    return { blob: new Blob(["fake-audio"], { type: "audio/webm" }), durationMs: 1800 };
   }
-  discard() {}
+  discard() {
+    this.recording = false;
+  }
   close() {
-    this.closed = true;
+    this.closed++;
+    this.recording = false;
+  }
+  rms() {
+    return this.input;
   }
   level() {
     return 0.4;
@@ -167,6 +224,7 @@ class FakeMic implements MicPort {
 class FakePlayer implements PlayerPort {
   spoken: string[] = [];
   stopped = 0;
+  chimes = 0;
   speaking = false;
   onStart: (() => void) | null = null;
   onIdle: (() => void) | null = null;
@@ -187,119 +245,330 @@ class FakePlayer implements PlayerPort {
     this.speaking = false;
   }
   close() {}
+  rms() {
+    return this.speaking ? 0.1 : 0;
+  }
   level() {
     return this.speaking ? 0.6 : 0;
   }
+  chime() {
+    this.chimes++;
+  }
 }
 
-function setup(opts: { transcript?: string | null; micError?: Error } = {}) {
+class FakeWake implements WakeEngine {
+  running = false;
+  started: Parameters<WakeEngine["start"]>[0] | null = null;
+  async availability() {
+    return "available" as const;
+  }
+  async install() {
+    return true;
+  }
+  start(opts: Parameters<WakeEngine["start"]>[0]) {
+    this.running = true;
+    this.started = opts;
+  }
+  stop() {
+    this.running = false;
+  }
+}
+
+const PREFS: VoicePrefs = {
+  speak: true,
+  bargeIn: true,
+  continuous: true,
+  wakeEnabled: false,
+  wakePhrase: "elise",
+  language: "es",
+};
+
+function setup(
+  opts: {
+    transcripts?: (string | null)[];
+    micError?: Error;
+    prefs?: Partial<VoicePrefs>;
+    wake?: boolean;
+  } = {},
+) {
   const mic = new FakeMic(opts.micError ?? null);
   const player = new FakePlayer();
+  const wake = opts.wake ? new FakeWake() : null;
   const sent: { text: string; options: unknown }[] = [];
-  const states: VoiceState[] = [];
-  const timings: unknown[] = [];
-  const transcribe: Transcriber = async (_blob, onPartial) => {
-    if (opts.transcript === null) return null;
-    onPartial("¿Qué tengo");
-    return { text: opts.transcript ?? "¿Qué tengo hoy?", language: "es" };
+  const timings: Record<string, number>[] = [];
+  const queue = [...(opts.transcripts ?? ["¿Qué tengo hoy?"])];
+  const uploads: string[] = [];
+  const transcribe: Transcriber = async (blob) => {
+    uploads.push(await blob.text());
+    const text = queue.length > 1 ? queue.shift()! : queue[0]!;
+    return text === null ? null : { text, language: "es" };
   };
+  let now = 0;
+  let tick: (() => void) | null = null;
   const controller = new VoiceController(
     {
       createMic: () => mic,
       createPlayer: () => player,
       transcribe,
       send: (text, options) => sent.push({ text, options }),
-      onState: (s) => states.push(s),
-      onTimings: (t) => timings.push(t),
+      onState: () => {},
+      onTimings: (t) => timings.push(t as Record<string, number>),
       micProblem: () => "permission_denied",
+      now: () => now,
+      every: (_ms, fn) => {
+        tick = fn;
+        return () => {
+          if (tick === fn) tick = null;
+        };
+      },
+      wake,
+      online: () => true,
     },
-    true,
+    { ...PREFS, ...opts.prefs },
   );
-  return { controller, mic, player, sent, states, timings };
+  /** Advances the clock by `ms`, hearing `rms` the whole time. */
+  const hear = async (ms: number, rms: number) => {
+    mic.input = rms;
+    for (let t = 0; t < ms; t += VOICE_TURN.tickMs) {
+      now += VOICE_TURN.tickMs;
+      tick?.();
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    }
+  };
+  /** One utterance in a calibrated room: quiet, speech, then the silence that ends it. */
+  const say = async (speechMs = 800) => {
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await hear(speechMs, 0.1);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+  };
+  return { controller, mic, player, wake, sent, timings, uploads, hear, say };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
-describe("voice controller", () => {
+describe("continuous voice controller", () => {
   it("never opens the microphone before the user starts, and releases it on end", async () => {
     const { controller, mic } = setup();
-    expect(mic.opened).toBe(false);
+    expect(mic.opened).toBe(0);
     await controller.start();
-    expect(mic.opened).toBe(true);
+    expect(mic.opened).toBe(1);
     expect(controller.state.phase).toBe("listening");
     controller.end();
-    expect(mic.closed).toBe(true);
+    expect(mic.closed).toBe(1);
     expect(controller.state.phase).toBe("idle");
   });
 
-  it("a spoken turn enters the same chat path with modality voice — transcript only, no audio", async () => {
-    const { controller, mic, sent } = setup();
+  it("detects the end of the turn by itself and sends the transcript — no audio, modality voice", async () => {
+    const { controller, sent, say } = setup();
     await controller.start();
-    mic.onSpeechEnd?.();
-    await settle();
+    await say();
     expect(sent).toEqual([
       {
         text: "¿Qué tengo hoy?",
-        options: { modality: "voice", voice: { durationMs: 1800, language: "es" } },
+        options: {
+          modality: "voice",
+          voice: { durationMs: 1800, language: "es", wake: "off" },
+        },
       },
     ]);
-    expect(JSON.stringify(sent)).not.toContain("fake-audio");
+    expect(JSON.stringify(sent)).not.toContain("audio");
     expect(controller.state.phase).toBe("thinking");
   });
 
-  it("speaks the streamed reply by sentence, then keeps listening in the same session", async () => {
-    const { controller, mic, player, timings } = setup();
+  it("uses the speculative transcript taken at the pause when nothing was said after it", async () => {
+    const { controller, uploads, say } = setup();
     await controller.start();
-    mic.onSpeechEnd?.();
+    await say();
+    expect(uploads).toEqual(["snapshot-audio"]); // one upload: the snapshot, not the final blob
+  });
+
+  it("a pause that sounds unfinished waits longer before ending the turn", async () => {
+    const { controller, sent, hear } = setup({ transcripts: ["Quiero que me prepares la"] });
+    await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await hear(800, 0.1);
+    await hear(VOICE_TURN.endSilenceMs + 200, 0.002);
+    expect(sent).toHaveLength(0); // still the user's turn
+    await hear(VOICE_TURN.unfinishedSilenceMs - VOICE_TURN.endSilenceMs, 0.002);
     await settle();
+    expect(sent).toHaveLength(1);
+  });
+
+  it("speaks the reply by sentence and listens again in the same session (multi-turn)", async () => {
+    const { controller, mic, player, sent, timings, say } = setup({
+      transcripts: ["¿Qué tengo hoy?", "Contame más de la segunda"],
+    });
+    await controller.start();
+    await say();
     controller.onStream({ type: "conversation" });
     controller.onStream({ type: "text", delta: "Hoy tenés dos reuniones. " });
     expect(controller.state.phase).toBe("speaking");
     controller.onStream({ type: "text", delta: "Te las dejé en pantalla." });
     controller.onStream({ type: "finished", failed: false });
     expect(player.spoken).toEqual(["Hoy tenés dos reuniones.", "Te las dejé en pantalla."]);
-    expect(controller.state.phase).toBe("speaking");
     player.finishPlaying();
     expect(controller.state.phase).toBe("listening");
-    expect(mic.began).toBe(2); // listening again for the next turn
     expect(timings).toHaveLength(1);
+    expect(timings[0]).toMatchObject({
+      speechStart: expect.any(Number),
+      audioStart: expect.any(Number),
+    });
+    await say();
+    expect(sent.map((s) => s.text)).toEqual(["¿Qué tengo hoy?", "Contame más de la segunda"]);
+    expect(mic.opened).toBe(1); // one permission, one session
   });
 
-  it("interruption stops speech at once and ignores the rest of the old reply", async () => {
-    const { controller, mic, player } = setup();
+  it("the user talking over ELISE stops her at once and becomes the next turn", async () => {
+    const { controller, player, sent, hear, say } = setup({
+      transcripts: ["¿Qué tengo hoy?", "No, pará, la de las tres"],
+    });
     await controller.start();
-    mic.onSpeechEnd?.();
-    await settle();
+    await say();
     controller.onStream({ type: "text", delta: "Esta es una respuesta larga. " });
+    // Her own voice leaking into the mic (echo) does not interrupt her…
+    await hear(VOICE_TURN.barge.calibrateMs + 400, 0.03);
+    expect(player.stopped).toBe(0);
+    // …the user clearly speaking over her does.
+    await hear(VOICE_TURN.barge.holdMs + 50, 0.3);
+    expect(player.stopped).toBe(1);
+    expect(controller.state.phase).toBe("user_speaking");
+    controller.onStream({ type: "text", delta: "Y sigue hablando. " });
+    expect(player.spoken).toEqual(["Esta es una respuesta larga."]); // the old reply is dropped
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    expect(sent.at(-1)?.text).toBe("No, pará, la de las tres");
+  });
+
+  it("her own words coming back after a barge-in are dropped, not answered", async () => {
+    const { controller, sent, hear, say } = setup({
+      transcripts: ["¿Qué tengo hoy?", "Tenés dos reuniones hoy"],
+    });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "text", delta: "Tenés dos reuniones hoy. " });
+    await hear(VOICE_TURN.barge.calibrateMs, 0.03);
+    await hear(VOICE_TURN.barge.holdMs + 50, 0.3);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    expect(sent).toHaveLength(1);
+    expect(controller.state.phase).toBe("listening");
+  });
+
+  it("without barge-in, speech over ELISE never interrupts (tap still does)", async () => {
+    const { controller, player, say, hear } = setup({ prefs: { bargeIn: false } });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "text", delta: "Una respuesta. " });
+    await hear(2000, 0.3);
+    expect(player.stopped).toBe(0);
     controller.interrupt();
     expect(player.stopped).toBe(1);
     expect(controller.state.phase).toBe("listening");
-    controller.onStream({ type: "text", delta: "Y sigue hablando. " });
+  });
+
+  it("an approval in the reply leaves the session waiting for the spoken answer", async () => {
+    const { controller, player, say } = setup();
+    await controller.start();
+    await say();
+    controller.onStream({ type: "tool_started" });
+    expect(controller.state.phase).toBe("executing");
+    controller.onStream({ type: "tool_finished", outcome: { status: "approval_required" } });
+    controller.onStream({ type: "text", delta: "¿Lo envío? " });
     controller.onStream({ type: "finished", failed: false });
-    expect(player.spoken).toEqual(["Esta es una respuesta larga."]);
+    player.finishPlaying();
+    expect(controller.state.phase).toBe("waiting_approval");
+  });
+
+  it("sleeps after a long silence, closing the microphone", async () => {
+    const { controller, mic, hear } = setup();
+    await controller.start();
+    await hear(VOICE_TURN.sleepAfterMs + VOICE_TURN.noSpeechMs + 1000, 0.002);
+    expect(controller.state).toMatchObject({ phase: "sleeping", sleep: "inactivity" });
+    expect(mic.closed).toBe(1);
+    expect(micCapturing(controller.state)).toBe(false);
+  });
+
+  it("asleep, the on-device wake phrase wakes it with a chime and runs what followed", async () => {
+    const { controller, mic, player, wake, sent } = setup({
+      wake: true,
+      prefs: { wakeEnabled: true },
+    });
+    controller.setWakeStatus("ready");
+    await controller.start();
+    controller.sleep("inactivity");
+    expect(wake!.running).toBe(true);
+    expect(wake!.started?.phrase).toBe("elise");
+    expect(controller.state.wake).toBe("listening");
+    wake!.started!.onWake("Morning Brief");
+    await settle();
+    expect(wake!.running).toBe(false);
+    expect(player.chimes).toBe(1);
+    expect(mic.opened).toBe(2);
+    expect(sent.at(-1)).toMatchObject({ text: "Morning Brief" });
+    expect(controller.state.phase).toBe("thinking");
+  });
+
+  it("never listens in the background: a hidden page sleeps and stops the wake engine", async () => {
+    const { controller, mic, wake } = setup({ wake: true, prefs: { wakeEnabled: true } });
+    controller.setWakeStatus("ready");
+    await controller.start();
+    controller.visibility(true);
+    expect(controller.state).toMatchObject({ phase: "sleeping", sleep: "hidden" });
+    expect(mic.closed).toBe(1);
+    expect(wake!.running).toBe(false);
+    controller.visibility(false);
+    expect(wake!.running).toBe(true);
+  });
+
+  it("the wake engine never starts when the browser can't detect it locally", async () => {
+    const { controller, wake } = setup({ wake: true, prefs: { wakeEnabled: true } });
+    controller.setWakeStatus("unsupported");
+    await controller.start();
+    controller.sleep("inactivity");
+    expect(wake!.running).toBe(false);
+  });
+
+  it("a dropped network pauses voice honestly and recovers to sleeping", async () => {
+    const { controller, mic } = setup();
+    await controller.start();
+    controller.network(false);
+    expect(controller.state).toMatchObject({ phase: "offline", problem: "network" });
+    expect(mic.closed).toBe(1);
+    controller.network(true);
+    expect(controller.state.phase).toBe("sleeping");
+  });
+
+  it("muted, nothing is captured or sent", async () => {
+    const { controller, sent, hear } = setup();
+    await controller.start();
+    controller.toggleMute();
+    await hear(3000, 0.2);
+    expect(sent).toHaveLength(0);
+    expect(micCapturing(controller.state)).toBe(false);
+    controller.toggleMute();
+    expect(controller.state.phase).toBe("listening");
   });
 
   it("permission denied: a clear problem, no session, nothing sent", async () => {
     const { controller, sent } = setup({ micError: new Error("NotAllowedError") });
     await controller.start();
-    expect(controller.state).toMatchObject({ phase: "idle", problem: "permission_denied" });
+    expect(controller.state).toMatchObject({ phase: "error", problem: "permission_denied" });
     expect(sent).toEqual([]);
   });
 
-  it("transcription failure asks to retry and sends nothing", async () => {
-    const { controller, mic, sent } = setup({ transcript: null });
+  it("transcription failure says so, sends nothing and keeps listening", async () => {
+    const { controller, sent, say } = setup({ transcripts: [null] });
     await controller.start();
-    mic.onSpeechEnd?.();
-    await settle();
+    await say();
     expect(sent).toEqual([]);
     expect(controller.state).toMatchObject({ phase: "listening", problem: "transcription_failed" });
   });
 
   it("if speaking fails the text answer stands and the session continues", async () => {
-    const { controller, mic, player } = setup();
+    const { controller, player, say } = setup();
     await controller.start();
-    mic.onSpeechEnd?.();
-    await settle();
+    await say();
     controller.onStream({ type: "text", delta: "Listo." });
     player.onError?.();
     controller.onStream({ type: "finished", failed: false });
@@ -308,7 +577,7 @@ describe("voice controller", () => {
     expect(controller.state.phase).toBe("listening");
   });
 
-  it("the Orb level is the real mic level while listening and ELISE's while speaking", async () => {
+  it("the Orb level is the real mic level while listening", async () => {
     const { controller } = setup();
     expect(controller.level()).toBe(-1);
     await controller.start();
@@ -327,10 +596,10 @@ describe("voice turns in the runtime", () => {
     userMessage: "¿Qué tengo hoy?",
   };
 
-  it("spoken turns get spoken-reply guidance; approvals are never spoken", () => {
+  it("spoken turns get spoken-reply guidance; the model never claims a spoken approval", () => {
     const voice = buildContextPackage({ ...base, modality: "voice" }).instructions;
     expect(voice).toContain("This turn is spoken");
-    expect(voice).toContain('A spoken "yes" is not an approval');
+    expect(voice).toContain("exactly one approval of this conversation is waiting");
     expect(voice).toContain("never that something is done");
     expect(buildContextPackage(base).instructions).not.toContain("This turn is spoken");
   });
@@ -537,10 +806,9 @@ describe("browser-pass regressions", () => {
   });
 
   it("a long spoken answer stops at the limit and says the rest is on screen", async () => {
-    const { controller, mic, player } = setup();
+    const { controller, player, say } = setup();
     await controller.start();
-    mic.onSpeechEnd?.();
-    await settle();
+    await say();
     for (let i = 0; i < 12; i++)
       controller.onStream({
         type: "text",

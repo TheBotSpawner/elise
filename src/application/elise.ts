@@ -25,8 +25,10 @@ import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { NOTE_TOOLS } from "@/core/tools/notes";
+import { PLANNING_TOOLS } from "@/core/tools/planning";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { SETTINGS_TOOLS } from "@/core/tools/settings";
+import { SHORTCUT_TOOLS } from "@/core/tools/shortcuts";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { STUDY_TOOLS } from "@/core/tools/study";
 import { TASK_TOOLS } from "@/core/tools/tasks";
@@ -68,6 +70,7 @@ import type { AuthContext } from "./auth-context";
 import { contextStore } from "./contexts-service";
 import { syncNoteToKnowledge } from "./notes-knowledge";
 import { settingsStore } from "./settings-service";
+import { shortcutStore } from "./shortcuts-service";
 import { startStructuredBulk } from "./structured-bulk";
 import { studyStore } from "./study-service";
 import { webCapability } from "./web-service";
@@ -92,6 +95,8 @@ export const toolRegistry = new ToolRegistry().register(
   ...WEB_TOOLS,
   ...CONTEXT_TOOLS,
   ...STUDY_TOOLS,
+  ...PLANNING_TOOLS,
+  ...SHORTCUT_TOOLS,
 );
 
 /**
@@ -332,6 +337,15 @@ function providerFactory(
         ai = null;
       }
       return { store: studyStore(auth), ai };
+    },
+    shortcuts() {
+      return shortcutStore(auth);
+    },
+    // The Morning Brief service builds on this module; loaded lazily to keep imports acyclic.
+    briefs() {
+      return {
+        today: async () => (await import("./morning-brief-service")).briefNow(auth),
+      };
     },
   };
 

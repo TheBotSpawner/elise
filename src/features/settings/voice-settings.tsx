@@ -1,23 +1,49 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { VoicePreferences } from "@/application/auth-context";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import type { WakeAvailability } from "@/core/voice/device";
 import { VOICES } from "@/core/voice/providers";
+import { WAKE_LABELS, WAKE_PHRASES, type WakePhrase } from "@/core/voice/wake";
+import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
+import { WebSpeechWakeEngine } from "@/features/voice/wake-engine";
 import { useI18n } from "@/lib/i18n/client";
 
 import { setVoicePreferences } from "./actions";
 
-/** Voice (ADR-014): only what's needed — on/off, spoken replies, language, voice. */
+/**
+ * Voice (ADR-014, ADR-017): only controls that work. The wake phrase is offered only as far as
+ * this browser can detect it on the device — checked, never assumed.
+ */
 export function VoiceSettings({ initial }: { initial: VoicePreferences }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const s = t.voice.settings;
   const [prefs, setPrefs] = useState(initial);
   const [, startTransition] = useTransition();
+  const lang: "es" | "en" = prefs.language === "auto" ? locale : prefs.language;
+  const [wake, setWake] = useState<WakeAvailability | "installing" | "checking">("checking");
+  useEffect(() => {
+    let live = true;
+    const engine = WebSpeechWakeEngine.supported() ? new WebSpeechWakeEngine() : null;
+    void (engine ? engine.availability(lang) : Promise.resolve("unavailable" as const)).then(
+      (a) => live && setWake(a),
+    );
+    return () => {
+      live = false;
+    };
+  }, [lang]);
+
+  async function install() {
+    setWake("installing");
+    const ok = await new WebSpeechWakeEngine().install(lang);
+    setWake(ok ? "available" : await new WebSpeechWakeEngine().availability(lang));
+  }
 
   function change(patch: Partial<VoicePreferences>) {
     const next = { ...prefs, ...patch };
@@ -27,7 +53,18 @@ export function VoiceSettings({ initial }: { initial: VoicePreferences }) {
       if (!result.ok) {
         setPrefs(prefs);
         toast.error(t.errors.codes[result.error.code]);
-      }
+      } else
+        window.dispatchEvent(
+          new CustomEvent(VOICE_PREFS_EVENT, {
+            detail: {
+              speak: next.speak,
+              continuous: next.continuous,
+              bargeIn: next.bargeIn,
+              wakeEnabled: next.wakeEnabled,
+              wakePhrase: next.wakePhrase,
+            },
+          }),
+        );
     });
   }
 
@@ -50,6 +87,65 @@ export function VoiceSettings({ initial }: { initial: VoicePreferences }) {
             onCheckedChange={(speak) => change({ speak })}
           />
         </Row>
+        <Row label={s.continuous} hint={s.continuousHint}>
+          <Switch
+            checked={prefs.continuous}
+            disabled={!prefs.enabled}
+            aria-label={s.continuous}
+            onCheckedChange={(continuous) => change({ continuous })}
+          />
+        </Row>
+        <Row label={s.bargeIn} hint={s.bargeInHint}>
+          <Switch
+            checked={prefs.bargeIn}
+            disabled={!prefs.enabled || !prefs.speak}
+            aria-label={s.bargeIn}
+            onCheckedChange={(bargeIn) => change({ bargeIn })}
+          />
+        </Row>
+        <Row label={s.wake} hint={wake === "unavailable" ? s.wakeUnsupported : s.wakeHint}>
+          <Switch
+            checked={prefs.wakeEnabled && wake !== "unavailable"}
+            disabled={!prefs.enabled || wake === "unavailable" || wake === "checking"}
+            aria-label={s.wake}
+            onCheckedChange={(wakeEnabled) => change({ wakeEnabled })}
+          />
+        </Row>
+        {prefs.enabled && prefs.wakeEnabled && wake !== "unavailable" && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-border p-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="voice-wake-phrase">{s.wakePhrase}</Label>
+                <Select
+                  id="voice-wake-phrase"
+                  value={prefs.wakePhrase}
+                  onChange={(e) => change({ wakePhrase: e.target.value as WakePhrase })}
+                >
+                  {WAKE_PHRASES.map((p) => (
+                    <option key={p} value={p}>
+                      {WAKE_LABELS[p]}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              {(wake === "downloadable" || wake === "downloading" || wake === "installing") && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={wake !== "downloadable"}
+                  onClick={() => void install()}
+                >
+                  {wake === "downloadable" ? s.wakeInstall : s.wakeInstalling}
+                </Button>
+              )}
+            </div>
+            <p className="text-[12.5px] text-muted">
+              {wake === "available" ? s.wakeReady : s.wakeNeedsPack}
+            </p>
+            {/* Only said where it's true: detection runs in this browser, on this device. */}
+            {wake === "available" && <p className="text-[12.5px] text-faint">{s.wakePrivacy}</p>}
+          </div>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="voice-language">{s.language}</Label>

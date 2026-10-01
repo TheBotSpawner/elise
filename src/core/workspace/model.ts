@@ -32,6 +32,7 @@ export const SURFACE_TYPES = [
   "study_question",
   "study_progress",
   "study_summary",
+  "shortcut",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
@@ -79,6 +80,7 @@ export const ACTION_IDS = [
   "create_task",
   "research",
   "create_context",
+  "save_shortcut",
   "expand",
 ] as const;
 export type ActionId = (typeof ACTION_IDS)[number];

@@ -1,5 +1,6 @@
 import { AppError } from "../errors";
 import { isValidTimezone } from "../time";
+import type { WakePhrase } from "../voice/wake";
 
 /**
  * ELISE Self-Control (ADR-012): the product settings ELISE may change for the user, through
@@ -23,6 +24,14 @@ export interface ElisePreferences {
   timezone: string;
   theme: Theme;
   accent: Accent;
+}
+
+/** Voice behavior ELISE may change (ADR-017 §9). The wake phrase is from an allowlist. */
+export interface VoiceSettings {
+  continuous: boolean;
+  bargeIn: boolean;
+  wakeEnabled: boolean;
+  wakePhrase: WakePhrase;
 }
 
 export interface ScheduleSummary {
@@ -51,6 +60,8 @@ export interface SettingsStore {
   setSchedulePaused(id: string, paused: boolean): Promise<void>;
   setScheduleNotify(id: string, notify: Notify): Promise<void>;
   connections(): Promise<ConnectionSummary[]>;
+  voice(): Promise<VoiceSettings>;
+  updateVoice(patch: Partial<VoiceSettings>): Promise<VoiceSettings>;
 }
 
 const norm = (s: string) =>

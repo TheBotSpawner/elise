@@ -7,6 +7,9 @@ import type { VoiceLanguage } from "@/core/voice/providers";
  * (16-bit PCM from /api/voice/speak, scheduled on Web Audio). The level is the real output
  * amplitude, so the Orb moves with what ELISE is actually saying. `stop()` cuts it at once.
  */
+/** No audio for this long (first byte or between chunks): the sentence is skipped. */
+const STALL_MS = 8000;
+
 export class SpeechPlayer {
   private ctx: AudioContext;
   private analyser: AnalyserNode;
@@ -46,7 +49,9 @@ export class SpeechPlayer {
       try {
         await this.play(next.text, next.language, generation);
       } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) this.onError?.();
+        // An interruption aborts quietly; a stalled or failed sentence is reported and skipped.
+        if (this.stalled || !(error instanceof DOMException && error.name === "AbortError"))
+          this.onError?.();
       }
     }
     // A newer reply may already be playing after an interruption: leave its state alone.
@@ -55,13 +60,41 @@ export class SpeechPlayer {
     this.idleWhenDone();
   }
 
+  private stalled = false;
+
   private async play(text: string, language: VoiceLanguage | null, generation: number) {
-    this.controller = new AbortController();
+    const controller = (this.controller = new AbortController());
+    // A sentence whose audio stops arriving is skipped (its text is on screen) instead of
+    // leaving ELISE "speaking" forever.
+    this.stalled = false;
+    let watchdog = 0;
+    const arm = () => {
+      clearTimeout(watchdog);
+      watchdog = window.setTimeout(() => {
+        this.stalled = true;
+        controller.abort();
+      }, STALL_MS);
+    };
+    arm();
+    try {
+      await this.stream(text, language, generation, controller, arm);
+    } finally {
+      clearTimeout(watchdog);
+    }
+  }
+
+  private async stream(
+    text: string,
+    language: VoiceLanguage | null,
+    generation: number,
+    controller: AbortController,
+    arm: () => void,
+  ) {
     const res = await fetch("/api/voice/speak", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text, language }),
-      signal: this.controller.signal,
+      signal: controller.signal,
     });
     if (!res.ok || !res.body) throw new Error("speech failed");
     const rate = Number(/rate=(\d+)/.exec(res.headers.get("x-audio-format") ?? "")?.[1] ?? 24000);
@@ -84,6 +117,7 @@ export class SpeechPlayer {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
+      arm();
       let chunk = value;
       if (carry) {
         const joined = new Uint8Array(carry.length + chunk.length);
@@ -128,13 +162,33 @@ export class SpeechPlayer {
     if (!this.working && !this.sources.size && !this.queue.length) this.onIdle?.();
   }
 
-  /** The live output level (0..1). */
-  level(): number {
+  /** The raw output RMS: what ELISE is putting into the speakers right now (barge-in). */
+  rms(): number {
     if (!this.sources.size) return 0;
     this.analyser.getFloatTimeDomainData(this.samples);
     let sum = 0;
     for (const v of this.samples) sum += v * v;
-    return Math.min(1, Math.sqrt(sum / this.samples.length) * 5);
+    return Math.sqrt(sum / this.samples.length);
+  }
+
+  /** The live output level (0..1). */
+  level(): number {
+    return Math.min(1, this.rms() * 5);
+  }
+
+  /** A very short, quiet tone when the wake phrase is heard (no "Yes?" every time). */
+  chime() {
+    void this.ctx.resume();
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const t = this.ctx.currentTime;
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.05, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    osc.connect(gain).connect(this.ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.2);
   }
 
   /** Stops speaking now (interruption); whatever was generated stays on screen. */

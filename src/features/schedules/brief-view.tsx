@@ -15,6 +15,7 @@ import { useInsightText } from "@/features/chat/finance-cards";
 import { useMoney } from "@/features/finance/format";
 import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
+import { cn } from "@/lib/utils";
 
 import { markResultReadAction } from "./actions";
 
@@ -106,21 +107,24 @@ function FollowUps({ items }: { items: BriefFollowUp[] }) {
   );
 }
 
-/** The Brief: the written summary first, the verified details underneath. */
+/**
+ * The Brief: the written summary first, the verified details underneath. Without a
+ * `resultId` it is the Brief ELISE just assembled in a conversation (a Shortcut, "my brief").
+ */
 export function BriefView({
   resultId,
   brief,
   createdAt,
   unread,
 }: {
-  resultId: string;
+  resultId?: string;
   brief: MorningBrief;
   createdAt: string;
   unread: boolean;
 }) {
   const { t, locale } = useI18n();
   useEffect(() => {
-    if (unread) void markResultReadAction(resultId);
+    if (unread && resultId) void markResultReadAction(resultId);
   }, [resultId, unread]);
 
   const time = new Intl.DateTimeFormat(locale, {
@@ -148,7 +152,12 @@ export function BriefView({
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="type-label text-faint">{day.format(new Date(createdAt))}</p>
-          <h1 className="text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
+          <h1
+            className={cn(
+              "leading-[1.15] font-light tracking-[-0.025em]",
+              resultId ? "text-[30px]" : "text-[20px]",
+            )}
+          >
             {t.brief.title}
           </h1>
         </div>

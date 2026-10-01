@@ -95,7 +95,15 @@ const knowledgeSource = z.object({
 });
 
 const change = z.object({
-  setting: z.enum(["accent", "theme", "timezone", "language", "notifications", "schedule"]),
+  setting: z.enum([
+    "accent",
+    "theme",
+    "timezone",
+    "language",
+    "notifications",
+    "schedule",
+    "wake_phrase",
+  ]),
   from: text(120).nullable(),
   to: text(120),
   subject: text(200).optional(),
@@ -446,6 +454,19 @@ export const PAYLOADS = {
     mistakes: z.array(text(240)).max(5),
     nextReview: z.array(text(120)).max(5),
     at: text(40),
+  }),
+  shortcut: z.object({
+    shortcutId: text(100).nullable(),
+    name: text(80),
+    phrases: z.array(text(60)).min(1).max(5),
+    steps: z
+      .array(z.object({ type: text(60), config: z.record(z.string(), z.unknown()) }))
+      .min(1)
+      .max(4),
+    contextId: text(100).nullable(),
+    contextName: text(120).nullable(),
+    requiresConfirmation: z.boolean(),
+    state: z.enum(["proposed", "saved"]),
   }),
   /** Any other tool result, rendered by its existing card. */
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
@@ -802,6 +823,28 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     actions: (p) => (p.review.length ? [{ id: "review_weak", kind: "prompt" }] : []),
     describe: (p) =>
       `${q(p.contextName)} session summary: ${p.questions} questions · strong: ${p.strong.join(", ") || "—"} · review: ${p.review.join(", ") || "—"}`,
+  },
+  shortcut: {
+    sizes: ["small", "medium"],
+    size: "small",
+    priority: 88,
+    actions: (p) => (p.state === "proposed" ? [{ id: "save_shortcut", kind: "tool" }] : []),
+    describe: (p) =>
+      `Shortcut ${q(p.name)} [${p.state}] phrases: ${p.phrases.map(q).join(", ")} → ${p.steps.map((s) => s.type).join(", ")}`,
+    // Saving builds the call from the stored proposal, never from the browser.
+    tool: (p, action) =>
+      action === "save_shortcut" && p.state === "proposed"
+        ? {
+            name: "shortcuts.create",
+            args: {
+              name: p.name,
+              phrases: p.phrases,
+              steps: p.steps,
+              ...(p.contextId ? { context: p.contextId } : {}),
+              requiresConfirmation: p.requiresConfirmation,
+            },
+          }
+        : null,
   },
   result: {
     sizes: ["small", "medium", "large"],

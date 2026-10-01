@@ -1359,3 +1359,72 @@ describe("context profiles", () => {
     );
   });
 });
+
+describe("shortcuts and voice preferences", () => {
+  const as = <T>(u: { userId: string }, sql: string, args: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, args));
+  const insert = (
+    u: { userId: string; workspaceId: string },
+    phrase: string,
+    steps = '[{"type":"daily_planning.start","config":{}}]',
+    context: string | null = null,
+  ) =>
+    as<{ id: string }>(
+      u,
+      `insert into public.shortcuts (workspace_id, user_id, name, trigger_phrases, phrase_keys, steps, context_profile_id)
+       values ($1, $2, $3, array[$3], array[lower($3)], $4::jsonb, $5) returning id`,
+      [u.workspaceId, u.userId, phrase, steps, context],
+    );
+
+  it("each user sees and runs only their own shortcuts", async () => {
+    const id = (await insert(alice, "Arrancamos")).rows[0]!.id;
+    expect((await as(bob, "select id from public.shortcuts")).rows).toHaveLength(0);
+    await as(bob, "update public.shortcuts set enabled = false where id = $1", [id]);
+    await as(bob, "delete from public.shortcuts where id = $1", [id]);
+    expect(
+      (
+        await as<{ enabled: boolean }>(
+          alice,
+          "select enabled from public.shortcuts where id = $1",
+          [id],
+        )
+      ).rows[0]?.enabled,
+    ).toBe(true);
+    // Writing into someone else's workspace is refused.
+    await expect(
+      as(
+        bob,
+        `insert into public.shortcuts (workspace_id, user_id, name, trigger_phrases, phrase_keys, steps)
+         values ($1, $2, 'x', array['hack'], array['hack'], '[{"type":"workspace.clear","config":{}}]')`,
+        [alice.workspaceId, bob.userId],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("refuses a phrase another enabled shortcut uses, malformed steps and foreign contexts", async () => {
+    await insert(alice, "Morning Brief");
+    await expect(insert(alice, "morning brief")).rejects.toThrow(/already uses that phrase/);
+    await expect(insert(alice, "Bad step", '[{"type":"rm -rf","config":{}}]')).rejects.toThrow();
+    const foreign = (
+      await as<{ id: string }>(
+        bob,
+        `insert into public.context_profiles (workspace_id, kind, name, name_key) values ($1, 'client', 'Secret', 'secret') returning id`,
+        [bob.workspaceId],
+      )
+    ).rows[0]!.id;
+    await expect(
+      insert(alice, "Secret brief", '[{"type":"work.brief","config":{}}]', foreign),
+    ).rejects.toThrow();
+  });
+
+  it("the wake phrase is allowlisted in the database too", async () => {
+    await as(alice, "update public.user_profiles set voice_wake_phrase = 'liz' where id = $1", [
+      alice.userId,
+    ]);
+    await expect(
+      as(alice, "update public.user_profiles set voice_wake_phrase = 'computer' where id = $1", [
+        alice.userId,
+      ]),
+    ).rejects.toThrow();
+  });
+});

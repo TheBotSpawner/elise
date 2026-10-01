@@ -294,6 +294,29 @@ database is needed.
   ask, weak concepts asked again later from another angle, a session summary, and progress kept
   for next time ("¿qué me costó la última vez?"). Works by voice. The Morning Brief's "Today's
   focus" mentions a context only when it has something concrete today.
+- **Continuous voice:** tap the microphone once and talk. ELISE notices when you've finished
+  (silence, plus a quick transcript that waits longer when the sentence sounds cut off), answers
+  in the same session, keeps listening, and stops speaking the moment you talk over her (her own
+  echo doesn't count; headphones work best). The voice gives the synthesis and the Live Workspace
+  shows the detail. After 30 s of silence, or when the tab is hidden, the session sleeps and the
+  microphone is released. The bar always shows whether the mic is capturing. With exactly one
+  approval waiting from the last reply, "Sí, envialo" / "Cancelalo" resolve it (audited as voice);
+  with two, ELISE asks which. See
+  [ADR-017](docs/decisions/ADR-017-continuous-voice-wake-shortcuts.md).
+- **Wake phrase (where the browser allows it):** while a session sleeps and ELISE is open and
+  visible, "Elise" (or Hey Elise / Oye Elise / Liz) wakes it — detected by the browser's
+  on-device speech recognition (Chrome with the local speech pack), never sent anywhere before
+  the phrase. Browsers that can't detect it locally simply don't offer it. Change it in
+  Settings › Voice or by asking ("cambiá tu frase de activación a Liz"). Nothing listens when the
+  tab is hidden or the browser is closed.
+- **Shortcuts:** your own phrases for workflows ELISE already has — "Arrancamos" → plan the day;
+  "RSFA Brief" → catch up on RSFA; "Contabilidad" → oral exam. Typed or spoken, only the exact
+  phrase triggers it ("¿A qué hora arrancamos mañana?" stays a question). Steps come from an
+  allowlist and run as normal tools, so permissions and approvals still apply. Create them in
+  My Elise › Shortcuts or by asking ELISE (a proposal with Save).
+- **Daily planning:** "Planifiquemos el día" brings calendar, tasks due or overdue, habits and
+  goals together into a plan — different from the Morning Brief, which ELISE can also assemble
+  on demand ("dame mi Morning Brief").
 - Dark / light / system theme; Spanish and English UI; responsive desktop + mobile navigation.
 
 ## Structure

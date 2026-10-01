@@ -3,6 +3,8 @@ import "server-only";
 import { executeApprovedAction, type ToolCallOutcome } from "@/core/agents/executor";
 import type { ActionOrigin, ToolDisplay } from "@/core/agents/tools";
 import { AppError } from "@/core/errors";
+import type { ThreadRef } from "@/core/interaction";
+import type { PendingForVoice } from "@/core/voice/approval";
 
 import type { AuthContext } from "./auth-context";
 import { resumeScheduleRunAfterApproval } from "./background";
@@ -46,6 +48,8 @@ export async function resolveApproval(
   auth: AuthContext,
   approvalId: string,
   decision: "approved" | "rejected",
+  /** How the user decided (the audit trail says "voice" for a spoken "sí"). */
+  channel: "ui" | "voice" = "ui",
 ): Promise<ToolCallOutcome | null> {
   const now = new Date().toISOString();
   const { data: approval, error } = await auth.db
@@ -82,6 +86,7 @@ export async function resolveApproval(
     actionId: action.id,
     approvalId,
     result: "success",
+    metadata: { channel },
   });
 
   if (decision === "rejected") {
@@ -107,6 +112,56 @@ export async function resolveApproval(
     errorCode: outcome.status === "failed" ? outcome.error.code : null,
   });
   return outcome;
+}
+
+/**
+ * Pending approvals as a spoken answer may bind to them (ADR-017 §16): whether each was
+ * requested in this same interaction, and by its most recent reply.
+ */
+export async function pendingForInteraction(
+  auth: AuthContext,
+  thread: ThreadRef,
+  /** Read before this turn's run exists (in parallel with the rest of the turn's setup). */
+  currentRunId: string | null = null,
+): Promise<PendingForVoice[]> {
+  const { data: pending } = await auth.db
+    .from("approvals")
+    .select("id, summary, created_at, action_id")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("user_id", auth.userId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(10);
+  if (!pending?.length) return [];
+  const { data: actions } = await auth.db
+    .from("actions")
+    .select("id, ai_run_id")
+    .eq("workspace_id", auth.workspaceId)
+    .in(
+      "id",
+      pending.map((p) => p.action_id),
+    );
+  const column = thread.kind === "conversation" ? "conversation_id" : "interaction_session_id";
+  let runsQuery = auth.db
+    .from("ai_runs")
+    .select("id, started_at")
+    .eq("workspace_id", auth.workspaceId)
+    .eq(column, thread.id);
+  if (currentRunId) runsQuery = runsQuery.neq("id", currentRunId);
+  const { data: runs } = await runsQuery.order("started_at", { ascending: false }).limit(20);
+  const inThread = new Set((runs ?? []).map((r) => r.id));
+  const lastRun = runs?.[0]?.id ?? null;
+  const runOf = new Map((actions ?? []).map((a) => [a.id, a.ai_run_id]));
+  return pending.map((p) => {
+    const run = runOf.get(p.action_id) ?? null;
+    return {
+      id: p.id,
+      summary: p.summary,
+      createdAt: p.created_at,
+      sameInteraction: Boolean(run && inThread.has(run)),
+      fromLastReply: Boolean(run && run === lastRun),
+    };
+  });
 }
 
 /** A schedule run waiting on this approval (if any) finishes with the decision. */

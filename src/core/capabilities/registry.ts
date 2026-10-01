@@ -218,6 +218,24 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       archive: ARCHIVE,
     },
   },
+  // ELISE Shortcuts (ADR-017): typed triggers for existing workflows. Proposing and running
+  // only read (the steps run as their own tools, under their own policy); saving is an audited
+  // write; deleting asks when ELISE proposes it.
+  shortcuts: {
+    key: "shortcuts",
+    status: "available",
+    internal: true,
+    operations: {
+      list: READ,
+      propose: READ,
+      run: READ,
+      create: WRITE,
+      update: WRITE,
+      enable: WRITE,
+      disable: WRITE,
+      delete: ARCHIVE,
+    },
+  },
   // Study Mode (ADR-016): sessions and progress are the user's own learning records.
   study: {
     key: "study",
@@ -268,6 +286,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       setAccent: WRITE,
       getNotifications: READ,
       updateNotifications: WRITE,
+      // The wake phrase and voice behavior (ADR-017 §9): allowlisted values only.
+      updateVoice: WRITE,
       listConnections: READ,
     },
   },
@@ -285,6 +305,9 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       dismiss: READ,
       clear: READ,
       prepareMeeting: READ,
+      // Orchestrations that only gather and present (ADR-017 §14-15).
+      planToday: READ,
+      briefToday: READ,
     },
   },
 };

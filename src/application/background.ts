@@ -27,7 +27,7 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
   const { data: profile } = await db
     .from("user_profiles")
     .select(
-      "display_name, preferred_language, timezone, onboarding_status, theme, accent, voice_enabled, voice_output, voice_language, voice_name",
+      "display_name, preferred_language, timezone, onboarding_status, theme, accent, voice_enabled, voice_output, voice_language, voice_name, voice_continuous, voice_barge_in, voice_wake_enabled, voice_wake_phrase",
     )
     .eq("id", userId)
     .maybeSingle();
@@ -49,6 +49,10 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
         speak: profile.voice_output,
         language: profile.voice_language,
         voice: profile.voice_name,
+        continuous: profile.voice_continuous ?? true,
+        bargeIn: profile.voice_barge_in ?? true,
+        wakeEnabled: profile.voice_wake_enabled ?? false,
+        wakePhrase: profile.voice_wake_phrase ?? "elise",
       },
     },
   };

@@ -13,12 +13,17 @@ import {
 import { AppError, toPublicError } from "@/core/errors";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
-import { intentForTool } from "@/core/workspace/from-results";
+import { matchShortcut } from "@/core/shortcuts/match";
+import { stepsToCalls } from "@/core/shortcuts/model";
+import { todayIn } from "@/core/time";
+import { bindVoiceApproval } from "@/core/voice/approval";
+import { approvalDecidedOps, intentForTool } from "@/core/workspace/from-results";
 import { describeWorkspace } from "@/core/workspace/registry";
 import { getAIProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
 import type { Json } from "@/infrastructure/supabase/database.types";
 
+import { pendingForInteraction, resolveApproval } from "./approvals-service";
 import type { AuthContext } from "./auth-context";
 import type {
   AssistantMessageMetadata,
@@ -36,6 +41,7 @@ import {
 } from "./elise";
 import { openThread } from "./interaction-thread";
 import { queueRecallIndex, searchRecall } from "./recall-service";
+import { enabledShortcuts, shortcutStore } from "./shortcuts-service";
 import { structuredSourcesForChat } from "./structured-service";
 import { studyStore } from "./study-service";
 import { webSearchConfigured } from "./web-service";
@@ -77,16 +83,22 @@ export async function startChatTurn(
     spaceId: input.spaceId,
   });
   const [history, activeSpace] = await Promise.all([thread.history(), thread.activeSpace()]);
-  const [structuredSources, recallEvidence, contexts, studySession] = await Promise.all([
-    capabilities.has("structured") ? structuredSourcesForChat(auth) : [],
-    recallIntent(input.message) ? prefetchRecall(auth, input.message, thread.ref) : null,
-    loadContexts(auth),
-    thread.isNew
-      ? null
-      : studyStore(auth)
-          .activeSession(thread.ref)
-          .catch(() => null),
-  ]);
+  const [structuredSources, recallEvidence, contexts, studySession, pendingApprovals, shortcuts] =
+    await Promise.all([
+      capabilities.has("structured") ? structuredSourcesForChat(auth) : [],
+      recallIntent(input.message) ? prefetchRecall(auth, input.message, thread.ref) : null,
+      loadContexts(auth),
+      thread.isNew
+        ? null
+        : studyStore(auth)
+            .activeSession(thread.ref)
+            .catch(() => null),
+      // Read now, before this turn's run exists: only earlier runs can have asked.
+      modality === "voice" && !thread.isNew
+        ? pendingForInteraction(auth, thread.ref).catch(() => [])
+        : [],
+      enabledShortcuts(auth),
+    ]);
 
   await thread.addUserTurn(input.message, modality, input.voice);
 
@@ -120,6 +132,49 @@ export async function startChatTurn(
   );
   const activeProfile = contexts.profiles.find((p) => p.id === workspace.state().context?.id);
 
+  // A spoken "sí" / "no" may answer exactly one pending approval of this interaction
+  // (ADR-017 §16); anything less certain stays conversation.
+  const approval =
+    modality === "voice"
+      ? bindVoiceApproval({
+          text: input.message,
+          modality,
+          pending: pendingApprovals,
+          now: new Date(),
+        })
+      : ({ kind: "none" } as const);
+  // A Shortcut phrase runs its steps without planning (ADR-017 §12); everything else is
+  // normal reasoning.
+  const shortcut =
+    approval.kind === "none"
+      ? matchShortcut(input.message, shortcuts)
+      : ({ kind: "none" } as const);
+  const ranShortcut =
+    shortcut.kind === "match" && !shortcut.shortcut.requiresConfirmation ? shortcut.shortcut : null;
+  const preset = ranShortcut
+    ? stepsToCalls(ranShortcut.steps, {
+        contextId: ranShortcut.contextId,
+        today: todayIn(auth.profile.timezone),
+      })
+    : null;
+  const turnHints = [
+    contextHint,
+    approval.kind === "ask"
+      ? `The user answered "${input.message.slice(0, 40)}" but ${approval.count} approvals are pending in this interaction. Approve nothing: ask which one (by what it does).`
+      : null,
+    shortcut.kind === "match" && shortcut.shortcut.requiresConfirmation
+      ? `The message matches the user's Shortcut "${shortcut.shortcut.name}", which asks for confirmation first: ask whether to run it; if they confirm, call shortcuts.run.`
+      : null,
+    shortcut.kind === "ambiguous"
+      ? `The message matches several Shortcuts (${shortcut.shortcuts.map((x) => x.name).join(", ")}): ask which one.`
+      : null,
+    ranShortcut
+      ? `This turn is the user's Shortcut "${ranShortcut.name}": its steps already ran (results above, as tool results). Answer from them — briefly, the details are on screen — and don't call those tools again unless the user asks for more.`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const context = buildContextPackage({
     user: auth.profile,
     now: new Date(),
@@ -137,7 +192,7 @@ export async function startChatTurn(
     contexts: contexts.profiles
       .filter((p) => p.id !== activeProfile?.id)
       .map((p) => ({ name: p.name, kind: p.kind })),
-    contextHint,
+    contextHint: turnHints || null,
     studySession: describeStudy(studySession, contexts.profiles),
   });
   const encoder = new TextEncoder();
@@ -187,6 +242,26 @@ export async function startChatTurn(
       let model: string | null = null;
 
       try {
+        if (approval.kind === "resolve") {
+          await answerVoiceApproval(approval);
+          return;
+        }
+        if (ranShortcut) {
+          void shortcutStore(auth)
+            .markRun(ranShortcut.id)
+            .catch(() => undefined);
+          logger.info("shortcut.run", { run_id: runId, steps: ranShortcut.steps.length, modality });
+          await auth.db.from("audit_events").insert({
+            workspace_id: auth.workspaceId,
+            user_id: auth.userId,
+            event_type: "shortcut.run",
+            resource_type: "shortcut",
+            resource_id: ranShortcut.id,
+            origin: "ai",
+            result: "success",
+            metadata: { steps: ranShortcut.steps.map((x) => x.type) },
+          });
+        }
         for await (const event of runElise({
           ai,
           ports,
@@ -194,6 +269,7 @@ export async function startChatTurn(
             ...toolContext(auth, "ai", runId, thread.ref),
             knowledgeSpaceId: activeSpace?.id ?? null,
             workspace,
+            voiceWake: input.voice?.wake ?? null,
             // Live: a context activated by a tool applies to the rest of the run.
             get context() {
               const c = workspace.state().context;
@@ -202,6 +278,10 @@ export async function startChatTurn(
           },
           instructions: context.instructions,
           input: context.input,
+          // A Shortcut's steps run first, through the same executor and policy (ADR-017 §12).
+          ...(preset ? { preset } : {}),
+          // A spoken turn waits on every second of thinking: less deliberation, same tools.
+          ...(modality === "voice" ? { reasoning: "low" as const } : {}),
           tools: toolRegistry
             .available(capabilities)
             .filter((t) => web || t.capability !== "web_search"),
@@ -313,8 +393,58 @@ export async function startChatTurn(
       }
 
       async function persistAssistant(text: string, metadata: AssistantMessageMetadata) {
-        const messageId = await thread.addAssistantTurn(text, modality, metadata);
+        const messageId = await thread.addAssistantTurn(text, modality, {
+          ...metadata,
+          ...(ranShortcut ? { shortcut: { id: ranShortcut.id, name: ranShortcut.name } } : {}),
+        });
         if (!failure) send({ type: "done", messageId });
+      }
+
+      /**
+       * The spoken answer resolved one pending approval: the same resolution as the Approve
+       * button (audited as voice), then a reply that states only what really happened.
+       */
+      async function answerVoiceApproval(a: Extract<typeof approval, { kind: "resolve" }>) {
+        const at = new Date().toISOString();
+        let outcome: Awaited<ReturnType<typeof resolveApproval>> = null;
+        let problem: string | null = null;
+        try {
+          outcome = await resolveApproval(auth, a.approvalId, a.decision, "voice");
+        } catch (error) {
+          problem = toPublicError(error).message;
+        }
+        const display = outcome?.status === "succeeded" ? outcome.display : undefined;
+        if (!problem)
+          workspace.apply(
+            approvalDecidedOps(workspace.state(), a.approvalId, a.decision, display, at),
+          );
+        const es = auth.profile.locale === "es";
+        const failedRun = outcome && outcome.status !== "succeeded";
+        const text = problem
+          ? es
+            ? `No pude resolverla: ${problem}`
+            : `I couldn't resolve it: ${problem}`
+          : a.decision === "rejected"
+            ? es
+              ? `Listo, no lo hago: ${a.summary}.`
+              : `Okay, I won't: ${a.summary}.`
+            : failedRun
+              ? es
+                ? `La aprobé, pero no se pudo completar: ${a.summary}.`
+                : `Approved, but it couldn't be completed: ${a.summary}.`
+              : es
+                ? `Hecho: ${a.summary}.`
+                : `Done: ${a.summary}.`;
+        logger.info("voice.approval_resolved", {
+          run_id: runId,
+          decision: a.decision,
+          status: problem ? "failed" : (outcome?.status ?? "rejected"),
+        });
+        finalText = text;
+        send({ type: "text", delta: text });
+        await persistAssistant(text, {
+          voiceApproval: { approvalId: a.approvalId, decision: a.decision },
+        });
       }
 
       async function finishRun() {

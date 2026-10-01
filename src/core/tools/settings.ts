@@ -9,6 +9,7 @@ import {
   type SettingsStore,
 } from "../capabilities/settings";
 import { AppError } from "../errors";
+import { WAKE_LABELS, WAKE_PHRASES } from "../voice/wake";
 
 /**
  * ELISE Self-Control (ADR-012): ELISE operates its own product settings through these typed
@@ -348,6 +349,87 @@ export const listConnectionsTool: ToolDefinition = {
   },
 };
 
+const wakeInput = z
+  .object({
+    phrase: z
+      .enum(WAKE_PHRASES)
+      .optional()
+      .describe('One of the supported phrases: "elise", "hey_elise", "oye_elise", "liz".'),
+    enabled: z.boolean().optional().describe("Turn the wake phrase on or off."),
+  })
+  .strict();
+
+export const setWakePhraseTool: ToolDefinition = {
+  name: "voice.setWakePhrase",
+  capability: "settings",
+  operation: "updateVoice",
+  description:
+    '"Cambiá tu wake phrase a Liz", "activá la palabra de activación": changes ELISE\'s wake phrase among the supported ones (Elise, Hey Elise, Oye Elise, Liz) or turns it on/off. Any other phrase isn\'t supported — say so.',
+  input: wakeInput,
+  async describe(raw) {
+    const q = wakeInput.parse(raw);
+    return {
+      summary: [
+        q.phrase && `Wake phrase → ${WAKE_LABELS[q.phrase]}`,
+        q.enabled !== undefined && `Wake phrase ${q.enabled ? "on" : "off"}`,
+      ]
+        .filter(Boolean)
+        .join(", "),
+    };
+  },
+  async run(raw, env) {
+    const q = wakeInput.parse(raw);
+    if (!q.phrase && q.enabled === undefined)
+      throw new AppError("VALIDATION_ERROR", "Nothing to change", { recovery: "review" });
+    const before = await store(env).voice();
+    const after = await store(env).updateVoice({
+      ...(q.phrase ? { wakePhrase: q.phrase } : {}),
+      ...(q.enabled !== undefined ? { wakeEnabled: q.enabled } : {}),
+    });
+    const device = env.ctx.voiceWake ?? null;
+    const works = device === "ready" || device === "listening";
+    return {
+      output: {
+        updated: true,
+        wakePhrase: WAKE_LABELS[after.wakePhrase],
+        enabled: after.wakeEnabled,
+        onThisDevice: device ?? "unknown",
+        instructions: after.wakeEnabled
+          ? works
+            ? "Saved. Say it works while a voice session sleeps on this device, with the page open."
+            : device === "downloadable"
+              ? "Saved, but this browser first needs its on-device speech pack: the user can install it in Settings › Voice. Don't say it works yet."
+              : "Saved, but this browser can't detect a wake phrase on the device (it needs Chrome with on-device speech). Say so plainly — tapping the microphone still works."
+          : "Saved.",
+      },
+      display: {
+        kind: "setting_changed",
+        changes: [
+          ...(q.phrase
+            ? [
+                {
+                  setting: "wake_phrase" as const,
+                  from: WAKE_LABELS[before.wakePhrase],
+                  to: WAKE_LABELS[after.wakePhrase],
+                },
+              ]
+            : []),
+          ...(q.enabled !== undefined
+            ? [
+                {
+                  setting: "wake_phrase" as const,
+                  from: before.wakeEnabled ? "on" : "off",
+                  to: after.wakeEnabled ? "on" : "off",
+                  subject: "enabled",
+                },
+              ]
+            : []),
+        ],
+      },
+    };
+  },
+};
+
 export const SETTINGS_TOOLS = [
   getSettingsTool,
   updateSettingsTool,
@@ -360,4 +442,5 @@ export const SETTINGS_TOOLS = [
   pauseTool("pause"),
   pauseTool("resume"),
   listConnectionsTool,
+  setWakePhraseTool,
 ];

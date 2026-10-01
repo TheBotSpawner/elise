@@ -8,6 +8,7 @@ import {
   synthesizeBrief,
   type BriefData,
   type BriefWarning,
+  type MorningBrief,
 } from "@/core/briefs/morning-brief";
 import { AppError, toAppError } from "@/core/errors";
 import type { ActionHandler } from "@/core/schedules/runner";
@@ -205,6 +206,32 @@ async function briefContexts(auth: AuthContext): Promise<BriefData["contexts"] |
     logger.warn("brief.contexts_failed", { code: toAppError(error).code });
     return null;
   }
+}
+
+/**
+ * Today's Morning Brief, now (ADR-017 §15): the same gathering and assembly as the scheduled
+ * brief, with the user's own brief configuration when they have one. No written narrative —
+ * the conversation (or the voice) gives the synthesis.
+ */
+export async function briefNow(auth: AuthContext): Promise<MorningBrief> {
+  const { data } = await auth.db
+    .from("schedules")
+    .select("configuration")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("action_type", "morning_brief")
+    .neq("status", "archived")
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  const parsed = morningBriefConfigSchema.safeParse(data?.configuration ?? {});
+  const config = parsed.success ? parsed.data : morningBriefConfigSchema.parse({});
+  const ctx: ToolContext = toolContext(auth, "ai");
+  const [gathered, contexts] = await Promise.all([
+    gatherBrief(createExecutorPorts(auth), ctx, config),
+    briefContexts(auth),
+  ]);
+  if (contexts) gathered.data.contexts = contexts;
+  return assembleBrief(gathered.data);
 }
 
 /** The Morning Brief action: deterministic gathering + ranking, then one synthesis call. */

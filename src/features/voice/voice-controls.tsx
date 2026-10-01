@@ -3,7 +3,14 @@
 import { Mic, MicOff, Square, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
-import type { VoiceState } from "@/core/voice/session";
+import {
+  isHearing,
+  isReplying,
+  micCapturing,
+  wakeListening,
+  type VoiceState,
+} from "@/core/voice/session";
+import { WAKE_LABELS, type WakePhrase } from "@/core/voice/wake";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -18,32 +25,34 @@ export interface VoiceHandlers {
 }
 
 /**
- * The microphone in the composer. One button, one meaning at a time: start talking, end my
- * turn, interrupt ELISE, or unmute. Never opens the microphone without this tap.
+ * The microphone in the composer. One button, one meaning at a time: start talking (or wake a
+ * sleeping session), end my turn, interrupt ELISE, or unmute. Never opens the microphone
+ * without this tap — or the on-device wake phrase the user turned on.
  */
 export function MicButton({ state, handlers }: { state: VoiceState; handlers: VoiceHandlers }) {
   const { t } = useI18n();
   const { phase } = state;
-  const label =
-    phase === "idle"
-      ? t.voice.start
-      : phase === "listening"
-        ? t.voice.finish
-        : phase === "muted"
-          ? t.voice.unmute
-          : phase === "speaking" || phase === "thinking"
-            ? t.voice.interrupt
-            : t.voice.transcribing;
-  const onClick =
-    phase === "idle"
-      ? handlers.start
-      : phase === "listening"
-        ? handlers.finishNow
-        : phase === "muted"
-          ? handlers.toggleMute
-          : phase === "speaking" || phase === "thinking"
-            ? handlers.interrupt
-            : undefined;
+  const hearing = isHearing(state);
+  const replying = isReplying(state);
+  const startable = phase === "idle" || phase === "error" || phase === "sleeping";
+  const label = startable
+    ? t.voice.start
+    : hearing
+      ? t.voice.finish
+      : phase === "muted"
+        ? t.voice.unmute
+        : replying
+          ? t.voice.interrupt
+          : t.voice.phases[phase] || t.voice.start;
+  const onClick = startable
+    ? handlers.start
+    : hearing
+      ? handlers.finishNow
+      : phase === "muted"
+        ? handlers.toggleMute
+        : replying
+          ? handlers.interrupt
+          : undefined;
   return (
     <button
       type="button"
@@ -51,17 +60,17 @@ export function MicButton({ state, handlers }: { state: VoiceState; handlers: Vo
       disabled={!onClick}
       aria-label={label}
       title={label}
-      aria-pressed={phase !== "idle"}
+      aria-pressed={!startable}
       className={cn(
         "relative grid size-11 shrink-0 place-items-center rounded-full transition-colors",
-        phase === "idle" && "text-muted hover:bg-active hover:text-fg",
-        phase === "listening" && "bg-accent text-accent-fg",
+        startable && "text-muted hover:bg-active hover:text-fg",
+        hearing && "bg-accent text-accent-fg",
         phase === "muted" && "bg-surface-2 text-muted",
-        (phase === "speaking" || phase === "thinking" || phase === "transcribing") &&
+        (replying || phase === "finalizing_input" || phase === "arming") &&
           "bg-accent-soft text-accent-text",
       )}
     >
-      {phase === "listening" && (
+      {hearing && (
         <span
           aria-hidden
           className="absolute inset-0 animate-ping rounded-full bg-accent/30 motion-reduce:hidden"
@@ -69,7 +78,7 @@ export function MicButton({ state, handlers }: { state: VoiceState; handlers: Vo
       )}
       {phase === "muted" ? (
         <MicOff className="relative size-[18px]" aria-hidden />
-      ) : phase === "speaking" ? (
+      ) : replying ? (
         <Square className="relative size-3.5 fill-current" aria-hidden />
       ) : (
         <Mic className="relative size-[18px]" aria-hidden />
@@ -79,14 +88,29 @@ export function MicButton({ state, handlers }: { state: VoiceState; handlers: Vo
 }
 
 /**
- * While a voice session is open: what ELISE is doing, the words as they are recognized, and
- * the few controls that matter. Always visible — the user always knows the mic is on.
+ * While a voice session exists: what ELISE is doing, the words as they are recognized, and
+ * the few controls that matter. Always visible — the dot says whether the microphone is
+ * capturing for ELISE right now, and asleep it says what (if anything) is still listening.
  */
-export function VoiceBar({ state, handlers }: { state: VoiceState; handlers: VoiceHandlers }) {
+export function VoiceBar({
+  state,
+  handlers,
+  wakePhrase,
+}: {
+  state: VoiceState;
+  handlers: VoiceHandlers;
+  wakePhrase: WakePhrase;
+}) {
   const { t } = useI18n();
-  const active = state.phase !== "idle";
+  const active = state.phase !== "idle" && state.phase !== "error";
   const problem = state.problem ? t.voice.problems[state.problem] : null;
-  const status = t.voice.phases[state.phase];
+  const capturing = micCapturing(state);
+  const status =
+    state.phase === "sleeping"
+      ? wakeListening(state)
+        ? t.voice.asleepWake(WAKE_LABELS[wakePhrase])
+        : t.voice.asleep
+      : t.voice.phases[state.phase];
   return (
     <AnimatePresence initial={false}>
       {(active || problem) && (
@@ -103,13 +127,14 @@ export function VoiceBar({ state, handlers }: { state: VoiceState; handlers: Voi
           {active && (
             <span
               aria-hidden
+              title={capturing ? t.voice.micOn : t.voice.micOff}
               className={cn(
                 "size-2 shrink-0 rounded-full",
-                state.phase === "listening"
+                capturing
                   ? "animate-pulse bg-accent"
-                  : state.phase === "muted"
-                    ? "bg-faint"
-                    : "bg-accent/60",
+                  : wakeListening(state)
+                    ? "bg-accent/40"
+                    : "bg-faint",
               )}
             />
           )}
@@ -122,7 +147,7 @@ export function VoiceBar({ state, handlers }: { state: VoiceState; handlers: Voi
           </span>
           {active && (
             <>
-              {(state.phase === "listening" || state.phase === "muted") && (
+              {(isHearing(state) || state.phase === "muted") && (
                 <IconButton
                   label={state.phase === "muted" ? t.voice.unmute : t.voice.mute}
                   onClick={handlers.toggleMute}
@@ -134,9 +159,14 @@ export function VoiceBar({ state, handlers }: { state: VoiceState; handlers: Voi
                   )}
                 </IconButton>
               )}
-              {state.phase === "speaking" && (
+              {isReplying(state) && (
                 <IconButton label={t.voice.stopSpeaking} onClick={handlers.interrupt}>
                   <Square className="size-3.5 fill-current" />
+                </IconButton>
+              )}
+              {state.phase === "sleeping" && (
+                <IconButton label={t.voice.start} onClick={handlers.start}>
+                  <Mic className="size-4" />
                 </IconButton>
               )}
               <IconButton label={t.voice.end} onClick={handlers.end}>

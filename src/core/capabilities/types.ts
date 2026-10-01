@@ -19,6 +19,7 @@ export type CapabilityKey =
   | "web_search"
   | "contexts"
   | "study"
+  | "shortcuts"
   | "voice"
   | "schedules";
 

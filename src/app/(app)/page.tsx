@@ -4,6 +4,7 @@ import { contextOptions } from "@/application/contexts-service";
 import { loadVoiceSession } from "@/application/interaction-thread";
 import { listSpaces } from "@/application/knowledge-service";
 import { latestBrief } from "@/application/schedules-service";
+import { shortcutStore } from "@/application/shortcuts-service";
 import { openTasks } from "@/application/tasks-service";
 import { activeWorkspace, loadWorkspace } from "@/application/workspace-service";
 import { ChatSurface } from "@/features/chat/chat-surface";
@@ -25,6 +26,16 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
     : null;
   const restored = voiceSession?.[0]
     ? { messages: voiceSession[0], workspace: voiceSession[1] }
+    : null;
+  // "Run" from My Elise sends the Shortcut's own phrase — never text taken from the URL.
+  const runId =
+    typeof params.run === "string" && /^[0-9a-f-]{36}$/i.test(params.run) ? params.run : null;
+  const run = runId
+    ? ((
+        await shortcutStore(auth)
+          .list()
+          .catch(() => [])
+      ).find((s) => s.id === runId && s.enabled)?.phrases[0] ?? null)
     : null;
   const [tasks, approvals, brief, resume, contexts] = await Promise.all([
     // Same service and definitions as the Tasks screen, so the counts match what it lists.
@@ -54,6 +65,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
       workspaceId={auth.workspaceId}
       userName={auth.profile.displayName ?? ""}
       contexts={contexts}
+      run={run}
       space={
         space ? { id: space.id, path: space.path, icon: space.icon, color: space.color } : null
       }

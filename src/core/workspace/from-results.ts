@@ -625,6 +625,16 @@ export function surfacesFromOutcome(
           ref: null,
         }),
       );
+    case "shortcut":
+      return one(
+        draft("shortcut", d.shortcut.name.toLowerCase(), d.shortcut, opts, {
+          title: d.shortcut.name,
+          source: { capability: "shortcuts", label: null },
+          ref: null,
+          // A saved confirmation leaves on its own; a proposal waits for Save.
+          ...(d.shortcut.state === "saved" ? { transient: true } : { state: "attention" as const }),
+        }),
+      );
     case "schedule_proposal":
       return one(
         draft(
@@ -744,6 +754,9 @@ const INTENT_BY_CAPABILITY: Record<string, IntentKind> = {
   web: "research",
   study: "study",
   work: "work_brief",
+  planning: "planning",
+  briefs: "planning",
+  shortcuts: "settings",
   contexts: "context_setup",
   settings: "settings",
   appearance: "settings",
