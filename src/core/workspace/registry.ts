@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { mediaPayload } from "./media";
 import {
   ACTION_IDS,
   INTENT_KINDS,
@@ -15,6 +16,7 @@ import {
   type SurfaceType,
   type WorkspaceState,
 } from "./model";
+import { visualizationSpec, type VisualizationSpec } from "./visualization";
 import { TASK_STATUSES } from "../capabilities/tasks";
 import { CONTEXT_KINDS, LINK_TYPES } from "../contexts/model";
 import { toLocalDateTime } from "../time";
@@ -473,6 +475,10 @@ export const PAYLOADS = {
     requiresConfirmation: z.boolean(),
     state: z.enum(["proposed", "saved"]),
   }),
+  /** A chart chosen from the supported templates (ADR-021); never markup or code. */
+  visualization: z.object({ spec: visualizationSpec }),
+  /** Images, video and link previews from URLs the workspace already holds (ADR-021). */
+  media: mediaPayload,
   /** Any other tool result, rendered by its existing card. */
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
 } satisfies Record<SurfaceType, z.ZodType>;
@@ -852,6 +858,21 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
           }
         : null,
   },
+  visualization: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 64,
+    actions: () => [expand],
+    describe: (p) => describeSpec(p.spec),
+  },
+  media: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 60,
+    actions: (p) => [...link("open", p.items[0]?.url), expand],
+    describe: (p) =>
+      `${p.kind}: ${p.items.map((m, i) => `${i + 1}) ${q(m.title || m.domain)} (${m.url})`).join("; ")}`,
+  },
   result: {
     sizes: ["small", "medium", "large"],
     size: "medium",
@@ -860,6 +881,31 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     describe: (p) => p.display.kind,
   },
 };
+
+/** A chart, compactly: its template, title and the numbers it shows (so ELISE can talk about it). */
+function describeSpec(spec: VisualizationSpec): string {
+  const head = `${spec.type} ${q(spec.title)}`;
+  switch (spec.type) {
+    case "kpi":
+      return `${head}: ${spec.value}${spec.previous != null ? ` (previous ${spec.previous})` : ""}`;
+    case "line":
+    case "area":
+    case "bar":
+      return `${head}: ${spec.series
+        .map((s) => `${s.name} [${s.values.map((v, i) => `${spec.x[i]}=${v ?? "–"}`).join(", ")}]`)
+        .join("; ")}`;
+    case "hbar":
+    case "distribution":
+    case "diverging":
+      return `${head}: ${spec.rows.map((r) => `${r.label}=${r.value}`).join(", ")}`;
+    case "progress":
+      return `${head}: ${spec.rows.map((r) => `${r.label}=${Math.round(r.value * 100)}%`).join(", ")}`;
+    case "streak":
+      return `${head}: ${spec.rows.map((r) => `${r.label} ${r.summary}`).join(", ")}`;
+    case "table":
+      return `${head}: ${spec.rows.length} rows`;
+  }
+}
 
 function undoFor(c: z.infer<typeof change>): ToolCallSpec | null {
   if (!c.from) return null;
@@ -934,6 +980,9 @@ const envelope = z.object({
     .max(8),
   intentId: text(100).nullable(),
   transient: z.boolean().optional(),
+  pinned: z.boolean().optional(),
+  compared: z.boolean().optional(),
+  focusItem: text(1000).optional(),
   turn: z.number().int().min(0),
   createdAt: text(40),
   updatedAt: text(40),
@@ -956,6 +1005,7 @@ const intentSchema = z.object({
   kind: z.enum(INTENT_KINDS),
   description: text(300),
   startedAt: text(40),
+  arrangement: z.literal("time").optional(),
 });
 
 const contextSchema = z.object({
@@ -1009,13 +1059,18 @@ export function describeWorkspace(state: WorkspaceState, timezone: string): stri
   if (!state.surfaces.length) return null;
   const lines = state.surfaces.map((s) => {
     const def = DEFINITIONS[s.type] as SurfaceDefinition<SurfaceType>;
-    const flags = [s.id === state.focusId && "focused", s.state !== "ready" && s.state].filter(
-      Boolean,
-    );
+    const flags = [
+      s.id === state.focusId && (s.focusItem ? `focused on item ${s.focusItem}` : "focused"),
+      s.compared && "compared",
+      s.pinned && "pinned",
+      s.state !== "ready" && s.state,
+    ].filter(Boolean);
     return `- ${s.handle} ${s.type}${flags.length ? ` [${flags.join(", ")}]` : ""} ${q(s.title)}: ${def.describe(s.payload as never, timezone)}`;
   });
   return [
-    state.intent ? `Active intent: ${state.intent.kind} — ${q(state.intent.description)}` : null,
+    state.intent
+      ? `Active intent: ${state.intent.kind} — ${q(state.intent.description)}${state.intent.arrangement === "time" ? " (shown in time order)" : ""}`
+      : null,
     state.context ? `Active context: ${q(state.context.name)} (${state.context.kind})` : null,
     ...lines,
   ]

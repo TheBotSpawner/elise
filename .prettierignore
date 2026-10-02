@@ -6,3 +6,5 @@ next-env.d.ts
 .trigger
 # Docs are authored outside this repo; keep their content byte-for-byte.
 docs/
+# Claude Design visual reference (development material, never bundled or served).
+design-reference/

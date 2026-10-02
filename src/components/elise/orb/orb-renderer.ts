@@ -1,12 +1,24 @@
 /**
- * ELISE Orb renderer — ported from the approved reference renderer (JarvisOrb).
+ * ELISE Orb renderer — ported from the approved reference renderer (JarvisOrb v2, Live Canvas:
+ * 12 presence states; design-reference/).
  * The params() table, easing constants and drawing are kept as in the reference:
  * motion τ 450 ms, colour τ 600 ms, pointer τ 400 ms; nothing snaps.
  * Transients: success shows 900 ms then idle; error 1200 ms then "rest" (dimmer idle).
  */
 
 export type RendererState =
-  "idle" | "listening" | "thinking" | "speaking" | "executing" | "approval" | "success" | "error";
+  | "idle"
+  | "listening"
+  | "userSpeaking"
+  | "thinking"
+  | "searching"
+  | "speaking"
+  | "executing"
+  | "approval"
+  | "success"
+  | "attention"
+  | "error"
+  | "sleeping";
 
 type RGB = [number, number, number];
 
@@ -23,6 +35,12 @@ interface Params {
   halo: number;
   rings: number;
   follow: number;
+  /** Searching: a latitude band sweeps the sphere. */
+  scan: number;
+  /** Attention: a soft ring pulses outward. */
+  nudge: number;
+  /** Sleeping: everything dims. */
+  dim: number;
   col: RGB;
   level: number;
 }
@@ -42,6 +60,9 @@ const NUMERIC = [
   "halo",
   "rings",
   "follow",
+  "scan",
+  "nudge",
+  "dim",
 ] as const;
 
 /** Idle/listening colours per approved accent (ADR-012); state colours never change. */
@@ -95,7 +116,7 @@ export function orbParams(key: ParamKey, light: boolean, accent?: string): Param
         listen: [0, 140, 160],
         think: [22, 104, 190],
         exec: [40, 80, 205],
-        approval: [176, 108, 8],
+        approval: accent === "amber" ? [200, 80, 20] : [176, 108, 8],
         success: [0, 136, 92],
         error: [198, 48, 48],
       }
@@ -104,42 +125,51 @@ export function orbParams(key: ParamKey, light: boolean, accent?: string): Param
         listen: [128, 242, 255],
         think: [124, 196, 255],
         exec: [126, 160, 255],
-        approval: [245, 186, 96],
+        approval: accent === "amber" ? [255, 150, 90] : [245, 186, 96],
         success: [120, 240, 190],
         error: [255, 122, 122],
       };
   const tint = accent ? ACCENT_RGB[accent] : undefined;
   if (tint) [C.idle, C.listen] = light ? tint.light : tint.dark;
-  const S: Record<ParamKey, Omit<Params, "level">> = {
-    idle: {
-      rot: 0.12,
-      dsp: 0.6,
-      amp: 0.35,
-      scale: 1,
-      glow: 0.6,
-      brate: 1.12,
-      breath: 1,
-      inner: 0,
-      orbit: 0,
-      halo: 0,
-      rings: 0,
-      follow: 1,
-      col: C.idle!,
-    },
+  const base: Omit<Params, "level" | "col"> = {
+    rot: 0.12,
+    dsp: 0.6,
+    amp: 0.35,
+    scale: 1,
+    glow: 0.6,
+    brate: 1.12,
+    breath: 1,
+    inner: 0,
+    orbit: 0,
+    halo: 0,
+    rings: 0,
+    follow: 1,
+    scan: 0,
+    nudge: 0,
+    dim: 0,
+  };
+  // Every state is the base plus what changes (reference table, v2).
+  const S: Record<ParamKey, Partial<Omit<Params, "level">>> = {
+    idle: {},
     listening: {
+      rot: 0.16,
+      dsp: 0.8,
+      amp: 0.45,
+      scale: 1.04,
+      glow: 0.85,
+      breath: 0.4,
+      rings: 0.6,
+      col: C.listen,
+    },
+    userSpeaking: {
       rot: 0.18,
       dsp: 0.9,
       amp: 0.5,
-      scale: 1.06,
-      glow: 0.95,
-      brate: 1.12,
-      breath: 0.3,
-      inner: 0,
-      orbit: 0,
-      halo: 0,
+      scale: 1.08,
+      glow: 1,
+      breath: 0.2,
       rings: 1,
-      follow: 1,
-      col: C.listen!,
+      col: C.listen,
     },
     thinking: {
       rot: 0.6,
@@ -147,107 +177,69 @@ export function orbParams(key: ParamKey, light: boolean, accent?: string): Param
       amp: 0.75,
       scale: 0.96,
       glow: 0.8,
-      brate: 1.12,
       breath: 0,
       inner: 1,
-      orbit: 0,
-      halo: 0,
-      rings: 0,
       follow: 0.6,
-      col: C.think!,
+      col: C.think,
     },
-    speaking: {
-      rot: 0.2,
-      dsp: 1,
-      amp: 0.5,
-      scale: 1.02,
-      glow: 0.9,
-      brate: 1.12,
-      breath: 0.2,
-      inner: 0,
-      orbit: 0,
-      halo: 0,
-      rings: 0,
-      follow: 1,
-      col: C.idle!,
+    searching: {
+      rot: 0.32,
+      dsp: 1.2,
+      amp: 0.45,
+      scale: 0.97,
+      glow: 0.8,
+      breath: 0,
+      scan: 1,
+      follow: 0.6,
+      col: C.think,
     },
+    speaking: { rot: 0.2, dsp: 1, amp: 0.5, scale: 1.02, glow: 0.9, breath: 0.2 },
     executing: {
       rot: 0.45,
       dsp: 0.8,
       amp: 0.3,
       scale: 0.94,
       glow: 0.7,
-      brate: 1.12,
       breath: 0,
-      inner: 0,
       orbit: 1,
-      halo: 0,
-      rings: 0,
       follow: 0.4,
-      col: C.exec!,
+      col: C.exec,
     },
     approval: {
       rot: 0,
       dsp: 0.15,
       amp: 0.2,
-      scale: 1,
       glow: 0.75,
       brate: 0.78,
-      breath: 1,
-      inner: 0,
-      orbit: 0,
       halo: 1,
-      rings: 0,
       follow: 0,
-      col: C.approval!,
+      col: C.approval,
     },
-    success: {
-      rot: 0.15,
-      dsp: 0.6,
-      amp: 0.3,
-      scale: 1.03,
-      glow: 0.95,
-      brate: 1.12,
-      breath: 0.6,
-      inner: 0,
-      orbit: 0,
-      halo: 0,
-      rings: 0,
-      follow: 1,
-      col: C.success!,
-    },
+    success: { rot: 0.15, scale: 1.03, glow: 0.95, breath: 0.6, col: C.success },
+    attention: { rot: 0.12, scale: 1.02, glow: 0.9, brate: 1.6, nudge: 1 },
     error: {
       rot: 0.05,
       dsp: 0.4,
       amp: 0.2,
       scale: 0.97,
       glow: 0.55,
-      brate: 1.12,
       breath: 0.3,
-      inner: 0,
-      orbit: 0,
-      halo: 0,
-      rings: 0,
       follow: 0.5,
-      col: C.error!,
+      col: C.error,
     },
-    rest: {
-      rot: 0.1,
-      dsp: 0.5,
-      amp: 0.28,
-      scale: 0.99,
-      glow: 0.45,
-      brate: 1.12,
-      breath: 0.8,
-      inner: 0,
-      orbit: 0,
-      halo: 0,
-      rings: 0,
-      follow: 1,
-      col: C.idle!,
+    rest: { rot: 0.1, dsp: 0.5, amp: 0.28, scale: 0.99, glow: 0.45, breath: 0.8 },
+    sleeping: {
+      rot: 0.02,
+      dsp: 0.1,
+      amp: 0.15,
+      scale: 0.9,
+      glow: 0.2,
+      brate: 0.45,
+      follow: 0,
+      dim: 0.55,
     },
   };
-  const o = S[key] ?? S.idle;
+  const o = { ...base, col: C.idle!, ...(S[key] ?? {}) };
   return { ...o, col: [...o.col] as RGB, level: 0 };
 }
 
@@ -271,6 +263,8 @@ export class OrbRenderer {
   private dph = 0;
   private bph = 0;
   private sweep = 0;
+  private sph = 0;
+  private nph = 0;
   private level = 0;
   private ps = { x: 0, y: 0 };
   private lastState: RendererState | null = null;
@@ -306,9 +300,11 @@ export class OrbRenderer {
     for (let i = 0; i < 3; i++) P.col[i]! += (T.col[i]! - P.col[i]!) * kc;
 
     let lv = 0;
-    if (input.level >= 0) lv = s === "listening" || s === "speaking" ? Math.min(1, input.level) : 0;
-    else if (s === "listening")
-      lv = Math.abs(Math.sin(t * 7.3) * Math.sin(t * 2.1 + 1) * 0.8 + Math.sin(t * 13.7) * 0.2);
+    const voiced = s === "listening" || s === "userSpeaking" || s === "speaking";
+    if (input.level >= 0) lv = voiced ? Math.min(1, input.level) : 0;
+    else if (s === "userSpeaking")
+      lv = Math.abs(Math.sin(t * 7.3) * Math.sin(t * 2.1 + 1) * 0.85 + Math.sin(t * 13.7) * 0.25);
+    else if (s === "listening") lv = 0.08 + 0.06 * Math.sin(t * 3.1);
     else if (s === "speaking")
       lv = Math.max(0, Math.sin(t * 5.2)) * (0.55 + 0.45 * Math.sin(t * 1.3));
     if (reduced) lv *= 0.3;
@@ -321,6 +317,8 @@ export class OrbRenderer {
     this.dph += dt * P.dsp * m;
     this.bph += dt * P.brate * m;
     this.sweep += dt * 1.6 * P.orbit * m;
+    this.sph += dt * 1.4 * P.scan * m;
+    this.nph += dt * P.nudge;
     const kp = 1 - Math.exp(-dt / 0.4);
     this.ps.x += (input.pointer.x * P.follow * m - this.ps.x) * kp;
     this.ps.y += (input.pointer.y * P.follow * m - this.ps.y) * kp;
@@ -350,12 +348,15 @@ export class OrbRenderer {
     const r = Math.round(P.col[0]);
     const g = Math.round(P.col[1]);
     const b = Math.round(P.col[2]);
-    const c = (a: number) => `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a)).toFixed(3)})`;
+    const dimK = 1 - P.dim;
+    const c = (a: number) =>
+      `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a * dimK)).toFixed(3)})`;
     const TAU = Math.PI * 2;
     const H = Math.PI / 2;
     // Below 90 px: mini orb (4 latitudes, 8 meridians, no inner core, no rings).
     const small = size < 90;
     const dph = this.dph;
+    const scanY = Math.sin(this.sph);
     ctx.globalCompositeOperation = light ? "source-over" : "lighter";
     let gr = ctx.createRadialGradient(cx, cy, R * 0.3, cx, cy, R * 2);
     gr.addColorStop(0, c((light ? 0.09 : 0.15) * P.glow * (small ? 1.4 : 1)));
@@ -401,12 +402,21 @@ export class OrbRenderer {
         return [cx + x * rad, cy + (y * ct - z * st) * rad, y * st + z * ct];
       };
       const base = (light ? 0.62 : 0.75) * alphaMul;
-      const seg = (a: [number, number, number], q: [number, number, number], lo: number) => {
+      const seg = (
+        a: [number, number, number],
+        q: [number, number, number],
+        lo: number,
+        la: number,
+      ) => {
         const f = ((a[2] + q[2]) / 2 + 1) / 2;
         let al = base * (0.06 + 0.94 * f * f);
         if (P.orbit > 0.02) {
           const d = Math.cos(lo - yaw - this.sweep);
           al *= 1 + P.orbit * 1.4 * Math.pow(Math.max(0, d), 10);
+        }
+        if (P.scan > 0.02) {
+          const d = Math.abs(Math.sin(la) - scanY);
+          al *= 1 + P.scan * 1.6 * Math.max(0, 1 - d / 0.18);
         }
         ctx.strokeStyle = c(al);
         ctx.beginPath();
@@ -420,7 +430,7 @@ export class OrbRenderer {
         for (let kk = 1; kk <= segL; kk++) {
           const lo = yaw + (kk / segL) * TAU;
           const q = proj(la, lo);
-          seg(p, q, lo);
+          seg(p, q, lo, la);
           p = q;
         }
       }
@@ -428,8 +438,9 @@ export class OrbRenderer {
         const lo = yaw + (j * TAU) / mers;
         let p = proj(-H, lo);
         for (let kk = 1; kk <= segM; kk++) {
-          const q = proj(-H + (kk / segM) * Math.PI, lo);
-          seg(p, q, lo);
+          const la = -H + (kk / segM) * Math.PI;
+          const q = proj(la, lo);
+          seg(p, q, lo, la - Math.PI / segM / 2);
           p = q;
         }
       }
@@ -476,10 +487,20 @@ export class OrbRenderer {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+    if (P.nudge > 0.02) {
+      const q = (this.nph % 2.4) / 1.3;
+      if (q < 1) {
+        ctx.lineWidth = small ? 1 : 1.4;
+        ctx.strokeStyle = c(0.55 * P.nudge * (1 - q));
+        ctx.beginPath();
+        ctx.arc(cx, cy, R * (1.1 + q * 0.55), 0, TAU);
+        ctx.stroke();
+      }
+    }
     if (P.rings > 0.02 && !small) {
       ctx.lineWidth = 1;
       for (let i = 0; i < 3; i++) {
-        ctx.strokeStyle = c(0.32 * P.level * P.rings * (1 - i * 0.28));
+        ctx.strokeStyle = c(0.32 * Math.max(P.level, 0.25) * P.rings * (1 - i * 0.28));
         ctx.beginPath();
         ctx.arc(cx, cy, R * (1.1 + i * 0.1 + P.level * 0.12 * (i + 1)), 0, TAU);
         ctx.stroke();

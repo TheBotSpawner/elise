@@ -273,6 +273,7 @@ export class WorkspaceSession implements WorkspacePort {
       : surfacesFromOutcome(toolName, outcome, {
           key: callId,
           intentId: this.value.intent?.id ?? null,
+          locale: this.auth.profile?.locale,
         });
     this.apply([
       ...reconciled,
@@ -328,7 +329,10 @@ async function mutate(
 }
 
 export type UserWorkspaceOp =
-  | { op: "focus"; id: string | null }
+  | { op: "focus"; id: string | null; item?: string | null; compareWith?: string | null }
+  /** The Live Canvas (ADR-021): the same view operations ELISE uses. */
+  | { op: "pin"; id: string; pinned: boolean }
+  | { op: "arrange"; order: "time" | "relevance" }
   /** The context indicator: switch to another profile, or clear it. */
   | { op: "context"; contextId: string | null }
   | { op: "dismiss"; id: string }
@@ -347,7 +351,19 @@ export async function applyUserOp(auth: AuthContext, thread: ThreadRef, op: User
   return mutate(auth, thread, (s) => {
     switch (op.op) {
       case "focus":
-        return [{ op: "focus", id: op.id, at }];
+        return [
+          {
+            op: "focus",
+            id: op.id,
+            item: op.item ?? null,
+            compareWith: op.compareWith ?? null,
+            at,
+          },
+        ];
+      case "pin":
+        return [{ op: "pin", id: op.id, pinned: op.pinned, at }];
+      case "arrange":
+        return [{ op: "arrange", order: op.order, at }];
       case "dismiss":
         return [{ op: "dismiss", id: op.id, at }];
       case "resize": {
@@ -410,6 +426,7 @@ export async function presentFromHistory(
     const drafts = surfacesFromOutcome(trace.name, outcome, {
       key: callId,
       intentId: s.intent?.id ?? null,
+      locale: auth.profile.locale,
     });
     focus = drafts[0]?.id ?? null;
     return [...presentOps(drafts, at), ...(focus ? [{ op: "focus" as const, id: focus, at }] : [])];
@@ -467,6 +484,7 @@ export async function runSurfaceAction(
             surfacesFromOutcome(call.name, outcome, {
               key: `${surfaceId}:${action}`,
               intentId: s.intent?.id ?? null,
+              locale: auth.profile.locale,
             }),
             at,
           )),

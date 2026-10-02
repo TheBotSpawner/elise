@@ -313,6 +313,9 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       focus: READ,
       dismiss: READ,
       clear: READ,
+      // The Live Canvas (ADR-021): keep a Surface, or show results in time order.
+      pin: READ,
+      arrange: READ,
       prepareMeeting: READ,
       // Orchestrations that only gather and present (ADR-017 §14-15).
       planToday: READ,

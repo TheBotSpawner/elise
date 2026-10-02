@@ -33,6 +33,8 @@ export const SURFACE_TYPES = [
   "study_progress",
   "study_summary",
   "shortcut",
+  "visualization",
+  "media",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
@@ -136,6 +138,12 @@ export interface Surface<P = unknown> {
   intentId: string | null;
   /** Confirmations that disappear on their own; never persisted. */
   transient?: boolean;
+  /** Kept when the context moves on (decay, a new intent, clear) until unpinned (ADR-021). */
+  pinned?: boolean;
+  /** One side of the current comparison (ADR-021). */
+  compared?: boolean;
+  /** The item inside this Surface that is in focus (an email of a list, a timeline entry). */
+  focusItem?: string;
   /** Last user turn in which it was presented, updated or focused. */
   turn: number;
   createdAt: string;
@@ -151,6 +159,8 @@ export interface ActiveIntent {
   kind: IntentKind;
   description: string;
   startedAt: string;
+  /** "time": show what happened in order (Temporal); absent: by relevance (ADR-021). */
+  arrangement?: "time";
 }
 
 /**
@@ -183,7 +193,20 @@ export type WorkspaceOp =
       patch: Partial<Pick<Surface, "title" | "state" | "size" | "priority" | "payload">>;
       at: string;
     }
-  | { op: "focus"; id: string | null; at: string }
+  /**
+   * Bring one Surface to the front (null: back to the whole workspace). `item` focuses one
+   * entry inside it; `compareWith` puts a second Surface beside it (ADR-021).
+   */
+  | {
+      op: "focus";
+      id: string | null;
+      item?: string | null;
+      compareWith?: string | null;
+      at: string;
+    }
+  | { op: "pin"; id: string; pinned: boolean; at: string }
+  /** How the workspace is ordered: by relevance, or in time order (Temporal). */
+  | { op: "arrange"; order: "time" | "relevance"; at: string }
   | { op: "dismiss"; id: string; at: string }
   | { op: "clear"; at: string }
   | { op: "intent"; intent: ActiveIntent; at: string }
@@ -196,7 +219,8 @@ export type WorkspaceOp =
   | { op: "turn"; at: string };
 
 export const WORKSPACE_LIMITS = {
-  maxVisible: 6,
+  /** The Live Canvas has room for 8 on large screens; smaller ones shelve the rest (ADR-021). */
+  maxVisible: 8,
   decayTurns: 4,
   staleAfterMs: 15 * 60_000,
   /** Transient confirmations disappear after this (UI timer). */
@@ -204,6 +228,8 @@ export const WORKSPACE_LIMITS = {
   ttlMs: 12 * 3_600_000,
   /** An active context nobody used for this many turns decays away (ADR-016 §6). */
   contextDecayTurns: 6,
+  /** Pinned Surfaces: one more unpins the least recently touched one (ADR-021). */
+  maxPinned: 3,
 } as const;
 
 export const emptyWorkspace = (): WorkspaceState => ({
@@ -221,6 +247,16 @@ const TRANSIENT_INTENTS: ReadonlySet<IntentKind> = new Set(["settings"]);
 
 /** A pending approval stays until it is decided, whatever else happens. */
 const sticky = (s: Surface) => s.type === "approval" && s.state === "attention";
+/** What stays when the context moves on: pending approvals and pinned Surfaces. */
+const kept = (s: Surface) => sticky(s) || Boolean(s.pinned);
+
+/** A Surface without its view flags (compared, focusItem). */
+function plain(s: Surface): Surface {
+  const next = { ...s };
+  delete next.compared;
+  delete next.focusItem;
+  return next;
+}
 
 export function applyOp(state: WorkspaceState, op: WorkspaceOp): WorkspaceState {
   const next = reduce(state, op);
@@ -273,15 +309,75 @@ function reduce(state: WorkspaceState, op: WorkspaceOp): WorkspaceState {
       };
     }
     case "focus": {
-      if (op.id === state.focusId) return state;
-      if (op.id && !state.surfaces.some((s) => s.id === op.id)) return state;
+      const id = op.id;
+      if (id && !state.surfaces.some((s) => s.id === id)) return state;
+      const other =
+        id &&
+        op.compareWith &&
+        op.compareWith !== id &&
+        state.surfaces.some((s) => s.id === op.compareWith)
+          ? op.compareWith
+          : null;
+      const item = id ? (op.item ?? null) : null;
+      const view = (s: Surface) => {
+        const compared = other !== null && (s.id === id || s.id === other);
+        return { compared, item: s.id === id ? item : null };
+      };
+      const unchanged =
+        id === state.focusId &&
+        state.surfaces.every(
+          (s) => Boolean(s.compared) === view(s).compared && (s.focusItem ?? null) === view(s).item,
+        );
+      if (unchanged) return state;
       return {
         ...state,
-        focusId: op.id,
-        surfaces: op.id
-          ? state.surfaces.map((s) => (s.id === op.id ? { ...s, turn: state.turn } : s))
-          : state.surfaces,
+        focusId: id,
+        surfaces: state.surfaces.map((s) => {
+          const v = view(s);
+          const next = plain(s);
+          if (s.id === id || s.id === other) next.turn = state.turn;
+          if (v.compared) next.compared = true;
+          if (v.item) next.focusItem = v.item;
+          return next;
+        }),
       };
+    }
+    case "pin": {
+      const target = state.surfaces.find((s) => s.id === op.id);
+      if (!target || Boolean(target.pinned) === op.pinned) return state;
+      const unpin = (s: Surface): Surface => {
+        const next = { ...s };
+        delete next.pinned;
+        return next;
+      };
+      let surfaces = state.surfaces.map((s) =>
+        s.id !== op.id
+          ? s
+          : op.pinned
+            ? { ...s, pinned: true, turn: state.turn, updatedAt: op.at }
+            : unpin(s),
+      );
+      const pinned = surfaces.filter((s) => s.pinned && s.id !== op.id);
+      if (op.pinned && pinned.length >= WORKSPACE_LIMITS.maxPinned) {
+        const oldest = [...pinned].sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))[0]!;
+        surfaces = surfaces.map((s) => (s.id === oldest.id ? unpin(s) : s));
+      }
+      return { ...state, surfaces };
+    }
+    case "arrange": {
+      const time = op.order === "time";
+      if (Boolean(state.intent?.arrangement) === time) return state;
+      // Arranging never changes the intent itself, so no Surface leaves.
+      const intent: ActiveIntent = {
+        ...(state.intent ?? {
+          id: `arranged:${op.at}`,
+          kind: "general" as const,
+          description: "",
+          startedAt: op.at,
+        }),
+      };
+      delete intent.arrangement;
+      return { ...state, intent: time ? { ...intent, arrangement: "time" } : intent };
     }
     case "dismiss": {
       if (!state.surfaces.some((s) => s.id === op.id)) return state;
@@ -292,20 +388,20 @@ function reduce(state: WorkspaceState, op: WorkspaceOp): WorkspaceState {
       };
     }
     case "clear": {
-      const kept = state.surfaces.filter(sticky);
-      if (kept.length === state.surfaces.length && !state.intent) return state;
-      return { ...state, surfaces: kept, focusId: null, intent: null };
+      const left = state.surfaces.filter(kept).map(plain);
+      if (left.length === state.surfaces.length && !state.intent && !state.focusId) return state;
+      return { ...state, surfaces: left, focusId: null, intent: null };
     }
     case "intent": {
       if (TRANSIENT_INTENTS.has(op.intent.kind)) return state;
       if (state.intent?.id === op.intent.id) return state;
-      // A new primary intent: the previous one's Surfaces leave (pending approvals stay).
-      const kept = state.surfaces.filter((s) => sticky(s) || s.intentId === op.intent.id);
+      // A new primary intent: the previous one's Surfaces leave (approvals and pins stay).
+      const left = state.surfaces.filter((s) => kept(s) || s.intentId === op.intent.id);
       return {
         ...state,
         intent: op.intent,
-        surfaces: kept,
-        focusId: kept.some((s) => s.id === state.focusId) ? state.focusId : null,
+        surfaces: left,
+        focusId: left.some((s) => s.id === state.focusId) ? state.focusId : null,
       };
     }
     case "context": {
@@ -318,27 +414,27 @@ function reduce(state: WorkspaceState, op: WorkspaceOp): WorkspaceState {
           state.context.accent === next.accent;
         return same ? state : { ...state, context: { ...next, turn: state.turn } };
       }
-      // Another context: what belonged to the previous one leaves (approvals stay).
-      const kept = state.context ? state.surfaces.filter(sticky) : state.surfaces;
+      // Another context: what belonged to the previous one leaves (approvals and pins stay).
+      const left = state.context ? state.surfaces.filter(kept) : state.surfaces;
       return {
         ...state,
         context: { ...next, turn: state.turn },
-        surfaces: kept,
+        surfaces: left,
         intent: state.context ? null : state.intent,
-        focusId: kept.some((s) => s.id === state.focusId) ? state.focusId : null,
+        focusId: left.some((s) => s.id === state.focusId) ? state.focusId : null,
       };
     }
     case "turn": {
       const turn = state.turn + 1;
-      const kept = state.surfaces.filter(
-        (s) => !s.transient && (sticky(s) || turn - s.turn < WORKSPACE_LIMITS.decayTurns),
+      const left = state.surfaces.filter(
+        (s) => !s.transient && (kept(s) || turn - s.turn < WORKSPACE_LIMITS.decayTurns),
       );
       return {
         ...state,
         turn,
-        surfaces: kept,
-        focusId: kept.some((s) => s.id === state.focusId) ? state.focusId : null,
-        intent: kept.length ? state.intent : null,
+        surfaces: left,
+        focusId: left.some((s) => s.id === state.focusId) ? state.focusId : null,
+        intent: left.length ? state.intent : null,
         context:
           state.context && turn - state.context.turn < WORKSPACE_LIMITS.contextDecayTurns
             ? state.context
@@ -353,7 +449,7 @@ function evict(state: WorkspaceState): WorkspaceState {
   let surfaces = state.surfaces;
   while (surfaces.length > WORKSPACE_LIMITS.maxVisible) {
     const candidates = surfaces
-      .filter((s) => s.id !== state.focusId && !sticky(s))
+      .filter((s) => s.id !== state.focusId && !kept(s))
       .sort((a, b) => a.priority - b.priority || a.updatedAt.localeCompare(b.updatedAt));
     const out = candidates[0];
     if (!out) break;

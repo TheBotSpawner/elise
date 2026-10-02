@@ -8,6 +8,15 @@ import {
   type WorkspaceState,
 } from "./model";
 import { draftDefaults, isValidPayload, type SurfacePayloads } from "./registry";
+import {
+  financeBreakdownVisual,
+  financeSummaryVisuals,
+  goalPace,
+  goalsVisual,
+  habitsVisual,
+  type BuiltVisualization,
+  type VizLocale,
+} from "./visualization";
 import type { KnowledgeEvidence, ToolDisplay } from "../agents/tools";
 import type { CalendarEvent } from "../capabilities/calendar";
 import type { EmailMessage } from "../capabilities/email";
@@ -37,6 +46,8 @@ export interface PresentOptions {
   intentId?: string | null;
   priority?: number;
   title?: string;
+  /** The user's language, for the few words derived charts carry (ADR-021). */
+  locale?: VizLocale;
 }
 
 const clip = (s: string | null | undefined, n: number) =>
@@ -360,6 +371,47 @@ export function contextOverviewSurface(
   });
 }
 
+/** How prominent each derived chart is: the headline first, detail after. */
+const VIZ_PRIORITY: Record<string, number> = {
+  kpi: 76,
+  breakdown: 66,
+  habits: 66,
+  goals: 64,
+  categories: 62,
+  change: 60,
+  largest: 48,
+};
+
+function visualizationSurface(v: BuiltVisualization, opts: PresentOptions, capability: string) {
+  return draft(
+    "visualization",
+    `${opts.key}:${v.role}`,
+    { spec: v.spec },
+    { ...opts, priority: opts.priority ?? VIZ_PRIORITY[v.role] ?? 60 },
+    {
+      title: v.spec.title,
+      source: { capability, label: v.spec.source ?? null },
+      ref: null,
+    },
+  );
+}
+
+/** Charts from a structured result; when none can be drawn honestly, its usual card. */
+function visualsOr(
+  built: (BuiltVisualization | null)[],
+  display: ToolDisplay,
+  opts: PresentOptions,
+  capability: string,
+): SurfaceDraft[] {
+  const drafts = built
+    .filter((v): v is BuiltVisualization => v !== null)
+    .map((v) => visualizationSurface(v, opts, capability))
+    .filter((d): d is SurfaceDraft => d !== null);
+  if (drafts.length) return drafts;
+  const fallback = resultSurface(display, opts, capability);
+  return fallback ? [fallback] : [];
+}
+
 /** Surfaces for one tool outcome (approvals included). Empty results make no Surface. */
 export function surfacesFromOutcome(
   toolName: string,
@@ -635,6 +687,36 @@ export function surfacesFromOutcome(
           ...(d.shortcut.state === "saved" ? { transient: true } : { state: "attention" as const }),
         }),
       );
+    case "finance_summary":
+      return visualsOr(financeSummaryVisuals(d.summary, opts.locale), d, opts, capability);
+    case "finance_breakdown":
+      return visualsOr([financeBreakdownVisual(d.breakdown, opts.locale)], d, opts, capability);
+    case "habits":
+      return isEmptyResult(d)
+        ? []
+        : visualsOr([habitsVisual(d.progress, opts.locale)], d, opts, capability);
+    case "goals": {
+      if (isEmptyResult(d)) return [];
+      const today = new Date().toISOString().slice(0, 10);
+      return visualsOr(
+        [
+          goalsVisual(
+            d.goals.map((g) => ({
+              title: g.goal.title,
+              percent: g.progress.percent,
+              pace:
+                g.goal.status === "completed"
+                  ? null
+                  : goalPace(g.goal.createdAt, g.goal.targetDate, today),
+            })),
+            opts.locale,
+          ),
+        ],
+        d,
+        opts,
+        capability,
+      );
+    }
     case "schedule_proposal":
       return one(
         draft(

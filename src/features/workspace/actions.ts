@@ -38,7 +38,14 @@ export async function getWorkspaceAction(thread: ThreadRef): Promise<Result<Work
 }
 
 const userOp = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("focus"), id: id.nullable() }),
+  z.object({
+    op: z.literal("focus"),
+    id: id.nullable(),
+    item: z.string().max(1000).nullable().optional(),
+    compareWith: id.nullable().optional(),
+  }),
+  z.object({ op: z.literal("pin"), id, pinned: z.boolean() }),
+  z.object({ op: z.literal("arrange"), order: z.enum(["time", "relevance"]) }),
   z.object({ op: z.literal("context"), contextId: z.uuid().nullable() }),
   z.object({ op: z.literal("dismiss"), id }),
   z.object({ op: z.literal("resize"), id, size: z.enum(SURFACE_SIZES) }),

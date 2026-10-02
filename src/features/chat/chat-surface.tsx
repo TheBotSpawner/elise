@@ -1,33 +1,27 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import type { VoicePreferences } from "@/application/auth-context";
-import { Orb } from "@/components/elise/orb/orb";
-import { ORB_FLIGHT, ORB_LAYOUT_ID, useOrbPresence } from "@/components/elise/orb/orb-presence";
+import { useOrbPresence } from "@/components/elise/orb/orb-presence";
 import { resolveOrbState, type OrbState } from "@/components/elise/orb/orb-states";
 import { threadUrl, type ThreadRef } from "@/core/interaction";
 import { WORKSPACE_LIMITS, type WorkspaceState } from "@/core/workspace/model";
 import { ContextIndicator, type ContextOption } from "@/features/contexts/context-indicator";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
 import { useVoice } from "@/features/voice/use-voice";
-import { MicButton, VoiceBar } from "@/features/voice/voice-controls";
-import { LiveWorkspace, SurfaceCard } from "@/features/workspace/live-workspace";
-import type { SurfaceHandlers } from "@/features/workspace/surfaces";
+import type { DockCaption } from "@/features/workspace/canvas/dock";
+import { LiveCanvas } from "@/features/workspace/canvas/live-canvas";
+import { SurfaceView, type CanvasHandlers } from "@/features/workspace/canvas/surface-view";
 import { useWorkspaceController } from "@/features/workspace/use-workspace";
-import { useIsDesktop, useIsWide } from "@/hooks/use-is-desktop";
 import { useOnline } from "@/hooks/use-online";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-import { Composer } from "./composer";
-import { MessageThread } from "./message-thread";
 import type { ChatMessage } from "./types";
 import { useEliseChat } from "./use-elise-chat";
-
-const EASE = [0.22, 1, 0.36, 1] as const;
 
 export interface HomeAmbient {
   dueToday: number;
@@ -39,10 +33,24 @@ export interface HomeAmbient {
   resume?: { thread: ThreadRef; description: string } | null;
 }
 
+/** Reads that gather (the Orb "searches"); anything else that runs is "executing". */
+const GATHERING = /\.(search|list|get|find|read|prepare|brief|research|today|recall)/i;
+
+/** Plain words for the dock caption: no markdown marks, no links, at most a few sentences. */
+function plain(text: string): string {
+  return text
+    .replace(/<spoken>[\s\S]*?<\/spoken>/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*_`#>]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 260);
+}
+
 /**
- * The center of ELISE. Empty: the Home hero (Orb 440/300, status, headline, input dock).
- * After the first send the hero Orb flies into the nav brand slot, the dock glides to the
- * bottom and the thread takes over (motion spec "Home → Chat").
+ * The center of ELISE: the Live Canvas (ADR-021). Voice or text in, a visual composition out;
+ * the conversation stays available as a secondary transcript. Home and a reopened
+ * conversation share it: a conversation without Surfaces simply reads as its thread.
  */
 export function ChatSurface({
   thread,
@@ -79,8 +87,6 @@ export function ChatSurface({
   space?: { id: string; path: string; icon: string; color: string } | null;
 }) {
   const { t } = useI18n();
-  const desktop = useIsDesktop();
-  const wide = useIsWide();
   const presence = useOrbPresence();
   const online = useOnline();
   const {
@@ -104,7 +110,6 @@ export function ChatSurface({
     spaceId: space?.id,
     workspace: initialWorkspace,
   });
-  const empty = messages.length === 0;
   const ranRef = useRef(false);
   // "?welcome=1" is a one-time landing: a reload shows the normal Home.
   useEffect(() => {
@@ -120,23 +125,32 @@ export function ChatSurface({
   const voiceSession = useVoice({ prefs: voice, send, subscribe, level: presence.level });
   const voiceOn = voice.enabled && voiceSession.supported;
   const phase = voiceSession.state.phase;
-  // Asleep, the Orb rests (idle); the wake phrase or a tap brings it back to listening.
+  const last = messages.at(-1);
+  const turnTools = last?.role === "assistant" ? last.tools : [];
+  const runningTool = turnTools.findLast((x) => !x.outcome);
   const voiceOrb: OrbState[] =
-    phase === "listening" ||
-    phase === "user_speaking" ||
-    phase === "interrupted" ||
-    phase === "arming"
-      ? ["listening"]
-      : phase === "speaking"
-        ? ["speaking"]
-        : phase === "executing"
-          ? ["executing"]
-          : phase === "waiting_approval"
-            ? ["waiting_approval"]
-            : phase === "finalizing_input" || phase === "thinking"
-              ? ["thinking"]
-              : [];
-  const orbState = resolveOrbState([...voiceOrb, chatOrbState]);
+    phase === "user_speaking"
+      ? ["user_speaking"]
+      : phase === "listening" || phase === "interrupted" || phase === "arming"
+        ? ["listening"]
+        : phase === "speaking"
+          ? ["speaking"]
+          : phase === "executing"
+            ? ["executing"]
+            : phase === "waiting_approval"
+              ? ["waiting_approval"]
+              : phase === "finalizing_input" || phase === "thinking"
+                ? ["thinking"]
+                : phase === "sleeping"
+                  ? ["sleeping"]
+                  : phase === "offline"
+                    ? ["attention"]
+                    : [];
+  const chatOrb: OrbState =
+    chatOrbState === "executing" && runningTool && GATHERING.test(runningTool.name)
+      ? "searching"
+      : chatOrbState;
+  const orbState = resolveOrbState([...voiceOrb, chatOrb]);
   const voiceHandlers = {
     start: voiceSession.start,
     end: voiceSession.end,
@@ -154,11 +168,8 @@ export function ChatSurface({
     clearOutOfSync,
     onApprovalResolved: markApprovalResolved,
   });
-  const last = messages.at(-1);
-  const turnTools = last?.role === "assistant" ? last.tools : [];
-  // Home becomes a workspace only while an intent has something worth showing; a quick
-  // confirmation (a settings change) appears by the composer and leaves on its own.
-  const active = !empty && workspace.surfaces.some((s) => !s.transient);
+
+  // A quick confirmation (a settings change) appears above the dock and leaves on its own.
   const confirmations = workspace.surfaces.filter((s) => s.transient);
   const confirmationKey = confirmations.map((s) => `${s.id}:${s.updatedAt}`).join(",");
   const dismissRef = useRef(controller.dismiss);
@@ -176,316 +187,182 @@ export function ChatSurface({
     }, WORKSPACE_LIMITS.transientMs);
     return () => window.clearTimeout(timer);
   }, [confirmationKey]);
-  const surfaceHandlers: SurfaceHandlers = {
-    onAction: (surface, action, itemId) => void controller.runAction(surface, action, itemId),
-    onPrompt: (text) => void send(text),
-    onExpand: controller.expand,
-    onApprovalResolved: controller.approvalResolved,
-    onApprovalPhase: trackApproval,
-    pending: controller.pending,
-    busy,
-  };
 
-  // Publish Elise's state to the shared Orb (nav brand slot + mobile header).
-  const { setState, setDocked } = presence;
-  useEffect(() => setState(orbState), [orbState, setState]);
-  useEffect(() => setDocked(!empty), [empty, setDocked]);
-  useEffect(
-    () => () => {
-      setDocked(false);
-      setState("idle");
-    },
-    [setDocked, setState],
+  const { focus, pin, dismiss, runAction, approvalResolved, loadDetail, showFromThread, pending } =
+    controller;
+  const handlers: CanvasHandlers = useMemo(
+    () => ({
+      onAction: (surface, action, itemId) => void runAction(surface, action, itemId),
+      onPrompt: (text) => void send(text),
+      // Opening an item inside a Surface is focusing it (the same op as "open the second email").
+      onExpand: (surface, itemId) => focus(surface.id, itemId),
+      onFocus: (surface, item) => focus(surface.id, item ?? null),
+      onUnfocus: () => focus(null),
+      onPin: pin,
+      onDismiss: dismiss,
+      loadDetail,
+      onApprovalResolved: approvalResolved,
+      onApprovalPhase: trackApproval,
+      pending,
+      busy,
+    }),
+    [
+      runAction,
+      send,
+      focus,
+      pin,
+      dismiss,
+      loadDetail,
+      approvalResolved,
+      trackApproval,
+      pending,
+      busy,
+    ],
+  );
+  const threadHandlers = useMemo(
+    () => ({
+      onApprovalResolved: approvalResolved,
+      onApprovalPhase: trackApproval,
+      onShowSurface: (ids: string[], messageId: string | null, callId: string) =>
+        void showFromThread(ids, messageId, callId),
+    }),
+    [approvalResolved, trackApproval, showFromThread],
   );
 
-  // Keep the view pinned to the bottom unless the user scrolled up; then offer "New reply".
-  // A ref, not state: nothing renders from it.
-  const pinnedRef = useRef(true);
-  const [unseen, setUnseen] = useState(false);
-  const unseenRef = useRef(unseen);
+  // One Orb: the Canvas owns it now (hero, centre or dock), so the nav keeps its brand dot.
+  const { setState, setDocked, setReceded } = presence;
+  useEffect(() => setState(orbState), [orbState, setState]);
+  const working = messages.length > 0 && workspace.surfaces.some((s) => !s.transient);
+  useEffect(() => setReceded(working), [working, setReceded]);
   useEffect(() => {
-    unseenRef.current = unseen;
-  }, [unseen]);
-  useEffect(() => {
-    // Only the user scrolling up unpins; content growing below (a Surface, streamed text)
-    // must not, or "New reply" shows while the user is simply reading along.
-    let lastY = window.scrollY;
-    const onScroll = () => {
-      const y = window.scrollY;
-      if (window.innerHeight + y >= document.documentElement.scrollHeight - 80) {
-        pinnedRef.current = true;
-        setUnseen(false);
-      } else if (y < lastY) pinnedRef.current = false;
-      lastY = y;
+    setDocked(false);
+    return () => {
+      setState("idle");
+      setReceded(false);
     };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-  const lastContent = messages.at(-1);
-  const signature = `${messages.length}:${lastContent?.content.length ?? 0}:${lastContent?.tools.length ?? 0}:${wide ? 0 : workspace.surfaces.length}`;
-  useEffect(() => {
-    if (empty) return;
-    if (pinnedRef.current) window.scrollTo({ top: document.documentElement.scrollHeight });
-    // Set once, not on every streamed commit: a setState per token here chained nested
-    // updates past React's limit ("Maximum update depth").
-    else if (!unseenRef.current) setUnseen(true);
-  }, [signature, empty]);
+  }, [setDocked, setState, setReceded]);
 
-  const confirmationSlot = (
-    <div
-      aria-live="polite"
-      className={cn(
-        "pointer-events-none absolute inset-x-0 flex flex-col gap-2",
-        // On the idle Home the headline sits above the input: show it below on larger screens.
-        empty ? "bottom-full mb-3 md:top-full md:bottom-auto md:mt-3 md:mb-0" : "bottom-full mb-3",
-      )}
-    >
+  // What the dock says: the words being heard, ELISE's latest reply, or a problem.
+  const problem = voiceSession.state.problem ? t.voice.problems[voiceSession.state.problem] : null;
+  const lastAssistant = messages.findLast((m) => m.role === "assistant");
+  const lastUser = messages.findLast((m) => m.role === "user");
+  const elise = lastAssistant ? plain(lastAssistant.content) : "";
+  const caption: DockCaption = voiceSession.state.partial
+    ? { who: "YOU", text: voiceSession.state.partial }
+    : problem
+      ? { who: "ELISE", text: problem, tone: "problem" }
+      : orbState === "waiting_approval"
+        ? { who: "ELISE", text: elise || t.canvas.approvalFirst, tone: "approval" }
+        : busy && lastAssistant?.streaming && !elise
+          ? { who: "YOU", text: lastUser?.content ?? "" }
+          : elise
+            ? { who: "ELISE", text: elise }
+            : phase === "sleeping"
+              ? { who: null, text: t.voice.asleep }
+              : { who: null, text: "" };
+  const heroText = voiceSession.state.partial
+    ? { who: "YOU" as const, text: voiceSession.state.partial }
+    : elise
+      ? { who: "ELISE" as const, text: elise }
+      : null;
+
+  const notices = (
+    <>
       {!online && (
-        <div className="flex justify-center">
-          <span
-            role="status"
-            className="inline-flex h-8 items-center gap-2 rounded-full border border-border-strong bg-[var(--menu-bg)] px-3 text-[13px] text-muted backdrop-blur"
-          >
-            <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-warning" />
-            {t.chat.offline}
-          </span>
-        </div>
+        <span
+          role="status"
+          className="inline-flex h-8 items-center gap-2 rounded-full border border-border-strong bg-[var(--menu-bg)] px-3 text-[13px] text-muted backdrop-blur"
+        >
+          <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-warning" />
+          {t.chat.offline}
+        </span>
       )}
-      {voiceOn && (
-        <VoiceBar
-          state={voiceSession.state}
-          handlers={voiceHandlers}
-          wakePhrase={voice.wakePhrase}
+      {workspace.context && messages.length > 0 && (
+        <ContextIndicator
+          context={workspace.context}
+          options={contexts}
+          disabled={busy}
+          onChange={controller.setContext}
         />
-      )}
-      {workspace.context && !empty && (
-        <div>
-          <ContextIndicator
-            context={workspace.context}
-            options={contexts}
-            disabled={busy}
-            onChange={controller.setContext}
-          />
-        </div>
       )}
       <AnimatePresence initial={false}>
         {confirmations.map((s) => (
-          <div key={s.id} className="pointer-events-auto">
-            <SurfaceCard
+          <div key={s.id} className="w-[min(420px,calc(100vw-32px))]">
+            <SurfaceView
               surface={s}
+              size="medium"
+              tier="secondary"
               timezone={timezone}
-              handlers={surfaceHandlers}
-              onDismiss={controller.dismiss}
-              className="bg-[var(--menu-bg)] backdrop-blur"
+              handlers={handlers}
             />
           </div>
         ))}
       </AnimatePresence>
-    </div>
+    </>
   );
-
-  const composer = (
-    <Composer
-      placeholder={
-        empty ? (desktop ? t.home.placeholder : t.home.placeholderMobile) : t.chat.replyPlaceholder
-      }
-      label={t.chat.placeholder}
-      busy={busy}
-      onSend={(text) => void send(text)}
-      onStop={stop}
-      sendLabel={t.chat.send}
-      stopLabel={t.chat.stop}
-      voice={voiceOn ? <MicButton state={voiceSession.state} handlers={voiceHandlers} /> : null}
-      offline={!online}
-      offlineLabel={t.chat.offline}
-      restore={failedDraft}
-    />
-  );
-
-  if (empty) {
-    return (
-      <main className="relative flex flex-1 flex-col items-center px-4 pb-32 md:px-0 md:pb-24">
-        <div aria-hidden className="elise-halo pointer-events-none fixed inset-0 -z-10" />
-        <motion.div
-          layoutId={ORB_LAYOUT_ID}
-          transition={ORB_FLIGHT}
-          className="mt-11 shrink-0 md:-mt-2"
-        >
-          {voiceOn ? (
-            // The Orb is ELISE's voice presence: tap it to talk.
-            <button
-              type="button"
-              onClick={
-                phase === "idle"
-                  ? voiceHandlers.start
-                  : phase === "listening"
-                    ? voiceHandlers.finishNow
-                    : voiceHandlers.interrupt
-              }
-              aria-label={
-                phase === "idle"
-                  ? t.voice.start
-                  : phase === "listening"
-                    ? t.voice.finish
-                    : t.voice.interrupt
-              }
-              className="block rounded-full focus-visible:outline-none"
-            >
-              <Orb
-                state={orbState}
-                size="fill"
-                levelSource={presence.level}
-                className="size-[300px] md:size-[440px]"
-              />
-            </button>
-          ) : (
-            <Orb state={orbState} size="fill" className="size-[300px] md:size-[440px]" />
-          )}
-        </motion.div>
-        <AnimatePresence>
-          <motion.div
-            key="hero-copy"
-            exit={{ opacity: 0, y: -8, transition: { duration: 0.16 } }}
-            className="flex flex-col items-center"
-          >
-            <HomeStatus state={orbState} userName={userName} timezone={timezone} />
-            {space && (
-              <Link
-                href={`/knowledge/spaces/${space.id}`}
-                className="mt-3 flex h-8 items-center gap-2 rounded-full border border-accent-line px-3 text-[13px] text-accent-text"
-              >
-                <SpaceGlyph
-                  icon={space.icon}
-                  color={space.color}
-                  size="sm"
-                  className="rounded-full"
-                />
-                {space.path}
-              </Link>
-            )}
-            <h1 className="mt-3 text-center text-[30px] leading-[1.15] font-light tracking-[-0.025em] md:text-[46px] md:leading-[1.1]">
-              {t.chat.emptyTitle}
-            </h1>
-            {ambient && <Ambient ambient={ambient} />}
-            {firstPrompts && firstPrompts.length > 0 && (
-              <div className="mt-6 flex max-w-[720px] flex-col items-center gap-3">
-                <p className="type-label text-faint">{t.onboarding.firstPromptsTitle}</p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {firstPrompts.map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      onClick={() => void send(prompt)}
-                      className="min-h-11 rounded-full border border-border-strong px-4 text-[14px] transition-colors hover:border-accent-line hover:bg-accent-soft"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-                {voiceOn && <p className="text-[13px] text-muted">{t.onboarding.voiceHint}</p>}
-              </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
-        <div className="fixed inset-x-4 bottom-7 z-30 md:relative md:inset-auto md:mt-9 md:w-[720px]">
-          {confirmationSlot}
-          {composer}
-        </div>
-      </main>
-    );
-  }
-
-  const workspaceView = (variant: "pane" | "stack") => (
-    <LiveWorkspace
-      state={workspace}
-      timezone={timezone}
-      handlers={surfaceHandlers}
-      activity={turnTools}
-      running={busy}
-      expanded={controller.expanded}
-      onCollapse={controller.collapse}
-      onDismiss={controller.dismiss}
-      loadDetail={controller.loadDetail}
-      variant={variant}
-    />
-  );
-  const split = active && wide;
 
   return (
-    <main
-      className={cn(
-        "relative flex flex-1 flex-col",
-        split &&
-          "mx-auto w-full max-w-[1480px] lg:grid lg:grid-cols-[minmax(360px,500px)_minmax(0,1fr)] lg:gap-10 lg:px-8 xl:grid-cols-[minmax(400px,540px)_minmax(0,1fr)]",
-      )}
-    >
-      <div className={cn("flex min-w-0 flex-col", split && "min-h-[calc(100dvh-5rem)]")}>
-        <MessageThread
-          messages={messages}
-          timezone={timezone}
-          column={split}
-          handlers={{
-            onApprovalResolved: controller.approvalResolved,
-            onApprovalPhase: trackApproval,
-            onShowSurface: (ids, messageId, callId) =>
-              void controller.showFromThread(ids, messageId, callId),
-          }}
-          after={active && !wide ? workspaceView("stack") : undefined}
-        />
-        {!split && voiceOn && phase !== "idle" && (
-          // Room for the voice bar above the dock, so it never covers the last Surface.
-          <div aria-hidden className="h-16 shrink-0" />
-        )}
-        {split && <div className="flex-1" />}
-        {split && (
-          <div className="sticky bottom-0 z-30 bg-[linear-gradient(transparent,var(--bg)_28%)] pt-8 pb-9">
-            <div className="relative">
-              {confirmationSlot}
-              {composer}
-            </div>
-          </div>
-        )}
-      </div>
-      {split && (
-        <aside
-          id="live-workspace"
-          className="sticky top-20 h-[calc(100dvh-5rem)] [scrollbar-width:thin] overflow-y-auto overscroll-contain pt-6"
-        >
-          {workspaceView("pane")}
-        </aside>
-      )}
-      {!split && (
-        <div
-          aria-hidden
-          className="pointer-events-none fixed inset-x-0 bottom-0 z-20 h-30 bg-[linear-gradient(transparent,var(--bg)_55%)] md:h-33"
-        />
-      )}
-      <div
-        className={cn(
-          "fixed inset-x-4 bottom-7 z-30 md:inset-x-0 md:bottom-9 md:mx-auto md:w-[720px]",
-          split && "hidden",
-        )}
-      >
-        <AnimatePresence>
-          {unseen && (
-            <motion.button
-              type="button"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2, ease: EASE }}
-              onClick={() =>
-                window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" })
-              }
-              className="absolute -top-12 left-1/2 h-9 -translate-x-1/2 rounded-full border border-border-strong bg-[var(--menu-bg)] px-4 text-[13px] backdrop-blur"
+    <main className="relative flex flex-1 flex-col">
+      <LiveCanvas
+        workspace={workspace}
+        messages={messages}
+        timezone={timezone}
+        handlers={handlers}
+        threadHandlers={threadHandlers}
+        running={busy}
+        activity={turnTools}
+        orbState={orbState}
+        level={presence.level}
+        voice={voiceOn ? { state: voiceSession.state, handlers: voiceHandlers } : null}
+        caption={caption}
+        heroText={heroText}
+        onSend={(text) => void send(text)}
+        onStop={stop}
+        onArrange={controller.arrange}
+        offline={!online}
+        failedDraft={failedDraft}
+        notices={notices}
+        idle={{
+          status: <HomeStatus state={orbState} userName={userName} timezone={timezone} />,
+          context: space ? (
+            <Link
+              href={`/knowledge/spaces/${space.id}`}
+              className="mt-4 flex h-8 items-center gap-2 rounded-full border border-accent-line px-3 text-[13px] text-accent-text"
             >
-              {t.chat.newReply}
-            </motion.button>
-          )}
-        </AnimatePresence>
-        {!split && confirmationSlot}
-        {composer}
-      </div>
+              <SpaceGlyph
+                icon={space.icon}
+                color={space.color}
+                size="sm"
+                className="rounded-full"
+              />
+              {space.path}
+            </Link>
+          ) : null,
+          below: (
+            <>
+              {ambient && <Ambient ambient={ambient} />}
+              {firstPrompts && firstPrompts.length > 0 && (
+                <div className="mt-6 flex max-w-[720px] flex-col items-center gap-3">
+                  <p className="type-label text-faint">{t.onboarding.firstPromptsTitle}</p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {firstPrompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => void send(prompt)}
+                        className="min-h-11 rounded-full border border-border-strong px-4 text-[14px] transition-colors hover:border-accent-line hover:bg-accent-soft"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                  {voiceOn && <p className="text-[13px] text-muted">{t.onboarding.voiceHint}</p>}
+                </div>
+              )}
+            </>
+          ),
+        }}
+      />
     </main>
   );
 }
@@ -495,7 +372,7 @@ function HomeStatus({
   userName,
   timezone,
 }: {
-  state: ReturnType<typeof useEliseChat>["orbState"];
+  state: OrbState;
   userName: string;
   timezone: string;
 }) {
@@ -523,7 +400,7 @@ function HomeStatus({
     <p
       aria-live="polite"
       className={cn(
-        "-mt-[22px] flex h-7 items-center type-status text-[11px] md:-mt-9 md:text-[12px]",
+        "flex h-7 items-center type-status text-[11px] md:text-[11.5px]",
         state === "waiting_approval"
           ? "text-approval-text"
           : state === "error"
@@ -566,7 +443,7 @@ function Ambient({ ambient }: { ambient: HomeAmbient }) {
     });
   if (items.length === 0 && !brief) return null;
   return (
-    <ul className="mt-5 flex flex-col items-center gap-1 text-[13px] text-muted md:fixed md:inset-x-10 md:bottom-8 md:mt-0 md:flex-row md:justify-center md:gap-14">
+    <ul className="mt-6 flex flex-col items-center gap-1 text-[13px] text-muted md:flex-row md:flex-wrap md:justify-center md:gap-x-10">
       {brief && (
         <li className="flex h-8 items-center gap-3">
           <span className={cn("flex items-center gap-2", brief.read ? "text-faint" : "text-fg")}>
@@ -584,7 +461,9 @@ function Ambient({ ambient }: { ambient: HomeAmbient }) {
       {items.map((item) => (
         <li key={item.label}>
           <Link href={item.href} className="flex h-8 items-baseline gap-2.5 hover:text-fg">
-            <span className="type-label text-faint">{item.label}</span>
+            <span className="font-mono text-[10.5px] tracking-[0.16em] text-faint uppercase">
+              {item.label}
+            </span>
             <span>{item.text}</span>
           </Link>
         </li>

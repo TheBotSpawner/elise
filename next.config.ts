@@ -18,6 +18,8 @@ const csp = [
   "font-src 'self' data:",
   `connect-src 'self' ${supabase} ${supabaseWs}`.trim(),
   "media-src 'self' blob:",
+  // Video Surfaces (ADR-021): only these players, only by id (core/workspace/media.ts).
+  "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",

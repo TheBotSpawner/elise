@@ -889,8 +889,10 @@ describe("meeting prep", () => {
     );
     // Public context about the outside company reaches the brief, labelled as such…
     expect(JSON.stringify(out.output)).toContain("publicWebAboutCompany");
-    // …but never crowds out private context on screen (lowest priority under capacity).
-    expect(types).not.toContain("web_results");
+    // …but never crowds out private context on screen: it is the lowest priority, so it is
+    // the first to leave under capacity (ADR-021 raised the cap, so here it still fits).
+    const web = ws.value.surfaces.find((s) => s.type === "web_results");
+    if (web) expect(web.priority).toBe(Math.min(...ws.value.surfaces.map((s) => s.priority)));
     // Links come only from real sources.
     const links = ws.value.surfaces.find((s) => s.type === "links")!.payload as {
       links: { url: string }[];

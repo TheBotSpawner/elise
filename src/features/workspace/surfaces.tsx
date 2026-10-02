@@ -25,6 +25,8 @@ import {
   Sprout,
   NotebookPen,
   Zap,
+  BarChart3,
+  Image as ImageIcon,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -38,6 +40,10 @@ import { ApprovalCard, type ApprovalPhase } from "@/features/chat/approval-card"
 import { DisplayCard } from "@/features/chat/result-cards";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
+
+import type { VisualSize } from "./canvas/composition";
+import { MediaBody } from "./canvas/media";
+import { Visualization } from "./viz/visualization";
 
 /**
  * Renderers for the canonical Surface types (ADR-013). Each maps a validated payload to calm,
@@ -74,6 +80,8 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   study_progress: Sprout,
   study_summary: NotebookPen,
   shortcut: Zap,
+  visualization: BarChart3,
+  media: ImageIcon,
   result: Sparkles,
 };
 
@@ -137,13 +145,26 @@ function useFormat(timezone: string) {
 const TITLE = "text-[15px] font-medium tracking-[-0.01em] md:text-base";
 const TEXT = "text-[13.5px] leading-[1.55]";
 
-function ActionLink({ href, children }: { href: string; children: ReactNode }) {
+function ActionLink({
+  href,
+  children,
+  primary = false,
+}: {
+  href: string;
+  children: ReactNode;
+  primary?: boolean;
+}) {
   const external = href.startsWith("https://");
   return (
     <Link
       href={href}
       {...(external ? { target: "_blank", rel: "noopener noreferrer nofollow" } : {})}
-      className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 text-[13px] text-fg transition-colors hover:border-accent-line hover:text-accent-text"
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] transition-colors",
+        primary
+          ? "h-9 bg-fg px-3.5 font-medium text-bg hover:opacity-90"
+          : "border border-border text-fg hover:border-accent-line hover:text-accent-text",
+      )}
     >
       {children}
     </Link>
@@ -187,7 +208,7 @@ export function SurfaceActions({
   const items = surface.actions.flatMap((a) => {
     if (a.kind === "link" && a.href)
       return [
-        <ActionLink key={a.id} href={a.href}>
+        <ActionLink key={a.id} href={a.href} primary={a.id === "join"}>
           {a.id === "join" && <Video className="size-3.5" aria-hidden />}
           {t.workspace.actions[a.id]}
         </ActionLink>,
@@ -263,61 +284,80 @@ function MeetingBody({
               ? t.workspace.meeting.startsInHours(Math.round(until / 60))
               : null;
   const people = p.attendees.filter((a) => !a.self);
+  const initials = (a: (typeof people)[number]) =>
+    (a.name ?? a.email)
+      .split(/[\s@.]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]!.toUpperCase())
+      .join("");
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <p className={cn(large ? "text-xl font-light tracking-[-0.02em] md:text-2xl" : TITLE)}>
-          {p.title}
-        </p>
-        <p className="flex flex-wrap items-center gap-x-2 text-[13.5px] text-muted">
-          <span className="font-mono text-[12.5px] text-fg">
-            {f.day(p.start)} · {f.time(p.start)}–{f.time(p.end)}
-          </span>
-          <span aria-hidden>·</span>
-          <span>{minutes} min</span>
-          {relative && (
-            <span
-              className={cn(
-                "rounded-full px-2 py-0.5 text-[12px]",
-                until !== null && until <= 15 && now < end
-                  ? "bg-accent-soft text-accent-text"
-                  : "bg-surface-2 text-muted",
-              )}
-            >
-              {relative}
-            </span>
+      <p
+        className={cn(
+          large
+            ? "text-[20px] leading-[1.2] font-medium tracking-[-0.015em] md:text-[22px]"
+            : TITLE,
+        )}
+      >
+        {p.title}
+      </p>
+      {/* Reference meeting card: the time is the headline; the countdown says how soon. */}
+      <p className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
+        <span
+          className={cn(
+            "leading-none font-light tracking-[-0.025em]",
+            large ? "text-[40px] md:text-[48px]" : "text-[26px]",
           )}
-        </p>
-        <p className="text-[12.5px] text-faint">
-          {p.calendarName} · {p.account}
-          {p.location && !p.location.startsWith("https://") ? ` · ${p.location}` : ""}
-        </p>
-      </div>
-      {people.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <p className="type-label text-faint">{t.workspace.meeting.participants(people.length)}</p>
-          <ul className="flex flex-wrap gap-1.5">
-            {people.slice(0, large ? 10 : 5).map((a) => (
-              <li
-                key={a.email}
-                className="flex h-7 items-center gap-1.5 rounded-full border border-border px-2.5 text-[12.5px]"
-                title={a.email}
-              >
-                <span className="max-w-[160px] truncate">{a.name ?? a.email}</span>
-                {a.organizer && (
-                  <span className="text-faint">· {t.workspace.meeting.organizer}</span>
-                )}
-                {a.response && a.response !== "accepted" && (
-                  <span className="text-faint">· {t.workspace.meeting.responses[a.response]}</span>
-                )}
-              </li>
-            ))}
-            {people.length > (large ? 10 : 5) && (
-              <li className="flex h-7 items-center px-1 text-[12.5px] text-faint">
-                {t.workspace.tasks.more(people.length - (large ? 10 : 5))}
-              </li>
+        >
+          {p.allDay ? f.day(p.start) : f.time(p.start)}
+        </span>
+        {relative && (
+          <span
+            className={cn(
+              "font-mono text-[12px] tracking-[0.08em] uppercase",
+              until !== null && until <= 15 && now < end ? "text-accent-text" : "text-muted",
             )}
-          </ul>
+          >
+            {relative}
+          </span>
+        )}
+      </p>
+      <p className="text-[12.5px] text-muted">
+        {f.day(p.start)}
+        {!p.allDay && ` · ${f.time(p.start)}–${f.time(p.end)} · ${minutes} min`}
+        {p.location && !p.location.startsWith("https://") ? ` · ${p.location}` : ""}
+      </p>
+      {people.length > 0 && (
+        <div
+          className="flex items-center gap-2.5"
+          title={people.map((a) => a.name ?? a.email).join(", ")}
+        >
+          <span className="flex" aria-hidden>
+            {people.slice(0, 5).map((a) => (
+              <span
+                key={a.email}
+                className="-mr-1.5 grid size-7 place-items-center rounded-full border-[1.5px] border-[var(--avatar-ring)] bg-avatar text-[10.5px] font-medium"
+              >
+                {initials(a)}
+              </span>
+            ))}
+          </span>
+          <span className="ml-1.5 min-w-0 truncate text-[13px] text-muted">
+            {people
+              .slice(0, large ? 4 : 2)
+              .map(
+                (a) =>
+                  `${a.name ?? a.email}${a.organizer ? ` (${t.workspace.meeting.organizer})` : ""}${
+                    a.response && a.response !== "accepted"
+                      ? ` · ${t.workspace.meeting.responses[a.response]}`
+                      : ""
+                  }`,
+              )
+              .join(", ")}
+            {people.length > (large ? 4 : 2) &&
+              ` ${t.workspace.tasks.more(people.length - (large ? 4 : 2))}`}
+          </span>
         </div>
       )}
       {!p.meetingUrl && <p className="text-[12.5px] text-faint">{t.workspace.meeting.noLink}</p>}
@@ -729,11 +769,14 @@ export function SurfaceBody({
   timezone,
   handlers,
   large = false,
+  size,
 }: {
   surface: Surface;
   timezone: string;
   handlers: SurfaceHandlers;
   large?: boolean;
+  /** The canvas size, when the body adapts beyond large/compact (charts, media). */
+  size?: VisualSize;
 }) {
   const { t: dictionary } = useI18n();
   const p = surface.payload as never;
@@ -845,6 +888,18 @@ export function SurfaceBody({
       return <StudySummaryBody p={p} />;
     case "shortcut":
       return <ShortcutBody surface={surface} p={p} handlers={handlers} />;
+    case "visualization": {
+      const vp = surface.payload as SurfacePayloads["visualization"];
+      const vs = size ?? (large ? "large" : "medium");
+      return <Visualization spec={vp.spec} size={vs === "micro" ? "small" : vs} />;
+    }
+    case "media":
+      return (
+        <MediaBody
+          p={surface.payload as SurfacePayloads["media"]}
+          size={size ?? (large ? "large" : "medium")}
+        />
+      );
     case "result": {
       const rp = surface.payload as SurfacePayloads["result"];
       return <DisplayCard display={rp.display as unknown as ToolDisplay} timezone={timezone} />;
@@ -1542,7 +1597,7 @@ function StudyQuestionBody({
           <span aria-hidden>·</span>
           <span className="truncate">{p.scope}</span>
         </p>
-        <p className="text-lg leading-snug font-light tracking-[-0.01em] md:text-xl">
+        <p className="text-[22px] leading-[1.3] font-light tracking-[-0.02em] text-pretty md:text-[26px]">
           {p.question}
         </p>
         <p className="text-[12.5px] text-faint">

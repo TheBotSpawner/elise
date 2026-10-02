@@ -33,7 +33,7 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
   const { t } = useI18n();
   const pathname = usePathname();
   const active = activeSection(pathname);
-  const { state: orbState, docked, level } = useOrbPresence();
+  const { state: orbState, docked, level, receded } = useOrbPresence();
   // The nav is hidden below md; only fly the Orb into it where it is visible.
   const desktop = useIsDesktop();
   const [scrolled, setScrolled] = useState(false);
@@ -74,6 +74,10 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
       </Link>
 
       <div
+        className={cn(
+          "transition-opacity duration-[var(--dur-md)]",
+          receded && !engaged && menu === null && "opacity-[0.42]",
+        )}
         onPointerEnter={() => setEngaged(true)}
         onPointerLeave={() => setEngaged(false)}
         onFocus={() => setEngaged(true)}

@@ -18,20 +18,3 @@ export function useIsDesktop(): boolean {
     () => true,
   );
 }
-
-const WIDE = "(min-width: 1024px)";
-
-function subscribeWide(onChange: () => void) {
-  const mq = window.matchMedia(WIDE);
-  mq.addEventListener("change", onChange);
-  return () => mq.removeEventListener("change", onChange);
-}
-
-/** True at the lg breakpoint: room for the Live Workspace beside the conversation. */
-export function useIsWide(): boolean {
-  return useSyncExternalStore(
-    subscribeWide,
-    () => window.matchMedia(WIDE).matches,
-    () => true,
-  );
-}

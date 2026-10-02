@@ -13,8 +13,11 @@ import type { OrbState } from "./orb-states";
 interface OrbPresence {
   state: OrbState;
   docked: boolean;
+  /** The Live Canvas is working: navigation steps back (still there, quieter). */
+  receded: boolean;
   setState(state: OrbState): void;
   setDocked(docked: boolean): void;
+  setReceded(receded: boolean): void;
   /** Live audio level (0..1) while ELISE listens or speaks; negative when there is none. */
   level: { current: number };
 }
@@ -27,8 +30,12 @@ export const ORB_FLIGHT = { duration: 0.48, ease: [0.22, 1, 0.36, 1] as const };
 export function OrbPresenceProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<OrbState>("idle");
   const [docked, setDocked] = useState(false);
+  const [receded, setReceded] = useState(false);
   const level = useRef(-1);
-  const value = useMemo(() => ({ state, docked, setState, setDocked, level }), [state, docked]);
+  const value = useMemo(
+    () => ({ state, docked, receded, setState, setDocked, setReceded, level }),
+    [state, docked, receded],
+  );
   return (
     <OrbPresenceContext.Provider value={value}>
       <LayoutGroup>{children}</LayoutGroup>

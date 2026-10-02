@@ -67,6 +67,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     ".trigger/**",
+    // Claude Design visual reference: development material, never imported or served.
+    "design-reference/**",
   ]),
 ]);
 

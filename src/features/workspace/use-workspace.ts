@@ -24,7 +24,6 @@ import {
   surfaceDetailAction,
   workspaceOpAction,
 } from "./actions";
-import type { ExpandedRef } from "./live-workspace";
 
 type UserOp = Parameters<typeof workspaceOpAction>[1];
 
@@ -57,7 +56,6 @@ export function useWorkspaceController({
   ) => void;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState<ExpandedRef | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const queue = useRef<UserOp[]>([]);
   const inFlight = useRef(0);
@@ -106,19 +104,34 @@ export function useWorkspaceController({
   );
 
   const dismiss = useCallback(
-    (surface: Surface) => {
-      if (expanded?.id === surface.id) setExpanded(null);
+    (surface: Surface) =>
       userOp({ op: "dismiss", id: surface.id }, (s) =>
         applyOp(s, { op: "dismiss", id: surface.id, at: new Date().toISOString() }),
-      );
-    },
-    [expanded, userOp],
+      ),
+    [userOp],
   );
 
+  /** The same operation ELISE uses for "open that" (ui.focus): click and voice agree. */
   const focus = useCallback(
-    (id: string) =>
-      userOp({ op: "focus", id }, (s) =>
-        applyOp(s, { op: "focus", id, at: new Date().toISOString() }),
+    (id: string | null, item: string | null = null, compareWith: string | null = null) =>
+      userOp({ op: "focus", id, item, compareWith }, (s) =>
+        applyOp(s, { op: "focus", id, item, compareWith, at: new Date().toISOString() }),
+      ),
+    [userOp],
+  );
+
+  const pin = useCallback(
+    (surface: Surface, pinned: boolean) =>
+      userOp({ op: "pin", id: surface.id, pinned }, (s) =>
+        applyOp(s, { op: "pin", id: surface.id, pinned, at: new Date().toISOString() }),
+      ),
+    [userOp],
+  );
+
+  const arrange = useCallback(
+    (order: "time" | "relevance") =>
+      userOp({ op: "arrange", order }, (s) =>
+        applyOp(s, { op: "arrange", order, at: new Date().toISOString() }),
       ),
     [userOp],
   );
@@ -130,14 +143,6 @@ export function useWorkspaceController({
         applyOp(s, { op: "context", context: c, at: new Date().toISOString() }),
       ),
     [userOp],
-  );
-
-  const expand = useCallback(
-    (surface: Surface, itemId: string | null) => {
-      setExpanded({ id: surface.id, itemId });
-      if (workspace.focusId !== surface.id) focus(surface.id);
-    },
-    [focus, workspace.focusId],
   );
 
   const runAction = useCallback(
@@ -180,9 +185,6 @@ export function useWorkspaceController({
       const visible = surfaceIds.find((id) => workspace.surfaces.some((s) => s.id === id));
       if (visible) {
         focus(visible);
-        document
-          .getElementById("live-workspace")
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
       const id = getThread();
@@ -210,11 +212,10 @@ export function useWorkspaceController({
   });
 
   return {
-    expanded,
-    collapse: useCallback(() => setExpanded(null), []),
-    expand,
     dismiss,
     focus,
+    pin,
+    arrange,
     setContext,
     runAction,
     loadDetail,

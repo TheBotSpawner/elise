@@ -13,6 +13,7 @@
   --line: rgba(8, 30, 40, 0.1);
   --line-strong: rgba(8, 30, 40, 0.16);
   --fg: #0b1519;
+  --fg-2: #2e3d43;
   --fg-muted: #4d5d63;
   --fg-faint: #5b6b71;
   --accent: #0a95a6;
@@ -39,6 +40,52 @@
     rgba(0, 150, 170, 0) 70%
   );
 
+  /*
+   * Live Canvas (ADR-021), from the Claude Design reference (design-reference/). Light values
+   * are the reference's own light theme, not an inversion. Tiers: primary (the lead), secondary,
+   * arriving (just presented), ambient (quiet context), dim (behind a decision), skeleton.
+   */
+  --sf-primary-bg: #ffffff;
+  --sf-primary-line: color-mix(in srgb, var(--accent) 45%, transparent);
+  --sf-primary-shadow: 0 24px 60px rgba(10, 40, 50, 0.14);
+  --sf-bg: rgba(255, 255, 255, 0.78);
+  --sf-line: rgba(8, 30, 40, 0.09);
+  --sf-shadow: 0 8px 24px rgba(10, 40, 50, 0.06);
+  --sf-arriving-bg: rgba(255, 255, 255, 0.85);
+  --sf-arriving-line: color-mix(in srgb, var(--accent) 50%, transparent);
+  --sf-arriving-shadow: 0 10px 30px rgba(10, 40, 50, 0.08);
+  --sf-ambient-bg: rgba(255, 255, 255, 0.3);
+  --sf-ambient-line: rgba(8, 30, 40, 0.07);
+  --sf-micro-bg: rgba(255, 255, 255, 0.92);
+  --sf-micro-shadow: 0 8px 24px rgba(10, 40, 50, 0.1);
+  --sf-skeleton-bg: rgba(255, 255, 255, 0.4);
+  --sf-skeleton-line: rgba(8, 30, 40, 0.14);
+  --sf-approval-bg: #fffdf8;
+  --sf-approval-line: rgba(176, 108, 8, 0.45);
+  --sf-approval-shadow: 0 24px 70px rgba(80, 50, 0, 0.14);
+  --dock-bg: rgba(255, 255, 255, 0.86);
+  --dock-shadow: 0 20px 50px rgba(10, 40, 50, 0.12);
+  --drawer-bg: rgba(255, 255, 255, 0.97);
+  --scrim: rgba(242, 245, 246, 0.7);
+  --canvas-dot: rgba(8, 30, 40, 0.1);
+  --ghost-line: rgba(8, 30, 40, 0.22);
+  --axis: rgba(8, 30, 40, 0.28);
+  --track: rgba(8, 30, 40, 0.08);
+  --gridline: rgba(8, 30, 40, 0.08);
+  --avatar: #e3eaec;
+  --avatar-ring: #ffffff;
+  --inner: rgba(8, 30, 40, 0.04);
+  --page: #ffffff;
+  --page-ink: rgba(8, 30, 40, 0.55);
+  --page-ink-soft: rgba(8, 30, 40, 0.16);
+  --skel: rgba(8, 30, 40, 0.07);
+  --tip-bg: #ffffff;
+  --warn-soft: rgba(176, 108, 8, 0.12);
+  --good-soft: rgba(11, 122, 82, 0.12);
+  --chart-neutral: rgba(8, 30, 40, 0.18);
+  --chart-neutral-2: rgba(8, 30, 40, 0.28);
+  --media-tone: linear-gradient(135deg, #cfe3e6 0%, #e9f1f2 60%, #d6e0e4 100%);
+
   /* Motion tokens */
   --dur-xs: 120ms;
   --dur-sm: 200ms;
@@ -55,6 +102,7 @@
   --line: rgba(255, 255, 255, 0.08);
   --line-strong: rgba(255, 255, 255, 0.14);
   --fg: #e6eef0;
+  --fg-2: #b5c2c6;
   --fg-muted: #8c9ca2;
   --fg-faint: #6e8187;
   --accent: #5ee6f0;
@@ -80,6 +128,48 @@
     rgba(70, 200, 215, 0.075),
     rgba(70, 200, 215, 0) 70%
   );
+
+  --sf-primary-bg: rgba(255, 255, 255, 0.045);
+  --sf-primary-line: color-mix(in srgb, var(--accent) 32%, transparent);
+  --sf-primary-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  --sf-bg: rgba(255, 255, 255, 0.028);
+  --sf-line: rgba(255, 255, 255, 0.08);
+  --sf-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+  --sf-arriving-bg: rgba(255, 255, 255, 0.035);
+  --sf-arriving-line: color-mix(in srgb, var(--accent) 50%, transparent);
+  --sf-arriving-shadow:
+    0 0 0 4px color-mix(in srgb, var(--accent) 5%, transparent), 0 16px 40px rgba(0, 0, 0, 0.3);
+  --sf-ambient-bg: rgba(255, 255, 255, 0.012);
+  --sf-ambient-line: rgba(255, 255, 255, 0.06);
+  --sf-micro-bg: rgba(14, 20, 24, 0.92);
+  --sf-micro-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  --sf-skeleton-bg: rgba(255, 255, 255, 0.015);
+  --sf-skeleton-line: rgba(255, 255, 255, 0.12);
+  --sf-approval-bg: rgba(245, 186, 96, 0.045);
+  --sf-approval-line: rgba(245, 186, 96, 0.42);
+  --sf-approval-shadow: 0 30px 90px rgba(0, 0, 0, 0.6);
+  --dock-bg: rgba(11, 16, 19, 0.84);
+  --dock-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --drawer-bg: rgba(10, 14, 17, 0.97);
+  --scrim: rgba(3, 5, 7, 0.62);
+  --canvas-dot: rgba(255, 255, 255, 0.07);
+  --ghost-line: rgba(230, 238, 240, 0.18);
+  --axis: rgba(230, 238, 240, 0.24);
+  --track: rgba(255, 255, 255, 0.08);
+  --gridline: rgba(255, 255, 255, 0.06);
+  --avatar: #1a2227;
+  --avatar-ring: #0b1013;
+  --inner: rgba(255, 255, 255, 0.04);
+  --page: #0a0f12;
+  --page-ink: rgba(230, 238, 240, 0.6);
+  --page-ink-soft: rgba(230, 238, 240, 0.16);
+  --skel: rgba(255, 255, 255, 0.06);
+  --tip-bg: rgba(14, 20, 24, 0.97);
+  --warn-soft: rgba(245, 186, 96, 0.12);
+  --good-soft: rgba(120, 240, 190, 0.12);
+  --chart-neutral: rgba(230, 238, 240, 0.22);
+  --chart-neutral-2: rgba(230, 238, 240, 0.32);
+  --media-tone: linear-gradient(135deg, #17323b 0%, #0c161b 55%, #1c2b33 100%);
 }
 
 /* Accents (ADR-012): approved palette only, chosen by data-accent. Cyan is the default above.
@@ -148,6 +238,7 @@
   --color-border: var(--line);
   --color-border-strong: var(--line-strong);
   --color-fg: var(--fg);
+  --color-fg2: var(--fg-2);
   --color-muted: var(--fg-muted);
   --color-faint: var(--fg-faint);
   --color-accent: var(--accent);
@@ -165,6 +256,16 @@
   --color-danger-text: var(--error-text);
   --color-glass: var(--glass);
   --color-active: var(--active-bg);
+  --color-track: var(--track);
+  --color-gridline: var(--gridline);
+  --color-avatar: var(--avatar);
+  --color-inner: var(--inner);
+  --color-page: var(--page);
+  --color-skel: var(--skel);
+  --color-warn-soft: var(--warn-soft);
+  --color-good-soft: var(--good-soft);
+  --color-ghost: var(--ghost-line);
+  --color-axis: var(--axis);
   --font-sans: var(--font-geist-sans), "Helvetica Neue", system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --ease-standard: var(--ease-standard);
@@ -226,6 +327,69 @@
   font-size: 10.5px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+
+/* Surface eyebrow (reference Surface label): mono 10.5 / 0.14em. */
+@utility type-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/*
+ * Surface shells by tier (ADR-021). One shell for every Surface type; bodies never draw their
+ * own frame. Ambient is quieter, never unreadable: it returns to full strength on hover/focus.
+ */
+.sf {
+  background: var(--sf-bg);
+  border: 1px solid var(--sf-line);
+  box-shadow: var(--sf-shadow);
+}
+.sf[data-tier="primary"] {
+  background: var(--sf-primary-bg);
+  border-color: var(--sf-primary-line);
+  box-shadow: var(--sf-primary-shadow);
+}
+.sf[data-tier="arriving"] {
+  background: var(--sf-arriving-bg);
+  border-color: var(--sf-arriving-line);
+  box-shadow: var(--sf-arriving-shadow);
+}
+.sf[data-tier="ambient"] {
+  background: var(--sf-ambient-bg);
+  border-color: var(--sf-ambient-line);
+  box-shadow: none;
+  opacity: 0.72;
+  transition: opacity var(--dur-sm) var(--ease-standard);
+}
+.sf[data-tier="ambient"]:hover,
+.sf[data-tier="ambient"]:focus-within {
+  opacity: 1;
+}
+.sf[data-tier="dim"] {
+  box-shadow: none;
+  opacity: 0.3;
+}
+.sf[data-size="micro"] {
+  background: var(--sf-micro-bg);
+  box-shadow: var(--sf-micro-shadow);
+}
+.sf[data-kind="approval"] {
+  background: var(--sf-approval-bg);
+  border-color: var(--sf-approval-line);
+  box-shadow: var(--sf-approval-shadow);
+}
+.sf-skeleton {
+  background: var(--sf-skeleton-bg);
+  border: 1px dashed var(--sf-skeleton-line);
+}
+
+/* Canvas backdrop: a faint dot grid while ELISE gathers (reference "gathering"). */
+.canvas-dots {
+  background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1.2px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 100%);
 }
 
 /* Ambient halo behind the Orb. Decorative. */
