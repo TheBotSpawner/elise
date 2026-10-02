@@ -155,6 +155,8 @@ export function LiveCanvas(props: LiveCanvasProps) {
   const approval = composition.approvalId ? byId.get(composition.approvalId) : undefined;
   const transcriptAvailable = canvasActive && messages.length > 0;
   const showTranscript = transcriptOpen && transcriptAvailable;
+  // Space is reserved only while the drawer is actually shown, not just remembered open.
+  const drawerShown = desktopDrawer && transcriptAvailable;
 
   const shelf = composition.shelf.map((id) => byId.get(id)).filter((s): s is Surface => Boolean(s));
   const above = (
@@ -177,7 +179,7 @@ export function LiveCanvas(props: LiveCanvasProps) {
   const dockEl = (
     <Dock
       inline={idleInline}
-      besideDrawer={desktopDrawer && transcriptAvailable}
+      besideDrawer={drawerShown}
       orbState={props.orbState}
       level={props.level}
       showOrb={composition.orb === "dock" && !idleInline}
@@ -218,7 +220,7 @@ export function LiveCanvas(props: LiveCanvasProps) {
     <div
       className={cn(
         "relative flex min-h-[calc(100dvh-5rem)] flex-1 flex-col",
-        desktopDrawer && "pr-[400px]",
+        drawerShown && "pr-[400px]",
       )}
     >
       <div

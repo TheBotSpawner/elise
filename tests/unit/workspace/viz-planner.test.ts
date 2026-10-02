@@ -9,7 +9,7 @@ import {
   type WorkspaceOp,
   type WorkspaceState,
 } from "@/core/workspace/model";
-import type { ActivityStep, WorkspacePort } from "@/core/workspace/port";
+import type { WorkspacePort } from "@/core/workspace/port";
 import {
   planVisualization,
   timeKey,
@@ -231,7 +231,7 @@ class FakeWorkspace implements WorkspacePort {
     this.state_ = applyOps(this.state_, ops);
     return this.state_.version;
   }
-  activity(_s: ActivityStep) {}
+  activity() {}
 }
 
 function researched() {
