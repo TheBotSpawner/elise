@@ -50,8 +50,18 @@ export class SupabaseRecallReader implements RecallReader {
     private readonly workspaceId: string,
     private readonly userId: string,
     private readonly embeddings: () => EmbeddingProvider,
+    /** Brings the index up to date before the first read (never fails the search). */
+    private readonly prepare: ((skip: string[]) => Promise<unknown>) | null = null,
   ) {
     this.links = new SupabaseHistoryLinks(db, workspaceId, userId);
+  }
+
+  private prepared: Promise<unknown> | null = null;
+  private ready(skip: (string | null | undefined)[] = []) {
+    this.prepared ??= (
+      this.prepare?.(skip.filter((x): x is string => Boolean(x))) ?? Promise.resolve()
+    ).catch(() => undefined);
+    return this.prepared;
   }
 
   private async sessionOf(conversationId: string | null | undefined): Promise<string | null> {
@@ -74,6 +84,7 @@ export class SupabaseRecallReader implements RecallReader {
     spaceIds?: string[] | null;
     limit: number;
   }) {
+    await this.ready([q.excludeConversationId, q.excludeSessionId]);
     let embedding: string | null = null;
     let model = "none";
     try {
@@ -100,6 +111,14 @@ export class SupabaseRecallReader implements RecallReader {
       p_spaces: q.spaceIds?.length ? q.spaceIds : undefined,
     });
     if (error) throw error;
+    // Counts only (never the query or excerpts).
+    logger.info("recall.search", {
+      semantic: embedding !== null,
+      hits: data?.length ?? 0,
+      keyword_hits: (data ?? []).filter((r) => r.keyword_rank !== null).length,
+      dated: Boolean(q.from || q.to),
+      scoped: Boolean(q.contextId || q.spaceIds?.length),
+    });
     return {
       semantic: embedding !== null,
       hits: (data ?? []).map((r) => ({
@@ -134,6 +153,7 @@ export class SupabaseRecallReader implements RecallReader {
     excludeConversationId?: string | null;
     excludeSessionId?: string | null;
   }) {
+    await this.ready([q.excludeConversationId, q.excludeSessionId]);
     let query = this.db
       .from("interaction_sessions")
       .select(SESSION_COLUMNS)

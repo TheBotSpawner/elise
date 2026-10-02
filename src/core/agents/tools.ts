@@ -83,6 +83,8 @@ export interface ToolContext {
    * stored, never logged, never sent back in a tool output.
    */
   here?: LatLng | null;
+  /** The user's message this turn, verbatim: searches keep the original wording (Recall). */
+  userMessage?: string | null;
 }
 
 /** Capability → provider contract. Grows as capabilities are implemented. */

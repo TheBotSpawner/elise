@@ -54,6 +54,8 @@ export interface ThreadEvidence {
   activated: Set<string>;
   /** The conversation was started from this Space/Section ("Ask ELISE" there). */
   scoped: Set<string>;
+  /** A turn named exactly this Section and ELISE resolved the request to it. */
+  resolved?: Set<string>;
   /** Knowledge passages used, per turn: spaceId → number of distinct turns / passages. */
   knowledgeTurns: Map<string, number>;
   knowledgePassages: Map<string, number>;
@@ -91,6 +93,11 @@ export function scoreEvidence(e: ThreadEvidence, nodes: KnowledgeNode[]): Scored
     if (e.scoped.has(node.id)) {
       c = Math.max(c, 0.95);
       why.push("space_scope");
+    }
+    // Resolved before any tool ran: the request is about it, even if its Knowledge had nothing.
+    if (e.resolved?.has(node.id)) {
+      c = Math.max(c, 0.9);
+      why.push("resolved_mention");
     }
     const kTurns = e.knowledgeTurns.get(node.id) ?? 0;
     const kPassages = e.knowledgePassages.get(node.id) ?? 0;
@@ -204,6 +211,31 @@ export function mentionedNodes(text: string, nodes: KnowledgeNode[]): string[] {
         (n.aliases ?? []).some((a) => usableAlias(a) && hit(a)),
     )
     .map((n) => n.id);
+}
+
+/**
+ * The one Space or Section a message clearly names, before any tool runs ("el cronograma de
+ * Análisis Matemático 2" → University › AMII when its description says "Análisis Matemático
+ * II"). A Space named together with one of its Sections resolves to the Section; two unrelated
+ * matches are ambiguous and resolve to nothing (the model asks or searches broadly).
+ */
+export function resolveMentioned(text: string, nodes: KnowledgeNode[]): KnowledgeNode | null {
+  const ids = new Set(mentionedNodes(text, nodes));
+  const hits = nodes.filter((n) => ids.has(n.id));
+  const specific = hits.filter((n) => !hits.some((c) => c.parentId === n.id));
+  return specific.length === 1 ? specific[0]! : null;
+}
+
+/** "University › AMII" — other names the user gave it", for the model's map of Knowledge. */
+export function knowledgeMap(nodes: KnowledgeNode[]): { path: string; aliases: string[] }[] {
+  return nodes
+    .filter((n) => !n.archived)
+    .map((n) => ({
+      path: n.parentName ? `${n.parentName} › ${n.name}` : n.name,
+      aliases: [...new Set((n.aliases ?? []).filter(usableAlias))].filter(
+        (a) => matchKey(a) !== matchKey(n.name),
+      ),
+    }));
 }
 
 // ── Reading: chips, filters, groups ─────────────────────────────────────────

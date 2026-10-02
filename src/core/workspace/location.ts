@@ -49,6 +49,19 @@ const route = z
     /** Starts at the user's shared position: line and start are kept out of storage. */
     fromHere: z.boolean(),
     mapsUrl: https.nullable(),
+    /** The same trip by other modes, when the user didn't name one. */
+    alternatives: z
+      .array(
+        z
+          .object({
+            mode: z.enum(TRAVEL_MODES),
+            durationSeconds: z.number().int().min(0),
+            distanceMeters: z.number().int().min(0),
+          })
+          .strict(),
+      )
+      .max(3)
+      .default([]),
   })
   .strict();
 

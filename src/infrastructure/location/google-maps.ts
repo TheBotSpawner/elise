@@ -97,7 +97,68 @@ interface GPlace {
   photos?: { name?: string; authorAttributions?: { displayName?: string; uri?: string }[] }[];
 }
 
-function failure(status: number, what: string): AppError {
+const API_NAMES: Record<string, string> = {
+  places: "Places API (New)",
+  routes: "Routes API",
+  geocode: "Geocoding API",
+};
+const apiName = (what: string) => API_NAMES[what.split(".")[0] ?? ""] ?? what;
+
+/**
+ * Google's own reason for a refused request → a precise setup error. "Maps isn't available"
+ * is never the answer when the real cause is a key restriction or an API left disabled.
+ */
+export function setupFailure(reason: string, what: string): AppError | null {
+  const api = apiName(what);
+  const setup = (code: string, message: string) =>
+    new AppError("CAPABILITY_UNAVAILABLE", `Maps setup: ${message}`, {
+      recovery: "configure",
+      details: { setup: code, api },
+    });
+  if (/REFERRER|referer restrictions/i.test(reason))
+    return setup(
+      "key_referrer_restricted",
+      `the Maps key only accepts requests from websites (HTTP referrer restriction), so ELISE's server can't call the ${api}. Set GOOGLE_MAPS_SERVER_API_KEY to a server key, or remove the website restriction from the development key.`,
+    );
+  if (/SERVICE_DISABLED|not activated|has not been used in project|is disabled/i.test(reason))
+    return setup(
+      "api_disabled",
+      `the ${api} isn't enabled in the Google Cloud project. Enable it in the console.`,
+    );
+  if (/API_KEY_SERVICE_BLOCKED|not authorized to use this API/i.test(reason))
+    return setup(
+      "api_not_allowed",
+      `the Maps key isn't allowed to call the ${api} (API restrictions). Add it to the key's allowed APIs.`,
+    );
+  if (/API_KEY_INVALID|API key not valid/i.test(reason))
+    return setup("key_invalid", "the Maps key isn't valid.");
+  if (/BILLING/i.test(reason))
+    return setup("billing", "billing isn't enabled on the Google Cloud project.");
+  return null;
+}
+
+/** The refusal reason Google put in an error body (reason codes and message). */
+async function reasonOf(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as {
+      error?: { message?: string; status?: string; details?: { reason?: string }[] };
+    };
+    return [
+      body.error?.status,
+      body.error?.message,
+      ...(body.error?.details ?? []).map((d) => d.reason),
+    ]
+      .filter(Boolean)
+      .join(" ");
+  } catch {
+    return "";
+  }
+}
+
+function failure(status: number, what: string, reason = ""): AppError {
+  const setup =
+    status === 401 || status === 403 || status === 400 ? setupFailure(reason, what) : null;
+  if (setup) return setup;
   if (status === 401 || status === 403)
     return new AppError("CAPABILITY_UNAVAILABLE", `Maps isn't configured correctly (${what})`, {
       recovery: "configure",
@@ -213,7 +274,7 @@ export class GoogleMapsLocation implements LocationProvider {
       signal,
     });
     this.onUsage({ api, units });
-    if (!response.ok) throw failure(response.status, api);
+    if (!response.ok) throw failure(response.status, api, await reasonOf(response));
     return (await response.json()) as T;
   }
 
@@ -294,13 +355,15 @@ export class GoogleMapsLocation implements LocationProvider {
     if (!response.ok) throw failure(response.status, "geocode");
     const data = (await response.json()) as {
       status?: string;
+      error_message?: string;
       results?: {
         place_id?: string;
         formatted_address?: string;
         geometry?: { location?: { lat?: number; lng?: number } };
       }[];
     };
-    if (data.status === "REQUEST_DENIED") throw failure(403, "geocode");
+    if (data.status === "REQUEST_DENIED")
+      throw setupFailure(data.error_message ?? "", "geocode") ?? failure(403, "geocode");
     if (data.status === "OVER_QUERY_LIMIT") throw failure(429, "geocode");
     return (data.results ?? []).slice(0, 5).flatMap((r) => {
       const lat = r.geometry?.location?.lat;

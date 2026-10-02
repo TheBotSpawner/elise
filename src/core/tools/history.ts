@@ -5,7 +5,15 @@ import { AppError } from "../errors";
 import { recallTiers, resolveNode, type KnowledgeNode } from "../history/links";
 import type { ThreadRef } from "../interaction";
 import { PERIODS, resolvePeriod, type PeriodPreset } from "../periods";
-import { groupRecall, RECALL, type RecallReader, type RecallResult } from "../recall/model";
+import {
+  groupRecall,
+  RECALL,
+  type RecallReader,
+  type RecallResult,
+  boostPhrases,
+  mergeRecallHits,
+  quotedPhrases,
+} from "../recall/model";
 import { addDays, isIsoDate, startOfDayUtc, toLocalDateTime, todayIn } from "../time";
 
 /**
@@ -63,6 +71,13 @@ const forModel = (r: RecallResult, tz: string) => ({
 const searchInput = z
   .object({
     query: z.string().trim().min(2).max(300).describe("What to look for, in the user's words."),
+    phrases: z
+      .array(z.string().trim().min(3).max(80))
+      .max(4)
+      .optional()
+      .describe(
+        "Exact names, titles or phrases the user remembers (an event title, a product, a person), as they said them.",
+      ),
     ...range,
     limit: z.number().int().min(1).max(RECALL.maxResults).default(RECALL.maxResults),
     context: z
@@ -98,17 +113,28 @@ export const searchHistoryTool: ToolDefinition = {
     const q = searchInput.parse(raw);
     const w = window(q, env);
     const r = reader(env);
+    // The model's query and the user's own sentence are both searched: reducing a request to
+    // keywords must never lose what the user actually said.
+    const said = env.ctx.userMessage?.trim();
+    const variants = [q.query, ...(said && said !== q.query ? [said.slice(0, 300)] : [])];
+    const phrases = [...(q.phrases ?? []), ...quotedPhrases(q.query), ...quotedPhrases(said ?? "")];
     const find = async (contextId: string | null, spaceIds: string[] | null = null) => {
-      const { hits } = await r.search({
-        text: q.query,
-        from: w.from,
-        to: w.to,
-        excludeConversationId: env.ctx.conversationId ?? null,
-        excludeSessionId: env.ctx.interactionSessionId ?? null,
-        contextId,
-        spaceIds,
-        limit: RECALL.candidates,
-      });
+      const lists = await Promise.all(
+        variants.map(async (text) => {
+          const { hits } = await r.search({
+            text,
+            from: w.from,
+            to: w.to,
+            excludeConversationId: env.ctx.conversationId ?? null,
+            excludeSessionId: env.ctx.interactionSessionId ?? null,
+            contextId,
+            spaceIds,
+            limit: RECALL.candidates,
+          });
+          return hits;
+        }),
+      );
+      const hits = boostPhrases(mergeRecallHits(lists), phrases);
       const sessions = await r.sessions([...new Set(hits.map((h) => h.sessionId))]);
       return groupRecall(hits, sessions).slice(0, q.limit);
     };

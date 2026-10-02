@@ -280,6 +280,7 @@ export const en = {
         other: "Done",
       },
       unavailable: (label: string) => `${label} unavailable`,
+      misconfigured: (label: string) => `${label}: setup incomplete`,
     },
     resultLabel: "Result",
   },
@@ -1481,6 +1482,7 @@ export const en = {
     account: "Account",
   },
   errors: {
+    setup: "It's there, but its setup isn't complete.",
     // Server messages are written in English: show them as-is only in English.
     useServerMessages: true,
     title: "Something went wrong",

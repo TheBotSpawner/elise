@@ -15,6 +15,7 @@ import {
   type Entity,
 } from "@/core/contexts/model";
 import { AppError, toPublicError } from "@/core/errors";
+import { knowledgeMap, resolveMentioned } from "@/core/history/links";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
 import { coarse, type LatLng } from "@/core/location/model";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
@@ -47,7 +48,7 @@ import {
   toolContext,
   toolRegistry,
 } from "./elise";
-import { autoLinkThread } from "./history-links-service";
+import { autoLinkThread, historyLinks } from "./history-links-service";
 import { openThread } from "./interaction-thread";
 import { syncDueSources } from "./knowledge-background";
 import { locationConfigured } from "./location-service";
@@ -203,6 +204,28 @@ export async function startChatTurn(
     .filter(Boolean)
     .join("\n");
 
+  // Object first (what is the user talking about?), tool second: a Section the message clearly
+  // names is resolved here, from the user's own names for it, before the model picks a tool.
+  const nodes = await historyLinks(auth)
+    .nodes()
+    .catch(() => []);
+  const mentioned = activeSpace ? null : resolveMentioned(input.message, nodes);
+  const resolvedPath = mentioned
+    ? mentioned.parentName
+      ? `${mentioned.parentName} › ${mentioned.name}`
+      : mentioned.name
+    : null;
+  logger.info("chat.routing", {
+    request_id: input.requestId,
+    modality,
+    active_space: activeSpace?.id ?? null,
+    resolved_space: mentioned?.id ?? null,
+    knowledge_nodes: nodes.length,
+    web,
+    location: location ? "configured" : "not_configured",
+    location_shared: Boolean(here),
+  });
+
   const context = buildContextPackage({
     user: auth.profile,
     now: new Date(),
@@ -211,8 +234,12 @@ export async function startChatTurn(
     history,
     userMessage: input.message,
     activeSpace: activeSpace?.path ?? null,
+    knowledgeMap: knowledgeMap(nodes),
+    resolvedSpace: resolvedPath,
     spaceNotes: await spaceNotes(auth, [
       activeSpace?.id ?? null,
+      mentioned?.id ?? null,
+      mentioned?.parentId ?? null,
       activeProfile?.section?.spaceId ?? null,
       activeProfile?.section?.parentId ?? null,
     ]).catch(() => []),
@@ -331,7 +358,9 @@ export async function startChatTurn(
               ports,
               ctx: {
                 ...toolContext(auth, "ai", runId, thread.ref),
-                knowledgeSpaceId: activeSpace?.id ?? null,
+                // The conversation's Space, else the Section this message named.
+                knowledgeSpaceId: activeSpace?.id ?? mentioned?.id ?? null,
+                userMessage: input.message,
                 workspace,
                 voiceWake: input.voice?.wake ?? null,
                 here,
@@ -585,6 +614,9 @@ export async function startChatTurn(
               ];
               void autoLinkThread(auth, thread.ref, {
                 activeSpaceIds: active ? [active] : [],
+                // The Section the request was resolved to: linked even if its Knowledge
+                // had no answer.
+                resolvedSpaceIds: mentioned ? [mentioned.id] : [],
                 scopedSpaceIds: scoped ? [scoped] : [],
                 strongSpaceIds: strong,
               });
@@ -599,6 +631,8 @@ export async function startChatTurn(
               error_code: failure?.code,
               latency_ms: latency,
               tool_calls: traces.size,
+              // Which tools ran (names only): routing is diagnosable without content.
+              tools: [...new Set([...traces.values()].map((x) => x.name))],
               input_tokens: usage?.inputTokens,
               output_tokens: usage?.outputTokens,
               response_chars: finalText.length,

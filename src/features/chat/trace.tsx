@@ -108,7 +108,9 @@ function TraceRow({ step, index }: { step: ClientToolTrace; index: number }) {
   let detail = "";
   if (!o) detail = "…";
   else if (o.status === "approval_required") detail = t.approvals.waitingDetail;
-  else if (o.status === "failed") detail = t.errors.codes[o.error.code];
+  // A capability that exists but is set up wrong is not "not connected" (ADR-023).
+  else if (o.status === "failed")
+    detail = o.error.recovery === "configure" ? t.errors.setup : t.errors.codes[o.error.code];
   else if (o.status === "rejected" || o.status === "clarification_required")
     detail = t.errors.codes.PERMISSION_DENIED;
   else if (o.display?.kind === "task") detail = o.display.task.title;
@@ -167,7 +169,9 @@ function TraceRow({ step, index }: { step: ClientToolTrace; index: number }) {
       </span>
       <span className={cn("truncate text-[13px] text-fg", step.parentId && "pl-4 text-muted")}>
         {o?.status === "failed" && o.error.code === "CAPABILITY_UNAVAILABLE"
-          ? t.chat.activity.unavailable(activityLabel(t, step.name, false))
+          ? (o.error.recovery === "configure"
+              ? t.chat.activity.misconfigured
+              : t.chat.activity.unavailable)(activityLabel(t, step.name, false))
           : activityLabel(t, step.name, !o)}
       </span>
       <span className={cn("truncate", kind === "waiting" ? "text-approval-text" : "text-muted")}>

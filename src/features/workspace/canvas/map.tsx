@@ -379,6 +379,22 @@ function RouteView({ route, size }: { route: NonNullable<MapPayload["route"]>; s
       <p className="text-[12px] text-muted">
         {route.from} → {route.to}
       </p>
+      {route.alternatives.length > 0 && (
+        <ul className="flex flex-wrap gap-2 text-[12px] text-muted">
+          {route.alternatives.map((a) => {
+            const AltIcon = MODE_ICON[a.mode];
+            return (
+              <li
+                key={a.mode}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2.5 py-1"
+              >
+                <AltIcon className="size-3.5" aria-label={t.location.modes[a.mode]} />
+                {f.duration(a.durationSeconds)}
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {(line || pins.length > 0) && (
         <MapCanvas
           pins={pins}

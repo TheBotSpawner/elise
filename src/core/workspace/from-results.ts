@@ -243,7 +243,8 @@ function recallSurface(d: Display<"recall_results">, opts: PresentOptions) {
         interactionId: r.interactionId,
         title: clip(r.title, 300),
         date: r.date,
-        summary: r.summary ? clip(r.summary, 1200) : null,
+        // Matched by its words: the card shows the exchange itself, not a general summary.
+        summary: r.summary && !r.relevance.keyword ? clip(r.summary, 1200) : null,
         excerpts: r.excerpts.slice(0, 2).map((e) => ({ text: clip(e.text, 500), at: e.at })),
         url: safe(r.url),
         modality: r.modality,

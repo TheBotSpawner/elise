@@ -949,6 +949,34 @@ describe("universal recall", () => {
     expect((await search({ ...alice, userId: bob.userId }, "pricing")).rows).toHaveLength(0);
   });
 
+  it("voice sessions (no conversation) are found like typed ones; only the current one is excluded", async () => {
+    const voice = async (text: string) => {
+      const session = (
+        await db.query<{ id: string }>(
+          `insert into public.interaction_sessions (workspace_id, user_id, modality, started_at, last_activity_at)
+           values ($1, $2, 'voice', now(), now()) returning id`,
+          [alice.workspaceId, alice.userId],
+        )
+      ).rows[0]!.id;
+      await db.query(
+        `insert into public.recall_chunks (workspace_id, user_id, session_id, chunk_index, started_at, ended_at, modality, content, content_hash)
+         values ($1, $2, $3, 0, now(), now(), 'voice', $4, 'h')`,
+        [alice.workspaceId, alice.userId, session, text],
+      );
+      return session;
+    };
+    const past = await voice("User: add an event to water the plants. ELISE: created Water Plants");
+    const current = await voice("User: find when I asked to water the plants");
+    const found = await as<{ session_id: string }>(
+      alice,
+      `select * from public.search_recall_chunks($1, $2, 'water | plants', null, 'none', null, null, $3, 10)`,
+      [alice.workspaceId, alice.userId, current],
+    );
+    const ids = found.rows.map((r) => r.session_id);
+    expect(ids).toContain(past);
+    expect(ids).not.toContain(current);
+  });
+
   it("is written only by the service role, within one user's workspace", async () => {
     const a = await indexed(alice, "User: notes", "2026-09-12T12:00:00Z");
     await expect(

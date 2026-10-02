@@ -18,8 +18,20 @@ import type { AuthContext } from "./auth-context";
  * short cache and usage metrics. Queries, addresses and coordinates are never logged.
  */
 
+/**
+ * The key ELISE's server uses. Production: only the dedicated server key. Development may run
+ * on the single (browser) key while the split is pending; if Google refuses it server-side, the
+ * tool says exactly why (see setupFailure) instead of maps silently not existing.
+ */
+function serverKey(): string | null {
+  const env = serverEnv();
+  if (env.GOOGLE_MAPS_SERVER_API_KEY) return env.GOOGLE_MAPS_SERVER_API_KEY;
+  if (env.ELISE_ENV === "production" || process.env.NODE_ENV === "production") return null;
+  return process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || null;
+}
+
 export function locationConfigured(): boolean {
-  return Boolean(serverEnv().GOOGLE_MAPS_SERVER_API_KEY);
+  return serverKey() !== null;
 }
 
 // ponytail: per-instance cache (short TTLs); a shared cache only if hit rates justify it.
@@ -39,7 +51,7 @@ export function locationCapability(
     });
   const maps = (): LocationProvider => {
     if (provider) return provider;
-    const key = serverEnv().GOOGLE_MAPS_SERVER_API_KEY;
+    const key = serverKey();
     if (!key)
       throw new AppError("CAPABILITY_UNAVAILABLE", "Maps isn't configured", {
         recovery: "configure",
@@ -68,8 +80,17 @@ export function locationCapability(
       cache.set(k, { at: Date.now(), ttl, value });
       return value;
     } catch (error) {
-      const code = controller.signal.aborted ? "TIMEOUT" : toAppError(error).code;
-      logger.warn("location.call_failed", { ...log, op, code, latency_ms: Date.now() - started });
+      const e = toAppError(error);
+      const code = controller.signal.aborted ? "TIMEOUT" : e.code;
+      // Category only (setup reason, API): never the query, address or coordinates.
+      logger.warn("location.call_failed", {
+        ...log,
+        op,
+        code,
+        setup: e.details?.setup ?? null,
+        api: e.details?.api ?? null,
+        latency_ms: Date.now() - started,
+      });
       if (controller.signal.aborted)
         throw new AppError("PROVIDER_UNAVAILABLE", "Maps took too long", { recovery: "retry" });
       throw error;

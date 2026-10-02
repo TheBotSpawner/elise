@@ -71,6 +71,7 @@ import type { AuthContext } from "./auth-context";
 import { contextStore } from "./contexts-service";
 import { locationCapability } from "./location-service";
 import { syncNoteToKnowledge } from "./notes-knowledge";
+import { catchUpRecall } from "./recall-service";
 import { settingsStore } from "./settings-service";
 import { shortcutStore } from "./shortcuts-service";
 import { startStructuredBulk } from "./structured-bulk";
@@ -304,7 +305,14 @@ function providerFactory(
     },
     // Recall is always the user's own interactions (RLS: author-only).
     history() {
-      return new SupabaseRecallReader(auth.db, auth.workspaceId, auth.userId, getEmbeddingProvider);
+      return new SupabaseRecallReader(
+        auth.db,
+        auth.workspaceId,
+        auth.userId,
+        getEmbeddingProvider,
+        // Recall never depends on the background worker: unindexed turns are indexed first.
+        (skip) => catchUpRecall(auth.workspaceId, auth.userId, skip),
+      );
     },
     settings() {
       return settingsStore(auth);

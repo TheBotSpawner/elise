@@ -97,6 +97,97 @@ export const RECALL = {
   turnChars: 900,
 } as const;
 
+/**
+ * Several phrasings of one search (the model's query, the user's own words) → one candidate
+ * list: each excerpt once, with its best score. A reduced keyword query never replaces the
+ * user's sentence; both are searched.
+ */
+export function mergeRecallHits(lists: readonly RecallHit[][]): RecallHit[] {
+  const best = new Map<string, RecallHit>();
+  for (const h of lists.flat()) {
+    const prev = best.get(h.chunkId);
+    if (!prev) best.set(h.chunkId, h);
+    else
+      best.set(h.chunkId, {
+        ...(h.score > prev.score ? h : prev),
+        keywordMatched: prev.keywordMatched || h.keywordMatched,
+        similarity: Math.max(prev.similarity ?? 0, h.similarity ?? 0) || null,
+      });
+  }
+  return [...best.values()].sort((a, b) => b.score - a.score);
+}
+
+/** Same comparison rules as names: case, accents and punctuation don't matter. */
+const norm = (s: string) =>
+  ` ${s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()} `;
+
+/** Fusion scores are small (1/(60+rank)); an exact phrase must outweigh rank noise. */
+export const PHRASE_BOOST = 0.02;
+
+/**
+ * Exact phrases the user remembers ("Revisar correos", a title, a name) are strong evidence:
+ * an excerpt containing one is a keyword match and ranks above loose matches.
+ */
+export function boostPhrases(hits: readonly RecallHit[], phrases: readonly string[]): RecallHit[] {
+  const wanted = phrases.map(norm).filter((p) => p.trim().length >= 3);
+  if (!wanted.length) return [...hits];
+  return hits
+    .map((h) => {
+      const text = norm(h.content);
+      const n = wanted.filter((p) => text.includes(p)).length;
+      return n ? { ...h, keywordMatched: true, score: h.score + n * PHRASE_BOOST } : h;
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+/** Quoted text in a request ("…que se llamaba 'Revisar correos'") is a phrase to match. */
+export function quotedPhrases(text: string): string[] {
+  return [...text.matchAll(/["“'‘«]([^"”'’»]{3,80})["”'’»]/g)].map((m) => m[1]!.trim());
+}
+
+export type DueInteraction =
+  | { at: string; conversationId: string; sessionId: null }
+  | { at: string; conversationId: null; sessionId: string };
+
+/**
+ * Which interactions the Recall index is missing or behind on, newest first. Typed
+ * conversations (their messages) and voice sessions (their turns, no conversation) alike:
+ * whatever History can show, Recall must be able to find.
+ */
+export function recallDue(
+  conversations: readonly { id: string; last_message_at: string | null }[],
+  sessions: readonly {
+    id: string;
+    conversation_id: string | null;
+    indexed_through: string | null;
+    last_activity_at: string | null;
+  }[],
+  opts: { skip?: readonly string[]; limit: number },
+): DueInteraction[] {
+  const skip = new Set(opts.skip ?? []);
+  const behind = (through: string | null, last: string | null) =>
+    !through || (last !== null && Date.parse(through) < Date.parse(last) - 1000);
+  const byConversation = new Map(
+    sessions.filter((s) => s.conversation_id).map((s) => [s.conversation_id!, s]),
+  );
+  const due: DueInteraction[] = [
+    ...conversations
+      .filter((c) => !skip.has(c.id))
+      .filter((c) => behind(byConversation.get(c.id)?.indexed_through ?? null, c.last_message_at))
+      .map((c) => ({ at: c.last_message_at ?? "", conversationId: c.id, sessionId: null })),
+    ...sessions
+      .filter((s) => !s.conversation_id && !skip.has(s.id))
+      .filter((s) => behind(s.indexed_through, s.last_activity_at))
+      .map((s) => ({ at: s.last_activity_at ?? "", conversationId: null, sessionId: s.id })),
+  ];
+  return due.sort((a, b) => b.at.localeCompare(a.at)).slice(0, opts.limit);
+}
+
 export const isRecallEvidence = (h: RecallHit) =>
   h.keywordMatched || (h.similarity ?? 0) >= RECALL.minSimilarity;
 

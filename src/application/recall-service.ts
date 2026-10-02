@@ -3,7 +3,13 @@ import "server-only";
 import { toAppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import { indexSession, summarizeWithAI, type IndexPorts } from "@/core/recall/indexer";
-import { groupRecall, RECALL, type RecallResult, type RecallTurn } from "@/core/recall/model";
+import {
+  groupRecall,
+  RECALL,
+  recallDue,
+  type RecallResult,
+  type RecallTurn,
+} from "@/core/recall/model";
 import { getAIProvider, getEmbeddingProvider } from "@/infrastructure/ai";
 import {
   isBackgroundConfigured,
@@ -24,7 +30,12 @@ import type { AuthContext } from "./auth-context";
 type Admin = ReturnType<typeof createAdminClient>;
 const toVector = (v: number[]) => `[${v.join(",")}]`;
 
-function ports(db: Admin, workspaceId: string, userId: string): IndexPorts {
+function ports(
+  db: Admin,
+  workspaceId: string,
+  userId: string,
+  opts: { summarize?: boolean } = {},
+): IndexPorts {
   let embeddingModel: string | null = null;
   const embed = (() => {
     try {
@@ -36,6 +47,7 @@ function ports(db: Admin, workspaceId: string, userId: string): IndexPorts {
     }
   })();
   const summarize = (() => {
+    if (opts.summarize === false) return null;
     try {
       const ai = getAIProvider();
       return (turns: RecallTurn[]) => summarizeWithAI(ai, turns);
@@ -142,7 +154,11 @@ function ports(db: Admin, workspaceId: string, userId: string): IndexPorts {
 }
 
 /** Indexes (or re-indexes) one conversation. Archived conversations are never indexed. */
-export async function indexConversation(workspaceId: string, conversationId: string) {
+export async function indexConversation(
+  workspaceId: string,
+  conversationId: string,
+  opts: { summarize?: boolean } = {},
+) {
   const db = createAdminClient();
   const { data: c } = await db
     .from("conversations")
@@ -180,7 +196,16 @@ export async function indexConversation(workspaceId: string, conversationId: str
       if (!session) throw error;
     } else session = data;
   }
-  const counts = await indexSession(ports(db, workspaceId, c.user_id), session!.id);
+  const counts = await indexSession(ports(db, workspaceId, c.user_id, opts), session!.id);
+  // The conversation's own clock can run past its last message (touches, tool turns): the index
+  // covers everything up to it, or the conversation would look "behind" forever.
+  if (c.last_message_at)
+    await db
+      .from("interaction_sessions")
+      .update({ indexed_through: c.last_message_at })
+      .eq("id", session!.id)
+      .eq("workspace_id", workspaceId)
+      .or(`indexed_through.is.null,indexed_through.lt."${c.last_message_at}"`);
   logger.info("recall.indexed", { conversation_id: conversationId, ...counts });
   return counts;
 }
@@ -189,7 +214,11 @@ export async function indexConversation(workspaceId: string, conversationId: str
  * A voice session (no History thread): its turns are already in interaction_turns, so it is
  * indexed directly. Archived sessions are never indexed.
  */
-export async function indexVoiceSession(workspaceId: string, sessionId: string) {
+export async function indexVoiceSession(
+  workspaceId: string,
+  sessionId: string,
+  opts: { summarize?: boolean } = {},
+) {
   const db = createAdminClient();
   const { data: s } = await db
     .from("interaction_sessions")
@@ -198,7 +227,7 @@ export async function indexVoiceSession(workspaceId: string, sessionId: string) 
     .eq("workspace_id", workspaceId)
     .maybeSingle();
   if (!s || s.status !== "active" || s.conversation_id) return null;
-  const counts = await indexSession(ports(db, workspaceId, s.user_id), s.id);
+  const counts = await indexSession(ports(db, workspaceId, s.user_id, opts), s.id);
   logger.info("recall.indexed", { session_id: sessionId, modality: "voice", ...counts });
   return counts;
 }
@@ -301,6 +330,75 @@ export async function sweepRecall(opts: { workspaceId?: string | null; limit: nu
   return result;
 }
 
+const RECALL_CATCH_UP = { scan: 60, sessions: 8, budgetMs: 5_000 };
+const catchingUp = new Map<string, Promise<number>>();
+
+/**
+ * Before searching: index this user's recent interactions (typed and spoken) whose index is
+ * missing or behind. Recall must not depend on a background worker being deployed: what
+ * History shows, Recall can find. Bounded (newest first, a few sessions, a time budget),
+ * idempotent (the index is the progress), shared by concurrent searches of the same user.
+ * Summaries are left to the background sweep; excerpts are what search needs.
+ */
+export function catchUpRecall(
+  workspaceId: string,
+  userId: string,
+  /** The thread being talked in: it's excluded from search, so not worth indexing now. */
+  skip: readonly string[] = [],
+): Promise<number> {
+  const key = `${workspaceId}:${userId}`;
+  const running = catchingUp.get(key);
+  if (running) return running;
+  const run = (async () => {
+    const db = createAdminClient();
+    const [{ data: conversations }, { data: sessions }] = await Promise.all([
+      db
+        .from("conversations")
+        .select("id, last_message_at")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", userId)
+        .is("archived_at", null)
+        .order("last_message_at", { ascending: false })
+        .limit(RECALL_CATCH_UP.scan),
+      db
+        .from("interaction_sessions")
+        .select("id, conversation_id, indexed_through, last_activity_at")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .order("last_activity_at", { ascending: false })
+        .limit(RECALL_CATCH_UP.scan * 2),
+    ]);
+    const due = recallDue(conversations ?? [], sessions ?? [], {
+      skip,
+      limit: RECALL_CATCH_UP.sessions,
+    });
+    const started = Date.now();
+    let indexed = 0;
+    for (const d of due) {
+      if (Date.now() - started > RECALL_CATCH_UP.budgetMs) break;
+      try {
+        if (d.conversationId)
+          await indexConversation(workspaceId, d.conversationId, { summarize: false });
+        else await indexVoiceSession(workspaceId, d.sessionId!, { summarize: false });
+        indexed++;
+      } catch (error) {
+        logger.warn("recall.catch_up_failed", { code: toAppError(error).code });
+      }
+    }
+    if (due.length)
+      logger.info("recall.catch_up", {
+        workspace_id: workspaceId,
+        due: due.length,
+        indexed,
+        latency_ms: Date.now() - started,
+      });
+    return indexed;
+  })().finally(() => catchingUp.delete(key));
+  catchingUp.set(key, run);
+  return run;
+}
+
 /** Recall search for the UI (History) and the chat prefetch, as the user (RLS). */
 export async function searchRecall(
   auth: AuthContext,
@@ -313,6 +411,7 @@ export async function searchRecall(
     auth.workspaceId,
     auth.userId,
     getEmbeddingProvider,
+    (skip) => catchUpRecall(auth.workspaceId, auth.userId, skip),
   );
   const { hits } = await reader.search({
     text: query,

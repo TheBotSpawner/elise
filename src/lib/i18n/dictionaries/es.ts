@@ -285,6 +285,7 @@ export const es: Dictionary = {
         other: "Listo",
       },
       unavailable: (label: string) => `${label} no disponible`,
+      misconfigured: (label: string) => `${label}: configuración incompleta`,
     },
     resultLabel: "Resultado",
   },
@@ -1493,6 +1494,7 @@ export const es: Dictionary = {
     account: "Cuenta",
   },
   errors: {
+    setup: "Está conectado, pero falta completar su configuración.",
     useServerMessages: false,
     title: "Algo salió mal",
     body: "ELISE tuvo un problema inesperado. Tus datos están a salvo.",

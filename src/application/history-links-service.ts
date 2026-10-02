@@ -107,6 +107,8 @@ export async function autoLinkThread(
     activeSpaceIds?: string[];
     /** The Space/Section the conversation was started from. */
     scopedSpaceIds?: string[];
+    /** The Section this turn's request was resolved to, from the user's words. */
+    resolvedSpaceIds?: string[];
     /** Entered explicitly in this turn (switched to, started there): may undo a removal. */
     strongSpaceIds?: string[];
     at?: string;
@@ -119,6 +121,7 @@ export async function autoLinkThread(
     const evidence = await gatherEvidence(auth, thread, nodes);
     for (const id of turn.activeSpaceIds ?? []) evidence.activated.add(id);
     for (const id of turn.scopedSpaceIds ?? []) evidence.scoped.add(id);
+    evidence.resolved = new Set(turn.resolvedSpaceIds ?? []);
     const at = turn.at ?? new Date().toISOString();
     const strongNow = new Map((turn.strongSpaceIds ?? []).map((id) => [id, at]));
     const add = linksToAdd(scoreEvidence(evidence, nodes), await port.linksOf([thread]), strongNow);

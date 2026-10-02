@@ -8,6 +8,7 @@ import {
   type LatLng,
   type LocationCapability,
   type Place,
+  type TravelMode,
   type Waypoint,
 } from "../location/model";
 import { clipText as clip } from "../text";
@@ -402,10 +403,18 @@ const routeInput = z
     from: place,
     to: place,
     stops: z.array(place).max(LOCATION_LIMITS.stops).default([]),
-    mode,
+    mode: z
+      .enum(TRAVEL_MODES)
+      .optional()
+      .describe(
+        "Only when the user named one. Omitted: driving, transit and walking are compared.",
+      ),
     departAt,
   })
   .strict();
+
+/** No mode named: the useful answer is a short comparison, not a question. */
+const COMPARED: readonly TravelMode[] = ["drive", "transit", "walk"];
 
 export const getRouteTool: ToolDefinition = {
   name: "location.getRoute",
@@ -423,21 +432,36 @@ export const getRouteTool: ToolDefinition = {
     if (points.includes("unknown_here")) return needsLocation(`${r.from} → ${r.to}`);
     const [origin, destination, ...stops] = points as Waypoint[];
     const departAtIso = departure(env, r.departAt);
-    const route = await maps(env).route({
-      origin: origin!,
-      destination: destination!,
-      stops,
-      mode: r.mode,
-      departAt: departAtIso,
-      language: env.ctx.locale,
-    });
+    const modes = r.mode ? [r.mode] : COMPARED;
+    const settled = await Promise.allSettled(
+      modes.map((mode) =>
+        maps(env).route({
+          origin: origin!,
+          destination: destination!,
+          stops,
+          mode,
+          departAt: departAtIso,
+          language: env.ctx.locale,
+        }),
+      ),
+    );
+    const found = settled.flatMap((s) => (s.status === "fulfilled" && s.value ? [s.value] : []));
+    // Every mode failed with an error (setup, provider): that error is the answer.
+    const firstError = settled.find((s) => s.status === "rejected");
+    if (!found.length && firstError) throw firstError.reason;
+    const route = found[0];
     if (!route)
       return {
         output: {
           found: false,
-          instructions: `There's no ${r.mode} route between those places. Say so; offer another way to travel.`,
+          instructions: `There's no ${modes.join("/")} route between those places. Say so; offer another way to travel.`,
         },
       };
+    const alternatives = found.slice(1).map((x) => ({
+      mode: x.mode,
+      durationSeconds: Math.round(x.durationSeconds),
+      distanceMeters: Math.round(x.distanceMeters),
+    }));
     const leave = departAtIso ? new Date(departAtIso) : env.ctx.now;
     const arrival = new Date(leave.getTime() + route.durationSeconds * 1000);
     const fromHere = r.from.trim().toLowerCase() === HERE;
@@ -446,15 +470,27 @@ export const getRouteTool: ToolDefinition = {
     return {
       output: {
         found: true,
-        mode: r.mode,
+        mode: route.mode,
+        ...(r.departAt ? {} : { assumed: "leaving now" }),
+        ...(alternatives.length
+          ? {
+              otherModes: alternatives.map((a) => ({
+                mode: a.mode,
+                minutes: minutes(a.durationSeconds),
+              })),
+            }
+          : {}),
         minutes: minutes(route.durationSeconds),
         km: Math.round(route.distanceMeters / 100) / 10,
         leaveAt: toLocalDateTime(leave, env.ctx.timezone),
         arriveAt: toLocalDateTime(arrival, env.ctx.timezone),
         ...(route.warnings.length ? { warnings: route.warnings } : {}),
-        ...(stops.length && r.mode === "transit" ? { note: "Transit routes ignore stops." } : {}),
-        instructions:
-          "The route is on screen. Give the time and arrival in one sentence. Travel times are estimates; with traffic for driving.",
+        ...(stops.length && route.mode === "transit"
+          ? { note: "Transit routes ignore stops." }
+          : {}),
+        instructions: alternatives.length
+          ? "The route is on screen. In one or two sentences give the time by each mode (driving first), leaving now. Don't ask for the mode or time; the user can refine."
+          : "The route is on screen. Give the time and arrival in one sentence, mentioning the assumption (leaving now) if no time was given. Travel times are estimates; with traffic for driving.",
       },
       display: {
         kind: "map",
@@ -464,7 +500,7 @@ export const getRouteTool: ToolDefinition = {
           center: null,
           places: [],
           route: {
-            mode: r.mode,
+            mode: route.mode,
             from: names.from,
             to: names.to,
             distanceMeters: Math.round(route.distanceMeters),
@@ -476,6 +512,7 @@ export const getRouteTool: ToolDefinition = {
             warnings: route.warnings.map((w) => clip(w, 200)),
             fromHere,
             mapsUrl: route.mapsUrl,
+            alternatives,
           },
           comparison: null,
         },
