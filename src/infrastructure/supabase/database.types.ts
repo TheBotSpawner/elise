@@ -570,6 +570,7 @@ export type NoteRow = {
 };
 
 export type KnowledgeSpaceRow = {
+  context: string | null;
   id: string;
   workspace_id: string;
   parent_space_id: string | null;

@@ -571,37 +571,29 @@ function GoogleConnectionCard({
                 {t.connections.nameHint}
               </p>
             </div>
-            <details className="group flex flex-col gap-1.5" open={Boolean(c.contextLabel)}>
-              <summary className="flex h-6 cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted hover:text-fg [&::-webkit-details-marker]:hidden">
-                <ChevronDown
-                  className="size-3.5 transition-transform group-open:rotate-180"
-                  aria-hidden
-                />
-                {t.connections.contextSection}
-              </summary>
-              <div className="mt-1.5 flex flex-col gap-1.5">
-                <Label htmlFor={`ctx-${c.id}`}>{t.connections.context}</Label>
-                <Input
-                  id={`ctx-${c.id}`}
-                  value={context}
-                  maxLength={80}
-                  placeholder={t.connections.contextPlaceholder}
-                  aria-describedby={`ctx-hint-${c.id}`}
-                  onChange={(e) => setContext(e.target.value)}
-                />
-                <p id={`ctx-hint-${c.id}`} className="text-[12.5px] text-faint">
-                  {t.connections.contextHint}
-                </p>
-              </div>
-            </details>
-            <Button
-              type="submit"
-              variant="secondary"
-              disabled={!dirty || pending}
-              className="sm:mt-[26px]"
-            >
-              {t.connections.save}
-            </Button>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`ctx-${c.id}`}>{t.connections.context}</Label>
+              <Input
+                id={`ctx-${c.id}`}
+                value={context}
+                maxLength={80}
+                placeholder={t.connections.contextPlaceholder}
+                aria-describedby={`ctx-hint-${c.id}`}
+                onChange={(e) => setContext(e.target.value)}
+              />
+              <p id={`ctx-hint-${c.id}`} className="text-[12.5px] text-faint">
+                {t.connections.contextHint}
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {/* Same height as the field labels, so the button lines up with the inputs. */}
+              <Label aria-hidden className="invisible hidden sm:block">
+                {t.connections.save}
+              </Label>
+              <Button type="submit" variant="secondary" disabled={!dirty || pending}>
+                {t.connections.save}
+              </Button>
+            </div>
           </form>
 
           <div className="flex justify-end">

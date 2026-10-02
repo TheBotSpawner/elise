@@ -9,7 +9,6 @@ import {
   knowledgeSetup,
   listSpaces,
 } from "@/application/knowledge-service";
-import { sectionDetail } from "@/application/sections-service";
 import { PageContainer } from "@/components/shared/page";
 import { SpaceView } from "@/features/knowledge/space-view";
 
@@ -22,11 +21,9 @@ export default async function SpacePage({
   const auth = await requireAuthContext();
   const data = await getSpace(auth, id).catch(() => null);
   if (!data) notFound();
-  const isSection = Boolean(data.space.parentId);
-  const [accounts, allSpaces, section, conversations] = await Promise.all([
+  const [accounts, allSpaces, conversations] = await Promise.all([
     knowledgeAccounts(auth),
     listSpaces(auth),
-    isSection ? sectionDetail(auth, id).catch(() => null) : Promise.resolve(null),
     relatedConversations(auth, id).catch(() => []),
   ]);
   const setup = knowledgeSetup();
@@ -42,7 +39,6 @@ export default async function SpacePage({
           at: c.at,
           section: c.section,
         }))}
-        section={section}
         sources={data.sources}
         items={data.items}
         accounts={accounts}

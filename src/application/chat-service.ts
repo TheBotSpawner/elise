@@ -204,6 +204,11 @@ export async function startChatTurn(
     history,
     userMessage: input.message,
     activeSpace: activeSpace?.path ?? null,
+    spaceNotes: await spaceNotes(auth, [
+      activeSpace?.id ?? null,
+      activeProfile?.section?.spaceId ?? null,
+      activeProfile?.section?.parentId ?? null,
+    ]).catch(() => []),
     structuredSources,
     recallEvidence,
     workspace: describeWorkspace(workspace.state(), auth.profile.timezone),
@@ -589,6 +594,34 @@ export async function startChatTurn(
         },
       }),
   );
+}
+
+/**
+ * The user's own descriptions of their Spaces/Sections (ADR-020 §9): the active ones in full,
+ * up to eight others briefly. Names and the user's words only — never documents.
+ */
+async function spaceNotes(auth: AuthContext, activeIds: (string | null)[]) {
+  const { data } = await auth.db
+    .from("knowledge_spaces")
+    .select("id, name, parent_space_id, context")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("status", "active");
+  const rows = data ?? [];
+  const names = new Map(rows.map((r) => [r.id, r.name]));
+  const active = new Set(activeIds.filter(Boolean));
+  const path = (r: (typeof rows)[number]) =>
+    r.parent_space_id ? `${names.get(r.parent_space_id) ?? ""} › ${r.name}` : r.name;
+  const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+  const withContext = rows.filter((r) => r.context?.trim());
+  return [
+    ...withContext
+      .filter((r) => active.has(r.id))
+      .map((r) => ({ path: path(r), context: clip(r.context!.trim(), 2000), active: true })),
+    ...withContext
+      .filter((r) => !active.has(r.id))
+      .slice(0, 8)
+      .map((r) => ({ path: path(r), context: clip(r.context!.trim(), 280), active: false })),
+  ];
 }
 
 /** Product events for tools that mark adoption of a feature (ADR-019). */

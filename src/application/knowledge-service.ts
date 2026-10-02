@@ -85,6 +85,8 @@ async function audit(
 
 export interface SpaceSummary extends SpaceInfo {
   description: string | null;
+  /** What the Space is about, in the user's words (ADR-020 §9). */
+  context: string | null;
   icon: SpaceIcon;
   color: SpaceColor;
   counts: { ready: number; processing: number; attention: number };
@@ -95,26 +97,35 @@ export interface SpaceSummary extends SpaceInfo {
 }
 
 export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
-  const [{ data: spaces, error }, { data: items }, { data: sources }] = await Promise.all([
-    auth.db
-      .from("knowledge_spaces")
-      .select("id, name, parent_space_id, description, icon, color, updated_at")
-      .eq("workspace_id", auth.workspaceId)
-      .eq("status", "active")
-      .order("name"),
-    auth.db
-      .from("knowledge_items")
-      .select("space_id, status, updated_at")
-      .eq("workspace_id", auth.workspaceId)
-      .is("archived_at", null)
-      .neq("status", "removed"),
-    auth.db
-      .from("knowledge_sources")
-      .select("space_id, source_type")
-      .eq("workspace_id", auth.workspaceId)
-      .is("archived_at", null),
-  ]);
+  const [{ data: spaces, error }, { data: items }, { data: sources }, contexts] = await Promise.all(
+    [
+      auth.db
+        .from("knowledge_spaces")
+        .select("id, name, parent_space_id, description, icon, color, updated_at")
+        .eq("workspace_id", auth.workspaceId)
+        .eq("status", "active")
+        .order("name"),
+      auth.db
+        .from("knowledge_items")
+        .select("space_id, status, updated_at")
+        .eq("workspace_id", auth.workspaceId)
+        .is("archived_at", null)
+        .neq("status", "removed"),
+      auth.db
+        .from("knowledge_sources")
+        .select("space_id, source_type")
+        .eq("workspace_id", auth.workspaceId)
+        .is("archived_at", null),
+      // Read apart: a database without migration 24 still shows Knowledge (just no context).
+      auth.db
+        .from("knowledge_spaces")
+        .select("id, context")
+        .eq("workspace_id", auth.workspaceId)
+        .eq("status", "active"),
+    ],
+  );
   if (error) throw new AppError("INTERNAL_ERROR", "Could not load Knowledge", { cause: error });
+  const contextOf = new Map((contexts.data ?? []).map((r) => [r.id, r.context]));
   return spacePaths(
     spaces.map((s) => ({ id: s.id, name: s.name, parentId: s.parent_space_id })),
   ).map((s) => {
@@ -123,6 +134,7 @@ export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
     return {
       ...s,
       description: row?.description ?? null,
+      context: contextOf.get(s.id) ?? null,
       icon: spaceIcon(row?.icon),
       color: spaceColor(row?.color),
       sourceTypes: [
@@ -243,6 +255,29 @@ export async function updateSpace(
 }
 
 /** Archive: the Space and its sub-Spaces leave Knowledge; sources stop syncing. */
+const contextSchema = z
+  .string()
+  .trim()
+  .max(4000)
+  .transform((v) => v || null)
+  .nullable();
+
+/** The Space's (or Section's) context: background ELISE reads when working there. */
+export async function updateSpaceContext(
+  auth: AuthContext,
+  spaceId: string,
+  context: string | null,
+) {
+  await ownSpace(auth, spaceId);
+  const { error } = await auth.db
+    .from("knowledge_spaces")
+    .update({ context: contextSchema.parse(context) })
+    .eq("id", spaceId)
+    .eq("workspace_id", auth.workspaceId);
+  if (error) throw new AppError("INTERNAL_ERROR", "Could not save the context", { cause: error });
+  await audit(auth, "knowledge.space_context_updated", "knowledge_space", spaceId);
+}
+
 export async function archiveSpace(auth: AuthContext, spaceId: string) {
   await ownSpace(auth, spaceId);
   const tree = spacePaths(

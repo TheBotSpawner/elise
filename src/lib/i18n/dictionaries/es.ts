@@ -636,7 +636,6 @@ export const es: Dictionary = {
     contextPlaceholder: "Trabajo, clientes, personal",
     contextHint:
       "Contale a ELISE con qué se relaciona esta cuenta: trabajo, clientes, marketing o personal. Así “Agregalo a mi calendario de trabajo” va acá.",
-    contextSection: "Contexto",
     expand: (name: string) => `Mostrar ajustes de ${name}`,
     collapse: (name: string) => `Ocultar ajustes de ${name}`,
     save: "Guardar",
@@ -654,6 +653,19 @@ export const es: Dictionary = {
     cancel: "Cancelar",
   },
   knowledge: {
+    context: {
+      title: "Contexto",
+      hintSpace:
+        "Contale a ELISE de qué se trata este Espacio: qué abarca, qué es importante, lo que la ayude a entenderlo.",
+      hintSection:
+        "Contale a ELISE de qué se trata esta sección: la materia, el cliente o el proyecto, qué es importante, fechas a tener en cuenta.",
+      placeholderSpace:
+        "Ej.: Todo lo de mi carrera de Ingeniería en Sistemas: materias, exámenes y trabajos.",
+      placeholderSection:
+        "Ej.: Análisis Matemático II, segundo año. El parcial es en junio; lo más importante son integrales y series.",
+      save: "Guardar",
+      saved: "Contexto guardado",
+    },
     title: "Conocimiento",
     breadcrumb: "Ubicación",
     sections: {

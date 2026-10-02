@@ -2,16 +2,13 @@ import "server-only";
 
 import { nameKey, type ContextKind, type ContextProfile } from "@/core/contexts/model";
 import { AppError } from "@/core/errors";
-import { progressCounts } from "@/core/study/model";
 import { trackEvent } from "@/infrastructure/observability/analytics";
 import { logger } from "@/infrastructure/observability/logger";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 
 import type { AuthContext } from "./auth-context";
-import { contextCatalog, createContextProfile, listContextProfiles } from "./contexts-service";
-import { runUserTool } from "./elise";
+import { createContextProfile, listContextProfiles } from "./contexts-service";
 import { createSpace, uploadSource } from "./knowledge-service";
-import { studyStore } from "./study-service";
 
 /**
  * Knowledge Sections (ADR-018): a first-level child of a Knowledge Space. The Section is the
@@ -121,34 +118,6 @@ export async function createSection(auth: AuthContext, input: NewSection) {
       ? error
       : new AppError("INTERNAL_ERROR", "Could not create the Section", { cause: error });
   }
-}
-
-/** What a Section page shows of its context: links, catalog to link from, study progress. */
-export async function sectionDetail(auth: AuthContext, spaceId: string) {
-  const profile = await sectionProfile(auth, spaceId);
-  if (!profile) return null;
-  const [catalog, concepts] = await Promise.all([
-    contextCatalog(auth, async () => {
-      // Task lists of every connected provider, read through the executor.
-      const outcome = await runUserTool(auth, "tasks.listLists", {}).catch(() => null);
-      return outcome?.display?.kind === "task_lists"
-        ? outcome.display.lists.map((l) => ({
-            id: l.id,
-            name: l.name,
-            source: l.provenance.source,
-          }))
-        : [];
-    }),
-    // Any Section can have been studied: progress shows wherever it exists.
-    studyStore(auth)
-      .concepts(profile.id)
-      .catch(() => []),
-  ]);
-  return {
-    profile,
-    catalog,
-    progress: concepts.length ? { counts: progressCounts(concepts), total: concepts.length } : null,
-  };
 }
 
 /** Moving a Space keeps the hierarchy one level deep (Space › Section). */

@@ -19,6 +19,7 @@ import {
   searchNotion,
   syncNow,
   updateSpace,
+  updateSpaceContext,
   type UploadTarget,
 } from "@/application/knowledge-service";
 import {
@@ -98,6 +99,17 @@ export async function createSectionAction(input: z.input<typeof sectionInput>) {
     const q = sectionInput.parse(input);
     return createSection(await requireAuthContext(), q);
   });
+}
+
+/** What this Space or Section is about, in the user's words. */
+export async function updateSpaceContextAction(spaceId: string, context: string) {
+  return run(async () =>
+    updateSpaceContext(
+      await requireAuthContext(),
+      id.parse(spaceId),
+      z.string().max(4000).parse(context),
+    ),
+  );
 }
 
 /** An uploaded document moves between a Space and its Sections; nothing is copied. */

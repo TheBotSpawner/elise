@@ -20,11 +20,9 @@ import type {
   SourceView,
   SpaceSummary,
 } from "@/application/knowledge-service";
-import type { sectionDetail } from "@/application/sections-service";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/input";
-import { ContextEditor } from "@/features/contexts/contexts-view";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -42,6 +40,7 @@ import {
 import { SpaceGlyph } from "./appearance";
 import { UPLOAD_ACCEPT } from "./constants";
 import { SectionDialog } from "./section-dialog";
+import { SpaceContext } from "./space-context";
 import { AddSourceDialog, CreateSpaceDialog, type AddSourceView } from "./space-dialogs";
 import { SourceIcon, SourceOptions, useRelative } from "./ui";
 import { uploadFiles, uploadVersion } from "./upload";
@@ -63,7 +62,6 @@ export type SectionCard = SpaceSummary;
 export function SpaceView({
   space,
   sections,
-  section,
   sources,
   items,
   accounts,
@@ -85,8 +83,6 @@ export function SpaceView({
   space: SpaceSummary;
   /** A Space's Sections (ADR-018); always empty inside a Section (one level). */
   sections: SectionCard[];
-  /** Inside a Section: its context (links, people, study progress). */
-  section: Awaited<ReturnType<typeof sectionDetail>>;
   sources: SourceView[];
   items: ItemView[];
   accounts: KnowledgeAccount[];
@@ -215,6 +211,13 @@ export function SpaceView({
           <p className="text-[13.5px] text-muted">{t.knowledge.background}</p>
         )}
       </header>
+
+      <SpaceContext
+        key={space.id}
+        spaceId={space.id}
+        initial={space.context}
+        isSection={isSection}
+      />
 
       {!isSection && (
         <section className="flex flex-col gap-3">
@@ -378,7 +381,31 @@ export function SpaceView({
         )}
       </section>
 
-      <section className="flex flex-col gap-3">
+      {conversations.length > 0 && (
+        <section className="flex flex-col gap-2 border-t border-border pt-8">
+          <h2 className="type-label text-faint">
+            {isSection ? t.history.related : t.history.recent}
+          </h2>
+          <ul className="flex flex-col">
+            {conversations.map((c) => (
+              <li key={c.key}>
+                <Link
+                  href={c.href}
+                  className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 text-[14px] hover:bg-active"
+                >
+                  <span className="min-w-0 truncate">
+                    {c.section && <span className="text-muted">{c.section} · </span>}
+                    {c.title || t.chat.untitled}
+                  </span>
+                  <span className="shrink-0 text-[12.5px] text-faint">{relative(c.at)}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="flex flex-col gap-3 border-t border-border pt-8">
         <h2 className="type-label text-faint">
           {t.knowledge.recent} ·{" "}
           {t.knowledge.counts(space.counts.ready, space.counts.processing, space.counts.attention)}
@@ -499,48 +526,6 @@ export function SpaceView({
           </Button>
         )}
       </section>
-
-      {conversations.length > 0 && (
-        <section className="flex flex-col gap-2 border-t border-border pt-8">
-          <h2 className="type-label text-faint">
-            {section ? t.history.related : t.history.recent}
-          </h2>
-          <ul className="flex flex-col">
-            {conversations.map((c) => (
-              <li key={c.key}>
-                <Link
-                  href={c.href}
-                  className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 text-[14px] hover:bg-active"
-                >
-                  <span className="min-w-0 truncate">
-                    {c.section && <span className="text-muted">{c.section} · </span>}
-                    {c.title || t.chat.untitled}
-                  </span>
-                  <span className="shrink-0 text-[12.5px] text-faint">{relative(c.at)}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {section && (
-        <section className="flex flex-col gap-4 border-t border-border pt-8">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="font-medium">{t.knowledge.sections.context}</h2>
-              <p className="text-[13px] text-muted">{t.knowledge.sections.contextHint}</p>
-            </div>
-          </div>
-          <ContextEditor
-            key={section.profile.id}
-            profile={section.profile}
-            catalog={section.catalog}
-            progress={section.progress}
-            embedded
-          />
-        </section>
-      )}
 
       <MoveItemDialog
         item={moving}

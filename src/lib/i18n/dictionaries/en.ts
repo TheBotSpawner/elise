@@ -627,7 +627,6 @@ export const en = {
     contextPlaceholder: "Work, clients, personal",
     contextHint:
       "Tell ELISE what this account is related to, such as work, clients, marketing or personal. Then “Add this to my work calendar” goes here.",
-    contextSection: "Context",
     expand: (name: string) => `Show settings for ${name}`,
     collapse: (name: string) => `Hide settings for ${name}`,
     save: "Save",
@@ -645,6 +644,19 @@ export const en = {
     cancel: "Cancel",
   },
   knowledge: {
+    context: {
+      title: "Context",
+      hintSpace:
+        "Tell ELISE what this Space is about: what it covers, what matters, anything that helps it understand it.",
+      hintSection:
+        "Tell ELISE what this section is about: the subject, client or project, what matters, dates worth knowing.",
+      placeholderSpace:
+        "E.g. Everything about my Systems Engineering degree: subjects, exams and projects.",
+      placeholderSection:
+        "E.g. Calculus II, second year. The midterm is in June; the focus is integrals and series.",
+      save: "Save",
+      saved: "Context saved",
+    },
     title: "Knowledge",
     breadcrumb: "Location",
     sections: {
