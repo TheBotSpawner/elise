@@ -447,11 +447,12 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
   async dueSources(now: Date, limit: number) {
     const { data } = await this.db
       .from("knowledge_sources")
-      .select("id, workspace_id")
+      .select("id, workspace_id, space_id")
       .in("source_type", ["google_drive", "notion"])
       .in("status", ["idle", "ready", "needs_attention"])
       .is("archived_at", null)
-      .lte("next_sync_at", now.toISOString())
+      // Never synced (the first sync couldn't start) is due too: no source waits forever.
+      .or(`next_sync_at.is.null,next_sync_at.lte.${now.toISOString()}`)
       .limit(limit);
     return data ?? [];
   }

@@ -40,6 +40,7 @@ import {
 import { SpaceGlyph } from "./appearance";
 import { UPLOAD_ACCEPT } from "./constants";
 import { SectionDialog } from "./section-dialog";
+import { SourceMenu } from "./source-menu";
 import { SpaceContext } from "./space-context";
 import { AddSourceDialog, CreateSpaceDialog, type AddSourceView } from "./space-dialogs";
 import { SourceIcon, SourceOptions, useRelative } from "./ui";
@@ -52,6 +53,13 @@ const DOT: Record<string, string> = {
   syncing: "bg-accent animate-pulse",
   needs_attention: "bg-approval",
   failed: "bg-danger",
+};
+
+const STATE_DOT: Record<SourceView["state"], string> = {
+  preparing: "bg-accent animate-pulse",
+  syncing: "bg-accent animate-pulse",
+  up_to_date: "bg-success",
+  needs_attention: "bg-approval",
 };
 
 const SOURCE_ORDER: SourceView["sourceType"][] = ["upload", "google_drive", "notion", "note"];
@@ -321,10 +329,15 @@ export function SpaceView({
                         <span className="text-faint">{t.knowledge.sourceTypes[s.sourceType]}</span>
                         <span
                           aria-hidden
-                          className={cn("size-1.5 rounded-full", DOT[s.status] ?? "bg-faint")}
+                          className={cn("size-1.5 rounded-full", STATE_DOT[s.state])}
                         />
-                        {t.knowledge.sourceStatus[s.status]}
-                        {s.lastSyncedAt && ` · ${t.knowledge.lastSynced(relative(s.lastSyncedAt))}`}
+                        {s.state === "up_to_date" && s.lastSyncedAt
+                          ? t.knowledge.upToDate(relative(s.lastSyncedAt))
+                          : t.knowledge.sourceState[s.state]}
+                        {/* Partial readiness: what is ready is already usable. */}
+                        {s.state === "preparing" &&
+                          s.counts.ready + s.counts.processing > 0 &&
+                          ` · ${t.knowledge.readyOf(s.counts.ready, s.counts.ready + s.counts.processing)}`}
                       </>
                     )}
                   </p>
@@ -344,36 +357,27 @@ export function SpaceView({
                       {t.knowledge.openNotes}
                     </Link>
                   )}
-                  {(s.sourceType === "google_drive" || s.sourceType === "notion") && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={pending || s.status === "syncing"}
-                      onClick={() => act(() => syncNowAction(s.id), t.knowledge.syncing)}
-                    >
-                      {t.knowledge.syncNow}
-                    </Button>
-                  )}
-                  {s.status === "needs_attention" && (
-                    <Link
-                      href="/connections"
-                      className={buttonVariants({ size: "sm", variant: "ghost" })}
-                    >
-                      {t.brief.reconnect}
-                    </Link>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="hover:text-danger-text"
+                  {s.state === "needs_attention" &&
+                    ["AUTH_EXPIRED", "AUTH_ERROR", "PERMISSION_DENIED"].includes(
+                      s.lastErrorCode ?? "",
+                    ) && (
+                      <Link
+                        href="/connections"
+                        className={buttonVariants({ size: "sm", variant: "ghost" })}
+                      >
+                        {t.brief.reconnect}
+                      </Link>
+                    )}
+                  <SourceMenu
+                    source={s}
                     disabled={pending}
-                    onClick={() => {
+                    when={relative}
+                    onSyncNow={() => act(() => syncNowAction(s.id), t.knowledge.syncing)}
+                    onRemove={() => {
                       if (window.confirm(t.knowledge.removeSourceConfirm))
                         act(() => removeSourceAction(s.id));
                     }}
-                  >
-                    {t.knowledge.removeSource}
-                  </Button>
+                  />
                 </div>
               </li>
             ))}

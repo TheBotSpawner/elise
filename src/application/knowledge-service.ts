@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { serverEnv } from "@/config/server-env";
 import { nameKey } from "@/core/contexts/model";
 import { AppError } from "@/core/errors";
 import {
@@ -13,6 +14,7 @@ import {
   type SpaceIcon,
 } from "@/core/knowledge/appearance";
 import { spacePaths, withDescendants, type SpaceInfo } from "@/core/knowledge/model";
+import { sourceState, type SourceState } from "@/core/knowledge/source-state";
 import { isBackgroundConfigured } from "@/infrastructure/background/trigger/runtime";
 import {
   SUPPORTED_UPLOADS,
@@ -328,8 +330,12 @@ export interface SourceView {
   sourceType: KnowledgeSourceRow["source_type"];
   name: string;
   status: KnowledgeSourceRow["status"];
+  /** What the user sees (core/knowledge/source-state.ts). */
+  state: SourceState;
   lastSyncedAt: string | null;
+  nextSyncAt: string | null;
   lastErrorCode: string | null;
+  counts: { ready: number; processing: number; attention: number };
 }
 
 export interface ItemView {
@@ -351,7 +357,9 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
   const [{ data: sources }, { data: items }] = await Promise.all([
     auth.db
       .from("knowledge_sources")
-      .select("id, source_type, display_name, status, last_synced_at, last_error_code")
+      .select(
+        "id, source_type, display_name, status, last_synced_at, next_sync_at, last_error_code",
+      )
       .eq("workspace_id", auth.workspaceId)
       .eq("space_id", spaceId)
       .is("archived_at", null)
@@ -359,7 +367,7 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
     auth.db
       .from("knowledge_items")
       .select(
-        "id, title, item_type, status, status_detail, error_code, source_url, updated_at, knowledge_sources(source_type), knowledge_versions!knowledge_versions_knowledge_item_id_fkey(id)",
+        "id, source_id, title, item_type, status, status_detail, error_code, source_url, updated_at, knowledge_sources(source_type), knowledge_versions!knowledge_versions_knowledge_item_id_fkey(id)",
       )
       .eq("workspace_id", auth.workspaceId)
       .eq("space_id", spaceId)
@@ -379,14 +387,26 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       updatedAt: space.updated_at,
     },
     children: spaces.filter((s) => s.parentId === spaceId),
-    sources: (sources ?? []).map((s): SourceView => ({
-      id: s.id,
-      sourceType: s.source_type,
-      name: s.display_name,
-      status: s.status,
-      lastSyncedAt: s.last_synced_at,
-      lastErrorCode: s.last_error_code,
-    })),
+    sources: (sources ?? []).map((s): SourceView => {
+      const own = (items ?? []).filter((i) => i.source_id === s.id);
+      const counts = {
+        ready: own.filter((i) => i.status === "ready").length,
+        processing: own.filter((i) => i.status === "queued" || i.status === "processing").length,
+        attention: own.filter((i) => i.status === "needs_attention" || i.status === "failed")
+          .length,
+      };
+      return {
+        id: s.id,
+        sourceType: s.source_type,
+        name: s.display_name,
+        status: s.status,
+        state: sourceState({ status: s.status, lastSyncedAt: s.last_synced_at, counts }),
+        lastSyncedAt: s.last_synced_at,
+        nextSyncAt: s.next_sync_at,
+        lastErrorCode: s.last_error_code,
+        counts,
+      };
+    }),
     items: (items ?? []).map((i): ItemView => ({
       id: i.id,
       title: i.title,
@@ -873,7 +893,10 @@ export async function addExternalSource(
     provider: input.provider,
     roots: selection.length,
   });
-  await startSync(auth.workspaceId, data.id, "initial");
+  // The first sync starts now; if the runtime is unavailable, the scheduler retries it.
+  await startSync(auth.workspaceId, data.id, "initial").catch((error: unknown) =>
+    logger.warn("knowledge.initial_sync_deferred", { code: (error as { code?: string }).code }),
+  );
   return data.id;
 }
 
@@ -958,7 +981,11 @@ export async function purgeConnectionKnowledge(workspaceId: string, connectionId
 }
 
 export function knowledgeSetup() {
-  return { backgroundAvailable: isBackgroundConfigured(), notionAvailable: isNotionConfigured() };
+  return {
+    // Development runs Knowledge work in-process without Trigger.dev (knowledge-background.ts).
+    backgroundAvailable: isBackgroundConfigured() || serverEnv().ELISE_ENV !== "production",
+    notionAvailable: isNotionConfigured(),
+  };
 }
 
 /**

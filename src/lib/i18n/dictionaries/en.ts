@@ -644,6 +644,26 @@ export const en = {
     cancel: "Cancel",
   },
   knowledge: {
+    sourceState: {
+      preparing: "Preparing…",
+      up_to_date: "Up to date",
+      syncing: "Syncing…",
+      needs_attention: "Needs attention",
+    },
+    upToDate: (when: string) => `Updated ${when}`,
+    readyOf: (ready: number, total: number) => `${ready} of ${total} ready`,
+    sourceMenu: (name: string) => `Options for ${name}`,
+    details: "View details",
+    sourceDetails: {
+      state: "Status",
+      lastSync: "Last sync",
+      nextCheck: "Next check",
+      indexed: "Files indexed",
+      lastError: "Last error",
+      preparing: (n: number) => `${n} being prepared`,
+      unreadable: (n: number) => `${n} couldn't be read`,
+      stillAvailable: "What ELISE indexed before is still available while this is fixed.",
+    },
     context: {
       title: "Context",
       hintSpace:
@@ -745,7 +765,7 @@ export const en = {
     lastSynced: (when: string) => `Synced ${when}`,
     syncNow: "Sync now",
     syncing: "Syncing started",
-    removeSource: "Remove",
+    removeSource: "Remove source",
     removeSourceConfirm:
       "Remove this source? ELISE deletes what it learned from it. Nothing changes in the original.",
     retry: "Try again",

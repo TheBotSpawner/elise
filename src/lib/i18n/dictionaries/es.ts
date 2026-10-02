@@ -653,6 +653,26 @@ export const es: Dictionary = {
     cancel: "Cancelar",
   },
   knowledge: {
+    sourceState: {
+      preparing: "Preparando…",
+      up_to_date: "Actualizado",
+      syncing: "Sincronizando…",
+      needs_attention: "Necesita atención",
+    },
+    upToDate: (when: string) => `Actualizado ${when}`,
+    readyOf: (ready: number, total: number) => `${ready} de ${total} listos`,
+    sourceMenu: (name: string) => `Opciones de ${name}`,
+    details: "Ver detalles",
+    sourceDetails: {
+      state: "Estado",
+      lastSync: "Última sincronización",
+      nextCheck: "Próxima comprobación",
+      indexed: "Archivos indexados",
+      lastError: "Último error",
+      preparing: (n: number) => `${n} preparándose`,
+      unreadable: (n: number) => `${n} no se pudieron leer`,
+      stillAvailable: "Lo que ELISE ya había indexado sigue disponible mientras se resuelve.",
+    },
     context: {
       title: "Contexto",
       hintSpace:
@@ -724,7 +744,7 @@ export const es: Dictionary = {
     connectNotion: "Conectar Notion",
     counts: (ready: number, processing: number, attention: number) =>
       [
-        ready ? `${ready} listos` : "",
+        ready ? `${ready} ${ready === 1 ? "listo" : "listos"}` : "",
         processing ? `${processing} procesando` : "",
         attention ? `${attention} necesitan atención` : "",
       ]
@@ -755,7 +775,7 @@ export const es: Dictionary = {
     lastSynced: (when: string) => `Sincronizado ${when}`,
     syncNow: "Sincronizar ahora",
     syncing: "Sincronización iniciada",
-    removeSource: "Quitar",
+    removeSource: "Quitar fuente",
     removeSourceConfirm:
       "¿Quitar esta fuente? ELISE borra lo que aprendió de ella. No cambia nada en el original.",
     retry: "Reintentar",

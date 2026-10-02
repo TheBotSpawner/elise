@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { relatedConversations } from "@/application/history-service";
+import { syncDueSources } from "@/application/knowledge-background";
 import {
   getSpace,
   knowledgeAccounts,
@@ -26,6 +28,9 @@ export default async function SpacePage({
     listSpaces(auth),
     relatedConversations(auth, id).catch(() => []),
   ]);
+  // This Space's (and its Sections') due sources refresh after the page is sent.
+  const ids = [id, ...data.children.map((c) => c.id)];
+  after(() => syncDueSources(auth.workspaceId, ids).catch(() => 0));
   const setup = knowledgeSetup();
   return (
     <PageContainer>

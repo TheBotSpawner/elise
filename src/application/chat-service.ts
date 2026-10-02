@@ -48,6 +48,7 @@ import {
 } from "./elise";
 import { autoLinkThread } from "./history-links-service";
 import { openThread } from "./interaction-thread";
+import { syncDueSources } from "./knowledge-background";
 import { queueRecallIndex, searchRecall } from "./recall-service";
 import { enabledShortcuts, shortcutStore } from "./shortcuts-service";
 import { structuredSourcesForChat } from "./structured-service";
@@ -558,6 +559,8 @@ export async function startChatTurn(
             ]);
             if (modality === "voice") trackEvent(auth, "voice_used", { failed: Boolean(failure) });
             if (!failure) void trackFirstTurn(auth).catch(() => undefined);
+            if ([...traces.values()].some((x) => x.name.startsWith("knowledge.")))
+              void syncDueSources(auth.workspaceId).catch(() => 0);
             // History tags (ADR-020): after the reply, from evidence; never delays the turn.
             if (!failure) {
               const sectionOf = (id: string | null | undefined) =>

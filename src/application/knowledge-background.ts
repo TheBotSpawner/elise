@@ -1,11 +1,16 @@
 import "server-only";
 
+import { serverEnv } from "@/config/server-env";
+import type { BackgroundRuntime } from "@/core/background/runtime";
 import { AppError } from "@/core/errors";
 import { CHUNKING } from "@/core/knowledge/chunking";
 import { ingestVersion, type IngestionPorts, type IngestOutcome } from "@/core/knowledge/ingest";
 import { syncSource, type SyncCounts, type SyncPorts } from "@/core/knowledge/sync";
 import { getEmbeddingProvider } from "@/infrastructure/ai";
-import { TriggerDevBackgroundRuntime } from "@/infrastructure/background/trigger/runtime";
+import {
+  isBackgroundConfigured,
+  TriggerDevBackgroundRuntime,
+} from "@/infrastructure/background/trigger/runtime";
 import {
   isNeedsAttention,
   parseMarkdown,
@@ -83,6 +88,50 @@ function ingestionPorts(auth: AuthContext): IngestionPorts {
   };
 }
 
+/**
+ * Where Knowledge work runs: Trigger.dev (durable, retried, scheduled). In development without
+ * TRIGGER_SECRET_KEY it runs in this server process instead, so a connected Drive/Notion
+ * source still prepares itself without any manual step. Production always needs Trigger.dev.
+ */
+function knowledgeRuntime(): BackgroundRuntime {
+  if (isBackgroundConfigured() || serverEnv().ELISE_ENV === "production")
+    return new TriggerDevBackgroundRuntime();
+  return {
+    async enqueue(job) {
+      const id = `inline:${crypto.randomUUID()}`;
+      setTimeout(() => {
+        const run =
+          job.type === "knowledge.sync"
+            ? runSync(job.payload)
+            : job.type === "knowledge.ingest"
+              ? runIngestion({ ...job.payload, attempt: 1 })
+              : Promise.reject(new Error(`no inline runner for ${job.type}`));
+        run.catch((error: unknown) =>
+          log("knowledge.inline_job_failed", {
+            type: job.type,
+            code: (error as { code?: string }).code,
+          }),
+        );
+      }, 0);
+      return { runtimeJobId: id };
+    },
+    async cancel() {},
+  };
+}
+
+/**
+ * Safety net (and the only scheduler in development): sources of these Spaces that are due —
+ * never synced, or past their next check — start syncing now. Cheap when nothing is due.
+ */
+export async function syncDueSources(workspaceId: string, spaceIds: string[] | null = null) {
+  const store = new SupabaseKnowledgeStore(createAdminClient());
+  const due = (await store.dueSources(new Date(), 20)).filter(
+    (s) => s.workspace_id === workspaceId && (!spaceIds || spaceIds.includes(s.space_id)),
+  );
+  for (const s of due) await startSync(workspaceId, s.id, "scheduled").catch(() => null);
+  return due.length;
+}
+
 export async function runIngestion(job: {
   workspaceId: string;
   versionId: string;
@@ -95,7 +144,7 @@ export async function runIngestion(job: {
 function syncPorts(auth: AuthContext): SyncPorts {
   return {
     store: new SupabaseKnowledgeStore(createAdminClient()),
-    runtime: new TriggerDevBackgroundRuntime(),
+    runtime: knowledgeRuntime(),
     now: () => new Date(),
     log,
     lister: {
@@ -142,7 +191,7 @@ export async function startSync(
   const runId = await store.createSyncRun(workspaceId, sourceId, trigger);
   if (!runId) return null;
   try {
-    const { runtimeJobId } = await new TriggerDevBackgroundRuntime().enqueue({
+    const { runtimeJobId } = await knowledgeRuntime().enqueue({
       type: "knowledge.sync",
       payload: { workspaceId, syncRunId: runId },
       idempotencyKey: `knowledge-sync:${runId}`,
@@ -157,7 +206,7 @@ export async function startSync(
 
 /** Hands one version to the background runtime for ingestion. */
 export async function enqueueIngestion(workspaceId: string, versionId: string, force = false) {
-  const { runtimeJobId } = await new TriggerDevBackgroundRuntime().enqueue({
+  const { runtimeJobId } = await knowledgeRuntime().enqueue({
     type: "knowledge.ingest",
     payload: { workspaceId, versionId, ...(force ? { force } : {}) },
     idempotencyKey: `knowledge-ingest:${versionId}${force ? `:reindex:${Date.now()}` : ""}`,
