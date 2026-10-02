@@ -19,6 +19,7 @@ import {
 import type { PublicError } from "@/core/errors";
 import { spaceColor, spaceIcon } from "@/core/knowledge/appearance";
 import { AppearancePicker, SpaceGlyph } from "@/features/knowledge/appearance";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -56,7 +57,7 @@ function useAction() {
   ) =>
     start(async () => {
       const r = await fn();
-      if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+      if (!r.ok) toast.error(errorText(t, r.error));
       else done?.(r.value);
     });
   return { pending, act };
@@ -212,6 +213,8 @@ export function ContextEditor({
   const { t } = useI18n();
   const c = t.myElise.contexts;
   const kinds = t.workspace.context;
+  // Study details appear once a context is studied, whatever it is (ADR-020).
+  const studied = profile.kind === "study" || Boolean(profile.study) || Boolean(progress);
   const router = useRouter();
   const { pending, act } = useAction();
   const [form, setForm] = useState({
@@ -248,7 +251,7 @@ export function ContextEditor({
           instructions: form.instructions,
           icon: form.icon,
           accent: form.accent,
-          ...(profile.kind === "study"
+          ...(studied
             ? {
                 study: {
                   targetDate: form.targetDate,
@@ -352,7 +355,7 @@ export function ContextEditor({
           />
           <span className="text-[12px] text-faint">{c.instructionsHint}</span>
         </label>
-        {profile.kind === "study" && (
+        {studied && (
           <>
             <label className={FIELD}>
               <span className={LABEL}>{c.targetDate}</span>
@@ -481,11 +484,11 @@ export function ContextEditor({
               maxLength={320}
               placeholder={
                 linkType === "email_domain"
-                  ? "@rsfa.co.nz"
+                  ? "@example.com"
                   : linkType === "web_domain"
-                    ? "rsfa.co.nz"
+                    ? "example.com"
                     : linkType === "email_address"
-                      ? "rod@rsfa.co.nz"
+                      ? "alex@example.com"
                       : profile.name
               }
               onChange={(e) => setLinkValue(e.target.value)}

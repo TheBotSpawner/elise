@@ -185,7 +185,7 @@ describe("GoogleCalendarProvider", () => {
         start: { kind: "date", date: "2026-10-01" },
         end: { kind: "date", date: "2026-10-02" },
         timezone: BA,
-        attendees: ["juan@acme.com"],
+        attendees: ["juan@northwind.com"],
       },
       { idempotencyKey: null },
     );

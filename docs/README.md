@@ -37,6 +37,7 @@ These documents are the source of truth for product and architecture decisions. 
 | `18-observability-errors-audit.md` | Observability, errors and audit |
 | `19-engineering-standards.md`      | Engineering standards           |
 | `20-testing-acceptance.md`         | Testing and acceptance          |
+| `22-mvp-readiness.md`              | MVP readiness: deploy, QA, gaps |
 
 ## roadmap/
 

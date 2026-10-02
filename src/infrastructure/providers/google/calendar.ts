@@ -22,7 +22,7 @@ const MAX_CALENDARS = 20;
 
 export interface GoogleConnectionInfo {
   connectionId: string;
-  /** User-facing account name ("Personal", "Firbot"). */
+  /** User-facing account name ("Personal", "Acme"). */
   label: string;
   /** Calendar used for new events when none is named (binding configuration). */
   defaultCalendarId?: string | null;

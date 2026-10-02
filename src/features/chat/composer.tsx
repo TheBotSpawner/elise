@@ -22,7 +22,15 @@ export function Composer({
   stopLabel,
   voice,
   className,
+  offline = false,
+  offlineLabel,
+  restore,
 }: {
+  /** No network: typing continues, sending waits (nothing is lost). */
+  offline?: boolean;
+  offlineLabel?: string;
+  /** A sent turn that failed: its text comes back if the input is empty. */
+  restore?: { text: string; at: number } | null;
   placeholder: string;
   label: string;
   busy: boolean;
@@ -35,9 +43,14 @@ export function Composer({
   className?: string;
 }) {
   const [draft, setDraft] = useState("");
+  const [restoredAt, setRestoredAt] = useState(restore?.at ?? 0);
+  if (restore && restore.at !== restoredAt) {
+    setRestoredAt(restore.at);
+    if (!draft.trim()) setDraft(restore.text);
+  }
 
   function submit() {
-    if (!draft.trim() || busy) return;
+    if (!draft.trim() || busy || offline) return;
     onSend(draft);
     setDraft("");
   }
@@ -91,7 +104,8 @@ export function Composer({
         <button
           type="submit"
           aria-label={sendLabel}
-          disabled={!draft.trim()}
+          disabled={!draft.trim() || offline}
+          title={offline ? offlineLabel : undefined}
           className="grid size-11 shrink-0 place-items-center rounded-full bg-fg text-bg"
         >
           <SendIcon />

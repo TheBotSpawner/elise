@@ -1,5 +1,7 @@
 import { requireAuthContext } from "@/application/auth-context";
 import { PageContainer, PageHeader } from "@/components/shared/page";
+import { isEnabled } from "@/config/flags";
+import { PrivacyCard } from "@/features/settings/privacy-card";
 import { SettingsForm } from "@/features/settings/settings-form";
 import { VoiceSettings } from "@/features/settings/voice-settings";
 import { getT } from "@/lib/i18n/server";
@@ -20,7 +22,10 @@ export default async function SettingsPage() {
         }}
       />
       <div className="mt-6">
-        <VoiceSettings initial={auth.profile.voice} />
+        <VoiceSettings initial={auth.profile.voice} wakeAllowed={isEnabled("wakePhrase", auth)} />
+      </div>
+      <div className="mt-6">
+        <PrivacyCard t={t} />
       </div>
     </PageContainer>
   );

@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/shared/page";
 import { Button } from "@/components/ui/button";
 import type { ScheduleInput } from "@/core/schedules/schedule";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -115,7 +116,7 @@ function ScheduleCard({
   function act<T>(fn: () => Promise<ScheduleActionResult<T>>, success?: string) {
     startTransition(async () => {
       const result = await fn();
-      if (!result.ok) toast.error(result.error.message || t.errors.codes[result.error.code]);
+      if (!result.ok) toast.error(errorText(t, result.error));
       else if (success) toast.success(success);
     });
   }

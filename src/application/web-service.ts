@@ -1,6 +1,7 @@
 import "server-only";
 
 import { serverEnv } from "@/config/server-env";
+import { entitlementsFor } from "@/core/entitlements";
 import { AppError, toAppError } from "@/core/errors";
 import {
   WEB_LIMITS,
@@ -12,6 +13,7 @@ import {
 } from "@/core/web/model";
 import { checkUrl, normalizeUrl } from "@/core/web/url";
 import { logger } from "@/infrastructure/observability/logger";
+import { recordUsage } from "@/infrastructure/observability/usage";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 import { fetchPage } from "@/infrastructure/web/fetcher";
 import {
@@ -73,7 +75,10 @@ async function consume(auth: AuthContext, kind: "searches" | "fetches") {
     return;
   }
   const row = Array.isArray(data) ? data[0] : data;
-  const limit = kind === "searches" ? WEB_LIMITS.dailySearches : WEB_LIMITS.dailyFetches;
+  const limit =
+    kind === "searches"
+      ? (entitlementsFor().web_research.limit?.amount ?? WEB_LIMITS.dailySearches)
+      : WEB_LIMITS.dailyFetches;
   if ((row?.[kind] ?? 0) > limit)
     throw new AppError(
       "RATE_LIMITED",
@@ -83,7 +88,22 @@ async function consume(auth: AuthContext, kind: "searches" | "fetches") {
 
 export function webCapability(auth: AuthContext, runId: string | null = null): WebCapability {
   const log = { workspace_id: auth.workspaceId, run_id: runId };
-  const onUsage = (u: SearchUsage) => logger.info("web.usage", { ...log, ...u });
+  const onUsage = (u: SearchUsage) => {
+    logger.info("web.usage", { ...log, ...u });
+    recordUsage({
+      operation: "web_search",
+      provider: u.provider,
+      ...(u.provider === "openai"
+        ? {
+            model: serverEnv().OPENAI_WEB_SEARCH_MODEL,
+            inputTokens: u.inputTokens,
+            outputTokens: u.outputTokens,
+          }
+        : {}),
+      units: u.provider === "tavily" ? (u.credits ?? u.searchCalls) : u.searchCalls,
+      unit: "queries",
+    });
+  };
   return {
     async search(q: WebSearchQuery): Promise<WebResult[]> {
       const key = `${auth.workspaceId}:s:${q.kind}:${q.recency}:${q.domains?.join(",")}:${q.query.toLowerCase()}`;

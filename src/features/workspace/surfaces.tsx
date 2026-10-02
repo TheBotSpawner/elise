@@ -1094,7 +1094,7 @@ function ContextOverviewBody({
   return (
     <div className="flex flex-col gap-3">
       <p className="flex flex-wrap items-center gap-2">
-        <Chip tone="accent">{c.kinds[p.kind]}</Chip>
+        {p.kind !== "custom" && <Chip tone="accent">{c.kinds[p.kind]}</Chip>}
         {p.baseline && (
           <span className="text-[13px] text-muted">
             {c.since(f.date(p.baseline.since))} · {c.basis[p.baseline.basis]}
@@ -1173,7 +1173,7 @@ function ContextProposalBody({
   return (
     <div className="flex flex-col gap-3">
       <p className="flex flex-wrap items-center gap-2">
-        <Chip tone="accent">{c.kinds[p.kind]}</Chip>
+        {p.kind !== "custom" && <Chip tone="accent">{c.kinds[p.kind]}</Chip>}
         {p.space && (
           <span className="text-[13px]">
             {p.space.name} › {p.name}

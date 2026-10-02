@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { AIProvider } from "../agents/ai-provider";
+import { MODEL_POLICY } from "../agents/model-policy";
 import { WRITABLE_TYPES, type FieldMapping, type SchemaProperty } from "../capabilities/structured";
 
 /**
@@ -239,7 +240,7 @@ export async function suggestMappingWithAI(
         },
       ],
       tools: [],
-      tier: "fast",
+      ...MODEL_POLICY.structured_mapping,
     })) {
       if (e.type === "text_delta") text += e.delta;
       if (text.length > 6000) break;

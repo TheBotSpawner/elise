@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { FINANCE_FIELDS, suggestFinanceMapping, type Cell, type FinanceField } from "./import";
 import type { AIProvider } from "../agents/ai-provider";
+import { MODEL_POLICY } from "../agents/model-policy";
 
 /**
  * AI-assisted column mapping (docs/architecture/10 §38). The model sees only headers and a few
@@ -59,7 +60,7 @@ export async function suggestMappingWithAI(
       instructions: INSTRUCTIONS,
       input: [{ type: "message", role: "user", content: JSON.stringify(table) }],
       tools: [],
-      tier: "fast",
+      ...MODEL_POLICY.finance_mapping,
     })) {
       if (event.type === "text_delta") text += event.delta;
       if (text.length > 4000) break;

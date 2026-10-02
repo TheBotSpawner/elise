@@ -13,8 +13,8 @@ import {
   type VoiceEvent,
   type VoiceState,
 } from "@/core/voice/session";
-import { SentenceChunker, toSpeakable } from "@/core/voice/speech-text";
-import { VOICE_TURN } from "@/core/voice/turn";
+import { SentenceChunker, SpokenSplitter, toSpeakable } from "@/core/voice/speech-text";
+import { calibrateFloor, TurnDetector, VOICE_TURN } from "@/core/voice/turn";
 import { emptyWorkspace } from "@/core/workspace/model";
 import {
   VoiceController,
@@ -159,7 +159,7 @@ describe("spoken text", () => {
     const c = new SentenceChunker();
     const out: string[] = [];
     for (const delta of [
-      "Sí. Tenés una reunión con Rod a las 12",
+      "Sí. Tenés una reunión con Alex a las 12",
       ".5 no, ",
       "a las 12. Estoy buscan",
       "do el contexto.",
@@ -167,7 +167,7 @@ describe("spoken text", () => {
       out.push(...c.push(delta));
     out.push(...c.flush());
     expect(out).toEqual([
-      "Sí. Tenés una reunión con Rod a las 12.5 no, a las 12.",
+      "Sí. Tenés una reunión con Alex a las 12.5 no, a las 12.",
       "Estoy buscando el contexto.",
     ]);
   });
@@ -349,10 +349,13 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe("continuous voice controller", () => {
   it("never opens the microphone before the user starts, and releases it on end", async () => {
-    const { controller, mic } = setup();
+    const { controller, mic, hear } = setup();
     expect(mic.opened).toBe(0);
     await controller.start();
     expect(mic.opened).toBe(1);
+    // The room is measured first: "listening" only once speech can really be caught.
+    expect(controller.state.phase).toBe("arming");
+    await hear(VOICE_TURN.calibrateMs, 0.002);
     expect(controller.state.phase).toBe("listening");
     controller.end();
     expect(mic.closed).toBe(1);
@@ -490,12 +493,13 @@ describe("continuous voice controller", () => {
   });
 
   it("asleep, the on-device wake phrase wakes it with a chime and runs what followed", async () => {
-    const { controller, mic, player, wake, sent } = setup({
+    const { controller, mic, player, wake, sent, hear } = setup({
       wake: true,
       prefs: { wakeEnabled: true },
     });
     controller.setWakeStatus("ready");
     await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
     controller.sleep("inactivity");
     expect(wake!.running).toBe(true);
     expect(wake!.started?.phrase).toBe("elise");
@@ -542,6 +546,7 @@ describe("continuous voice controller", () => {
   it("muted, nothing is captured or sent", async () => {
     const { controller, sent, hear } = setup();
     await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
     controller.toggleMute();
     await hear(3000, 0.2);
     expect(sent).toHaveLength(0);
@@ -578,10 +583,63 @@ describe("continuous voice controller", () => {
   });
 
   it("the Orb level is the real mic level while listening", async () => {
-    const { controller } = setup();
+    const { controller, hear } = setup();
     expect(controller.level()).toBe(-1);
     await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
     expect(controller.level()).toBe(0.4);
+  });
+});
+
+describe("continuous voice: every follow-up is caught the first time (regression)", () => {
+  /** User turn N, ELISE replies and finishes, user turn N+1 starts right away — 10 times. */
+  for (const gapMs of [0, 100, 250, 500, 1000])
+    it(`10 alternating turns, speaking ${gapMs} ms after ELISE stops`, async () => {
+      const lines = Array.from({ length: 10 }, (_, i) => `Pregunta número ${i + 1}`);
+      const { controller, player, sent, hear, say } = setup({ transcripts: [...lines] });
+      await controller.start();
+      await say(); // first turn: the room is measured once, while arming
+      for (let turn = 1; turn < lines.length; turn++) {
+        controller.onStream({ type: "conversation" });
+        controller.onStream({ type: "text", delta: "Listo, ya lo tengo. " });
+        controller.onStream({ type: "finished", failed: false });
+        expect(controller.state.phase).toBe("speaking");
+        player.finishPlaying();
+        expect(controller.state.phase).toBe("listening");
+        // No deaf window: the user may start at once, with no quiet moment to "calibrate".
+        if (gapMs) await hear(gapMs, 0.002);
+        await hear(700, 0.1);
+        await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+        await settle();
+        expect(sent.map((x) => x.text)).toEqual(lines.slice(0, turn + 1));
+      }
+      expect(controller.state.problem).toBeNull();
+    });
+
+  it("an empty speculative transcript falls back to the whole utterance", async () => {
+    // The snapshot (at the pause) comes back empty; the full utterance has the words.
+    const { controller, sent, hear } = setup({ transcripts: ["", "¿Y qué tengo mañana?"] });
+    await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await hear(700, 0.1);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    expect(sent.map((x) => x.text)).toEqual(["¿Y qué tengo mañana?"]);
+  });
+
+  it("the room is measured once per session, robustly, never per turn", () => {
+    // Someone already talking in part of the window doesn't become the "noise".
+    expect(calibrateFloor([0.002, 0.003, 0.002, 0.1, 0.12, 0.11, 0.1, 0.09])).toBeLessThan(0.01);
+    // A "floor" louder than a quiet room is speech: capped.
+    expect(calibrateFloor(Array(8).fill(0.2))).toBe(VOICE_TURN.maxFloor);
+    // A detector with the session's floor hears speech from its first frame.
+    const d = new TurnDetector(VOICE_TURN, { floor: 0.002 });
+    const signals: string[] = [];
+    for (let t = 0; t < 300; t += VOICE_TURN.tickMs) {
+      const s = d.frame(0.1, t);
+      if (s) signals.push(s);
+    }
+    expect(signals).toEqual(["speech_start"]);
   });
 });
 
@@ -805,6 +863,21 @@ describe("browser-pass regressions", () => {
     expect(state.surfaces.map((s) => s.type)).toEqual(["task_list"]);
   });
 
+  it("speaks the model's spoken synthesis, never the detailed display answer", async () => {
+    const { controller, player, say } = setup();
+    await controller.start();
+    await say();
+    controller.onStream({ type: "spoken", delta: "Tenés tres temas importantes. " });
+    controller.onStream({ type: "spoken", delta: "Te los dejé en pantalla." });
+    controller.onStream({
+      type: "text",
+      delta: "## Temas\n\n1. Contrato Initech: vence el viernes. ",
+    });
+    controller.onStream({ type: "text", delta: "2. Presupuesto. 3. Próxima entrega." });
+    controller.onStream({ type: "finished", failed: false });
+    expect(player.spoken).toEqual(["Tenés tres temas importantes.", "Te los dejé en pantalla."]);
+  });
+
   it("a long spoken answer stops at the limit and says the rest is on screen", async () => {
     const { controller, player, say } = setup();
     await controller.start();
@@ -817,5 +890,47 @@ describe("browser-pass regressions", () => {
     controller.onStream({ type: "finished", failed: false });
     expect(player.spoken.at(-1)).toBe("El resto te lo dejo en pantalla.");
     expect(player.spoken.slice(0, -1).join(" ").length).toBeLessThanOrEqual(420);
+  });
+});
+
+describe("spoken vs display (ADR-019)", () => {
+  const run = (deltas: string[]) => {
+    const s = new SpokenSplitter();
+    const out = { spoken: "", display: "" };
+    for (const d of deltas) {
+      const p = s.push(d);
+      out.spoken += p.spoken;
+      out.display += p.display;
+    }
+    const p = s.flush();
+    return { spoken: out.spoken + p.spoken, display: out.display + p.display };
+  };
+
+  it("separates the spoken synthesis from the display answer, across any delta split", () => {
+    const text =
+      "<spoken>Tenés tres temas para la reunión. Te los dejé abiertos.</spoken>\n\n## Temas\n- Contrato\n- Presupuesto";
+    const whole = run([text]);
+    expect(whole).toEqual({
+      spoken: "Tenés tres temas para la reunión. Te los dejé abiertos.",
+      display: "## Temas\n- Contrato\n- Presupuesto",
+    });
+    // Every possible split point (tags cut in the middle included) gives the same result.
+    for (let i = 1; i < text.length; i++)
+      expect(run([text.slice(0, i), text.slice(i)])).toEqual(whole);
+    expect(run(text.split(""))).toEqual(whole);
+  });
+
+  it("keeps narration before tools spoken and supports several spoken parts", () => {
+    expect(
+      run(["<spoken>Dejame revisar.</spoken>", "<spoken>Listo, tenés dos.</spoken>Detalle"]),
+    ).toEqual({ spoken: "Dejame revisar.Listo, tenés dos.", display: "Detalle" });
+  });
+
+  it("a reply without tags is display only; a stray '<' is just text", () => {
+    expect(run(["Hoy tenés 2 < 3 reuniones."])).toEqual({
+      spoken: "",
+      display: "Hoy tenés 2 < 3 reuniones.",
+    });
+    expect(run(["Termina con <spo"])).toEqual({ spoken: "", display: "Termina con <spo" });
   });
 });

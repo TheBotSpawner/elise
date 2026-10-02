@@ -23,6 +23,7 @@ import { logger } from "@/infrastructure/observability/logger";
 import { GoogleDriveClient } from "@/infrastructure/providers/google/drive";
 import { pageTitle } from "@/infrastructure/providers/notion/client";
 import { isNotionConfigured } from "@/infrastructure/providers/notion/oauth";
+import { rateLimit } from "@/infrastructure/rate-limit";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 import type {
   Json,
@@ -439,6 +440,8 @@ export async function prepareUploads(
   spaceId: string,
   files: unknown[],
 ): Promise<UploadTarget[]> {
+  // Generous for real use (20 files per batch); stops a runaway client from flooding ingestion.
+  rateLimit(`knowledge.upload:${auth.userId}`, 15, 60_000);
   await ownSpace(auth, spaceId);
   if (!files.length || files.length > UPLOAD_LIMITS.maxFilesPerBatch) {
     throw new AppError(

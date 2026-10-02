@@ -95,7 +95,7 @@ describe("progressive Google authorization", () => {
 
   it("suggests friendly aliases", () => {
     expect(suggestAlias("leo@gmail.com")).toBe("Personal");
-    expect(suggestAlias("leo@firbot.com")).toBe("Firbot");
+    expect(suggestAlias("leo@northwind.com")).toBe("Northwind");
   });
 });
 

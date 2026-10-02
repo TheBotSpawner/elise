@@ -32,7 +32,7 @@ export interface NotesProvider {
     patch: { title?: string; content?: string; spaceId?: string | null },
   ): Promise<Note>;
   archive(id: string): Promise<Note>;
-  /** Resolves a Knowledge Space by id, name or path ("Work › Firbot"). */
+  /** Resolves a Knowledge Space by id, name or path ("Work › Acme"). */
   resolveSpace(ref: string): Promise<{ id: string; path: string } | null>;
 }
 

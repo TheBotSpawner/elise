@@ -27,8 +27,8 @@ describe("Knowledge Space appearance", () => {
   it("falls back to defaults for unknown keys and suggests a look from the name", () => {
     expect(spaceIcon("nope")).toBe("folder");
     expect(spaceColor(null)).toBe("slate");
-    expect(suggestAppearance("UTN")).toEqual({ icon: "graduation", color: "blue" });
-    expect(suggestAppearance("Firbot")).toEqual({ icon: "briefcase", color: "cyan" });
+    expect(suggestAppearance("University")).toEqual({ icon: "graduation", color: "blue" });
+    expect(suggestAppearance("Work")).toEqual({ icon: "briefcase", color: "cyan" });
     expect(suggestAppearance("Japan Trip")).toEqual({ icon: "plane", color: "amber" });
     expect(suggestAppearance("Misc")).toBeNull();
   });
@@ -50,12 +50,12 @@ describe("timezone picker", () => {
 
 describe("“Use this account for”", () => {
   it("routes a request that names the context to that account", () => {
-    const firbot = binding({
+    const northwind = binding({
       connectionId: "22222222-2222-4222-8222-222222222222",
       capability: "calendar",
       providerKey: "google",
       label: "Work account",
-      contextLabel: "Firbot",
+      contextLabel: "Northwind",
     });
     const personal = binding({
       connectionId: "11111111-1111-4111-8111-111111111111",
@@ -64,14 +64,14 @@ describe("“Use this account for”", () => {
       label: "Personal",
       isDefault: true,
     });
-    const r = resolveBindings([{ ...NATIVE_BINDING, capability: "tasks" }, personal, firbot], {
+    const r = resolveBindings([{ ...NATIVE_BINDING, capability: "tasks" }, personal, northwind], {
       capability: "calendar",
       operationKind: "write",
-      destination: "my Firbot calendar",
+      destination: "my Northwind calendar",
     });
     expect(r).toMatchObject({
       kind: "resolved",
-      bindings: [{ connectionId: firbot.connectionId }],
+      bindings: [{ connectionId: northwind.connectionId }],
     });
   });
 });

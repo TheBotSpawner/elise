@@ -14,7 +14,7 @@ my world".
 ## Decision
 
 1. **Product model.** Users see Knowledge **Spaces** and, inside each, **Sections** (Espacio ›
-   Sección): "UTN › Administración", "Firbot Solutions › RSFA". "Contexts" is no longer a
+   Sección): "University › Mathematics", "Acme Studio › Client A". "Contexts" is no longer a
    user-facing module: it leaves the My Elise page and navigation.
 2. **One visible level.** A Section is a first-level child Space (`knowledge_spaces.parent_space_id`,
    the existing hierarchy, no new table). The UI and the server actions only create Sections
@@ -31,10 +31,10 @@ my world".
    onto the existing kinds (`study`, `client`, `project`, `custom`). Study and Client Work
    Intelligence attach to the Section through that profile, unchanged.
 5. **Identity.** A Section's identity includes its Space. Standalone profile names stay unique
-   per workspace; Section profiles are unique by Section, so "UTN › Administración" and
+   per workspace; Section profiles are unique by Section, so "University › Mathematics" and
    "Posgrado › Administración" coexist. Everywhere a context is shown (active indicator, prompts,
    errors) it reads "Space › Section". Resolution treats two same-named Sections as ambiguous
-   (ELISE asks) unless the Space is named ("Administración de UTN"); tools accept the path.
+   (ELISE asks) unless the Space is named ("Mathematics de University"); tools accept the path.
 6. **Inheritance at retrieval time.** Nothing is copied. A Section's search covers its own
    sources (primary) plus its parent Space's own general sources (inherited, weight 0.85) — never
    sibling Sections. A top-level Space's search covers its general sources and its Sections, and

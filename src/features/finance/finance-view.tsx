@@ -22,6 +22,7 @@ import {
 import { compareAmounts } from "@/core/finance/money";
 import { useInsightText } from "@/features/chat/finance-cards";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -310,7 +311,7 @@ function AccountDialog({
   const run = (tool: string, args: unknown) =>
     startTransition(async () => {
       const r = await financeToolAction(tool, args);
-      if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+      if (!r.ok) toast.error(errorText(t, r.error));
       else {
         router.refresh();
         onClose();
@@ -433,7 +434,7 @@ function CategoryDialog({
               type,
               ...(parent ? { parent } : {}),
             });
-            if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+            if (!r.ok) toast.error(errorText(t, r.error));
             else {
               setName("");
               setParent("");
@@ -836,7 +837,7 @@ export function FinanceView({
             onChange={(e) =>
               startTransition(async () => {
                 const r = await setDefaultCurrencyAction(e.target.value || null);
-                if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+                if (!r.ok) toast.error(errorText(t, r.error));
                 else router.refresh();
               })
             }

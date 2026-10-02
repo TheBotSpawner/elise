@@ -340,11 +340,17 @@ const ADMIN: ContextProfile = {
   updatedAt: NOW.toISOString(),
 };
 
-function setup(opts: { noMaterial?: boolean; noAI?: boolean } = {}) {
+function setup(
+  opts: { noMaterial?: boolean; noAI?: boolean; untyped?: boolean; activeContext?: boolean } = {},
+) {
   const store = new FakeStudyStore();
   const ai = new RouterAI();
   const associations: string[] = [];
-  const profile = opts.noMaterial ? { ...ADMIN, links: [] } : ADMIN;
+  const base: ContextProfile = opts.untyped
+    ? // A Section created without any purpose (ADR-020).
+      { ...ADMIN, kind: "custom", study: null, name: "Mathematics" }
+    : ADMIN;
+  const profile = opts.noMaterial ? { ...base, links: [] } : base;
   const contexts = {
     list: async () => [profile],
     entities: async () => [],
@@ -358,7 +364,14 @@ function setup(opts: { noMaterial?: boolean; noAI?: boolean } = {}) {
   };
   ports.providers = { get: ((c: string) => byCapability[c]) as ProviderFactory["get"] };
   const ws = new FakeWorkspace();
-  const ctx = makeCtx({ workspace: ws, now: NOW, conversationId: CONV });
+  const ctx = makeCtx({
+    workspace: ws,
+    now: NOW,
+    conversationId: CONV,
+    ...(opts.activeContext
+      ? { context: { id: profile.id, name: profile.name, kind: profile.kind } }
+      : {}),
+  });
   const call = (name: string, args: unknown = {}) => executeToolCall(ports, ctx, { name, args });
   const question = () =>
     ws.value.surfaces.find((s) => s.type === "study_question")?.payload as
@@ -367,6 +380,20 @@ function setup(opts: { noMaterial?: boolean; noAI?: boolean } = {}) {
 }
 
 describe("study sessions", () => {
+  it("studies an untyped Section: by name, or as the active context (ADR-020)", async () => {
+    for (const how of [{ byName: true }, { byName: false }]) {
+      const { call, question } = setup({ untyped: true, activeContext: !how.byName });
+      const out = await call("study.start", {
+        ...(how.byName ? { context: "Mathematics" } : {}),
+        mode: "quiz",
+      });
+      expect(out.status).toBe("succeeded");
+      if (out.status !== "succeeded") return;
+      expect((out.output as { started: boolean }).started).toBe(true);
+      expect(question()?.number).toBe(1);
+    }
+  });
+
   it("starts grounded in the requested units and never leaks the answer", async () => {
     const { call, ws, question, store, ai, associations } = setup();
     const out = await call("study.start", {

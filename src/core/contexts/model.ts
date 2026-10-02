@@ -39,7 +39,7 @@ export interface ContextLink {
   type: ContextLinkType;
   resourceId: string | null;
   value: string | null;
-  /** What the user sees ("Knowledge Space · RSFA", "@rsfa.co.nz"). */
+  /** What the user sees ("Knowledge Space · Client A", "@example.com"). */
   label: string;
   /** Suggested by ELISE and not confirmed yet: never used for retrieval. */
   confirmed: boolean;
@@ -60,7 +60,7 @@ export interface ContextProfile {
   links: ContextLink[];
   /**
    * The Knowledge Section this profile is the intelligence of (ADR-018): users see
-   * "UTN › Administración", never a separate context. Null for a standalone profile.
+   * "University › Mathematics", never a separate context. Null for a standalone profile.
    */
   section?: SectionRef | null;
   createdAt: string;
@@ -73,16 +73,7 @@ export interface SectionRef {
   parentName: string;
 }
 
-/** What a Section is for, as users choose it; mapped onto the profile's kind. */
-export const SECTION_PURPOSES = ["study", "client", "project", "general"] as const;
-export type SectionPurpose = (typeof SECTION_PURPOSES)[number];
-
-export const kindForPurpose = (p: SectionPurpose): ContextKind => (p === "general" ? "custom" : p);
-
-export const purposeOf = (kind: ContextKind): SectionPurpose =>
-  kind === "custom" ? "general" : kind === "work" ? "client" : kind;
-
-/** How a context reads everywhere: "UTN › Administración" for a Section, else its name. */
+/** How a context reads everywhere: "University › Mathematics" for a Section, else its name. */
 export const contextLabel = (p: Pick<ContextProfile, "name" | "section">) =>
   p.section ? `${p.section.parentName} › ${p.name}` : p.name;
 
@@ -342,7 +333,7 @@ const SCORE: Record<MatchReason, number> = {
   first_name: 50,
 };
 
-/** "Ahora hablemos de Firbot", "volvamos a RSFA", "switch to my Administration subject". */
+/** "Ahora hablemos de Acme", "volvamos a Client A", "switch to my Administration subject". */
 const SWITCH =
   /\b(ahora (hablemos|pasemos|vamos|sigamos) (de|con|a)|volvamos (a|con)|cambiemos a|pasemos a|switch to|let'?s (talk about|go back to|switch to)|back to|go back to)\b/i;
 
@@ -381,7 +372,7 @@ export function resolveContext(input: {
       };
       if (containsTerm(text, profile.name)) {
         consider("name");
-        // "Administración de UTN": the parent Space disambiguates same-named Sections.
+        // "Mathematics de University": the parent Space disambiguates same-named Sections.
         if (profile.section && containsTerm(text, profile.section.parentName))
           best = { score: SCORE.name + 20, reason: "name" };
       }
@@ -440,7 +431,7 @@ export function contextForEvent(
   return scored[0]!.p;
 }
 
-/** People of the context whose name matches ("Rod"): several → ambiguous, ask. */
+/** People of the context whose name matches ("Alex"): several → ambiguous, ask. */
 export function findPeople(entities: Entity[], name: string): Entity[] {
   const key = nameKey(name);
   if (key.length < 2) return [];
@@ -477,7 +468,7 @@ const LINK_NAMES: Record<ContextLinkType, string> = {
 
 export const linkName = (type: ContextLinkType) => LINK_NAMES[type];
 
-/** "Context: RSFA (client) …" — names and hints only, quoted as data. */
+/** "Context: Client A (client) …" — names and hints only, quoted as data. */
 export function describeActiveContext(profile: ContextProfile): string {
   const hints = profile.links
     .filter((l) => l.confirmed)

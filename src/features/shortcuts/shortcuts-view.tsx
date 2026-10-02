@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { EmptyState } from "@/components/shared/page";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Label, Select } from "@/components/ui/input";
@@ -18,6 +19,7 @@ import {
   type StepType,
 } from "@/core/shortcuts/model";
 import { STUDY_MODES } from "@/core/study/model";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
 import {
@@ -75,7 +77,7 @@ export function ShortcutsView({
   ) =>
     start(async () => {
       const r = await fn();
-      if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+      if (!r.ok) toast.error(errorText(t, r.error));
       else done?.();
     });
 
@@ -125,7 +127,17 @@ export function ShortcutsView({
       )}
 
       {shortcuts.length === 0 && !draft && (
-        <Card className="p-6 text-[14px] text-muted">{sc.empty}</Card>
+        <EmptyState
+          icon={Zap}
+          title={sc.emptyTitle}
+          body={sc.empty}
+          action={
+            <Button onClick={() => setDraft(EMPTY)}>
+              <Plus className="size-4" aria-hidden />
+              {sc.new}
+            </Button>
+          }
+        />
       )}
 
       <ul className="flex flex-col gap-3">

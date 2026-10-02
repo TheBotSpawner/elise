@@ -30,7 +30,7 @@ const spaceField = z
   .min(1)
   .max(200)
   .optional()
-  .describe('A Knowledge Space by name (e.g. "RSFA"). Omit to use the conversation\'s Space.');
+  .describe('A Knowledge Space by name (e.g. "Client A"). Omit to use the conversation\'s Space.');
 
 interface Scope {
   /** The Spaces themselves (with their Sections): what listing and overviews cover. */
@@ -123,6 +123,7 @@ function toEvidence(hits: KnowledgeHit[]): KnowledgeEvidence[] {
     url: h.sourceUrl,
     versionNumber: h.versionNumber,
     spaceName: h.spaceName,
+    spaceId: h.spaceId,
     snippet: clip(h.content, 280),
   }));
 }
@@ -281,7 +282,7 @@ export const recentChangesTool: ToolDefinition = {
   capability: "knowledge",
   operation: "listRecentChanges",
   description:
-    'What was added, updated or removed in the user\'s Knowledge recently ("what changed in RSFA this week?"). Use knowledge.compare to explain a specific update.',
+    'What was added, updated or removed in the user\'s Knowledge recently ("what changed in Client A this week?"). Use knowledge.compare to explain a specific update.',
   input: recentInput,
   async describe() {
     return { summary: "Recent Knowledge changes" };

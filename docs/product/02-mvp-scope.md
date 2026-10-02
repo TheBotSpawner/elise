@@ -247,7 +247,7 @@ Ejemplos:
 
 ```text
 Personal Gmail
-Firbot Gmail
+Acme Gmail
 Another business Gmail
 ```
 
@@ -316,7 +316,7 @@ Ejemplos:
 ```text
 Google Account A
 ├── Personal
-├── Firbot
+├── Acme
 └── University
 
 Google Account B
@@ -583,7 +583,7 @@ Sirve para agrupar información por contexto.
 Ejemplos:
 
 ```text
-Firbot
+Acme
 ├── Client A
 ├── Client B
 └── Internal
@@ -599,7 +599,7 @@ Un Knowledge Space puede tener múltiples fuentes.
 Ejemplo:
 
 ```text
-Firbot / RSFA
+Acme / Client A
 
 Sources:
 - Notion Account A
@@ -637,7 +637,7 @@ Ejemplo:
 
 ```text
 Personal Notion
-Firbot Notion
+Acme Notion
 Client Notion
 ```
 
@@ -738,7 +738,7 @@ Ejemplo:
 
 ```text
 Work
-└── Firbot
+└── Acme
     ├── Client A
     ├── Client B
     └── Internal

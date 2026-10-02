@@ -24,9 +24,9 @@ import type { sectionDetail } from "@/application/sections-service";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/input";
-import { SECTION_PURPOSES, type SectionPurpose } from "@/core/contexts/model";
 import { ContextEditor } from "@/features/contexts/contexts-view";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +36,6 @@ import {
   moveItemAction,
   removeSourceAction,
   retryItemAction,
-  setSectionPurposeAction,
   syncNowAction,
   type KnowledgeResult,
 } from "./actions";
@@ -59,7 +58,7 @@ const DOT: Record<string, string> = {
 const SOURCE_ORDER: SourceView["sourceType"][] = ["upload", "google_drive", "notion", "note"];
 const RECENT = 8;
 
-export type SectionCard = SpaceSummary & { purpose: SectionPurpose | null };
+export type SectionCard = SpaceSummary;
 
 export function SpaceView({
   space,
@@ -73,11 +72,20 @@ export function SpaceView({
   notionAvailable,
   backgroundAvailable,
   initialAdd = null,
+  conversations = [],
 }: {
+  /** Conversations linked to this Space (its Sections included) or Section (ADR-020). */
+  conversations?: {
+    key: string;
+    href: string;
+    title: string;
+    at: string;
+    section: string | null;
+  }[];
   space: SpaceSummary;
   /** A Space's Sections (ADR-018); always empty inside a Section (one level). */
   sections: SectionCard[];
-  /** Inside a Section: its context (purpose, links, study progress). */
+  /** Inside a Section: its context (links, people, study progress). */
   section: Awaited<ReturnType<typeof sectionDetail>>;
   sources: SourceView[];
   items: ItemView[];
@@ -131,7 +139,7 @@ export function SpaceView({
       ? await uploadVersion(itemId, files[0]!)
       : await uploadFiles(space.id, [...files]);
     setUploading(false);
-    if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+    if (!r.ok) toast.error(errorText(t, r.error));
     else toast.success(t.knowledge.uploaded(r.value));
     router.refresh();
   }
@@ -170,11 +178,6 @@ export function SpaceView({
             <SpaceGlyph icon={space.icon} color={space.color} size="lg" />
             {space.name}
           </h1>
-          {section && (
-            <p className="type-label text-faint">
-              {t.knowledge.sections.purposes[section.purpose]}
-            </p>
-          )}
           {space.description && (
             <p className="max-w-2xl text-[15px] text-muted">{space.description}</p>
           )}
@@ -239,7 +242,6 @@ export function SpaceView({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[14.5px] font-medium">{c.name}</span>
                       <span className="block truncate text-[12.5px] text-muted">
-                        {c.purpose && `${t.knowledge.sections.purposes[c.purpose]} · `}
                         {t.knowledge.itemCount(c.counts.ready + c.counts.processing)}
                       </span>
                     </span>
@@ -498,6 +500,30 @@ export function SpaceView({
         )}
       </section>
 
+      {conversations.length > 0 && (
+        <section className="flex flex-col gap-2 border-t border-border pt-8">
+          <h2 className="type-label text-faint">
+            {section ? t.history.related : t.history.recent}
+          </h2>
+          <ul className="flex flex-col">
+            {conversations.map((c) => (
+              <li key={c.key}>
+                <Link
+                  href={c.href}
+                  className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 text-[14px] hover:bg-active"
+                >
+                  <span className="min-w-0 truncate">
+                    {c.section && <span className="text-muted">{c.section} · </span>}
+                    {c.title || t.chat.untitled}
+                  </span>
+                  <span className="shrink-0 text-[12.5px] text-faint">{relative(c.at)}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {section && (
         <section className="flex flex-col gap-4 border-t border-border pt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -505,24 +531,9 @@ export function SpaceView({
               <h2 className="font-medium">{t.knowledge.sections.context}</h2>
               <p className="text-[13px] text-muted">{t.knowledge.sections.contextHint}</p>
             </div>
-            <label className="flex items-center gap-2 text-[13px] text-muted">
-              {t.knowledge.sections.purpose}
-              <Select
-                value={section.purpose}
-                disabled={pending}
-                className="w-auto"
-                onChange={(e) => act(() => setSectionPurposeAction(space.id, e.target.value))}
-              >
-                {SECTION_PURPOSES.map((p) => (
-                  <option key={p} value={p}>
-                    {t.knowledge.sections.purposes[p]}
-                  </option>
-                ))}
-              </Select>
-            </label>
           </div>
           <ContextEditor
-            key={section.profile.id + section.profile.kind}
+            key={section.profile.id}
             profile={section.profile}
             catalog={section.catalog}
             progress={section.progress}
@@ -652,7 +663,7 @@ function MoveItemDialog({
             onClick={() =>
               startTransition(async () => {
                 const r = await moveItemAction(item!.id, choice);
-                if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+                if (!r.ok) toast.error(errorText(t, r.error));
                 else {
                   toast.success(t.knowledge.sections.moved);
                   onMoved();

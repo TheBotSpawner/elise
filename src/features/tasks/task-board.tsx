@@ -20,6 +20,7 @@ import {
   type TaskView,
 } from "@/core/capabilities/tasks";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -73,7 +74,7 @@ export function TaskBoard({
 
   async function run(operation: Parameters<typeof taskAction>[0], args: unknown, key?: string) {
     const result = await taskAction(operation, args, key);
-    if (!result.ok) toast.error(result.error.message || t.errors.codes[result.error.code]);
+    if (!result.ok) toast.error(errorText(t, result.error));
     return result.ok;
   }
 
@@ -273,7 +274,7 @@ function NewTask({
             key,
           );
           if (!r.ok) {
-            toast.error(r.error.message || t.errors.codes[r.error.code]);
+            toast.error(errorText(t, r.error));
             return;
           }
           setKey(crypto.randomUUID());
@@ -370,7 +371,7 @@ function NewListDialog({
           e.preventDefault();
           startTransition(async () => {
             const r = await taskAction("createList", { name });
-            if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+            if (!r.ok) toast.error(errorText(t, r.error));
             else {
               setName("");
               onCreated();

@@ -2,6 +2,7 @@ import "server-only";
 
 import { MAX_HISTORY_MESSAGES, type HistoryMessage } from "@/core/agents/context";
 import { AppError } from "@/core/errors";
+import { conciseTitle } from "@/core/history/links";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 import type { Json } from "@/infrastructure/supabase/database.types";
@@ -66,7 +67,8 @@ async function createConversation(auth: AuthContext, firstMessage: string, space
     .insert({
       workspace_id: auth.workspaceId,
       user_id: auth.userId,
-      title: firstMessage.replace(/\s+/g, " ").trim().slice(0, 80),
+      // Readable until the Recall summary titles it (ADR-020): no greetings or politeness.
+      title: conciseTitle(firstMessage, 80),
       // The Space is re-validated on every turn (activeSpace); this is only a reference.
       active_context: spaceId ? { knowledgeSpaceId: spaceId } : {},
     })
@@ -167,7 +169,8 @@ async function createVoiceSession(auth: AuthContext, firstMessage: string): Prom
       workspace_id: auth.workspaceId,
       user_id: auth.userId,
       modality: "voice",
-      title: firstMessage.replace(/\s+/g, " ").trim().slice(0, 80),
+      // Readable until the Recall summary titles it (ADR-020): no greetings or politeness.
+      title: conciseTitle(firstMessage, 80),
     })
     .select("id")
     .single();

@@ -8,6 +8,7 @@ import {
   runSync,
 } from "@/application/knowledge-background";
 import { MAX_INGEST_ATTEMPTS } from "@/core/knowledge/ingest";
+import { withUsageScope } from "@/infrastructure/observability/usage";
 
 /**
  * Thin Trigger.dev entry points for Knowledge (docs/architecture/14 §27-28). Business logic
@@ -35,7 +36,10 @@ export const knowledgeIngestTask = task({
   run: async (payload: z.infer<typeof ingestPayload>, { ctx }) => {
     const parsed = ingestPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid ingestion payload");
-    return { outcome: await runIngestion({ ...parsed.data, attempt: ctx.attempt.number }) };
+    const scope = { workspaceId: parsed.data.workspaceId, feature: "knowledge_ingest" };
+    return withUsageScope(scope, async () => ({
+      outcome: await runIngestion({ ...parsed.data, attempt: ctx.attempt.number }),
+    }));
   },
 });
 
@@ -48,7 +52,8 @@ export const knowledgeSyncTask = task({
   run: async (payload: z.infer<typeof syncPayload>) => {
     const parsed = syncPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid sync payload");
-    return { counts: await runSync(parsed.data) };
+    const scope = { workspaceId: parsed.data.workspaceId, feature: "knowledge_sync" };
+    return withUsageScope(scope, async () => ({ counts: await runSync(parsed.data) }));
   },
 });
 

@@ -28,19 +28,42 @@ const serverEnvSchema = z.object({
   ELISE_ENCRYPTION_KEY: z.string().min(1).optional(),
   ELISE_ENCRYPTION_KEY_PREVIOUS: z.string().min(1).optional(),
   CHAT_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(20),
+  /** Comma-separated emails allowed to see internal pages (/admin/usage). Empty: nobody. */
+  ELISE_ADMIN_EMAILS: z.string().optional(),
+  /** Feature flag overrides (config/flags.ts). */
+  ELISE_FLAGS: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
 let cached: ServerEnv | undefined;
+let invalid: string[] = [];
 
-/** Validated server configuration. Missing optional secrets disable features, never the build. */
+/**
+ * Validated server configuration. Missing optional secrets disable features, never the build.
+ * A malformed value (a bad URL, an unknown provider name) disables only what it configures:
+ * it is dropped with a warning instead of failing every request that reads configuration.
+ */
 export function serverEnv(): ServerEnv {
   if (!cached) {
-    const blankToUndefined = Object.fromEntries(
+    const raw: Record<string, string | undefined> = Object.fromEntries(
       Object.keys(serverEnvSchema.shape).map((key) => [key, process.env[key] || undefined]),
     );
-    cached = serverEnvSchema.parse(blankToUndefined);
+    const first = serverEnvSchema.safeParse(raw);
+    if (first.success) cached = first.data;
+    else {
+      invalid = [...new Set(first.error.issues.map((i) => String(i.path[0])))];
+      for (const key of invalid) raw[key] = undefined;
+      cached = serverEnvSchema.parse(raw);
+      // Names only, never values.
+      console.warn(JSON.stringify({ level: "warn", event: "env.invalid", keys: invalid }));
+    }
   }
   return cached;
+}
+
+/** Variables that were set but malformed (for the health check; names only). */
+export function invalidEnvKeys(): string[] {
+  serverEnv();
+  return invalid;
 }

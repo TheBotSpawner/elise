@@ -109,7 +109,7 @@ mapping (migration `20260930000014_structured_notion.sql`). See
    ELISE's interpretation of each field, choose what ELISE may change, check the preview,
    confirm.
 4. Ask in chat: "What projects are still in progress?", "What's due this week?", "Mark ELISE
-   Website as completed", "Create a project called Website Redesign for Firbot".
+   Website as completed", "Create a project called Website Redesign for Acme".
 
 Bulk changes over 25 records run on Trigger.dev (`structured-bulk`); schemas are re-checked
 hourly (`structured-schema-check`) and at most every 10 minutes when used.
@@ -193,6 +193,8 @@ reads). See [ADR-015](docs/decisions/ADR-015-web-search-research.md). Morning Br
 | `OPENAI_WEB_SEARCH_MODEL`                                          | no        | Web search via OpenAI (default `gpt-4.1-mini`)          |
 | `TAVILY_API_KEY`                                                   | no        | Use Tavily for web search (faster; else OpenAI)         |
 | `WEB_SEARCH_PROVIDER`                                              | no        | Force `openai` or `tavily`                              |
+| `ELISE_ADMIN_EMAILS`                                               | no        | Who may open the internal usage page (`/admin/usage`)   |
+| `ELISE_FLAGS`                                                      | no        | Feature flag overrides (`src/config/flags.ts`)          |
 
 ## Scripts
 
@@ -207,9 +209,14 @@ reads). See [ADR-015](docs/decisions/ADR-015-web-search-research.md). Morning Br
 | `npm run test:run`     | Vitest single run (unit + RLS integration)    |
 | `npm run format`       | Prettier write                                |
 | `npm run format:check` | Prettier check                                |
+| `npm run test:db`      | Only the database/RLS suite (PGlite)          |
+| `npm run test:e2e`     | Playwright (`npm run build` first)            |
 
 The RLS tests run the real migrations inside PGlite (in-process Postgres), so no Docker or hosted
-database is needed.
+database is needed. E2E: `e2e/public.spec.ts` needs nothing; the journeys and the screen sweep
+need a Supabase project (they create and delete a throwaway user) and the sweep needs real
+Chrome: `E2E_CHANNEL=chrome npm run test:e2e`. CI (`.github/workflows/ci.yml`) runs all of it;
+deployment, QA matrix and known gaps are in `docs/engineering/22-mvp-readiness.md`.
 
 ## What works today
 
@@ -225,7 +232,7 @@ database is needed.
 - **Google Calendar + Google Tasks** through Connections: several Google accounts, each with an
   alias and context; Calendar and Tasks granted separately (progressive scopes); reconnect and
   disconnect. Elise reads across all calendars/task accounts (with the account shown), writes to
-  the default or the account you name ("en mis tareas de Firbot"), and asks when it's ambiguous.
+  the default or the account you name ("en mis tareas de Acme"), and asks when it's ambiguous.
   Inviting people or deleting events waits for your approval.
 - **Gmail + Email Copilot:** search and read across Gmail accounts with the account shown;
   thread summaries; "needs reply" / "waiting on" with reasons; replies drafted in the same
@@ -239,13 +246,13 @@ database is needed.
   redacted.
 - **My Elise — Habits, Goals, Lists, Notes:** the same data from the UI and from Chat ("create
   a habit to run 3 times a week", "mark gym done", "link my running habit to the half marathon
-  goal", "add eggs and coffee to the shopping list", "save this as a note in Firbot"). Habit
+  goal", "add eggs and coffee to the shopping list", "save this as a note in Acme"). Habit
   progress, streaks and goal percentages are computed by ELISE (never by the model); habits
   support quantities (2 liters/day, 20 km/week). Notes filed in a Knowledge Space are indexed
   and citable, re-indexed on every edit. CSV import with mapping preview for Habits, Goals and
   Lists. Morning Brief can include Habits and Goals. See
   [ADR-008](docs/decisions/ADR-008-my-elise-native.md).
-- **Knowledge:** Spaces (nested: Work › Firbot › RSFA) fed by uploads, Google Drive folders/files
+- **Knowledge:** Spaces (nested: Work › Acme › Client A) fed by uploads, Google Drive folders/files
   and Notion pages. Background reading → structure-aware chunks → embeddings → hybrid search
   (vector + full-text, scoped to the Space first). Answers cite their sources `[n]` with a
   Sources card that opens the cited passage, version and original; ELISE says when the Space
@@ -276,21 +283,21 @@ database is needed.
   fields are followed; removed or retyped fields mark the database as needing attention. Record
   content is treated as data. Document questions still go to Knowledge.
 - **Spaces and Sections:** Knowledge is organized as Spaces with one level of Sections —
-  "UTN › Administración", "Firbot Solutions › RSFA". "+ New section" sits on every Space page; a
+  "University › Mathematics", "Acme Studio › Client A". "+ New section" sits on every Space page; a
   Section has its own sources, inherits the Space's general sources at search time (its own come
   first; sibling Sections are never mixed in), and carries its context: purpose (Study, Client,
   Project, General), connected email domains, people, task lists, Notion and websites, study
-  progress. ELISE recognizes Sections from what you say ("poneme al día con RSFA", "volvamos a
+  progress. ELISE recognizes Sections from what you say ("poneme al día con Client A", "volvamos a
   Administración"; asks when two Spaces have a Section with the same name), shows the active one
-  as "Space › Section", and "RSFA es uno de mis clientes en Firbot Solutions" proposes a Section
+  as "Space › Section", and "Client A es uno de mis clientes en Acme Studio" proposes a Section
   with the links it found (you confirm on screen). A context only tells ELISE where to look
   first: every source keeps its own permissions and approvals. Uploaded documents can be moved
   between a Space and its Sections. See
   [ADR-018](docs/decisions/ADR-018-knowledge-sections.md) (built on
   [ADR-016](docs/decisions/ADR-016-context-profiles-study-work.md)).
-- **Client / Work Intelligence:** "Poneme al día con RSFA" gathers what changed since your last
+- **Client / Work Intelligence:** "Poneme al día con Client A" gathers what changed since your last
   interaction about it (email, meetings, tasks, documents, earlier conversations, linked Notion
-  data; public news only if you ask), with quoted commitments ("Rod asked for…"), a timeline,
+  data; public news only if you ask), with quoted commitments ("Alex asked for…"), a timeline,
   and every unavailable source named. Meeting Prep recognizes the client from the attendees and
   searches its sources first.
 - **Study Mode:** "Tomame oral de Administración sobre las unidades 3 y 4" — one question at a
@@ -315,7 +322,7 @@ database is needed.
   Settings › Voice or by asking ("cambiá tu frase de activación a Liz"). Nothing listens when the
   tab is hidden or the browser is closed.
 - **Shortcuts:** your own phrases for workflows ELISE already has — "Arrancamos" → plan the day;
-  "RSFA Brief" → catch up on RSFA; "Contabilidad" → oral exam. Typed or spoken, only the exact
+  "Client A Brief" → catch up on Client A; "Contabilidad" → oral exam. Typed or spoken, only the exact
   phrase triggers it ("¿A qué hora arrancamos mañana?" stays a question). Steps come from an
   allowlist and run as normal tools, so permissions and approvals still apply. Create them in
   My Elise › Shortcuts or by asking ELISE (a proposal with Save).

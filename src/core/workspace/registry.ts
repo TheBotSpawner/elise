@@ -294,7 +294,7 @@ export const PAYLOADS = {
     accent: text(20).nullable(),
     description: text(400).nullable(),
     links: z.array(z.object({ type: text(40), label: text(200), confirmed: z.boolean() })).max(16),
-    /** A brief's comparison point ("since your last RSFA interaction on Sep 28"). */
+    /** A brief's comparison point ("since your last Client A interaction on Sep 28"). */
     baseline: z
       .object({
         since: text(40),

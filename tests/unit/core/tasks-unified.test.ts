@@ -21,7 +21,7 @@ import {
 } from "../../fixtures/core-fakes";
 
 const PERSONAL = "11111111-1111-4111-8111-111111111111";
-const FIRBOT = "22222222-2222-4222-8222-222222222222";
+const NORTHWIND = "22222222-2222-4222-8222-222222222222";
 const TODAY = "2026-09-29"; // makeCtx: 2026-09-29 in Buenos Aires
 
 function seed(p: InMemoryTaskProvider, n: number, over: Partial<Task>) {
@@ -34,27 +34,30 @@ function seed(p: InMemoryTaskProvider, n: number, over: Partial<Task>) {
 
 async function setup() {
   const personal = new InMemoryTaskProvider(PERSONAL, "Personal", "google");
-  const firbot = new InMemoryTaskProvider(FIRBOT, "Firbot Academy", "google");
+  const northwind = new InMemoryTaskProvider(NORTHWIND, "Northwind Academy", "google");
   const bindings = [
     NATIVE_BINDING,
     binding({ connectionId: PERSONAL, providerKey: "google", label: "Personal" }),
     binding({
-      connectionId: FIRBOT,
+      connectionId: NORTHWIND,
       providerKey: "google",
-      label: "Firbot Academy",
-      contextLabel: "Firbot",
+      label: "Northwind Academy",
+      contextLabel: "Northwind",
     }),
   ];
-  const { ports, tasks: native } = makePorts(bindings, { [PERSONAL]: personal, [FIRBOT]: firbot });
+  const { ports, tasks: native } = makePorts(bindings, {
+    [PERSONAL]: personal,
+    [NORTHWIND]: northwind,
+  });
   // Lots of completed work must never crowd out open tasks.
   seed(native, 60, { status: "completed", completedAt: "2026-09-01T00:00:00Z" });
   seed(native, 4, { dueDate: "2026-09-20", title: "native overdue" });
   seed(personal, 3, { dueDate: TODAY, title: "personal today" });
   seed(personal, 2, { dueDate: "2026-09-10", title: "personal overdue" });
-  seed(firbot, 4, { dueDate: "2026-09-01", title: "firbot overdue" });
-  seed(firbot, 40, { status: "completed", completedAt: "2026-09-02T00:00:00Z" });
+  seed(northwind, 4, { dueDate: "2026-09-01", title: "northwind overdue" });
+  seed(northwind, 40, { status: "completed", completedAt: "2026-09-02T00:00:00Z" });
   await new Promise((r) => setTimeout(r, 0));
-  return { ports, native, personal, firbot };
+  return { ports, native, personal, northwind };
 }
 
 async function list(ports: Awaited<ReturnType<typeof setup>>["ports"], args: object) {
@@ -74,7 +77,7 @@ describe("unified tasks (ELISE + two Google accounts)", () => {
       m[t.provenance.source] = (m[t.provenance.source] ?? 0) + 1;
       return m;
     }, {});
-    expect(bySource).toEqual({ ELISE: 4, Personal: 5, "Firbot Academy": 4 });
+    expect(bySource).toEqual({ ELISE: 4, Personal: 5, "Northwind Academy": 4 });
     expect(
       open.filter((t) => t.provenance.providerKey === "google").every((t) => t.id.startsWith("x:")),
     ).toBe(true);
@@ -100,14 +103,14 @@ describe("unified tasks (ELISE + two Google accounts)", () => {
   });
 
   it("routes a new task to the account its list belongs to", async () => {
-    const { ports, native, personal, firbot } = await setup();
-    const before = { n: native.tasks.size, p: personal.tasks.size, f: firbot.tasks.size };
+    const { ports, native, personal, northwind } = await setup();
+    const before = { n: native.tasks.size, p: personal.tasks.size, f: northwind.tasks.size };
     const out = await executeToolCall(ports, makeCtx({ origin: "user_ui" }), {
       name: "tasks.create",
-      args: { title: "Test Firbot task", list: makeExternalRef(FIRBOT, "list", "clients") },
+      args: { title: "Test Northwind task", list: makeExternalRef(NORTHWIND, "list", "clients") },
     });
     expect(out.status).toBe("succeeded");
-    expect(firbot.tasks.size).toBe(before.f + 1);
+    expect(northwind.tasks.size).toBe(before.f + 1);
     expect(native.tasks.size + personal.tasks.size).toBe(before.n + before.p);
     // By account name, as said in chat ("add this to Personal").
     await executeToolCall(ports, makeCtx(), {
@@ -133,16 +136,16 @@ describe("task lists", () => {
 
   it("keeps Google's list identity scoped to the connection", () => {
     const t = normalizeTask(
-      { id: "g1", title: "Call RSFA", status: "needsAction" },
+      { id: "g1", title: "Call Initech", status: "needsAction" },
       { id: "L1", title: "Clients" },
-      { connectionId: FIRBOT, label: "Firbot Academy" },
+      { connectionId: NORTHWIND, label: "Northwind Academy" },
     );
     expect(t.provenance).toMatchObject({
       providerKey: "google",
-      connectionId: FIRBOT,
-      source: "Firbot Academy",
+      connectionId: NORTHWIND,
+      source: "Northwind Academy",
       listName: "Clients",
-      listId: makeExternalRef(FIRBOT, "list", "L1"),
+      listId: makeExternalRef(NORTHWIND, "list", "L1"),
     });
   });
 
@@ -169,7 +172,7 @@ describe("task lists", () => {
       return Response.json({ items: [{ id: "c", title: "Three", status: "needsAction" }] });
     });
     const provider = new GoogleTasksProvider(
-      { connectionId: FIRBOT, label: "Firbot Academy" },
+      { connectionId: NORTHWIND, label: "Northwind Academy" },
       new GoogleHttp({ accessToken: async () => "token" }, fetchImpl),
     );
     const lists = await provider.listLists();

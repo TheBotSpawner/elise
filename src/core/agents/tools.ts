@@ -68,7 +68,13 @@ export interface ToolContext {
    * The interaction's active context (ADR-016): where to look first. Never an authorization —
    * every read still resolves its own binding and permissions.
    */
-  context?: { id: string; name: string; kind: ContextKind } | null;
+  context?: {
+    id: string;
+    name: string;
+    kind: ContextKind;
+    /** When the context is a Knowledge Section: its Space id (ADR-018/020). */
+    sectionSpaceId?: string | null;
+  } | null;
   /** What this device can do for the wake phrase, as the browser reported it (voice turns). */
   voiceWake?: WakeStatus | null;
 }
@@ -123,6 +129,8 @@ export interface KnowledgeEvidence {
   url: string | null;
   versionNumber: number;
   spaceName: string;
+  /** The Space or Section the passage lives in (History tagging, ADR-020). */
+  spaceId?: string;
   snippet: string;
 }
 

@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import type { RecordValue } from "@/core/capabilities/structured";
 import { useRelative } from "@/features/knowledge/ui";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -47,8 +48,7 @@ export function SourceDetail({ source, workspaceId }: { source: SourceView; work
   ) {
     startTransition(async () => {
       const r = await fn();
-      if (!r.ok)
-        toast.error(r.error.message || t.errors.codes[r.error.code as keyof typeof t.errors.codes]);
+      if (!r.ok) toast.error(errorText(t, r.error));
       else {
         done?.(r.value);
         router.refresh();

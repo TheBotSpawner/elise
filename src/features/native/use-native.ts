@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
 import { nativeActionAction } from "./actions";
@@ -16,7 +17,7 @@ export function useNative() {
   const act = (tool: string, args: unknown, onDone?: () => void) =>
     startTransition(async () => {
       const r = await nativeActionAction(tool, args);
-      if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+      if (!r.ok) toast.error(errorText(t, r.error));
       else {
         onDone?.();
         router.refresh();

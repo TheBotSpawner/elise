@@ -385,7 +385,12 @@ describe("Morning Brief assembly", () => {
     attendees: [],
     status: "confirmed",
     url: null,
-    provenance: { providerKey: "google", connectionId: "x", externalId: title, source: "Firbot" },
+    provenance: {
+      providerKey: "google",
+      connectionId: "x",
+      externalId: title,
+      source: "Northwind",
+    },
   });
 
   it("ranks, filters and explains deterministically, keeping provenance", () => {
@@ -400,7 +405,7 @@ describe("Morning Brief assembly", () => {
         {
           id: "m1",
           threadId: "t1",
-          from: { email: "rod@client.com", name: "Rod" },
+          from: { email: "alex@client.com", name: "Alex" },
           to: [],
           cc: [],
           replyTo: [],
@@ -423,7 +428,7 @@ describe("Morning Brief assembly", () => {
             providerKey: "google",
             connectionId: "x",
             externalId: "m1",
-            source: "Firbot",
+            source: "Northwind",
             account: null,
           },
         },
@@ -502,8 +507,8 @@ describe("Morning Brief assembly", () => {
     });
     expect(brief.date).toBe("2026-09-29");
     expect(brief.today?.events.map((e) => [e.title, e.source])).toEqual([
-      ["Standup", "Firbot"],
-      ["Client call", "Firbot"],
+      ["Standup", "Northwind"],
+      ["Client call", "Northwind"],
     ]);
     expect(brief.today?.conflicts).toEqual([{ a: "Standup", b: "Client call" }]);
     expect(brief.attention.emails.map((e) => e.subject)).toEqual(["Contract"]); // newsletter dropped

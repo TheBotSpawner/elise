@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Format · lint · types · tests · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # No real provider credentials: features without configuration are simply unavailable.
+      ELISE_ENV: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      # Unit tests and the database/RLS suite (PGlite runs every migration in order).
+      - run: npm run test:run
+      - run: npm run build
+
+  e2e:
+    name: End-to-end (Chrome, desktop + mobile)
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      ELISE_ENV: development
+      # Journeys run only when a disposable Supabase project is configured as repository
+      # secrets; without them only the public checks run (headers, health, auth redirects).
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.E2E_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SECRET_KEY: ${{ secrets.E2E_SUPABASE_SECRET_KEY }}
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      E2E_CHANNEL: chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chrome
+      # NEXT_PUBLIC_* values are inlined at build time, so E2E builds with its own env.
+      - run: npm run build
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results
+          retention-days: 7

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { runFinanceImport } from "@/application/finance-import";
 import { dispatchFinanceSyncs, runFinanceSync } from "@/application/finance-sources";
+import { withUsageScope } from "@/infrastructure/observability/usage";
 
 /**
  * Thin Trigger.dev entry points for Finance (docs/architecture/14). Payloads carry ids only;
@@ -20,7 +21,10 @@ export const financeImportTask = task({
   run: async (payload: z.infer<typeof importPayload>) => {
     const parsed = importPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid import payload");
-    return { imported: await runFinanceImport(parsed.data.workspaceId, parsed.data.importId) };
+    const scope = { workspaceId: parsed.data.workspaceId, feature: "finance_import" };
+    return withUsageScope(scope, async () => ({
+      imported: await runFinanceImport(parsed.data.workspaceId, parsed.data.importId),
+    }));
   },
 });
 

@@ -205,7 +205,7 @@ export const queryTool: ToolDefinition = {
   capability: "finance",
   operation: "query",
   description:
-    '"¿Cuánto gasté en software en septiembre?", "gastos por categoría", "ingresos de Firbot por mes", "USD vs ARS": deterministic filtered totals, optionally grouped (category, month, account, counterparty, project, source, currency…). Totals are per currency.',
+    '"¿Cuánto gasté en software en septiembre?", "gastos por categoría", "ingresos de Acme por mes", "USD vs ARS": deterministic filtered totals, optionally grouped (category, month, account, counterparty, project, source, currency…). Totals are per currency.',
   input: queryInput,
   async describe() {
     return { summary: "Finance query" };
@@ -647,7 +647,7 @@ export const createAccountTool: ToolDefinition = {
   capability: "finance",
   operation: "createAccount",
   description:
-    'Add an account or payment source ("Visa", "Cash USD", "PayPal", "Firbot account"). Bookkeeping only; nothing connects to a bank.',
+    'Add an account or payment source ("Visa", "Cash USD", "PayPal", "Acme account"). Bookkeeping only; nothing connects to a bank.',
   input: createAccountInput,
   route: nativeOnly,
   async describe(raw) {

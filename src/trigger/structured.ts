@@ -2,6 +2,7 @@ import { AbortTaskRunError, schedules, task } from "@trigger.dev/sdk";
 import { z } from "zod";
 
 import { dispatchSchemaChecks, runStructuredBulk } from "@/application/structured-service";
+import { withUsageScope } from "@/infrastructure/observability/usage";
 
 /**
  * Thin Trigger.dev entry points for Structured Data (ADR-011). Single reads and writes stay
@@ -19,7 +20,10 @@ export const structuredBulkTask = task({
   run: async (payload: z.infer<typeof bulkPayload>) => {
     const parsed = bulkPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid bulk payload");
-    return { result: await runStructuredBulk(parsed.data.workspaceId, parsed.data.jobId) };
+    const scope = { workspaceId: parsed.data.workspaceId, feature: "structured_bulk" };
+    return withUsageScope(scope, async () => ({
+      result: await runStructuredBulk(parsed.data.workspaceId, parsed.data.jobId),
+    }));
   },
 });
 

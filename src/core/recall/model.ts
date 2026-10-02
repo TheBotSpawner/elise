@@ -1,3 +1,4 @@
+import type { HistoryLinksPort } from "../history/links";
 import { keywordQuery } from "../knowledge/retrieval";
 
 /**
@@ -49,6 +50,8 @@ export interface RecallReader {
     excludeSessionId?: string | null;
     /** Only interactions known to belong to this context (ADR-016 §8). */
     contextId?: string | null;
+    /** Only interactions linked to one of these Spaces/Sections (ADR-020). Scopes, never widens. */
+    spaceIds?: string[] | null;
     limit: number;
   }): Promise<{ hits: RecallHit[]; semantic: boolean }>;
   sessions(ids: string[]): Promise<RecallSession[]>;
@@ -61,6 +64,8 @@ export interface RecallReader {
   }): Promise<RecallSession[]>;
   /** Turns of one session: around a moment, or the latest ones. */
   turns(sessionId: string, q: { around?: string | null; limit: number }): Promise<RecallTurn[]>;
+  /** History ↔ Knowledge links (ADR-020), when the reader has them. */
+  links?: HistoryLinksPort;
 }
 
 /**

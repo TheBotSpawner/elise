@@ -21,7 +21,7 @@ export function isNotionConfigured(): boolean {
     env.NOTION_OAUTH_CLIENT_ID &&
     env.NOTION_OAUTH_CLIENT_SECRET &&
     env.ELISE_ENCRYPTION_KEY &&
-    process.env.SUPABASE_SECRET_KEY,
+    env.SUPABASE_SECRET_KEY,
   );
 }
 

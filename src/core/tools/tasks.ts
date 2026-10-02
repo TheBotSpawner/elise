@@ -135,7 +135,7 @@ export const createTaskTool: ToolDefinition = {
   capability: "tasks",
   operation: "create",
   description:
-    'Create a task. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user\'s timezone. Only set priority/category when the user implies them. Set `destination` only when the user says which account ("Personal", "Firbot"), and `list` when they name a list ("my Firbot Clients list" → destination "Firbot", list "Clients"). If the tool says a list is ambiguous or missing, ask.',
+    'Create a task. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user\'s timezone. Only set priority/category when the user implies them. Set `destination` only when the user says which account ("Personal", "Acme"), and `list` when they name a list ("my Acme Clients list" → destination "Acme", list "Clients"). If the tool says a list is ambiguous or missing, ask.',
   input: createTaskInput,
   route: routeList,
   async describe(input, env) {

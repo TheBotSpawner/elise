@@ -499,14 +499,14 @@ describe("finance tools", () => {
 
   it("aggregates ELISE Finance and a connected sheet with provenance, reads only", async () => {
     const native = new MemoryFinance();
-    const sheet = new MemoryFinance(true, "Firbot Revenue", GOOGLE_CONN);
+    const sheet = new MemoryFinance(true, "Northwind Revenue", GOOGLE_CONN);
     native.add({ type: "expense", amount: "10", currency: "USD", date: "2026-09-10" });
     sheet.add({
       type: "income",
       amount: "1500",
       currency: "USD",
       date: "2026-09-10",
-      counterparty: "Firbot",
+      counterparty: "Northwind",
     });
     sheet.add({ type: "expense", amount: "10", currency: "USD", date: "2026-09-10" });
     const { ports } = setup(native, sheet);
@@ -516,7 +516,7 @@ describe("finance tools", () => {
     });
     const s = (summary as { display: { summary: FinanceSummary } }).display.summary;
     expect(s.current.totals[0]).toMatchObject({ income: "1500", expense: "20" });
-    expect(s.sources.map((x) => x.name).sort()).toEqual(["ELISE Finance", "Firbot Revenue"]);
+    expect(s.sources.map((x) => x.name).sort()).toEqual(["ELISE Finance", "Northwind Revenue"]);
 
     const list = await executeToolCall(ports, ctx, {
       name: "finance.listTransactions",
@@ -526,7 +526,7 @@ describe("finance tools", () => {
       list as { output: { transactions: { source: string }[]; possibleDuplicates?: number } }
     ).output;
     expect(new Set(output.transactions.map((t) => t.source))).toEqual(
-      new Set(["ELISE Finance", "Firbot Revenue"]),
+      new Set(["ELISE Finance", "Northwind Revenue"]),
     );
     // The identical USD 10 expense in both sources is surfaced, not silently counted as one.
     expect(output.possibleDuplicates).toBe(2);
@@ -534,7 +534,7 @@ describe("finance tools", () => {
     // "How much did this source bring in?" reads only that source.
     const named = await executeToolCall(ports, ctx, {
       name: "finance.getSummary",
-      args: { period: "this_month", source: "Firbot Revenue", compare: "none" },
+      args: { period: "this_month", source: "Northwind Revenue", compare: "none" },
     });
     expect(
       (named as { display: { summary: FinanceSummary } }).display.summary.current.totals[0],
@@ -580,15 +580,15 @@ describe("finance tools", () => {
     const SECOND = "00000000-0000-4000-8000-00000000000b";
     const native = new MemoryFinance();
     const personal = new MemoryFinance(true, "Personal Finance", GOOGLE_CONN);
-    const firbot = new MemoryFinance(true, "Firbot Revenue", SECOND);
+    const northwind = new MemoryFinance(true, "Northwind Revenue", SECOND);
     native.add({ type: "expense", amount: "25", currency: "USD", date: "2026-09-10" });
     personal.add({ type: "expense", amount: "30000", currency: "ARS", date: "2026-09-11" });
-    firbot.add({
+    northwind.add({
       type: "income",
       amount: "1500",
       currency: "USD",
       date: "2026-09-12",
-      counterparty: "Firbot",
+      counterparty: "Northwind",
     });
     const bindings = [
       FINANCE_BINDING,
@@ -597,11 +597,11 @@ describe("finance tools", () => {
         connectionId: SECOND,
         capability: "finance",
         providerKey: "google",
-        label: "Firbot",
+        label: "Northwind",
       }),
     ];
     const { ports } = makePorts(bindings);
-    const byConn: Record<string, MemoryFinance> = { [GOOGLE_CONN]: personal, [SECOND]: firbot };
+    const byConn: Record<string, MemoryFinance> = { [GOOGLE_CONN]: personal, [SECOND]: northwind };
     ports.providers = {
       get: ((_c: string, b: { connectionId: string }) =>
         byConn[b.connectionId] ?? native) as ProviderFactory["get"],
@@ -620,12 +620,12 @@ describe("finance tools", () => {
     );
     expect(s.sources.map((x) => x.name).sort()).toEqual([
       "ELISE Finance",
-      "Firbot Revenue",
+      "Northwind Revenue",
       "Personal Finance",
     ]);
 
     // A revoked account: its sheet is reported as unavailable, never silently dropped.
-    firbot.transactions = async () => {
+    northwind.transactions = async () => {
       throw new AppError("AUTH_EXPIRED", "reconnect", { recovery: "reconnect" });
     };
     const partial = await executeToolCall(ports, ctx, {
@@ -635,7 +635,7 @@ describe("finance tools", () => {
     expect(partial.status).toBe("succeeded");
     expect(
       (partial as { output: { unavailable?: { account: string }[] } }).output.unavailable,
-    ).toEqual([{ account: "Firbot", error: "AUTH_EXPIRED" }]);
+    ).toEqual([{ account: "Northwind", error: "AUTH_EXPIRED" }]);
   });
 
   it("refuses to edit a row of a connected sheet", async () => {
@@ -700,7 +700,7 @@ describe("finance tools", () => {
 
 const CSV = `Fecha;Tipo;Monto;Moneda;Medio de Pago;Categoría;Proveedor;Proyecto;Estado
 01/09/2026;Gasto;1.234,56;ARS;Visa;Supermercado;Coto;;Pagado
-15/09/2026;Ingreso;2.000,00;USD;Banco;Clientes;RSFA;Firbot;Pagado
+15/09/2026;Ingreso;2.000,00;USD;Banco;Clientes;Initech;Northwind;Pagado
 16/09/2026;Egreso;25,00;usd;Visa;Software;OpenAI;ELISE;Pendiente
 31/02/2026;Gasto;10;ARS;;;;;
 17/09/2026;Gasto;abc;ARS;;;;;

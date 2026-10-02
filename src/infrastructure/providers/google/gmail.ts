@@ -33,7 +33,7 @@ const METADATA_HEADERS = [
 
 export interface GmailConnectionInfo {
   connectionId: string;
-  /** User-facing account name ("Personal", "Firbot"). */
+  /** User-facing account name ("Personal", "Acme"). */
   label: string;
   /** The connected Google address. */
   account: string | null;

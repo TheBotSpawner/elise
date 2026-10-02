@@ -2,6 +2,7 @@ import "server-only";
 
 import type { CapabilityKey } from "@/core/capabilities/types";
 import { AppError } from "@/core/errors";
+import { connectionHealth, type ConnectionHealth } from "@/core/providers/health";
 import type { ConnectionStatus, ProviderKey } from "@/core/providers/types";
 import { decrypt, encrypt } from "@/infrastructure/crypto/encryption";
 import { logger } from "@/infrastructure/observability/logger";
@@ -30,6 +31,7 @@ import {
   isNotionConfigured,
   notionOAuthConfig,
 } from "@/infrastructure/providers/notion/oauth";
+import { rateLimit } from "@/infrastructure/rate-limit";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 
 import type { AuthContext } from "./auth-context";
@@ -106,14 +108,30 @@ export function planCapabilityGrants(params: {
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
+/** Where an OAuth flow may land afterwards: only these pages (no open redirects). */
+const RETURN_PATHS = ["/connections", "/onboarding"] as const;
+export type ReturnPath = (typeof RETURN_PATHS)[number];
+
+export function safeReturnPath(value: unknown): ReturnPath {
+  return (RETURN_PATHS as readonly unknown[]).includes(value)
+    ? (value as ReturnPath)
+    : "/connections";
+}
+
 /**
  * Starts Google authorization for the chosen capabilities only (progressive scopes). With
  * `connectionId` it reconnects or extends that exact account (incremental authorization).
  */
 export async function startGoogleConnection(
   auth: AuthContext,
-  params: { capabilities: readonly string[]; connectionId?: string | null; origin: string },
+  params: {
+    capabilities: readonly string[];
+    connectionId?: string | null;
+    origin: string;
+    returnPath?: string | null;
+  },
 ): Promise<string> {
+  rateLimit(`oauth.start:${auth.userId}`, 10, 60_000);
   const capabilities = parseRequestedCapabilities(params.capabilities);
   const config = googleOAuthConfig(params.origin);
 
@@ -144,6 +162,7 @@ export async function startGoogleConnection(
     provider_key: "google",
     capabilities,
     connection_id: params.connectionId ?? null,
+    return_path: safeReturnPath(params.returnPath),
     code_verifier_ciphertext: encrypt(pkce.verifier, `oauth_state:${hash}`),
   });
   if (error)
@@ -168,7 +187,14 @@ export interface ConnectionResult {
 
 export async function completeGoogleConnection(
   auth: AuthContext,
-  params: { code: string | null; state: string | null; error: string | null; origin: string },
+  params: {
+    code: string | null;
+    state: string | null;
+    error: string | null;
+    origin: string;
+    /** Told where this flow should land as soon as the state is verified (also on failure). */
+    onReturnPath?: (path: ReturnPath) => void;
+  },
 ): Promise<ConnectionResult> {
   if (!params.state) throw new AppError("VALIDATION_ERROR", "Missing authorization state");
   const stateHash = hashState(params.state);
@@ -192,6 +218,7 @@ export async function completeGoogleConnection(
     providerKey: "google",
     now: new Date(),
   });
+  params.onReturnPath?.(safeReturnPath(pending!.return_path));
   const row = pending!;
 
   if (params.error || !params.code) {
@@ -368,6 +395,8 @@ export interface ConnectionView {
   accountLabel: string | null;
   contextLabel: string | null;
   status: ConnectionStatus;
+  /** Product-level health with one obvious remedy (core/providers/health.ts). */
+  health: ConnectionHealth;
   capabilities: { key: CapabilityKey; enabled: boolean; granted: boolean; isDefault: boolean }[];
 }
 
@@ -377,7 +406,9 @@ export async function listConnections(
   const [conns, caps, bindings] = await Promise.all([
     auth.db
       .from("provider_connections")
-      .select("id, provider_key, display_name, account_label, context_label, status")
+      .select(
+        "id, provider_key, display_name, account_label, context_label, status, last_error_code",
+      )
       .eq("workspace_id", auth.workspaceId)
       .neq("status", "disconnected")
       .order("created_at"),
@@ -390,14 +421,12 @@ export async function listConnections(
       .select("connection_id, capability_key, is_default, context_type")
       .eq("workspace_id", auth.workspaceId),
   ]);
-  const connections = (conns.data ?? []).map((c) => ({
-    id: c.id,
-    providerKey: c.provider_key as ProviderKey,
-    displayName: c.display_name,
-    accountLabel: c.account_label,
-    contextLabel: c.context_label,
-    status: c.status,
-    capabilities: (caps.data ?? [])
+  const available: Partial<Record<string, boolean>> = {
+    google: isGoogleConfigured(),
+    notion: isNotionConfigured(),
+  };
+  const connections = (conns.data ?? []).map((c) => {
+    const capabilities = (caps.data ?? [])
       .filter((cap) => cap.connection_id === c.id)
       .map((cap) => ({
         key: cap.capability_key as CapabilityKey,
@@ -410,12 +439,27 @@ export async function listConnections(
             b.is_default &&
             b.context_type === null,
         ),
-      })),
-  }));
+      }));
+    return {
+      id: c.id,
+      providerKey: c.provider_key as ProviderKey,
+      displayName: c.display_name,
+      accountLabel: c.account_label,
+      contextLabel: c.context_label,
+      status: c.status,
+      health: connectionHealth({
+        status: c.status,
+        providerAvailable: available[c.provider_key] ?? true,
+        lastErrorCode: c.last_error_code,
+        capabilities,
+      }),
+      capabilities,
+    };
+  });
   return {
     connections,
-    googleAvailable: isGoogleConfigured(),
-    notionAvailable: isNotionConfigured(),
+    googleAvailable: available.google ?? false,
+    notionAvailable: available.notion ?? false,
   };
 }
 
@@ -576,7 +620,12 @@ async function audit(
 // ── Notion ───────────────────────────────────────────────────────────────────
 
 /** Starts Notion's consent. The user picks which pages ELISE may read, in Notion. */
-export async function startNotionConnection(auth: AuthContext, origin: string): Promise<string> {
+export async function startNotionConnection(
+  auth: AuthContext,
+  origin: string,
+  returnPath?: string | null,
+): Promise<string> {
+  rateLimit(`oauth.start:${auth.userId}`, 10, 60_000);
   const config = notionOAuthConfig(origin);
   const { state, hash } = createState();
   const { error } = await auth.db.from("oauth_states").insert({
@@ -585,6 +634,7 @@ export async function startNotionConnection(auth: AuthContext, origin: string): 
     user_id: auth.userId,
     provider_key: "notion",
     capabilities: ["knowledge"],
+    return_path: safeReturnPath(returnPath),
     // Notion's flow has no PKCE; the column stores an encrypted placeholder.
     code_verifier_ciphertext: encrypt("none", `oauth_state:${hash}`),
   });
@@ -595,7 +645,14 @@ export async function startNotionConnection(auth: AuthContext, origin: string): 
 
 export async function completeNotionConnection(
   auth: AuthContext,
-  params: { code: string | null; state: string | null; error: string | null; origin: string },
+  params: {
+    code: string | null;
+    state: string | null;
+    error: string | null;
+    origin: string;
+    /** Told where this flow should land as soon as the state is verified (also on failure). */
+    onReturnPath?: (path: ReturnPath) => void;
+  },
 ): Promise<string> {
   if (!params.state) throw new AppError("VALIDATION_ERROR", "Missing authorization state");
   const stateHash = hashState(params.state);
@@ -613,6 +670,7 @@ export async function completeNotionConnection(
     providerKey: "notion",
     now: new Date(),
   });
+  params.onReturnPath?.(safeReturnPath(pending!.return_path));
   if (params.error || !params.code) {
     throw new AppError("PERMISSION_DENIED", "Notion access was not granted", { recovery: "retry" });
   }

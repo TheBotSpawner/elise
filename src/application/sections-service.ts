@@ -1,15 +1,9 @@
 import "server-only";
 
-import {
-  kindForPurpose,
-  nameKey,
-  purposeOf,
-  type ContextKind,
-  type ContextProfile,
-  type SectionPurpose,
-} from "@/core/contexts/model";
+import { nameKey, type ContextKind, type ContextProfile } from "@/core/contexts/model";
 import { AppError } from "@/core/errors";
 import { progressCounts } from "@/core/study/model";
+import { trackEvent } from "@/infrastructure/observability/analytics";
 import { logger } from "@/infrastructure/observability/logger";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 
@@ -22,7 +16,8 @@ import { studyStore } from "./study-service";
 /**
  * Knowledge Sections (ADR-018): a first-level child of a Knowledge Space. The Section is the
  * Knowledge hierarchy (a child Space with its own sources); its Context Profile is its
- * intelligence (purpose, links, study progress). Users create one thing — a Section — and both
+ * intelligence (links, people, study progress). Untyped: what the user asks decides whether
+ * Study or Work Intelligence runs (ADR-020). Users create one thing — a Section — and both
  * exist, 1:1, with the Space as the source of truth for name and place.
  */
 
@@ -62,8 +57,10 @@ export interface NewSection {
   description?: string | null;
   icon?: string | null;
   color?: string | null;
-  purpose: SectionPurpose;
-  /** A finer kind than the purpose says (ELISE creating a "work" context). */
+  /**
+   * Internal hint only (an older context ELISE adopted had one). Sections are untyped for the
+   * user; intent decides Study or Work Intelligence (ADR-020).
+   */
   kind?: ContextKind;
 }
 
@@ -81,7 +78,7 @@ export async function createSection(auth: AuthContext, input: NewSection) {
     icon: input.icon ?? null,
     color: input.color ?? null,
   });
-  const kind = input.kind ?? kindForPurpose(input.purpose);
+  const kind = input.kind ?? "custom";
   try {
     const adoptable = (await listContextProfiles(auth)).find(
       (p) => !p.section && nameKey(p.name) === nameKey(input.name),
@@ -89,7 +86,8 @@ export async function createSection(auth: AuthContext, input: NewSection) {
     if (adoptable) {
       const { error } = await auth.db
         .from("context_profiles")
-        .update({ knowledge_space_id: spaceId, kind })
+        // An adopted context keeps whatever it already knew (its kind included).
+        .update({ knowledge_space_id: spaceId })
         .eq("id", adoptable.id)
         .eq("workspace_id", auth.workspaceId);
       if (error) throw error;
@@ -108,11 +106,9 @@ export async function createSection(auth: AuthContext, input: NewSection) {
         "user_ui",
       );
     }
-    await audit(auth, "knowledge.section_created", spaceId, {
-      purpose: input.purpose,
-      adopted: Boolean(adoptable),
-    });
-    logger.info("knowledge.section_created", { purpose: input.purpose, adopted: !!adoptable });
+    await audit(auth, "knowledge.section_created", spaceId, { adopted: Boolean(adoptable) });
+    logger.info("knowledge.section_created", { adopted: !!adoptable });
+    trackEvent(auth, "section_created", { adopted: Boolean(adoptable) });
     return { id: spaceId, adopted: Boolean(adoptable) };
   } catch (error) {
     // Never a Section without its context: the new (empty) Space goes away again.
@@ -125,14 +121,6 @@ export async function createSection(auth: AuthContext, input: NewSection) {
       ? error
       : new AppError("INTERNAL_ERROR", "Could not create the Section", { cause: error });
   }
-}
-
-/** Purpose of each Section, for a Space's Sections block. */
-export async function sectionPurposes(auth: AuthContext): Promise<Map<string, SectionPurpose>> {
-  const profiles = await listContextProfiles(auth).catch(() => []);
-  return new Map(
-    profiles.filter((p) => p.section).map((p) => [p.section!.spaceId, purposeOf(p.kind)]),
-  );
 }
 
 /** What a Section page shows of its context: links, catalog to link from, study progress. */
@@ -151,11 +139,13 @@ export async function sectionDetail(auth: AuthContext, spaceId: string) {
           }))
         : [];
     }),
-    profile.kind === "study" ? studyStore(auth).concepts(profile.id) : Promise.resolve([]),
+    // Any Section can have been studied: progress shows wherever it exists.
+    studyStore(auth)
+      .concepts(profile.id)
+      .catch(() => []),
   ]);
   return {
     profile,
-    purpose: purposeOf(profile.kind),
     catalog,
     progress: concepts.length ? { counts: progressCounts(concepts), total: concepts.length } : null,
   };
@@ -193,15 +183,11 @@ export async function sectionProfile(
 
 /** A Space that just became a Section gets its (general) context, unless it has one. */
 export async function ensureSectionProfile(auth: AuthContext, spaceId: string) {
-  if (!(await sectionProfile(auth, spaceId))) await setSectionPurpose(auth, spaceId, "general");
+  await createSectionProfile(auth, spaceId);
 }
 
 /** Purpose of a Section: a Section that predates ADR-018 gets its context on first change. */
-export async function setSectionPurpose(
-  auth: AuthContext,
-  spaceId: string,
-  purpose: SectionPurpose,
-) {
+async function createSectionProfile(auth: AuthContext, spaceId: string) {
   const { data: space } = await auth.db
     .from("knowledge_spaces")
     .select("id, name, description, icon, color, parent_space_id")
@@ -211,19 +197,12 @@ export async function setSectionPurpose(
     .maybeSingle();
   if (!space?.parent_space_id)
     throw new AppError("NOT_FOUND", "Section not found", { recovery: "review" });
-  const kind = kindForPurpose(purpose);
-  const existing = await sectionProfile(auth, spaceId);
-  if (existing) {
-    await auth.db
-      .from("context_profiles")
-      .update({ kind })
-      .eq("id", existing.id)
-      .eq("workspace_id", auth.workspaceId);
-  } else {
+  if (await sectionProfile(auth, spaceId)) return;
+  {
     await createContextProfile(
       auth,
       {
-        kind,
+        kind: "custom",
         name: space.name,
         description: space.description,
         icon: space.icon,
@@ -234,7 +213,6 @@ export async function setSectionPurpose(
       "user_ui",
     );
   }
-  await audit(auth, "knowledge.section_purpose_changed", spaceId, { purpose });
 }
 
 /**

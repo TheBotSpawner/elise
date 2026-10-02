@@ -3,7 +3,6 @@ import "server-only";
 import {
   activeContextOf,
   CONTEXT_LIMITS,
-  purposeOf,
   domainOfEmail,
   isResourceLink,
   nameKey,
@@ -93,8 +92,9 @@ const toProfile = (
     accent: r.accent,
     status: r.status,
     instructions: r.instructions,
+    // Any context can be studied (ADR-020): its study details exist once someone set them.
     study:
-      r.kind === "study"
+      r.kind === "study" || r.study_target_date || r.study_objective || r.study_level
         ? { targetDate: r.study_target_date, objective: r.study_objective, level: r.study_level }
         : null,
     links: links.filter((l) => l.context_profile_id === r.id).map(toLink),
@@ -347,7 +347,8 @@ export async function createContextProfile(
       instructions: input.instructions ?? null,
       icon: input.icon ?? null,
       accent: input.accent ?? null,
-      ...(input.kind === "study" ? studyColumns(input.study) : {}),
+      // Study details belong to any context that is studied, not to a "study" type.
+      ...studyColumns(input.study),
       knowledge_space_id: input.sectionSpaceId ?? null,
       source: origin,
       created_by_user_id: auth.userId,
@@ -394,7 +395,7 @@ export async function updateContextProfile(
     ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
     ...(patch.icon !== undefined ? { icon: patch.icon } : {}),
     ...(patch.accent !== undefined ? { accent: patch.accent } : {}),
-    ...(current.kind === "study" ? studyColumns(patch.study) : {}),
+    ...studyColumns(patch.study),
   };
   if (Object.keys(fields).length) {
     const { error } = await auth.db
@@ -534,7 +535,7 @@ export async function listContextProfiles(auth: AuthContext, includeArchived = f
 /** For the context indicator: names and kinds only; never blocks the page. */
 export async function contextOptions(auth: AuthContext) {
   try {
-    // A Section reads "UTN › Administración" wherever contexts are listed.
+    // A Section reads "University › Mathematics" wherever contexts are listed.
     return (await loadProfiles(auth)).map(activeContextOf);
   } catch {
     return [];
@@ -635,7 +636,7 @@ export function contextStore(
     entities: () => listEntities(auth),
     create: async (input) => {
       if (!input.parentSpaceId) return createContextProfile(auth, input, "ai");
-      // ELISE creating "RSFA" in "Firbot Solutions" makes a Section there (ADR-018).
+      // ELISE creating "Client A" in "Acme Studio" makes a Section there (ADR-018).
       const { createSection, sectionProfile } = await import("./sections-service");
       const { id } = await createSection(auth, {
         parentId: input.parentSpaceId,
@@ -643,7 +644,6 @@ export function contextStore(
         description: input.description ?? null,
         icon: input.icon ?? null,
         color: input.accent ?? null,
-        purpose: purposeOf(input.kind),
         kind: input.kind,
       });
       const profile = await sectionProfile(auth, id);

@@ -42,6 +42,8 @@ export type ChatStreamEvent =
   | { type: "conversation"; thread: ThreadRef; runId: string }
   | { type: "status"; state: "thinking" | "using_tools" }
   | { type: "text"; delta: string }
+  /** Voice turns: what ELISE says aloud, streamed before the detail (ADR-019). Never shown. */
+  | { type: "spoken"; delta: string }
   | { type: "tool_started"; callId: string; name: string; parentId?: string }
   | {
       type: "tool_finished";

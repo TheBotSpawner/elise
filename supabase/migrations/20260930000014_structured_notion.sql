@@ -19,7 +19,7 @@ create table public.structured_sources (
   database_id text not null check (char_length(database_id) between 1 and 100),
   data_source_id text not null check (char_length(data_source_id) between 1 and 100),
   name text not null check (char_length(btrim(name)) between 1 and 120),
-  -- Words that point at this source in chat ("projects, development, Firbot").
+  -- Words that point at this source in chat ("projects, development, Acme").
   context text check (char_length(context) <= 200),
   -- generic today; declared types (e.g. habits) let a canonical capability use it later.
   semantic_type text not null default 'generic' check (semantic_type in ('generic', 'habits')),

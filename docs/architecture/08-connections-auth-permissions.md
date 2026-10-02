@@ -25,11 +25,11 @@ leo@example.com
 
 Connected Accounts
 ├── Gmail Personal
-├── Gmail Firbot
+├── Gmail Acme
 ├── Google Calendar Personal
-├── Google Drive Firbot
+├── Google Drive Acme
 ├── Notion Personal
-└── Notion Firbot
+└── Notion Acme
 ```
 
 El usuario puede iniciar sesión en ELISE con una identidad y conectar posteriormente múltiples cuentas completamente independientes.
@@ -70,9 +70,9 @@ Login:
 leo@gmail.com
 
 Connections:
-├── Google Workspace Firbot
+├── Google Workspace Acme
 ├── Gmail Personal
-├── Notion Firbot
+├── Notion Acme
 └── Notion Personal
 ```
 
@@ -111,7 +111,7 @@ La arquitectura debe permitir posteriormente:
 ```text
 User
 ├── Personal Workspace
-├── Firbot Workspace
+├── Acme Workspace
 └── Team Workspace
 ```
 
@@ -154,7 +154,7 @@ Provider:
 Google
 
 Account:
-leo@firbot.com
+leo@acme.com
 
 Capabilities:
 Gmail
@@ -189,7 +189,7 @@ ELISE debe mostrar estos estados en lenguaje simple.
 Ejemplo:
 
 ```text
-Google Firbot
+Google Acme
 Needs attention
 
 Calendar access expired.
@@ -314,7 +314,7 @@ Draft → automatic
 Send → ask first
 
 Context Rule:
-Emails to internal Firbot team → auto-send allowed
+Emails to internal Acme team → auto-send allowed
 ```
 
 La autorización técnica no significa automáticamente que ELISE deba usar toda esa capacidad sin control.
@@ -447,7 +447,7 @@ Remember this choice
 Ejemplo:
 
 ```text
-Always use Firbot Gmail for Client X
+Always use Acme Gmail for Client X
 ```
 
 o:
@@ -576,7 +576,7 @@ Ejemplo:
 Personal Gmail
 Send → Ask when uncertain
 
-Firbot Gmail
+Acme Gmail
 Send → Always Ask
 ```
 
@@ -599,7 +599,7 @@ También pueden existir reglas por contexto.
 Ejemplo:
 
 ```text
-Work / Firbot
+Work / Acme
 Create calendar events → Automatic
 
 Personal
@@ -740,7 +740,7 @@ ELISE debe explicar qué funcionalidades dejarán de funcionar.
 Ejemplo:
 
 ```text
-Disconnect Gmail Firbot?
+Disconnect Gmail Acme?
 
 This connection is currently used by:
 
@@ -853,9 +853,9 @@ ELISE puede sugerir nombres como:
 
 ```text
 Personal
-Firbot
+Acme
 University
-RSFA
+Client A
 ```
 
 El usuario puede cambiarlos.
@@ -942,7 +942,7 @@ Ejemplo:
 
 ```text
 User approved email.send
-Connection: Gmail Firbot
+Connection: Gmail Acme
 Time: 14:32
 Result: Success
 ```

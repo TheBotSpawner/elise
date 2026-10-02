@@ -6,8 +6,8 @@
 
 ELISE can already read the user's email, calendar, tasks, Knowledge, Recall, structured
 Notion data and the public web. It does not yet know which *area* of the user's life a
-request belongs to. "Poneme al día con RSFA", "tomame oral de Administración" and "¿qué le
-debemos a Rod?" all need ELISE to know where that part of the user's world lives: which
+request belongs to. "Poneme al día con Client A", "tomame oral de Administración" and "¿qué le
+debemos a Alex?" all need ELISE to know where that part of the user's world lives: which
 Knowledge Space, which email domain, which task list, which people.
 
 `docs/architecture/11` describes entities, active context and study/work context packages.

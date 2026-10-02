@@ -103,7 +103,7 @@ async function activeContextOf(
     .eq("workspace_id", auth.workspaceId)
     .maybeSingle();
   if (!data || data.status !== "active") return null;
-  // A Section's context reads "UTN › Administración" (ADR-018).
+  // A Section's context reads "University › Mathematics" (ADR-018).
   const parent = data.knowledge_space_id
     ? await sectionParentName(auth, data.knowledge_space_id)
     : null;

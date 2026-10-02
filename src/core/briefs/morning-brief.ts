@@ -1,4 +1,5 @@
 import type { AIProvider } from "../agents/ai-provider";
+import { MODEL_POLICY } from "../agents/model-policy";
 import type { CalendarEvent } from "../capabilities/calendar";
 import { clip, noiseSignals, type EmailMessage, type FollowUp } from "../capabilities/email";
 import type {
@@ -578,7 +579,7 @@ export async function synthesizeBrief(
     instructions,
     input: [{ type: "message", role: "user", content: JSON.stringify(forModel(brief)) }],
     tools: [],
-    tier: "standard",
+    ...MODEL_POLICY.morning_brief,
   })) {
     if (event.type === "text_delta") text += event.delta;
   }

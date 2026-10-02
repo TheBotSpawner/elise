@@ -315,7 +315,7 @@ export const createRecordTool: ToolDefinition = {
   capability: "structured",
   operation: "createRecord",
   description:
-    'Create a record: "create a project called Website Redesign for Firbot" → values {name:"Website Redesign", client:"Firbot"}. Use field keys and existing option names. If a required field is missing, the tool says so: ask the user.',
+    'Create a record: "create a project called Website Redesign for Acme" → values {name:"Website Redesign", client:"Acme"}. Use field keys and existing option names. If a required field is missing, the tool says so: ask the user.',
   input: createInput,
   route: (i: z.infer<typeof createInput>) => routeRef(i.source),
   async describe(raw, env) {

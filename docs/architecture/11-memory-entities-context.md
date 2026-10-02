@@ -55,7 +55,7 @@ Ejemplo:
 
 ```text
 User:
-"Preparame la reunión con Rod."
+"Preparame la reunión con Alex."
 
 ELISE:
 ...
@@ -104,8 +104,8 @@ Ejemplos:
 
 ```text
 Leo suele planificar el día siguiente la noche anterior.
-Firbot es una empresa del usuario.
-RSFA es un cliente relacionado con trabajo.
+Acme es una empresa del usuario.
+Client A es un cliente relacionado con trabajo.
 El usuario prefiere que los scheduled results no sean invasivos.
 ```
 
@@ -171,7 +171,7 @@ Active Knowledge Space:
 Architecture
 
 Recent entity:
-Firbot
+Acme
 ```
 
 El contexto activo puede cambiar rápidamente.
@@ -296,9 +296,9 @@ Estas preferencias pueden ser:
 Ejemplos:
 
 ```text
-Firbot is the user's company.
+Acme is the user's company.
 ELISE is an active project.
-RSFA is a work client.
+Client A is a work client.
 ```
 
 Solo hechos suficientemente estables deben tratarse como persistent memory.
@@ -349,13 +349,13 @@ No memorizar todo.
 
 Caso:
 
-> “Recordá que para Firbot siempre uso la cuenta de Gmail del trabajo.”
+> “Recordá que para Acme siempre uso la cuenta de Gmail del trabajo.”
 
 Esto puede producir:
 
 ```text
 Memory / Preference:
-Firbot email context
+Acme email context
 → Work Gmail
 ```
 
@@ -523,7 +523,7 @@ ELISE no debe actuar de forma extraña basándose en una memory invisible.
 Cuando una memory materialmente cambia una acción, puede ser útil mostrar:
 
 ```text
-Using your Firbot work account
+Using your Acme work account
 ```
 
 o permitir inspeccionar por qué tomó una decisión.
@@ -538,7 +538,7 @@ Ejemplo:
 
 ```text
 Entity:
-RSFA
+Client A
 
 Relationships:
 ├── Knowledge Space
@@ -597,8 +597,8 @@ metadata
 Ejemplo:
 
 ```text
-Rod Schubert
-→ RSFA
+Alex Morgan
+→ Client A
 → email
 → meetings
 → related Knowledge
@@ -611,10 +611,10 @@ Rod Schubert
 Ejemplos:
 
 ```text
-Firbot
-RSFA
+Acme
+Client A
 Client X
-UTN
+University
 ```
 
 Modelo conceptual:
@@ -665,9 +665,9 @@ Las entidades deben soportar aliases.
 Ejemplo:
 
 ```text
-Robert Schubert
-Rod
-Rod Schubert
+Robert Morgan
+Alex
+Alex Morgan
 ```
 
 pueden referir a la misma entidad.
@@ -675,8 +675,8 @@ pueden referir a la misma entidad.
 Otro ejemplo:
 
 ```text
-Firbot
-Firbot Solutions
+Acme
+Acme Studio
 ```
 
 ---
@@ -686,7 +686,7 @@ Firbot Solutions
 Cuando ELISE encuentra nombres en texto:
 
 ```text
-"Rod"
+"Alex"
 ```
 
 debe intentar resolver:
@@ -744,9 +744,9 @@ El sistema debe poder fusionar duplicados.
 Ejemplo:
 
 ```text
-Rod
-Rod Schubert
-rod@rsfa...
+Alex
+Alex Morgan
+alex@client-a...
 ```
 
 pueden terminar como una sola entidad.
@@ -802,9 +802,9 @@ confirmed
 Ejemplo:
 
 ```text
-Rod
+Alex
 works_at
-RSFA
+Client A
 ```
 
 ---
@@ -815,11 +815,11 @@ Conceptualmente:
 
 ```text
 Leo
-├── owns → Firbot
-├── studies_at → UTN
-└── works_with → RSFA
+├── owns → Acme
+├── studies_at → University
+└── works_with → Client A
 
-Firbot
+Acme
 ├── has_project → ELISE
 └── has_client → Client X
 ```
@@ -863,9 +863,9 @@ Client
 Ejemplo:
 
 ```text
-rod@rsfa.co.nz
-→ Rod
-→ RSFA
+alex@example.com
+→ Alex
+→ Client A
 ```
 
 Esto mejora meeting prep y client brief.
@@ -901,13 +901,13 @@ Ejemplo:
 
 ```text
 Transaction
-→ Firbot
+→ Acme
 
 Task
 → ELISE Project
 
 Note
-→ RSFA
+→ Client A
 ```
 
 ---
@@ -918,20 +918,20 @@ Si el usuario está navegando:
 
 ```text
 Knowledge
-→ RSFA
+→ Client A
 ```
 
 ELISE puede establecer:
 
 ```text
-active_entity = RSFA
+active_entity = Client A
 ```
 
 Luego:
 
 > “¿Qué tengo pendiente?”
 
-puede priorizar tareas relacionadas con RSFA.
+puede priorizar tareas relacionadas con Client A.
 
 ---
 
@@ -965,7 +965,7 @@ Ejemplo:
 
 ```text
 route:
-Knowledge / RSFA
+Knowledge / Client A
 
 selected_document:
 Mortgage Process.pdf
@@ -1055,7 +1055,7 @@ Ejemplo:
 
 ```text
 Personal
-Future: Firbot Team
+Future: Acme Team
 ```
 
 El Context Builder nunca debe mezclar workspaces sin autorización explícita.
@@ -1326,7 +1326,7 @@ Las entities pueden aparecer de forma contextual.
 Ejemplo:
 
 ```text
-Client: RSFA
+Client: Client A
 
 Recent:
 • 2 emails
@@ -1454,7 +1454,7 @@ Ejemplo:
 Context sabe que:
 
 ```text
-Firbot → Gmail Work
+Acme → Gmail Work
 ```
 
 Eso puede resolver la cuenta.
@@ -1477,20 +1477,20 @@ Ejemplo:
 
 ```text
 Message:
-"Respondé a Rod."
+"Respondé a Alex."
 
 Entities:
-Rod → RSFA
+Alex → Client A
 
 Context:
 Work
 
 Bindings:
 Gmail Personal
-Outlook RSFA
+Outlook Client A
 
 Resolver:
-Outlook RSFA
+Outlook Client A
 ```
 
 ---
@@ -1717,7 +1717,7 @@ Correcciones deben tener alta prioridad.
 
 Ejemplo:
 
-> “No, Martín López no trabaja en Firbot.”
+> “No, Martín López no trabaja en Acme.”
 
 El sistema debe:
 

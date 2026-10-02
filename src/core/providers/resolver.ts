@@ -8,7 +8,7 @@ export interface ResolutionRequest {
   connectionId?: string | null;
   /** Restrict to one provider (e.g. an existing ELISE Native item). */
   providerKey?: ProviderKey | null;
-  /** Account named in natural language: "Firbot", "Google", "ELISE", an email… */
+  /** Account named in natural language: "Acme", "Google", "ELISE", an email… */
   destination?: string | null;
   context?: { type: ContextType; id?: string | null } | null;
   /**

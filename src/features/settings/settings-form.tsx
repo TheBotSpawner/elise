@@ -59,6 +59,52 @@ export function SettingsForm({
   return (
     <div className="space-y-6">
       <Card className="p-5">
+        <h2 className="mb-4 font-medium">{t.settings.profile}</h2>
+        <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="displayName">{t.settings.displayName}</Label>
+            <Input
+              id="displayName"
+              value={values.displayName}
+              maxLength={120}
+              required
+              onChange={(e) => setValues({ ...values, displayName: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="language">{t.settings.language}</Label>
+            <Select
+              id="language"
+              value={values.language}
+              onChange={(e) => setValues({ ...values, language: e.target.value as Locale })}
+            >
+              {LOCALES.map((l) => (
+                <option key={l} value={l}>
+                  {t.settings.languages[l]}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="timezone">{t.settings.timezone}</Label>
+            <Combobox
+              id="timezone"
+              value={values.timezone}
+              options={timezones}
+              placeholder={t.settings.timezoneSearch}
+              emptyText={t.settings.timezoneNone}
+              onChange={(timezone) => setValues({ ...values, timezone })}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Button type="submit" disabled={pending}>
+              {t.settings.save}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card className="p-5">
         <h2 className="mb-4 font-medium">{t.settings.appearance}</h2>
         <div role="radiogroup" aria-label={t.settings.theme} className="grid grid-cols-3 gap-2">
           {(Object.keys(themeIcons) as Theme[]).map((option) => {
@@ -113,52 +159,6 @@ export function SettingsForm({
             />
           ))}
         </div>
-      </Card>
-
-      <Card className="p-5">
-        <h2 className="mb-4 font-medium">{t.settings.profile}</h2>
-        <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="displayName">{t.settings.displayName}</Label>
-            <Input
-              id="displayName"
-              value={values.displayName}
-              maxLength={120}
-              required
-              onChange={(e) => setValues({ ...values, displayName: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="language">{t.settings.language}</Label>
-            <Select
-              id="language"
-              value={values.language}
-              onChange={(e) => setValues({ ...values, language: e.target.value as Locale })}
-            >
-              {LOCALES.map((l) => (
-                <option key={l} value={l}>
-                  {t.settings.languages[l]}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="timezone">{t.settings.timezone}</Label>
-            <Combobox
-              id="timezone"
-              value={values.timezone}
-              options={timezones}
-              placeholder={t.settings.timezoneSearch}
-              emptyText={t.settings.timezoneNone}
-              onChange={(timezone) => setValues({ ...values, timezone })}
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <Button type="submit" disabled={pending}>
-              {t.settings.save}
-            </Button>
-          </div>
-        </form>
       </Card>
 
       {email && (

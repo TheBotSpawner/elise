@@ -8,14 +8,14 @@ export type CommitmentDirection = "ours" | "theirs" | "waiting";
 
 export interface CommitmentSource {
   kind: "email" | "recall" | "task";
-  /** "Proposal v2 · Rod Smith", "Conversation · Sep 28", the task title. */
+  /** "Proposal v2 · Alex Smith", "Conversation · Sep 28", the task title. */
   label: string;
   date: string | null;
   /** Thread, interaction or task id, to open it. */
   ref: string | null;
   /** Who wrote it: the user ("us"), the other side ("them"), or unknown. */
   author: "us" | "them" | "unknown";
-  /** Who the other side is, when known ("Rod Smith"). */
+  /** Who the other side is, when known ("Alex Smith"). */
   counterpart: string | null;
 }
 

@@ -195,11 +195,34 @@ export async function parsePdf(title: string, data: Uint8Array): Promise<Normali
   return { title, sections };
 }
 
+/**
+ * Does the content look like the declared type? Upload names and browser MIME types are only
+ * claims (the bucket also accepts application/octet-stream): a PDF must start with %PDF-, a
+ * DOCX is a ZIP container, text has no NUL bytes in its first 8 KB.
+ */
+export function contentMatchesType(mimeType: string, data: Uint8Array): boolean {
+  const head = (n: number) => String.fromCharCode(...data.subarray(0, n));
+  switch (mimeType) {
+    case "application/pdf":
+      return head(1024).includes("%PDF-");
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      return data[0] === 0x50 && data[1] === 0x4b && data[2] === 0x03 && data[3] === 0x04;
+    case "text/markdown":
+    case "text/csv":
+    case "text/plain":
+      return !data.subarray(0, 8192).includes(0);
+    default:
+      return false;
+  }
+}
+
 export async function parseDocument(input: {
   title: string;
   mimeType: string;
   data: Uint8Array;
 }): Promise<NormalizedDocument> {
+  if (!contentMatchesType(input.mimeType, input.data))
+    throw needsAttention("This file's content doesn't match its type");
   const text = () => new TextDecoder("utf-8").decode(input.data);
   let doc: NormalizedDocument;
   try {

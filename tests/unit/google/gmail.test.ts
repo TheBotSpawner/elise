@@ -20,8 +20,8 @@ import {
 
 const CONN = {
   connectionId: "11111111-1111-4111-8111-111111111111",
-  label: "Firbot",
-  account: "leo@firbot.com",
+  label: "Northwind",
+  account: "leo@northwind.com",
 };
 const API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const b64 = (s: string) => Buffer.from(s, "utf8").toString("base64url");
@@ -66,8 +66,8 @@ const received: GMessage = {
   payload: {
     mimeType: "multipart/mixed",
     headers: [
-      { name: "From", value: '"Rod, Jr." <rod@client.com>' },
-      { name: "To", value: "leo@firbot.com, Ana <ana@client.com>" },
+      { name: "From", value: '"Alex, Jr." <alex@client.com>' },
+      { name: "To", value: "leo@northwind.com, Ana <ana@client.com>" },
       { name: "Subject", value: "Proposal" },
       { name: "Message-ID", value: "<abc@client.com>" },
     ],
@@ -76,7 +76,7 @@ const received: GMessage = {
         mimeType: "text/html",
         body: {
           data: b64(
-            "<p>Hi Leo,<br>Friday works?</p><p>On Mon, Rod wrote:</p><blockquote>&gt; old</blockquote>",
+            "<p>Hi Leo,<br>Friday works?</p><p>On Mon, Alex wrote:</p><blockquote>&gt; old</blockquote>",
           ),
         },
       },
@@ -95,9 +95,9 @@ describe("Gmail normalization", () => {
     expect(m).toMatchObject({
       id: makeExternalRef(CONN.connectionId, "m", "m1"),
       threadId: makeExternalRef(CONN.connectionId, "t", "t1"),
-      from: { email: "rod@client.com", name: "Rod, Jr." },
+      from: { email: "alex@client.com", name: "Alex, Jr." },
       to: [
-        { email: "leo@firbot.com", name: null },
+        { email: "leo@northwind.com", name: null },
         { email: "ana@client.com", name: "Ana" },
       ],
       subject: "Proposal",
@@ -112,7 +112,7 @@ describe("Gmail normalization", () => {
       attachments: [{ filename: "quote.pdf", mimeType: "application/pdf", size: 2048 }],
       bulk: false,
       rfcMessageId: "<abc@client.com>",
-      provenance: { source: "Firbot", account: "leo@firbot.com", externalId: "m1" },
+      provenance: { source: "Northwind", account: "leo@northwind.com", externalId: "m1" },
     });
     // HTML → text, quoted history removed.
     expect(m.body).toBe("Hi Leo,\nFriday works?");
@@ -160,7 +160,7 @@ describe("Gmail queries and MIME", () => {
   it("translates structured filters into Gmail search syntax", () => {
     expect(
       buildGmailQuery({
-        from: "Rod (RSFA)",
+        from: "Alex (Initech)",
         text: "AffordX",
         after: new Date("2026-09-28T03:00:00Z"),
         unread: true,
@@ -169,24 +169,24 @@ describe("Gmail queries and MIME", () => {
         limit: 10,
       }),
     ).toBe(
-      "AffordX from:(Rod  RSFA) after:1790564400 is:unread in:inbox category:primary -in:drafts",
+      "AffordX from:(Alex  Initech) after:1790564400 is:unread in:inbox category:primary -in:drafts",
     );
   });
 
   it("builds an RFC 5322 reply with UTF-8 subject and threading headers", () => {
     const raw = buildRawMessage(
       {
-        to: [{ email: "rod@client.com", name: "Rod" }],
+        to: [{ email: "alex@client.com", name: "Alex" }],
         cc: [],
         bcc: [],
         subject: "Re: Propuesta ñ",
         body: "Lo tenemos el viernes.\nSaludos",
         reply: { threadId: "x", inReplyTo: "<abc@client.com>", references: "<abc@client.com>" },
       },
-      "leo@firbot.com",
+      "leo@northwind.com",
     );
     const text = Buffer.from(raw, "base64url").toString("utf8");
-    expect(text).toContain('To: "Rod" <rod@client.com>\r\n');
+    expect(text).toContain('To: "Alex" <alex@client.com>\r\n');
     expect(text).toContain("Subject: =?UTF-8?B?");
     expect(text).toContain("In-Reply-To: <abc@client.com>\r\n");
     const body = text.split("\r\n\r\n")[1]!.replace(/\r\n/g, "");
@@ -218,7 +218,7 @@ describe("GmailProvider", () => {
       payload: {
         mimeType: "text/plain",
         headers: [
-          { name: "To", value: "rod@client.com" },
+          { name: "To", value: "alex@client.com" },
           { name: "Subject", value: "Re: Proposal" },
           { name: "In-Reply-To", value: "<abc@client.com>" },
         ],
@@ -232,7 +232,7 @@ describe("GmailProvider", () => {
       [`GET ${API}/messages?`]: () => ({ messages: [{ id: "m1" }] }),
       [`GET ${API}/messages/m1`]: () => received,
     });
-    const found = await gmail.search({ from: "rod", limit: 5 });
+    const found = await gmail.search({ from: "alex", limit: 5 });
     expect(found).toHaveLength(1);
     expect(calls[1]!.url).toContain("format=metadata");
     expect(found[0]!.body).toBeNull();
@@ -244,7 +244,7 @@ describe("GmailProvider", () => {
       [`GET ${API}/drafts/d1`]: () => draftResponse,
     });
     const draft = await gmail.createDraft({
-      to: [{ email: "rod@client.com", name: null }],
+      to: [{ email: "alex@client.com", name: null }],
       cc: [],
       bcc: [],
       subject: "Re: Proposal",
@@ -259,7 +259,7 @@ describe("GmailProvider", () => {
     expect(draft).toMatchObject({
       id: makeExternalRef(CONN.connectionId, "d", "d1"),
       threadId: makeExternalRef(CONN.connectionId, "t", "t1"),
-      from: "leo@firbot.com",
+      from: "leo@northwind.com",
       body: "Ready Friday.",
       inReplyTo: "<abc@client.com>",
     });

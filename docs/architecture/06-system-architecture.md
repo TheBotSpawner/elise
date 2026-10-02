@@ -465,9 +465,9 @@ Ejemplo:
 ```text
 User
 ├── Gmail Personal
-├── Gmail Firbot
+├── Gmail Acme
 ├── Notion Personal
-├── Notion Firbot
+├── Notion Acme
 ├── Google Account Personal
 └── Google Account Business
 ```
@@ -517,16 +517,16 @@ External API
 Ejemplo:
 
 ```text
-"Respondé el mail de Rod"
+"Respondé el mail de Alex"
 
 Intent
 → Email
 
 Context
-→ Work / RSFA
+→ Work / Client A
 
 Resolver
-→ Gmail Firbot or relevant account
+→ Gmail Acme or relevant account
 
 Action
 → create draft / send

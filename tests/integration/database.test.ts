@@ -499,11 +499,11 @@ describe("knowledge", () => {
 
   it("keeps Spaces in one workspace and refuses cycles", async () => {
     const work = await space(alice, "Work");
-    const firbot = await space(alice, "Firbot", work);
+    const northwind = await space(alice, "Northwind", work);
     await expect(
       asUser(db, alice.userId, () =>
         db.query("update public.knowledge_spaces set parent_space_id = $1 where id = $2", [
-          firbot,
+          northwind,
           work,
         ]),
       ),
@@ -516,11 +516,11 @@ describe("knowledge", () => {
   });
 
   it("hybrid search is scoped to the workspace, the Space and current versions", async () => {
-    const rsfa = await space(alice, "RSFA");
+    const initech = await space(alice, "Initech");
     const other = await space(alice, "Personal");
     await indexedDoc(
       alice.workspaceId,
-      rsfa,
+      initech,
       "The Unique ID links each email to the client file.",
       1,
     );
@@ -529,7 +529,7 @@ describe("knowledge", () => {
     await indexedDoc(bob.workspaceId, bobSpace, "Bob's secret email filing notes.", 1);
 
     // Semantic + keyword, within one Space.
-    const inSpace = await search(alice.userId, alice.workspaceId, "email | filing", 1, [rsfa]);
+    const inSpace = await search(alice.userId, alice.workspaceId, "email | filing", 1, [initech]);
     expect(inSpace.rows.map((r) => r.content)).toEqual([
       "The Unique ID links each email to the client file.",
     ]);
@@ -817,7 +817,7 @@ describe("finance", () => {
       await as<{ id: string }>(
         alice,
         `insert into public.finance_sources (workspace_id, connection_id, display_name, spreadsheet_id, sheet_id, sheet_title)
-         values ($1, $2, 'Firbot Revenue', 'abcdefghijklmnopqrstuvwxyz', 0, 'Ingresos') returning id`,
+         values ($1, $2, 'Northwind Revenue', 'abcdefghijklmnopqrstuvwxyz', 0, 'Ingresos') returning id`,
         [alice.workspaceId, conn],
       )
     ).rows[0]!.id;
@@ -864,7 +864,7 @@ describe("structured sources", () => {
     const conn = (
       await db.query<{ id: string }>(
         `insert into public.provider_connections (workspace_id, provider_key, external_account_id, display_name, status)
-         values ($1, 'notion', 'nw-alice', 'Firbot Workspace', 'connected') returning id`,
+         values ($1, 'notion', 'nw-alice', 'Northwind Workspace', 'connected') returning id`,
         [alice.workspaceId],
       )
     ).rows[0]!.id;
@@ -936,7 +936,7 @@ describe("universal recall", () => {
   it("finds the author's own interactions by words and dates, and nobody else's", async () => {
     const a = await indexed(
       alice,
-      "User: we decided annual pricing for Firbot",
+      "User: we decided annual pricing for Northwind",
       "2026-09-10T12:00:00Z",
     );
     expect((await search(alice, "pricing")).rows.map((r) => r.session_id)).toContain(a.session);
@@ -1219,27 +1219,27 @@ describe("context profiles", () => {
     ).rows[0]!.id;
 
   it("links only to records of its own workspace, and only valid values", async () => {
-    const rsfa = await createProfile(alice, "RSFA");
-    const mine = await space(alice, "RSFA");
+    const initech = await createProfile(alice, "Initech");
+    const mine = await space(alice, "Initech");
     const theirs = await space(bob, "Private");
     await as(
       alice,
-      `insert into public.context_links (workspace_id, context_profile_id, link_type, resource_id, label) values ($1, $2, 'knowledge_space', $3, 'RSFA')`,
-      [alice.workspaceId, rsfa, mine],
+      `insert into public.context_links (workspace_id, context_profile_id, link_type, resource_id, label) values ($1, $2, 'knowledge_space', $3, 'Initech')`,
+      [alice.workspaceId, initech, mine],
     );
     // Pointing at another workspace's Space is refused even though the id exists.
     await expect(
       as(
         alice,
         `insert into public.context_links (workspace_id, context_profile_id, link_type, resource_id, label) values ($1, $2, 'knowledge_space', $3, 'x')`,
-        [alice.workspaceId, rsfa, theirs],
+        [alice.workspaceId, initech, theirs],
       ),
     ).rejects.toThrow(/invalid context link/);
     await expect(
       as(
         alice,
         `insert into public.context_links (workspace_id, context_profile_id, link_type, value, label) values ($1, $2, 'email_domain', 'not a domain', 'x')`,
-        [alice.workspaceId, rsfa],
+        [alice.workspaceId, initech],
       ),
     ).rejects.toThrow(/invalid context link/);
     // Bob can't link into Alice's profile, nor read it.
@@ -1247,7 +1247,7 @@ describe("context profiles", () => {
       as(
         bob,
         `insert into public.context_links (workspace_id, context_profile_id, link_type, value, label) values ($1, $2, 'keyword', 'hack', 'hack')`,
-        [bob.workspaceId, rsfa],
+        [bob.workspaceId, initech],
       ),
     ).rejects.toThrow();
     expect((await as(bob, "select id from public.context_profiles")).rows).toHaveLength(0);
@@ -1255,27 +1255,33 @@ describe("context profiles", () => {
   });
 
   it("names are unique per workspace; one email belongs to one person", async () => {
-    await createProfile(alice, "Firbot", "work");
-    await expect(createProfile(alice, "Firbot", "work")).rejects.toThrow(/duplicate|unique/);
-    await createProfile(bob, "Firbot", "work");
+    await createProfile(alice, "Northwind", "work");
+    await expect(createProfile(alice, "Northwind", "work")).rejects.toThrow(/duplicate|unique/);
+    await createProfile(bob, "Northwind", "work");
     const person = `insert into public.entities (workspace_id, entity_type, name, name_key, emails) values ($1, 'person', $2, lower($2), $3)`;
-    await as(alice, person, [alice.workspaceId, "Rod Schubert", ["rod@rsfa.co.nz"]]);
+    await as(alice, person, [alice.workspaceId, "Alex Morgan", ["alex@example.com"]]);
     await expect(
-      as(alice, person, [alice.workspaceId, "Rod S.", ["rod@rsfa.co.nz"]]),
+      as(alice, person, [alice.workspaceId, "Alex S.", ["alex@example.com"]]),
     ).rejects.toThrow(/only one person/);
     // Two people named Chris stay two people.
     await as(alice, person, [alice.workspaceId, "Chris", ["chris@a.com"]]);
     await as(alice, person, [alice.workspaceId, "Chris", ["chris@b.com"]]);
   });
 
-  it("study progress is private to its author and only for study contexts", async () => {
+  it("study progress is private to its author, on any context of the workspace (ADR-020)", async () => {
     const subject = await createProfile(alice, "Administracion", "study");
-    const client = await createProfile(alice, "Not a subject");
+    // Sections are untyped: an ordinary context can be studied too.
+    const untyped = await createProfile(alice, "Not typed as a subject", "custom");
     const concept = `insert into public.study_concepts (workspace_id, user_id, context_profile_id, label, label_key) values ($1, $2, $3, 'Weber', 'weber')`;
-    await expect(as(alice, concept, [alice.workspaceId, alice.userId, client])).rejects.toThrow(
-      /study context/,
-    );
-    await as(alice, concept, [alice.workspaceId, alice.userId, subject]);
+    await as(alice, concept, [alice.workspaceId, alice.userId, untyped]);
+    // …but never a context of another workspace.
+    const bobs = await createProfile(bob, "Bob's");
+    await expect(as(alice, concept, [alice.workspaceId, alice.userId, bobs])).rejects.toThrow();
+    await as(alice, concept.replace("'Weber', 'weber'", "'Weber2', 'weber2'"), [
+      alice.workspaceId,
+      alice.userId,
+      subject,
+    ]);
     const session = (
       await as<{ id: string }>(
         alice,
@@ -1455,9 +1461,9 @@ describe("knowledge sections", () => {
     );
 
   it("same-named Sections live in different Spaces; standalone names stay unique", async () => {
-    const utn = await space(alice, "UTN-s");
+    const university = await space(alice, "University-s");
     const posgrado = await space(alice, "Posgrado-s");
-    const a1 = await space(alice, "Administración", utn);
+    const a1 = await space(alice, "Administración", university);
     const a2 = await space(alice, "Administración", posgrado);
     await profile(alice, "Administración", a1);
     await profile(alice, "Administración", a2);
@@ -1471,24 +1477,24 @@ describe("knowledge sections", () => {
     const theirs = await space(bob, "Bob private");
     const bobSection = await space(bob, "Inner", theirs);
     await expect(profile(alice, "Steal", bobSection)).rejects.toThrow();
-    const mine = await space(alice, "Firbot-s");
-    const rsfa = await space(alice, "RSFA-s", mine);
-    await profile(alice, "RSFA-s", rsfa, "client");
+    const mine = await space(alice, "Northwind-s");
+    const initech = await space(alice, "Initech-s", mine);
+    await profile(alice, "Initech-s", initech, "client");
     expect(
       (
         await as(bob, "select id from public.context_profiles where knowledge_space_id = $1", [
-          rsfa,
+          initech,
         ])
       ).rows,
     ).toHaveLength(0);
   });
 
   it("transitional mapping attaches a standalone context only when it is unambiguous", async () => {
-    const utn = await space(alice, "UTN-m");
-    const legis = await space(alice, "legislacion-m", utn);
-    const other = await space(alice, "sistemas-m", utn);
+    const university = await space(alice, "University-m");
+    const legis = await space(alice, "physics-m", university);
+    const other = await space(alice, "sistemas-m", university);
     // Exactly one confirmed link to a same-named Section → attached, with its study progress.
-    const p1 = (await profile(alice, "legislacion-m", null)).rows[0]!.id;
+    const p1 = (await profile(alice, "physics-m", null)).rows[0]!.id;
     await as(
       alice,
       `insert into public.context_links (workspace_id, context_profile_id, link_type, resource_id, label) values ($1, $2, 'knowledge_space', $3, 'x')`,
@@ -1525,5 +1531,200 @@ describe("knowledge sections", () => {
       (await db.query("select id from public.context_links where context_profile_id = $1", [p2]))
         .rows,
     ).toHaveLength(1);
+  });
+});
+
+describe("productization (ADR-019)", () => {
+  it("new accounts start onboarding; the migration marks pre-existing pending accounts done", async () => {
+    const carol = await createUser(db, "carol@example.com", {});
+    const status = async () =>
+      (
+        await db.query<{ onboarding_status: string }>(
+          "select onboarding_status from public.user_profiles where id = $1",
+          [carol.userId],
+        )
+      ).rows[0]!.onboarding_status;
+    expect(await status()).toBe("pending");
+    const sql = readFileSync("supabase/migrations/20261003000022_productization.sql", "utf8");
+    await db.exec(sql.slice(0, sql.indexOf("-- 2.")));
+    expect(await status()).toBe("completed");
+  });
+
+  it("keeps usage events per workspace and read-only for browsers", async () => {
+    await db.query(
+      "insert into public.usage_events (workspace_id, user_id, feature, operation, provider, model, input_tokens) values ($1, $2, 'chat', 'llm', 'openai', 'gpt-5-mini', 10), ($3, $4, 'chat', 'llm', 'openai', 'gpt-5-mini', 20)",
+      [alice.workspaceId, alice.userId, bob.workspaceId, bob.userId],
+    );
+    const seen = await asUser(db, alice.userId, () =>
+      db.query<{ workspace_id: string }>("select workspace_id from public.usage_events"),
+    );
+    expect(seen.rows.length).toBeGreaterThan(0);
+    expect(seen.rows.every((r) => r.workspace_id === alice.workspaceId)).toBe(true);
+    await expect(
+      asUser(db, alice.userId, () =>
+        db.query(
+          "insert into public.usage_events (workspace_id, feature, operation, provider) values ($1, 'chat', 'llm', 'openai')",
+          [alice.workspaceId],
+        ),
+      ),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("never lets a browser delete connection capabilities or bindings", async () => {
+    for (const table of ["connection_capabilities", "capability_bindings"])
+      await expect(
+        asUser(db, alice.userId, () => db.query(`delete from public.${table}`)),
+      ).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("history knowledge links (ADR-020)", () => {
+  const q = <T>(u: { userId: string }, sql: string, params: unknown[] = []) =>
+    asUser(db, u.userId, () => db.query<T & Record<string, unknown>>(sql, params));
+  const mkSpace = async (u: { workspaceId: string }, name: string, parent: string | null = null) =>
+    (
+      await db.query<{ id: string }>(
+        "insert into public.knowledge_spaces (workspace_id, name, parent_space_id) values ($1, $2, $3) returning id",
+        [u.workspaceId, name, parent],
+      )
+    ).rows[0]!.id;
+  const mkThread = async (u: { userId: string; workspaceId: string }, text: string) => {
+    const conv = (
+      await db.query<{ id: string }>(
+        "insert into public.conversations (workspace_id, user_id, title) values ($1, $2, 't') returning id",
+        [u.workspaceId, u.userId],
+      )
+    ).rows[0]!.id;
+    const session = (
+      await db.query<{ id: string }>(
+        "insert into public.interaction_sessions (workspace_id, user_id, modality, conversation_id) values ($1, $2, 'text', $3) returning id",
+        [u.workspaceId, u.userId, conv],
+      )
+    ).rows[0]!.id;
+    await db.query(
+      "insert into public.recall_chunks (workspace_id, user_id, session_id, chunk_index, started_at, ended_at, content, content_hash) values ($1, $2, $3, 0, now(), now(), $4, 'h')",
+      [u.workspaceId, u.userId, session, text],
+    );
+    return { conv, session };
+  };
+  const link = (u: { userId: string; workspaceId: string }, conv: string, space: string) =>
+    q(
+      u,
+      "insert into public.interaction_knowledge_links (workspace_id, user_id, conversation_id, space_id, source) values ($1, $2, $3, $4, 'manual')",
+      [u.workspaceId, u.userId, conv, space],
+    );
+
+  it("are the author's own and never cross workspaces", async () => {
+    const uni = await mkSpace(alice, "Uni-links");
+    const { conv } = await mkThread(alice, "derivatives");
+    await link(alice, conv, uni);
+    expect((await q(bob, "select id from public.interaction_knowledge_links")).rows).toHaveLength(
+      0,
+    );
+    // Bob's Space on Alice's conversation, or Alice's conversation from Bob: refused.
+    const bobs = await mkSpace(bob, "Bob-space");
+    await expect(link(alice, conv, bobs)).rejects.toThrow();
+    await expect(link(bob, conv, bobs)).rejects.toThrow();
+    // The same link twice is one link.
+    await expect(link(alice, conv, uni)).rejects.toThrow(/duplicate|unique/);
+  });
+
+  it("scope Recall to a Space without widening it", async () => {
+    const uni = await mkSpace(alice, "Uni-recall");
+    const math = await mkSpace(alice, "Math-recall", uni);
+    const tagged = await mkThread(alice, "derivative rules for the exam");
+    await mkThread(alice, "derivative of the stock price");
+    await link(alice, tagged.conv, math);
+    const search = (spaces: string[] | null, as = alice) =>
+      q<{ session_id: string }>(
+        as,
+        "select session_id from public.search_recall_chunks($1, $2, 'derivative', null, 'none', null, null, null, 10, null, $3)",
+        [alice.workspaceId, alice.userId, spaces],
+      );
+    expect((await search([math])).rows.map((r) => r.session_id)).toEqual([tagged.session]);
+    expect((await search(null)).rows.length).toBeGreaterThanOrEqual(2);
+    // A tag doesn't give Bob Alice's Recall.
+    expect((await search([math], bob)).rows).toHaveLength(0);
+    // Removed tags don't scope.
+    await q(
+      alice,
+      "update public.interaction_knowledge_links set state = 'removed' where conversation_id = $1",
+      [tagged.conv],
+    );
+    expect((await search([math])).rows).toHaveLength(0);
+  });
+
+  it("survive archiving and go with a deleted Space", async () => {
+    const space = await mkSpace(alice, "Archive-me");
+    const { conv } = await mkThread(alice, "x");
+    await link(alice, conv, space);
+    await db.query("update public.knowledge_spaces set status = 'archived' where id = $1", [space]);
+    const count = async () =>
+      (
+        await db.query("select 1 from public.interaction_knowledge_links where space_id = $1", [
+          space,
+        ])
+      ).rows.length;
+    expect(await count()).toBe(1);
+    await db.query("delete from public.knowledge_spaces where id = $1", [space]);
+    expect(await count()).toBe(0);
+  });
+
+  it("backfill links from existing context evidence, idempotently", async () => {
+    const uni = await mkSpace(alice, "Uni-backfill");
+    const sec = await mkSpace(alice, "Sec-backfill", uni);
+    const profile = (
+      await db.query<{ id: string }>(
+        "insert into public.context_profiles (workspace_id, kind, name, name_key, knowledge_space_id) values ($1, 'custom', 'Sec-backfill', 'sec-backfill', $2) returning id",
+        [alice.workspaceId, sec],
+      )
+    ).rows[0]!.id;
+    const { conv } = await mkThread(alice, "y");
+    await db.query(
+      "insert into public.context_interactions (workspace_id, user_id, context_profile_id, conversation_id, source) values ($1, $2, $3, $4, 'study')",
+      [alice.workspaceId, alice.userId, profile, conv],
+    );
+    const sql = readFileSync(
+      "supabase/migrations/20261004000023_history_knowledge_links.sql",
+      "utf8",
+    );
+    const backfill = sql.slice(sql.indexOf("insert into public.interaction_knowledge_links"));
+    await db.exec(backfill);
+    await db.exec(backfill);
+    const rows = await db.query<{ source: string; evidence: string[] }>(
+      "select source, evidence from public.interaction_knowledge_links where conversation_id = $1",
+      [conv],
+    );
+    expect(rows.rows).toEqual([{ source: "automatic", evidence: ["backfill", "study"] }]);
+  });
+});
+
+describe("account deletion (ADR-019)", () => {
+  // Last on purpose: Alice's workspace now holds rows from every module tested above.
+  it("deleting an account removes its personal workspace and everything in it", async () => {
+    const before = await db.query<{ n: number }>(
+      "select count(*)::int as n from public.tasks where workspace_id = $1",
+      [alice.workspaceId],
+    );
+    expect(before.rows[0]!.n).toBeGreaterThan(0);
+    await db.query("delete from auth.users where id = $1", [alice.userId]);
+    for (const table of [
+      "workspaces",
+      "tasks",
+      "conversations",
+      "audit_events",
+      "knowledge_spaces",
+    ]) {
+      const column = table === "workspaces" ? "id" : "workspace_id";
+      const left = await db.query(`select 1 from public.${table} where ${column} = $1`, [
+        alice.workspaceId,
+      ]);
+      expect(left.rows, table).toHaveLength(0);
+    }
+    // Bob is untouched.
+    const bobWs = await db.query("select 1 from public.workspaces where id = $1", [
+      bob.workspaceId,
+    ]);
+    expect(bobWs.rows).toHaveLength(1);
   });
 });

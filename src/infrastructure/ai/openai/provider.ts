@@ -9,6 +9,7 @@ import type {
   AITurnRequest,
 } from "@/core/agents/ai-provider";
 import { AppError } from "@/core/errors";
+import { recordUsage } from "@/infrastructure/observability/usage";
 
 /** OpenAI function names allow [a-zA-Z0-9_-]; ELISE tool names use dots ("tasks.create"). */
 const encodeName = (name: string) => name.replaceAll(".", "__");
@@ -34,6 +35,7 @@ export class OpenAIProvider implements AIProvider {
 
   async *streamTurn(request: AITurnRequest): AsyncIterable<AIStreamEvent> {
     const model = this.options.models[request.tier];
+    const started = Date.now();
     let stream;
     try {
       stream = await this.client.responses.create(
@@ -58,6 +60,7 @@ export class OpenAIProvider implements AIProvider {
         { signal: request.signal },
       );
     } catch (error) {
+      recordUsage({ operation: "llm", provider: this.id, model, status: "failed" });
       throw normalizeError(error);
     }
 
@@ -79,11 +82,28 @@ export class OpenAIProvider implements AIProvider {
             break;
           case "response.completed": {
             const usage = event.response.usage;
+            const cachedTokens = usage?.input_tokens_details?.cached_tokens ?? 0;
+            const reasoningTokens = usage?.output_tokens_details?.reasoning_tokens ?? 0;
+            recordUsage({
+              operation: "llm",
+              provider: this.id,
+              model: event.response.model,
+              inputTokens: usage?.input_tokens ?? null,
+              outputTokens: usage?.output_tokens ?? null,
+              cachedTokens,
+              reasoningTokens,
+              latencyMs: Date.now() - started,
+            });
             yield {
               type: "completed",
               model: event.response.model,
               usage: usage
-                ? { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens }
+                ? {
+                    inputTokens: usage.input_tokens,
+                    outputTokens: usage.output_tokens,
+                    cachedTokens,
+                    reasoningTokens,
+                  }
                 : null,
             };
             break;

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { RecordValue } from "@/core/capabilities/structured";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -66,8 +67,7 @@ export function StructuredSetup({
   const [advanced, setAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fail = (e: { message: string; code: string }) =>
-    setError(e.message || t.errors.codes[e.code as keyof typeof t.errors.codes]);
+  const fail = (e: { message: string; code: string }) => setError(errorText(t, e));
 
   // Browse what this workspace shared with ELISE (debounced search).
   useEffect(() => {

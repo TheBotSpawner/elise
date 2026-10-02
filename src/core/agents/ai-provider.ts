@@ -37,6 +37,8 @@ export interface AITurnRequest {
 export interface AIUsage {
   inputTokens: number;
   outputTokens: number;
+  cachedTokens?: number;
+  reasoningTokens?: number;
 }
 
 export type AIStreamEvent =

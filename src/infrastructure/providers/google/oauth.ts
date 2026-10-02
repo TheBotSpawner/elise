@@ -219,7 +219,7 @@ export async function revokeToken(token: string, fetchImpl: FetchLike = fetch): 
   }
 }
 
-/** A friendly default alias from the account: gmail.com → "Personal", firbot.com → "Firbot". */
+/** A friendly default alias from the account: gmail.com → "Personal", acme.com → "Acme". */
 export function suggestAlias(email: string): string {
   const domain = email.split("@")[1]?.toLowerCase() ?? "";
   if (!domain || ["gmail.com", "googlemail.com"].includes(domain)) return "Personal";

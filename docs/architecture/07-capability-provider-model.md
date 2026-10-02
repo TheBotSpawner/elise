@@ -142,14 +142,14 @@ Provider:
 Gmail
 
 Connection:
-leo@firbot.com
+leo@acme.com
 ```
 
 No confundir Provider con Connection.
 
 `GmailProvider` es una implementación.
 
-`leo@firbot.com` es una conexión específica de un usuario.
+`leo@acme.com` es una conexión específica de un usuario.
 
 ---
 
@@ -162,7 +162,7 @@ Ejemplo:
 ```text
 Email
 ├── Gmail Personal
-├── Gmail Firbot
+├── Gmail Acme
 └── Future Outlook Account
 ```
 
@@ -196,7 +196,7 @@ Si existen:
 
 ```text
 Gmail Personal
-Gmail Firbot
+Gmail Acme
 ```
 
 ELISE puede buscar en ambas cuentas.
@@ -229,8 +229,8 @@ Si existe suficiente contexto:
 
 ```text
 Client Juan
-→ Firbot context
-→ Gmail Firbot
+→ Acme context
+→ Gmail Acme
 ```
 
 ELISE puede sugerir o utilizar esa cuenta según reglas.
@@ -239,7 +239,7 @@ Si existe ambigüedad:
 
 ```text
 Personal Gmail
-Firbot Gmail
+Acme Gmail
 ```
 
 debe preguntar.
@@ -277,8 +277,8 @@ Ejemplo:
 ```text
 capability: email
 provider: gmail
-connection: firbot@gmail.com
-context: work.firbot
+connection: acme@gmail.com
+context: work.acme
 priority: 100
 is_default: false
 ```
@@ -301,13 +301,13 @@ Elise debe resolver bindings utilizando contexto.
 
 Ejemplo:
 
-> “Respondé el correo de Rod.”
+> “Respondé el correo de Alex.”
 
 Contexto:
 
 ```text
-Rod
-→ RSFA
+Alex
+→ Client A
 → Work
 ```
 
@@ -349,11 +349,11 @@ Email
 Global default:
 Personal Gmail
 
-Work / Firbot:
-Firbot Gmail
+Work / Acme:
+Acme Gmail
 
-Work / RSFA:
-Outlook RSFA
+Work / Client A:
+Outlook Client A
 ```
 
 El user-facing setup debe mantener esto simple.
@@ -679,7 +679,7 @@ Ejemplo:
 ```text
 Calendar
 ├── Personal
-├── Firbot
+├── Acme
 └── University
 ```
 
@@ -711,8 +711,8 @@ Ejemplo:
 
 ```text
 10:00
-Firbot Meeting
-Source: Firbot Calendar
+Acme Meeting
+Source: Acme Calendar
 
 15:00
 University
@@ -943,13 +943,13 @@ Solo cuando sea necesario:
 Which account should I use?
 
 ○ Personal
-● Firbot
+● Acme
 ```
 
 Puede incluir:
 
 ```text
-Remember this choice for Firbot
+Remember this choice for Acme
 ```
 
 ---
@@ -965,7 +965,7 @@ Personal
 ✓ Connected
 Default for Personal
 
-Firbot
+Acme
 ✓ Connected
 Default for Work
 
@@ -991,7 +991,7 @@ Knowledge normalmente combina varias fuentes.
 Ejemplo:
 
 ```text
-Knowledge Space: RSFA
+Knowledge Space: Client A
 
 Sources
 ├── Notion
@@ -1064,7 +1064,7 @@ Una connection puede tener reglas propias.
 Ejemplo:
 
 ```text
-Gmail Firbot
+Gmail Acme
 
 Important:
 clients
@@ -1256,14 +1256,14 @@ Explicit account?
 → No
 
 Context strong enough?
-→ Work / Firbot
+→ Work / Acme
 
 Available bindings:
 - Gmail Personal
-- Gmail Firbot
+- Gmail Acme
 
 Resolver:
-→ Gmail Firbot first
+→ Gmail Acme first
 
 Confidence sufficient?
 → Yes
@@ -1293,7 +1293,7 @@ Bindings:
 
 ```text
 Personal Calendar
-Firbot Calendar
+Acme Calendar
 University Calendar
 ```
 

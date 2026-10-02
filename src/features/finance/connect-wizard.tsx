@@ -10,6 +10,7 @@ import type { FinanceGoogleAccount, TabInspection } from "@/application/finance-
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import type { FinanceMapping, FinancePreview } from "@/core/finance/import";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -70,8 +71,7 @@ export function ConnectSheetWizard({
     };
   }, [account?.connectionId, account?.canBrowse]);
 
-  const fail = (e: { message: string; code: string }) =>
-    setError(e.message || t.errors.codes[e.code as keyof typeof t.errors.codes]);
+  const fail = (e: { message: string; code: string }) => setError(errorText(t, e));
 
   const open = (idOrLink: string) =>
     startTransition(async () => {

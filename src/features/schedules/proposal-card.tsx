@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 
 import type { ToolDisplay } from "@/core/agents/tools";
 import { briefCapabilities } from "@/core/schedules/schedule";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
 import { createScheduleAction } from "./actions";
@@ -74,7 +75,7 @@ export function ScheduleProposalCard({ display, rise }: { display: Proposal; ris
                 startTransition(async () => {
                   const result = await createScheduleAction(input);
                   if (result.ok) setCreated(true);
-                  else setError(result.error.message || t.errors.codes[result.error.code]);
+                  else setError(errorText(t, result.error));
                 })
               }
               className="h-10 rounded-full bg-fg px-[18px] text-sm font-medium text-bg disabled:opacity-60"

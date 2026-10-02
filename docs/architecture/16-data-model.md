@@ -130,7 +130,7 @@ Futuro:
 ```text
 User
 ├── Personal
-├── Firbot Team
+├── Acme Team
 └── Organization Workspace
 ```
 
@@ -417,8 +417,8 @@ Ejemplo:
 
 ```text
 email
-→ Gmail Firbot
-→ context = work.firbot
+→ Gmail Acme
+→ context = work.acme
 ```
 
 ---
@@ -722,8 +722,8 @@ created_at
 Useful for:
 
 ```text
-Rod
-Rod Schubert
+Alex
+Alex Morgan
 ```
 
 ---

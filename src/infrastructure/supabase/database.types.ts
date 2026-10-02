@@ -36,6 +36,42 @@ export type UserProfileRow = {
   updated_at: Ts;
 };
 
+export type InteractionKnowledgeLinkRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  conversation_id: string | null;
+  session_id: string | null;
+  space_id: string;
+  source: "automatic" | "manual";
+  state: "linked" | "removed";
+  evidence: string[];
+  confidence: number | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type UsageEventRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string | null;
+  feature: string;
+  operation: "llm" | "embedding" | "transcription" | "speech" | "web_search" | "web_fetch";
+  provider: string;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_tokens: number | null;
+  reasoning_tokens: number | null;
+  units: number | null;
+  unit: "seconds" | "characters" | "queries" | "pages" | null;
+  latency_ms: number | null;
+  estimated_cost_usd: number | null;
+  status: "succeeded" | "failed";
+  ai_run_id: string | null;
+  created_at: Ts;
+};
+
 export type WorkspaceRow = {
   id: string;
   name: string;
@@ -1082,6 +1118,7 @@ export type Database = {
         "workspace_id"
       >;
       live_workspaces: Table<LiveWorkspaceRow, "workspace_id" | "user_id">;
+      usage_events: Table<UsageEventRow, "workspace_id" | "feature" | "operation" | "provider">;
       context_profiles: Table<ContextProfileRow, "workspace_id" | "kind" | "name" | "name_key">;
       shortcuts: Table<
         ShortcutRow,
@@ -1092,6 +1129,10 @@ export type Database = {
         "workspace_id" | "context_profile_id" | "link_type" | "label"
       >;
       entities: Table<EntityRow, "workspace_id" | "entity_type" | "name" | "name_key">;
+      interaction_knowledge_links: Table<
+        InteractionKnowledgeLinkRow,
+        "workspace_id" | "user_id" | "space_id" | "source"
+      >;
       context_interactions: Table<
         ContextInteractionRow,
         "workspace_id" | "user_id" | "context_profile_id" | "source"
@@ -1296,6 +1337,7 @@ export type Database = {
           p_exclude_session?: string | null;
           p_limit?: number;
           p_context?: string | null;
+          p_spaces?: string[] | null;
         };
         Returns: {
           chunk_id: string;

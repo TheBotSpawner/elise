@@ -271,7 +271,16 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     key: "history",
     status: "available",
     internal: true,
-    operations: { search: READ, getContext: READ, getInteraction: READ, getRecent: READ },
+    operations: {
+      search: READ,
+      getContext: READ,
+      getInteraction: READ,
+      getRecent: READ,
+      // History organized by Knowledge (ADR-020): organizing the user's own threads.
+      listKnowledgeLinks: READ,
+      addKnowledgeLink: WRITE,
+      removeKnowledgeLink: WRITE,
+    },
   },
   // ELISE's own product settings for this user: allowlisted values, audited (ADR-012).
   settings: {

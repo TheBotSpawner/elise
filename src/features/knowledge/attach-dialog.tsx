@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Select } from "@/components/ui/input";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
 import { createSpaceAction, listSpacesAction } from "./actions";
@@ -55,7 +56,7 @@ export function AttachToKnowledge() {
     const r = await uploadFiles(spaceId, files);
     setBusy(false);
     if (!r.ok) {
-      toast.error(r.error.message || t.errors.codes[r.error.code]);
+      toast.error(errorText(t, r.error));
       return;
     }
     toast.success(t.knowledge.uploaded(r.value));

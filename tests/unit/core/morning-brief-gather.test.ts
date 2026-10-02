@@ -15,7 +15,7 @@ import {
 } from "../../fixtures/core-fakes";
 
 const PERSONAL = "11111111-1111-4111-8111-111111111111";
-const FIRBOT = "22222222-2222-4222-8222-222222222222";
+const NORTHWIND = "22222222-2222-4222-8222-222222222222";
 
 const calendar = (events: number): CalendarProvider =>
   ({
@@ -42,14 +42,14 @@ const calendar = (events: number): CalendarProvider =>
       })),
   }) as unknown as CalendarProvider;
 
-function setup(opts: { firbotStatus?: "connected" | "needs_reauthorization" } = {}) {
+function setup(opts: { northwindStatus?: "connected" | "needs_reauthorization" } = {}) {
   const personalMail = new InMemoryEmailProvider(PERSONAL, "Personal", "leo@gmail.com");
-  const firbotMail = new InMemoryEmailProvider(FIRBOT, "Firbot", "leo@firbot.com");
+  const northwindMail = new InMemoryEmailProvider(NORTHWIND, "Northwind", "leo@northwind.com");
   const tasks = new InMemoryTaskProvider();
   const cal = calendar(2);
   const providers = new Map<string, Record<string, unknown>>([
     [PERSONAL, { email: personalMail, calendar: cal }],
-    [FIRBOT, { email: firbotMail }],
+    [NORTHWIND, { email: northwindMail }],
     ["conn-native", { tasks }],
   ]);
   const bindings = [
@@ -68,11 +68,11 @@ function setup(opts: { firbotStatus?: "connected" | "needs_reauthorization" } = 
       isDefault: true,
     }),
     binding({
-      connectionId: FIRBOT,
+      connectionId: NORTHWIND,
       capability: "email",
       providerKey: "google",
-      label: "Firbot",
-      connectionStatus: opts.firbotStatus ?? "connected",
+      label: "Northwind",
+      connectionStatus: opts.northwindStatus ?? "connected",
     }),
   ];
   const { ports } = makePorts(bindings);
@@ -81,7 +81,7 @@ function setup(opts: { firbotStatus?: "connected" | "needs_reauthorization" } = 
       providers.get(b.connectionId)?.[capability]) as typeof ports.providers.get,
   };
   const ctx = makeCtx({ origin: "schedule", now: new Date("2026-09-29T10:30:00Z") });
-  return { ports, ctx, personalMail, firbotMail, tasks };
+  return { ports, ctx, personalMail, northwindMail, tasks };
 }
 
 const all = morningBriefConfigSchema.parse({
@@ -90,22 +90,22 @@ const all = morningBriefConfigSchema.parse({
 
 describe("Morning Brief gathering", () => {
   it("reads calendar, email and tasks across the accounts connected right now", async () => {
-    const { ports, ctx, personalMail, firbotMail, tasks } = setup();
+    const { ports, ctx, personalMail, northwindMail, tasks } = setup();
     personalMail.addMessage({ id: "p1", threadId: "pt1" });
-    firbotMail.addMessage({ id: "f1", threadId: "ft1" });
+    northwindMail.addMessage({ id: "f1", threadId: "ft1" });
     await tasks.create({ title: "Send proposal", dueDate: "2026-09-29" });
     const { data, failed } = await gatherBrief(ports, ctx, all);
     expect(failed).toBe(0);
     expect(data.events).toHaveLength(2);
-    expect(data.unread?.map((m) => m.provenance.source).sort()).toEqual(["Firbot", "Personal"]);
+    expect(data.unread?.map((m) => m.provenance.source).sort()).toEqual(["Northwind", "Personal"]);
     expect(data.tasks?.map((t) => t.title)).toEqual(["Send proposal"]);
     expect(data.warnings).toEqual([]);
   });
 
   it("keeps the brief when one source fails and says which", async () => {
-    const { ports, ctx, firbotMail, personalMail } = setup();
+    const { ports, ctx, northwindMail, personalMail } = setup();
     personalMail.failReads = new AppError("AUTH_EXPIRED", "reconnect");
-    firbotMail.failReads = new AppError("AUTH_EXPIRED", "reconnect");
+    northwindMail.failReads = new AppError("AUTH_EXPIRED", "reconnect");
     const { data, failed, attempted } = await gatherBrief(ports, ctx, all);
     expect(failed).toBe(3); // email + two follow-up reads
     expect(attempted).toBe(5);
@@ -114,18 +114,18 @@ describe("Morning Brief gathering", () => {
   });
 
   it("skips an account that needs reconnecting and names it, instead of failing", async () => {
-    const { ports, ctx, personalMail } = setup({ firbotStatus: "needs_reauthorization" });
+    const { ports, ctx, personalMail } = setup({ northwindStatus: "needs_reauthorization" });
     personalMail.addMessage({ id: "p1", threadId: "pt1" });
     const { data } = await gatherBrief(ports, ctx, all);
     expect(data.unread?.map((m) => m.provenance.source)).toEqual(["Personal"]);
   });
 
   it("a pinned account is used alone and never replaced by another", async () => {
-    const { ports, ctx, personalMail } = setup({ firbotStatus: "needs_reauthorization" });
+    const { ports, ctx, personalMail } = setup({ northwindStatus: "needs_reauthorization" });
     personalMail.addMessage({ id: "p1", threadId: "pt1" });
     const pinned = morningBriefConfigSchema.parse({
       blocks: ["email"],
-      sources: { email: FIRBOT },
+      sources: { email: NORTHWIND },
     });
     const { data } = await gatherBrief(ports, ctx, pinned);
     expect(data.unread).toBeUndefined();

@@ -202,6 +202,11 @@ export function ConnectionsView({
 
   return (
     <div className="flex flex-col gap-10">
+      {!google.length && !notion.length && (
+        <p className="rounded-2xl border border-accent-line bg-accent-soft px-5 py-4 text-[14px]">
+          {t.connections.emptyIntro}
+        </p>
+      )}
       <section className="flex flex-col gap-3">
         <h2 className="type-label text-faint">ELISE</h2>
         {elise.map((c) => (
@@ -295,20 +300,6 @@ export function ConnectionsView({
             {t.connections.notionNotConfigured}
           </p>
         )}
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="type-label text-faint">{t.connections.comingSoon}</h2>
-        <div className="flex flex-wrap gap-2">
-          {(["web_search"] as const).map((p) => (
-            <span
-              key={p}
-              className="flex h-9 items-center rounded-full border border-dashed border-border px-4 text-[13px] text-muted"
-            >
-              {t.providers[p]}
-            </span>
-          ))}
-        </div>
       </section>
     </div>
   );
@@ -414,7 +405,7 @@ function GoogleConnectionCard({
   const [name, setName] = useState(c.displayName);
   const [context, setContext] = useState(c.contextLabel ?? "");
   const [expanded, setOpen] = useExpanded(c.id, openOnce);
-  const healthy = c.status === "connected";
+  const healthy = c.health === "connected";
   const enabled = GOOGLE_CAPS.filter((key) =>
     c.capabilities.some((x) => x.key === key && x.enabled),
   )
@@ -458,17 +449,7 @@ function GoogleConnectionCard({
             {enabled && <span className="block truncate text-[12.5px] text-faint">{enabled}</span>}
           </span>
           <span className="flex items-center gap-2">
-            {healthy ? (
-              <span className="hidden items-center gap-2 text-[13px] text-muted sm:flex">
-                <span aria-hidden className="size-1.5 rounded-full bg-success" />
-                {t.connections.connected}
-              </span>
-            ) : (
-              <span className="flex items-center gap-2 text-[13px] text-approval-text">
-                <span aria-hidden className="size-1.5 rounded-full bg-approval" />
-                {t.connections.needsAttention}
-              </span>
-            )}
+            <HealthPill health={c.health} />
             <ChevronDown
               className={cn("size-4 text-faint transition-transform", expanded && "rotate-180")}
               aria-hidden
@@ -484,12 +465,23 @@ function GoogleConnectionCard({
               action={connectGoogle}
               className="flex flex-wrap items-center justify-between gap-3"
             >
-              <p className="text-[13.5px] text-approval-text">{t.connections.needsAttentionBody}</p>
+              <p className="text-[13.5px] text-approval-text">
+                {t.connections.healthBody[c.health]}
+              </p>
               <input type="hidden" name="connectionId" value={c.id} />
-              {c.capabilities.map((cap) => (
-                <input key={cap.key} type="hidden" name="capability" value={cap.key} />
-              ))}
-              {googleAvailable && <Button type="submit">{t.connections.reconnect}</Button>}
+              {/* Missing permission: ask only for that. Lost access: ask again for everything. */}
+              {c.capabilities
+                .filter((cap) => c.health !== "permission_missing" || (cap.enabled && !cap.granted))
+                .map((cap) => (
+                  <input key={cap.key} type="hidden" name="capability" value={cap.key} />
+                ))}
+              {googleAvailable && c.health !== "unavailable" && (
+                <Button type="submit">
+                  {c.health === "permission_missing"
+                    ? t.connections.grantMissing
+                    : t.connections.reconnect}
+                </Button>
+              )}
             </form>
           )}
 
@@ -503,9 +495,18 @@ function GoogleConnectionCard({
                   key={key}
                   className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5"
                 >
-                  <span className="flex items-center gap-3 text-sm">
-                    <Logo size={24} className={cn(!cap?.enabled && "opacity-50 grayscale")} />
-                    {CAP_PRODUCT[key]}
+                  <span className="flex min-w-0 items-center gap-3 text-sm">
+                    <Logo
+                      size={24}
+                      className={cn("shrink-0", !cap?.enabled && "opacity-50 grayscale")}
+                    />
+                    <span className="min-w-0">
+                      <span className="block">{CAP_PRODUCT[key]}</span>
+                      {/* What ELISE can do with it, in plain words (never scope strings). */}
+                      <span className="block text-[12.5px] text-faint">
+                        {t.connections.capabilityBody[key]}
+                      </span>
+                    </span>
                   </span>
                   <div className="flex items-center gap-2">
                     {!granted ? (
@@ -604,18 +605,7 @@ function GoogleConnectionCard({
           </form>
 
           <div className="flex justify-end">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={pending}
-              className="hover:text-danger-text"
-              onClick={() => {
-                if (window.confirm(t.connections.disconnectConfirm(c.displayName)))
-                  act(() => disconnectAction(c.id));
-              }}
-            >
-              {t.connections.disconnect}
-            </Button>
+            <DisconnectButton connection={c} />
           </div>
         </div>
       )}
@@ -631,8 +621,7 @@ function NotionConnectionCard({
   notionAvailable: boolean;
 }) {
   const { t } = useI18n();
-  const [pending, startTransition] = useTransition();
-  const healthy = c.status === "connected";
+  const healthy = c.health === "connected";
   return (
     <article
       className={cn(
@@ -644,13 +633,14 @@ function NotionConnectionCard({
         <NotionIcon size={28} />
         <div className="min-w-0">
           <p className="truncate font-medium">{c.displayName}</p>
-          <p className="truncate text-[13.5px] text-muted">
-            {healthy ? t.connections.connected : t.connections.needsAttention}
-            {c.accountLabel && ` · ${c.accountLabel}`}
+          <p className="truncate text-[13.5px] text-muted">{c.accountLabel}</p>
+          <p className="text-[12.5px] text-faint">
+            {healthy ? t.connections.notionPermissions : t.connections.healthBody[c.health]}
           </p>
         </div>
       </div>
-      <div className="flex gap-1">
+      <div className="flex items-center gap-1">
+        <HealthPill health={c.health} />
         {!healthy && notionAvailable && (
           <form action={connectNotion}>
             <Button type="submit" size="sm">
@@ -658,22 +648,83 @@ function NotionConnectionCard({
             </Button>
           </form>
         )}
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={pending}
-          className="hover:text-danger-text"
-          onClick={() => {
-            if (window.confirm(t.connections.disconnectNotionConfirm(c.displayName)))
+        <DisconnectButton connection={c} />
+      </div>
+    </article>
+  );
+}
+
+function HealthPill({ health }: { health: ConnectionView["health"] }) {
+  const { t } = useI18n();
+  const ok = health === "connected";
+  return (
+    <span
+      className={cn(
+        "flex items-center gap-2 text-[13px]",
+        ok ? "hidden text-muted sm:flex" : "text-approval-text",
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn("size-1.5 rounded-full", ok ? "bg-success" : "bg-approval")}
+      />
+      {t.connections.health[health]}
+    </span>
+  );
+}
+
+/** Disconnect explains what happens first: what stops, what is removed, what stays. */
+function DisconnectButton({ connection: c }: { connection: ConnectionView }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const consequences =
+    c.providerKey === "notion"
+      ? t.connections.disconnectNotionConsequences
+      : t.connections.disconnectGoogleConsequences;
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="hover:text-danger-text"
+        onClick={() => setOpen(true)}
+      >
+        {t.connections.disconnect}
+      </Button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={t.connections.disconnectTitle(c.displayName)}
+        busy={pending}
+      >
+        <ul className="flex list-disc flex-col gap-1.5 pl-5 text-[14px] text-muted">
+          {consequences.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="ghost" disabled={pending} onClick={() => setOpen(false)}>
+            {t.connections.cancel}
+          </Button>
+          <Button
+            variant="danger"
+            disabled={pending}
+            onClick={() =>
               startTransition(async () => {
                 const result = await disconnectAction(c.id);
                 if (!result.ok) toast.error(t.errors.codes[result.error.code]);
-              });
-          }}
-        >
-          {t.connections.disconnect}
-        </Button>
-      </div>
-    </article>
+                else {
+                  toast.success(t.connections.disconnected(c.displayName));
+                  setOpen(false);
+                }
+              })
+            }
+          >
+            {pending ? t.connections.disconnecting : t.connections.disconnect}
+          </Button>
+        </div>
+      </Dialog>
+    </>
   );
 }

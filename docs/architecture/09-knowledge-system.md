@@ -197,8 +197,8 @@ Knowledge Spaces son contenedores lógicos de contexto.
 Ejemplos:
 
 ```text
-Firbot
-RSFA
+Acme
+Client A
 University
 Administración
 Personal
@@ -210,7 +210,7 @@ Un Space no equivale necesariamente a una carpeta física.
 Puede combinar:
 
 ```text
-Knowledge Space: RSFA
+Knowledge Space: Client A
 
 ├── Notion workspace/pages
 ├── Google Drive folder
@@ -229,16 +229,16 @@ Ejemplo:
 
 ```text
 Work
-└── Firbot
+└── Acme
     ├── Internal
     └── Clients
-        ├── RSFA
+        ├── Client A
         └── Client B
 
 Study
-└── UTN
+└── University
     ├── Administración
-    └── Legislación
+    └── Physics
 ```
 
 La jerarquía sirve para:
@@ -261,7 +261,7 @@ Ejemplo:
 
 ```text
 Active Space:
-RSFA
+Client A
 
 User:
 "¿Cuál fue la última decisión sobre el flujo?"
@@ -270,7 +270,7 @@ User:
 ELISE busca primero:
 
 ```text
-RSFA
+Client A
 ```
 
 Si la evidencia es insuficiente, puede:
@@ -307,7 +307,7 @@ El usuario puede indicar scope explícitamente.
 
 Ejemplos:
 
-> “Buscá solo en Firbot.”
+> “Buscá solo en Acme.”
 
 > “No uses mis notas personales.”
 
@@ -1040,10 +1040,10 @@ Ejemplo:
 
 ```text
 Drive:
-Clients / RSFA
+Clients / Client A
 
 Suggested:
-Knowledge Space → RSFA
+Knowledge Space → Client A
 ```
 
 ---
@@ -1100,7 +1100,7 @@ User:
 ELISE:
 → create note
 → link Client entity
-→ assign RSFA Knowledge Space
+→ assign Client A Knowledge Space
 → index
 ```
 
@@ -1130,9 +1130,9 @@ Ejemplo:
 
 ```text
 Document
-→ Client: RSFA
+→ Client: Client A
 → Project: Mortgage Application
-→ Person: Rod
+→ Person: Alex
 ```
 
 Esto mejora:
@@ -1154,7 +1154,7 @@ El vínculo puede ser:
 
 El sistema debe poder responder:
 
-> “¿Qué cambió en RSFA esta semana?”
+> “¿Qué cambió en Client A esta semana?”
 
 Fuentes:
 
@@ -1189,7 +1189,7 @@ No se debe buscar globalmente salvo que el usuario lo solicite.
 
 Caso:
 
-> “Resumime todo Firbot.”
+> “Resumime todo Acme.”
 
 ELISE puede realizar retrieval progresivo o un proceso background si el Space es grande.
 
@@ -1245,7 +1245,7 @@ No fingir que sigue siendo información actual.
 Antes de desconectar:
 
 ```text
-Notion Firbot
+Notion Acme
 
 Used by:
 • 3 Knowledge Spaces
@@ -1549,7 +1549,7 @@ User opens:
 
 ```text
 Knowledge
-→ UTN
+→ University
 → Administración
 → Study
 ```

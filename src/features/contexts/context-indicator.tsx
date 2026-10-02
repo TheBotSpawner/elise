@@ -14,7 +14,7 @@ export type ContextOption = Omit<ActiveContext, "turn">;
 
 /**
  * The interaction's active context (ADR-016 §6): a small pill, never a header. Click to
- * switch to another context or clear it. A Section reads "UTN › Administración" (ADR-018);
+ * switch to another context or clear it. A Section reads "University › Mathematics" (ADR-018);
  * Sections are managed in Knowledge.
  */
 export function ContextIndicator({
@@ -65,7 +65,10 @@ export function ContextIndicator({
           style={{ backgroundColor: dot(context.accent) }}
         />
         <span className="truncate">{context.name}</span>
-        <span className="shrink-0 text-faint">{c.kinds[context.kind]}</span>
+        {/* Untyped contexts (every new Section, ADR-020) show no type. */}
+        {context.kind !== "custom" && (
+          <span className="shrink-0 text-faint">{c.kinds[context.kind]}</span>
+        )}
         <ChevronDown className="size-3.5 shrink-0 text-faint" aria-hidden />
       </button>
       {open && (
@@ -92,7 +95,9 @@ export function ContextIndicator({
                     style={{ backgroundColor: dot(o.accent) }}
                   />
                   <span className="min-w-0 flex-1 truncate">{o.name}</span>
-                  <span className="text-[12px] text-faint">{c.kinds[o.kind]}</span>
+                  {o.kind !== "custom" && (
+                    <span className="text-[12px] text-faint">{c.kinds[o.kind]}</span>
+                  )}
                   {o.id === context.id && (
                     <Check className="size-3.5 text-accent-text" aria-hidden />
                   )}

@@ -1205,7 +1205,7 @@ Muy útil para investigar respuestas inesperadas.
 La UI puede explicar decisiones mediante hechos observables:
 
 ```text
-Using Firbot Gmail because this conversation is linked to RSFA.
+Using Acme Gmail because this conversation is linked to Client A.
 ```
 
 No requiere exponer razonamiento interno detallado del modelo.

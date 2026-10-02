@@ -8,8 +8,18 @@ import { VOICE_LIMITS } from "./providers";
 
 export const VOICE_TURN = {
   tickMs: 50,
-  /** The first moments of each utterance calibrate the room's noise floor. */
+  /**
+   * The room's noise floor is measured once per session, while arming (before "listening"),
+   * never at the start of each utterance: a turn that starts right after ELISE speaks must
+   * not be measured as "noise".
+   */
   calibrateMs: 400,
+  /** Of the calibration frames, this quantile is the floor (speech starting early is ignored). */
+  floorQuantile: 0.25,
+  /** A floor above this is someone talking, not a room. */
+  maxFloor: 0.02,
+  /** Quiet frames nudge the floor this much (slow adaptation to the room). */
+  floorAdapt: 0.02,
   minThreshold: 0.012,
   floorFactor: 2.5,
   /** Voiced time before a pause can end the turn. */
@@ -46,7 +56,6 @@ export type TurnSignal = "speech_start" | "pause" | "resumed" | "end" | "no_spee
 export class TurnDetector {
   private start = -1;
   private floor = 0;
-  private floorN = 0;
   private voicedMs = 0;
   private lastVoice = -1;
   private speaking = false;
@@ -55,21 +64,24 @@ export class TurnDetector {
   private wantLonger = false;
   private calibrated = false;
   private resumed = false;
+  private samples: number[] = [];
 
   constructor(
     private readonly cfg: typeof VOICE_TURN = VOICE_TURN,
     /**
-     * Barge-in: the user is already talking, so the room can't be calibrated now — use the
-     * floor measured earlier in the session and count the turn as started.
+     * `floor`: the session's calibrated floor — listening starts at once, with no deaf
+     * window. `resumed` (barge-in): the user is already talking, so the turn counts as started.
      */
-    resume?: { floor: number },
+    known?: { floor: number; resumed?: boolean },
   ) {
-    if (resume) {
+    if (known) {
       this.calibrated = true;
-      this.resumed = true;
-      this.floor = resume.floor;
-      this.speaking = true;
-      this.voicedMs = cfg.minSpeechMs;
+      this.floor = known.floor;
+      if (known.resumed) {
+        this.resumed = true;
+        this.speaking = true;
+        this.voicedMs = cfg.minSpeechMs;
+      }
     }
   }
 
@@ -96,12 +108,16 @@ export class TurnDetector {
     const elapsed = now - this.start;
     if (!this.calibrated) {
       if (elapsed < this.cfg.calibrateMs) {
-        this.floor = (this.floor * this.floorN + rms) / ++this.floorN;
+        this.samples.push(rms);
         return null;
       }
+      this.floor = calibrateFloor(this.samples, this.cfg);
       this.calibrated = true;
     }
     const threshold = Math.max(this.cfg.minThreshold, this.floor * this.cfg.floorFactor);
+    // Only clearly quiet frames adapt the floor, slowly: speech never raises it.
+    if (!this.speaking && rms < threshold * 0.6)
+      this.floor += (rms - this.floor) * this.cfg.floorAdapt;
     if (rms > threshold) {
       this.voicedMs += this.cfg.tickMs;
       this.lastVoice = now;
@@ -131,6 +147,17 @@ export class TurnDetector {
     this.done = true;
     return signal;
   }
+}
+
+/**
+ * The room's floor from calibration frames: a low quantile (someone already talking in part
+ * of the window doesn't count), capped (a "floor" louder than a quiet room is speech).
+ */
+export function calibrateFloor(samples: number[], cfg: typeof VOICE_TURN = VOICE_TURN): number {
+  if (!samples.length) return 0;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const q = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * cfg.floorQuantile))]!;
+  return Math.min(q, cfg.maxFloor);
 }
 
 const UNFINISHED_WORDS = new Set(

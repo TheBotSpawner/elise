@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * Optional, model-facing account selector shared by every capability tool. The model names an
- * account in the user's words ("Firbot", "Google", "ELISE", an email); the resolver maps it to a
+ * account in the user's words ("Acme", "Google", "ELISE", an email); the resolver maps it to a
  * connection deterministically. It is never a credential or an internal id.
  */
 export const destinationField = z
@@ -12,7 +12,7 @@ export const destinationField = z
   .max(80)
   .optional()
   .describe(
-    'Only when the user names where this should happen (e.g. "Google", "ELISE", "Firbot"). Use the account names listed in your context. Omit to use the default.',
+    'Only when the user names where this should happen (e.g. "Google", "ELISE", "Acme"). Use the account names listed in your context. Omit to use the default.',
   );
 
 export function readDestination(input: unknown): string | null {

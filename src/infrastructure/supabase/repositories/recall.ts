@@ -8,6 +8,8 @@ import {
 import { logger } from "@/infrastructure/observability/logger";
 import type { ServerSupabase } from "@/infrastructure/supabase/server";
 
+import { SupabaseHistoryLinks } from "./history-links";
+
 const toVector = (v: number[]) => `[${v.join(",")}]`;
 
 type SessionRow = {
@@ -41,12 +43,16 @@ const SESSION_COLUMNS =
  * Works without embeddings too (full-text only), so Recall never depends on the AI provider.
  */
 export class SupabaseRecallReader implements RecallReader {
+  readonly links: SupabaseHistoryLinks;
+
   constructor(
     private readonly db: ServerSupabase,
     private readonly workspaceId: string,
     private readonly userId: string,
     private readonly embeddings: () => EmbeddingProvider,
-  ) {}
+  ) {
+    this.links = new SupabaseHistoryLinks(db, workspaceId, userId);
+  }
 
   private async sessionOf(conversationId: string | null | undefined): Promise<string | null> {
     if (!conversationId) return null;
@@ -65,6 +71,7 @@ export class SupabaseRecallReader implements RecallReader {
     excludeConversationId?: string | null;
     excludeSessionId?: string | null;
     contextId?: string | null;
+    spaceIds?: string[] | null;
     limit: number;
   }) {
     let embedding: string | null = null;
@@ -90,6 +97,7 @@ export class SupabaseRecallReader implements RecallReader {
       p_exclude_session: q.excludeSessionId ?? (await this.sessionOf(q.excludeConversationId)),
       p_limit: q.limit,
       p_context: q.contextId ?? undefined,
+      p_spaces: q.spaceIds?.length ? q.spaceIds : undefined,
     });
     if (error) throw error;
     return {

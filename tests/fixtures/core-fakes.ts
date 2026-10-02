@@ -309,7 +309,7 @@ export class InMemoryEmailProvider implements EmailProvider {
 
   addMessage(over: Partial<EmailMessage> & { id: string; threadId: string }): EmailMessage {
     const m: EmailMessage = {
-      from: { email: "rod@client.com", name: "Rod" },
+      from: { email: "alex@client.com", name: "Alex" },
       to: [{ email: this.account, name: null }],
       cc: [],
       replyTo: [],

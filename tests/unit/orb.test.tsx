@@ -22,6 +22,6 @@ describe("Orb", () => {
         <Orb state="waiting_approval" />
       </I18nProvider>,
     );
-    expect(screen.getByRole("img", { name: "Elise espera tu aprobación" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "ELISE espera tu aprobación" })).toBeInTheDocument();
   });
 });

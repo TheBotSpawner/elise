@@ -21,7 +21,14 @@ import { setVoicePreferences } from "./actions";
  * Voice (ADR-014, ADR-017): only controls that work. The wake phrase is offered only as far as
  * this browser can detect it on the device — checked, never assumed.
  */
-export function VoiceSettings({ initial }: { initial: VoicePreferences }) {
+export function VoiceSettings({
+  initial,
+  wakeAllowed = true,
+}: {
+  initial: VoicePreferences;
+  /** The wake-phrase feature flag (ADR-019). */
+  wakeAllowed?: boolean;
+}) {
   const { t, locale } = useI18n();
   const s = t.voice.settings;
   const [prefs, setPrefs] = useState(initial);
@@ -103,15 +110,18 @@ export function VoiceSettings({ initial }: { initial: VoicePreferences }) {
             onCheckedChange={(bargeIn) => change({ bargeIn })}
           />
         </Row>
-        <Row label={s.wake} hint={wake === "unavailable" ? s.wakeUnsupported : s.wakeHint}>
-          <Switch
-            checked={prefs.wakeEnabled && wake !== "unavailable"}
-            disabled={!prefs.enabled || wake === "unavailable" || wake === "checking"}
-            aria-label={s.wake}
-            onCheckedChange={(wakeEnabled) => change({ wakeEnabled })}
-          />
-        </Row>
-        {prefs.enabled && prefs.wakeEnabled && wake !== "unavailable" && (
+        {/* Offered only where this browser can detect it on the device (ADR-017 §7). */}
+        {wakeAllowed && wake !== "unavailable" && (
+          <Row label={s.wake} hint={s.wakeHint}>
+            <Switch
+              checked={prefs.wakeEnabled}
+              disabled={!prefs.enabled || wake === "checking"}
+              aria-label={s.wake}
+              onCheckedChange={(wakeEnabled) => change({ wakeEnabled })}
+            />
+          </Row>
+        )}
+        {wakeAllowed && prefs.enabled && prefs.wakeEnabled && wake !== "unavailable" && (
           <div className="flex flex-col gap-3 rounded-2xl border border-border p-4">
             <div className="flex flex-wrap items-end gap-4">
               <div className="space-y-1.5">

@@ -139,10 +139,12 @@ function makeEvent(
 }
 
 const PERSONAL = "11111111-1111-4111-8111-111111111111";
-const FIRBOT = "22222222-2222-4222-8222-222222222222";
+const NORTHWIND = "22222222-2222-4222-8222-222222222222";
 
 function setup() {
-  const meeting = makeEvent(FIRBOT, "Firbot", "m1", "Client meeting", ["client@acme.com"]);
+  const meeting = makeEvent(NORTHWIND, "Northwind", "m1", "Client meeting", [
+    "client@northwind.com",
+  ]);
   const gym = makeEvent(PERSONAL, "Personal", "g1", "Gym", []);
   const personal = new FakeCalendar(
     PERSONAL,
@@ -156,14 +158,14 @@ function setup() {
     ],
     [gym],
   );
-  const firbot = new FakeCalendar(
-    FIRBOT,
-    "Firbot",
+  const northwind = new FakeCalendar(
+    NORTHWIND,
+    "Northwind",
     [
       {
         start: new Date("2026-09-30T19:30:00Z"),
         end: new Date("2026-09-30T20:00:00Z"),
-        source: "Firbot",
+        source: "Northwind",
       },
     ],
     [meeting],
@@ -177,14 +179,14 @@ function setup() {
       isDefault: true,
     }),
     binding({
-      connectionId: FIRBOT,
+      connectionId: NORTHWIND,
       capability: "calendar",
       providerKey: "google",
-      label: "Firbot",
+      label: "Northwind",
     }),
   ];
-  const { ports, log } = makePorts(bindings, { [PERSONAL]: personal, [FIRBOT]: firbot });
-  return { ports, log, personal, firbot, meeting, gym };
+  const { ports, log } = makePorts(bindings, { [PERSONAL]: personal, [NORTHWIND]: northwind });
+  return { ports, log, personal, northwind, meeting, gym };
 }
 
 describe("calendar tools", () => {
@@ -198,13 +200,13 @@ describe("calendar tools", () => {
       status: "succeeded",
       output: {
         free: [{ start: "2026-09-30T16:00", end: "2026-09-30T16:30" }],
-        busy: [{ source: "Personal" }, { source: "Firbot" }],
+        busy: [{ source: "Personal" }, { source: "Northwind" }],
       },
     });
   });
 
   it("creates a simple personal event directly in the default calendar", async () => {
-    const { ports, personal, firbot } = setup();
+    const { ports, personal, northwind } = setup();
     const out = await executeToolCall(ports, makeCtx(), {
       name: "calendar.createEvent",
       args: { title: "Gym", start: "2026-09-30T18:00" },
@@ -218,23 +220,23 @@ describe("calendar tools", () => {
         timezone: BA,
       },
     ]);
-    expect(firbot.created).toHaveLength(0);
+    expect(northwind.created).toHaveLength(0);
   });
 
   it("requires approval before inviting other people", async () => {
-    const { ports, firbot, log } = setup();
+    const { ports, northwind, log } = setup();
     const out = await executeToolCall(ports, makeCtx(), {
       name: "calendar.createEvent",
       args: {
         title: "Proposal review",
         start: "2026-10-01T15:00",
-        attendees: ["juan@acme.com"],
-        destination: "Firbot",
+        attendees: ["juan@northwind.com"],
+        destination: "Northwind",
       },
     });
     expect(out).toMatchObject({ status: "approval_required", reason: "external_communication" });
-    expect(out.status === "approval_required" && out.summary).toContain("juan@acme.com");
-    expect(firbot.created).toHaveLength(0);
+    expect(out.status === "approval_required" && out.summary).toContain("juan@northwind.com");
+    expect(northwind.created).toHaveLength(0);
     expect(log.approvals).toHaveLength(1);
   });
 

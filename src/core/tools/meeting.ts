@@ -231,7 +231,7 @@ export const prepareMeetingTool: ToolDefinition = {
   capability: "workspace",
   operation: "prepareMeeting",
   description:
-    '"Preparame para mi próxima reunión", "creo que tengo una reunión a las 12", "¿con quién me junto ahora?", "help me prepare for my meeting with Rod": finds the meeting and gathers its context (email with the participants, earlier conversations, documents, related open tasks, links) into the Live Workspace. Pass only what the user said. Then write the brief with ui.present.',
+    '"Preparame para mi próxima reunión", "creo que tengo una reunión a las 12", "¿con quién me junto ahora?", "help me prepare for my meeting with Alex": finds the meeting and gathers its context (email with the participants, earlier conversations, documents, related open tasks, links) into the Live Workspace. Pass only what the user said. Then write the brief with ui.present.',
   input,
   async describe() {
     return { summary: "Prepare meeting" };

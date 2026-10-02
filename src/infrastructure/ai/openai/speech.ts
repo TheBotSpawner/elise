@@ -10,6 +10,7 @@ import {
   type TranscriptionRequest,
   type VoiceLanguage,
 } from "@/core/voice/providers";
+import { recordUsage } from "@/infrastructure/observability/usage";
 
 /**
  * OpenAI speech (verified against the current API, 2026-09):
@@ -37,7 +38,10 @@ function providerError(status: number, fallback: string): AppError {
     });
   if (status === 429)
     return new AppError("RATE_LIMITED", "Speech is busy right now. Try again in a moment.");
-  return new AppError("PROVIDER_UNAVAILABLE", fallback, { recovery: "retry" });
+  return new AppError("PROVIDER_UNAVAILABLE", fallback, {
+    recovery: "retry",
+    details: { providerStatus: status },
+  });
 }
 
 const asLanguage = (code: unknown): VoiceLanguage | null =>
@@ -67,6 +71,7 @@ export class OpenAISpeechInput implements SpeechInputProvider {
     form.append("stream", "true");
     if (request.language) form.append("language", request.language);
     if (request.context) form.append("prompt", request.context.slice(0, 800));
+    const started = Date.now();
     const res = await fetch(`${API}/audio/transcriptions`, {
       method: "POST",
       headers: { authorization: `Bearer ${this.apiKey}` },
@@ -93,11 +98,26 @@ export class OpenAISpeechInput implements SpeechInputProvider {
           delta?: string;
           text?: string;
           languages?: { code?: string }[];
+          usage?: {
+            type?: string;
+            seconds?: number;
+            input_tokens?: number;
+            output_tokens?: number;
+          };
         };
         if (event.type === "transcript.text.delta" && event.delta) {
           text += event.delta;
           yield { type: "partial", text };
         } else if (event.type === "transcript.text.done") {
+          recordUsage({
+            operation: "transcription",
+            provider: this.id,
+            model: this.model,
+            inputTokens: event.usage?.input_tokens ?? null,
+            outputTokens: event.usage?.output_tokens ?? null,
+            ...(event.usage?.seconds ? { units: event.usage.seconds, unit: "seconds" } : {}),
+            latencyMs: Date.now() - started,
+          });
           yield {
             type: "final",
             text: (event.text ?? text).trim(),
@@ -129,6 +149,7 @@ export class OpenAISpeechOutput implements SpeechOutputProvider {
     request: SynthesisRequest,
     signal?: AbortSignal,
   ): Promise<ReadableStream<Uint8Array>> {
+    const started = Date.now();
     const res = await fetch(`${API}/audio/speech`, {
       method: "POST",
       headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
@@ -142,6 +163,15 @@ export class OpenAISpeechOutput implements SpeechOutputProvider {
       signal,
     });
     if (!res.ok || !res.body) throw providerError(res.status, "Couldn't synthesize speech");
+    // Latency here is time to first byte: what the listener waits for.
+    recordUsage({
+      operation: "speech",
+      provider: this.id,
+      model: this.model,
+      units: request.text.length,
+      unit: "characters",
+      latencyMs: Date.now() - started,
+    });
     return res.body;
   }
 }

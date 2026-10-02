@@ -73,13 +73,18 @@ export class Microphone {
     return this.recorder?.state === "recording";
   }
 
-  /** Starts recording one utterance. */
+  /**
+   * Starts recording one utterance. Each recorder writes into its own chunk list: a stopped
+   * recorder still delivers a final `dataavailable` later, and that fragment must never land
+   * in the next utterance (it made the upload an invalid WebM and the follow-up was lost).
+   */
   begin(): void {
     if (!this.stream || this.recording) return;
     const mimeType = pickMimeType();
-    this.chunks = [];
+    const chunks: Blob[] = [];
+    this.chunks = chunks;
     this.recorder = new MediaRecorder(this.stream, mimeType ? { mimeType } : undefined);
-    this.recorder.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
+    this.recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     // Small timeslices make snapshots fresh (a snapshot is the chunks so far).
     this.recorder.start(200);
     this.startedAt = performance.now();
@@ -112,12 +117,15 @@ export class Microphone {
     const durationMs = Math.round(performance.now() - this.startedAt);
     if (!recorder || recorder.state === "inactive")
       return Promise.resolve({ blob: new Blob(), durationMs: 0 });
+    const chunks = this.chunks;
     return new Promise((resolve) => {
-      recorder.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
+      recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
       recorder.onstop = () => {
-        const blob = new Blob(this.chunks, { type: recorder.mimeType || "audio/webm" });
-        this.chunks = [];
-        this.recorder = null;
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        if (this.recorder === recorder) {
+          this.chunks = [];
+          this.recorder = null;
+        }
         resolve({ blob, durationMs });
       };
       recorder.stop();
@@ -127,6 +135,8 @@ export class Microphone {
   /** Drops the current utterance without sending it (mute, interrupt, a reply that ended). */
   discard(): void {
     if (this.recorder && this.recorder.state !== "inactive") {
+      // Its last fragment arrives after stop(): detach so it goes nowhere.
+      this.recorder.ondataavailable = null;
       this.recorder.onstop = null;
       this.recorder.stop();
     }

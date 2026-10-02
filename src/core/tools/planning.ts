@@ -31,7 +31,7 @@ const planningInput = z
       .min(1)
       .max(120)
       .optional()
-      .describe('A context to focus the day on ("modo Firbot"), if the user names one.'),
+      .describe('A context to focus the day on ("modo Acme"), if the user names one.'),
   })
   .strict();
 

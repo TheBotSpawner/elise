@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { dispatchDueSchedules, executeScheduleRun } from "@/application/background";
 import { MAX_ATTEMPTS } from "@/core/schedules/runner";
+import { withUsageScope } from "@/infrastructure/observability/usage";
 
 /**
  * Thin Trigger.dev entry points (docs/architecture/14 §3). All business logic lives in ELISE
@@ -28,7 +29,10 @@ export const scheduleRunTask = task({
     const parsed = scheduleRunPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid schedule run payload");
     // Throws only for transient errors; the runtime retries those with backoff.
-    const status = await executeScheduleRun({ ...parsed.data, attempt: ctx.attempt.number });
+    const scope = { workspaceId: parsed.data.workspaceId, feature: "schedule" };
+    const status = await withUsageScope(scope, () =>
+      executeScheduleRun({ ...parsed.data, attempt: ctx.attempt.number }),
+    );
     return { status };
   },
 });

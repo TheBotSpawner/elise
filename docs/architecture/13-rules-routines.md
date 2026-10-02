@@ -70,7 +70,7 @@ Ejemplos:
 ```text
 Always ask before sending an email.
 
-Use my Firbot Gmail for client communication.
+Use my Acme Gmail for client communication.
 
 Don't include newsletters in my Morning Brief.
 
@@ -105,10 +105,10 @@ Ejemplo:
 
 ```text
 ELISE notices:
-User always chooses Firbot Gmail for RSFA.
+User always chooses Acme Gmail for Client A.
 
 Suggestion:
-"Should I always use Firbot Gmail for RSFA?"
+"Should I always use Acme Gmail for Client A?"
 ```
 
 Si el usuario confirma:
@@ -219,7 +219,7 @@ Create personal reminders without asking.
 Ejemplo:
 
 ```text
-Gmail Firbot:
+Gmail Acme:
 Client emails → Always Ask before send.
 
 Gmail Personal:
@@ -233,9 +233,9 @@ Family emails → Ask When Uncertain.
 Ejemplo:
 
 ```text
-Firbot:
+Acme:
 Use Work Gmail.
-Use Firbot Calendar.
+Use Acme Calendar.
 
 Personal:
 Use Personal Calendar.
@@ -248,8 +248,8 @@ Use Personal Calendar.
 Ejemplo:
 
 ```text
-RSFA:
-Always use Firbot work email.
+Client A:
+Always use Acme work email.
 Include recent open tasks in meeting prep.
 ```
 
@@ -337,14 +337,14 @@ Ejemplo:
 Global:
 Send Email → Always Ask
 
-RSFA:
-Send internal RSFA email → Allow Automatically
+Client A:
+Send internal Client A email → Allow Automatically
 ```
 
 Si hard security policy lo permite:
 
 ```text
-RSFA-specific rule
+Client A-specific rule
 → wins
 ```
 
@@ -439,7 +439,7 @@ Aunque se almacenen estructuradamente, deben poder explicarse en lenguaje natura
 Ejemplo:
 
 ```text
-"When communicating with RSFA, use Firbot Gmail."
+"When communicating with Client A, use Acme Gmail."
 ```
 
 No mostrar:
@@ -1314,13 +1314,13 @@ Some Schedules may intentionally target a specific account.
 Example:
 
 ```text
-"Every Friday summarize only my Firbot inbox."
+"Every Friday summarize only my Acme inbox."
 ```
 
 Then persist:
 
 ```text
-connection_id = Firbot Gmail
+connection_id = Acme Gmail
 ```
 
 ---
@@ -1666,7 +1666,7 @@ Example:
 
 ```text
 Client communication
-→ Firbot Gmail
+→ Acme Gmail
 ```
 
 Used by Provider Resolver.

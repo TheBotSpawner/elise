@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
-import { nameKey, type ContextProfile, type ContextStore } from "../contexts/model";
+import { contextLabel, type ContextProfile, type ContextStore, nameKey } from "../contexts/model";
 import { AppError } from "../errors";
 import { activateContext, findProfile, threadOf } from "./contexts";
 import { clip, present } from "./orchestration";
@@ -443,26 +443,31 @@ export const startStudyTool: ToolDefinition = {
   async run(raw, env) {
     const q = startInput.parse(raw);
     const store = contexts(env);
-    const subjects = (await store.list()).filter(
-      (p) => p.status === "active" && p.kind === "study",
-    );
+    // Studying is an intent, not a context type (ADR-020): any Section or context with
+    // material can be studied — the named one, else the active one, else the only one studied.
+    const active = (await store.list()).filter((p) => p.status === "active");
+    const studied = active.filter((p) => p.kind === "study" || p.study);
     const profile = q.context
-      ? await findProfile(store, q.context, { kind: "study" })
-      : env.ctx.context?.kind === "study"
+      ? await findProfile(store, q.context)
+      : env.ctx.context
         ? await findProfile(store, env.ctx.context.id)
-        : subjects.length === 1
-          ? subjects[0]!
+        : studied.length === 1
+          ? studied[0]!
           : null;
-    if (!profile)
+    if (!profile) {
+      const candidates = (studied.length ? studied : active.filter((p) => p.section))
+        .slice(0, 12)
+        .map(contextLabel);
       return {
         output: {
           started: false,
-          subjects: subjects.map((p) => p.name),
-          instructions: subjects.length
-            ? "Ask which subject (by name)."
-            : "There's no study context yet. Offer to create one for this subject (contexts.propose with kind study), linking the Knowledge Space with its material.",
+          subjects: candidates,
+          instructions: candidates.length
+            ? "Ask which Section or subject (by name)."
+            : "There's no Section with material yet. Offer to create a Section for this subject inside a Knowledge Space and upload the material there.",
         },
       };
+    }
     const m = await material(env, profile);
     if (!m || !m.documents.length)
       return {
@@ -993,7 +998,7 @@ export const progressStudyTool: ToolDefinition = {
   capability: "study",
   operation: "progress",
   description:
-    '"¿Qué me costó la última vez en Administración?", "what am I weak at?", "¿cómo vengo con Legislación?": the subject\'s structured progress (concept status, weak areas, last session, recent mistakes). Prefer it over Recall for progress.',
+    '"¿Qué me costó la última vez en Administración?", "what am I weak at?", "¿cómo vengo con Physics?": the subject\'s structured progress (concept status, weak areas, last session, recent mistakes). Prefer it over Recall for progress.',
   input: progressInput,
   async describe() {
     return { summary: "Study progress" };
@@ -1002,12 +1007,12 @@ export const progressStudyTool: ToolDefinition = {
     const q = progressInput.parse(raw);
     const store = contexts(env);
     const profile = q.context
-      ? await findProfile(store, q.context, { kind: "study" })
-      : env.ctx.context?.kind === "study"
+      ? await findProfile(store, q.context)
+      : env.ctx.context
         ? await findProfile(store, env.ctx.context.id)
         : await (async () => {
             const subjects = (await store.list()).filter(
-              (p) => p.status === "active" && p.kind === "study",
+              (p) => p.status === "active" && (p.kind === "study" || p.study),
             );
             if (subjects.length === 1) return subjects[0]!;
             throw new AppError(

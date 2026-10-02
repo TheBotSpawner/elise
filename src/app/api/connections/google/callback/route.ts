@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getAuthContext } from "@/application/auth-context";
 import { completeGoogleConnection } from "@/application/connections-service";
 import { toAppError } from "@/core/errors";
+import { trackEvent } from "@/infrastructure/observability/analytics";
 import { logger } from "@/infrastructure/observability/logger";
 
 /**
@@ -23,8 +24,13 @@ export async function GET(request: NextRequest) {
       state: searchParams.get("state"),
       error: searchParams.get("error"),
       origin,
+      onReturnPath: (path) => (back.pathname = path),
     });
     back.searchParams.set("connected", result.connectionId);
+    trackEvent(auth, "connection_added", {
+      provider: "google",
+      capabilities: result.enabled.length,
+    });
     if (result.missing.length) back.searchParams.set("missing", result.missing.join(","));
   } catch (error) {
     const e = toAppError(error);

@@ -11,7 +11,7 @@ create unique index context_profiles_section_idx on public.context_profiles (kno
   where knowledge_space_id is not null;
 
 -- Names stay unique among standalone profiles; a Section's identity includes its parent Space
--- ("UTN › Administración" and "Posgrado › Administración" can coexist).
+-- ("University › Mathematics" and "Posgrado › Administración" can coexist).
 drop index public.context_profiles_name_idx;
 create unique index context_profiles_name_idx on public.context_profiles (workspace_id, name_key)
   where status = 'active' and knowledge_space_id is null;

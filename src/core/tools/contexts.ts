@@ -78,7 +78,7 @@ export async function findProfile(
     (p) => p.status === "active" && (!opts.kind || p.kind === opts.kind),
   );
   const key = nameKey(ref.replace(/\s*[›>/]\s*/g, " "));
-  // A Section is also known by its path: "UTN Administración", "UTN › Administración".
+  // A Section is also known by its path: "University Mathematics", "University › Mathematics".
   const pathKey = (p: ContextProfile) =>
     p.section ? nameKey(`${p.section.parentName} ${p.name}`) : null;
   const exact = all.filter(
@@ -243,7 +243,7 @@ const proposeInput = z
       .max(200)
       .optional()
       .describe(
-        'The top-level Knowledge Space it belongs in, which makes it a Section there ("Firbot Solutions" for a client, "UTN" for a subject). Only a Space the user named or one that obviously fits; omit otherwise.',
+        'The top-level Knowledge Space it belongs in, which makes it a Section there ("Acme Studio" for a client, "University" for a subject). Only a Space the user named or one that obviously fits; omit otherwise.',
       ),
     hints: z
       .object({
@@ -484,7 +484,7 @@ export const proposeContextTool: ToolDefinition = {
   capability: "contexts",
   operation: "propose",
   description:
-    '"RSFA es uno de mis clientes", "creame un contexto para Administración", "quiero usar esta carpeta de Knowledge para Administración": proposes a Context Profile with suggested links found from metadata (Knowledge Space names, task lists, structured sources, the email domains and people that appear with it). Nothing is created: the user confirms on screen.',
+    '"Client A es uno de mis clientes", "creame un contexto para Administración", "quiero usar esta carpeta de Knowledge para Administración": proposes a Context Profile with suggested links found from metadata (Knowledge Space names, task lists, structured sources, the email domains and people that appear with it). Nothing is created: the user confirms on screen.',
   input: proposeInput,
   async describe() {
     return { summary: "Propose context" };
@@ -612,7 +612,7 @@ const createInput = z
       .max(200)
       .optional()
       .describe(
-        'The top-level Knowledge Space it belongs in, which makes it a Section there ("Firbot Solutions" for a client, "UTN" for a subject). Only a Space the user named or one that obviously fits; omit otherwise.',
+        'The top-level Knowledge Space it belongs in, which makes it a Section there ("Acme Studio" for a client, "University" for a subject). Only a Space the user named or one that obviously fits; omit otherwise.',
       ),
     instructions: z
       .string()
@@ -735,7 +735,7 @@ export const updateContextTool: ToolDefinition = {
   capability: "contexts",
   operation: "update",
   description:
-    'Changes a context: name, aliases, description, routing preferences, study details, or its links ("usá también la lista RSFA", "sacale el dominio viejo").',
+    'Changes a context: name, aliases, description, routing preferences, study details, or its links ("usá también la lista Client A", "sacale el dominio viejo").',
   input: updateInput,
   async describe(raw, env) {
     const q = updateInput.parse(raw);
@@ -802,7 +802,7 @@ export const activateContextTool: ToolDefinition = {
   capability: "contexts",
   operation: "activate",
   description:
-    '"Ahora hablemos de Firbot", "volvamos a RSFA", "switch to my Administration subject": makes a context the active one for this interaction (retrieval looks there first). Changes no data.',
+    '"Ahora hablemos de Acme", "volvamos a Client A", "switch to my Administration subject": makes a context the active one for this interaction (retrieval looks there first). Changes no data.',
   input: getInput,
   async describe() {
     return { summary: "Switch context" };
@@ -826,7 +826,7 @@ export const clearContextTool: ToolDefinition = {
   capability: "contexts",
   operation: "clear",
   description:
-    "Clears the active context when the user leaves the subject ('dejemos RSFA', 'otra cosa'). Changes no data.",
+    "Clears the active context when the user leaves the subject ('dejemos Client A', 'otra cosa'). Changes no data.",
   input: z.object({}).strict(),
   async describe() {
     return { summary: "Clear context" };
@@ -844,7 +844,7 @@ export const findPeopleTool: ToolDefinition = {
   capability: "contexts",
   operation: "findPeople",
   description:
-    '"¿Qué le debemos a Rod?", "el último mail de Chris": who that person is (name, emails, organization, contexts). Several matches → ask which; never merge people.',
+    '"¿Qué le debemos a Alex?", "el último mail de Chris": who that person is (name, emails, organization, contexts). Several matches → ask which; never merge people.',
   input: peopleInput,
   async describe() {
     return { summary: "Find person" };
@@ -914,7 +914,7 @@ export const workBriefTool: ToolDefinition = {
   capability: "contexts",
   operation: "brief",
   description:
-    '"Poneme al día con RSFA", "client brief for RSFA", "¿cómo viene ELISE?", "what are the open items with this client?", "what did we promise them?": gathers what changed since the last interaction (email, meetings, tasks, documents, earlier conversations, linked structured data; public news only if asked) into the Live Workspace, with extracted commitments and a timeline. Then write the brief with ui.present.',
+    '"Poneme al día con Client A", "client brief for Client A", "¿cómo viene ELISE?", "what are the open items with this client?", "what did we promise them?": gathers what changed since the last interaction (email, meetings, tasks, documents, earlier conversations, linked structured data; public news only if asked) into the Live Workspace, with extracted commitments and a timeline. Then write the brief with ui.present.',
   input: briefInput,
   async describe() {
     return { summary: "Work brief" };

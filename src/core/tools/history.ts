@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { AppError } from "../errors";
+import { recallTiers, resolveNode, type KnowledgeNode } from "../history/links";
+import type { ThreadRef } from "../interaction";
 import { PERIODS, resolvePeriod, type PeriodPreset } from "../periods";
 import { groupRecall, RECALL, type RecallReader, type RecallResult } from "../recall/model";
 import { addDays, isIsoDate, startOfDayUtc, toLocalDateTime, todayIn } from "../time";
@@ -70,6 +72,15 @@ const searchInput = z
       .max(100)
       .optional()
       .describe("A context id: search its interactions first (defaults to the active context)."),
+    space: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .optional()
+      .describe(
+        'A Knowledge Space or Section the past conversations belong to ("Client A", "University › Mathematics"): searched first, then its Space, then everything. Defaults to the active Section.',
+      ),
   })
   .strict();
 
@@ -87,7 +98,7 @@ export const searchHistoryTool: ToolDefinition = {
     const q = searchInput.parse(raw);
     const w = window(q, env);
     const r = reader(env);
-    const find = async (contextId: string | null) => {
+    const find = async (contextId: string | null, spaceIds: string[] | null = null) => {
       const { hits } = await r.search({
         text: q.query,
         from: w.from,
@@ -95,26 +106,52 @@ export const searchHistoryTool: ToolDefinition = {
         excludeConversationId: env.ctx.conversationId ?? null,
         excludeSessionId: env.ctx.interactionSessionId ?? null,
         contextId,
+        spaceIds,
         limit: RECALL.candidates,
       });
       const sessions = await r.sessions([...new Set(hits.map((h) => h.sessionId))]);
       return groupRecall(hits, sessions).slice(0, q.limit);
     };
-    // The context's own interactions first (ADR-016 §8), then everything if none matched.
+    // Most specific first, like Knowledge (ADR-020): the Section's conversations, then its
+    // Space's, then the context's own interactions (ADR-016 §8), then everything.
+    const nodes = r.links ? await r.links.nodes().catch(() => []) : [];
+    const spaceRef = q.space ?? env.ctx.context?.sectionSpaceId ?? null;
+    const resolved = spaceRef ? resolveNode(spaceRef, nodes) : null;
+    if (resolved && "ambiguous" in resolved)
+      return {
+        output: {
+          enough: false,
+          ambiguous: resolved.ambiguous.map((n) =>
+            n.parentName ? `${n.parentName} › ${n.name}` : n.name,
+          ),
+          instructions: "Several Spaces/Sections match: ask which one.",
+        },
+      };
+    const node = resolved && "node" in resolved ? resolved.node : null;
+    let results: RecallResult[] = [];
+    let scope: string | null = null;
+    for (const [i, tier] of (node ? recallTiers(node.id, nodes) : []).entries()) {
+      results = await find(null, tier);
+      if (results.length) {
+        scope = i === 0 ? `conversations of ${node!.name}` : `conversations of ${node!.parentName}`;
+        break;
+      }
+    }
     const contextId = q.context ?? env.ctx.context?.id ?? null;
-    let results = contextId ? await find(contextId) : [];
-    const scoped = results.length > 0;
-    if (!scoped) results = await find(null);
+    if (!results.length && contextId) {
+      results = await find(contextId);
+      if (results.length) scope = "interactions of the context";
+    }
+    const scoped = results.length > 0 && scope !== null;
+    if (!results.length) results = await find(null);
     const chronological = [...results].sort((a, b) => a.date.localeCompare(b.date));
     return {
       output: {
         enough: results.length > 0,
         ...(w.label ? { dates: w.label } : {}),
-        ...(contextId
+        ...(node || contextId
           ? {
-              scope: scoped
-                ? "interactions of the context"
-                : "all interactions (none of the context's matched)",
+              scope: scoped ? scope : "all interactions (none of the scoped ones matched)",
             }
           : {}),
         ...(results.length
@@ -259,8 +296,157 @@ export const getRecentHistoryTool: ToolDefinition = {
   },
 };
 
+// ── History ↔ Knowledge (ADR-020) ────────────────────────────────────────────
+
+function linksPort(env: ToolRunEnv) {
+  const port = reader(env).links;
+  if (!port) throw new AppError("CAPABILITY_UNAVAILABLE", "History tags aren't available");
+  return port;
+}
+
+/** The thread this turn runs in: a conversation, or a voice session. */
+function currentThread(env: ToolRunEnv): ThreadRef {
+  if (env.ctx.conversationId) return { kind: "conversation", id: env.ctx.conversationId };
+  if (env.ctx.interactionSessionId) return { kind: "session", id: env.ctx.interactionSessionId };
+  throw new AppError("VALIDATION_ERROR", "There's no conversation to organize yet", {
+    recovery: "review",
+  });
+}
+
+const nodeLabel = (n: KnowledgeNode) => (n.parentName ? `${n.parentName} › ${n.name}` : n.name);
+
+async function nodeFor(env: ToolRunEnv, ref: string) {
+  const nodes = await linksPort(env).nodes();
+  const r = resolveNode(ref, nodes);
+  if (!r)
+    throw new AppError("NOT_FOUND", `No Space or Section is called "${ref}"`, {
+      recovery: "review",
+    });
+  if ("ambiguous" in r)
+    throw new AppError(
+      "VALIDATION_ERROR",
+      `Several match "${ref}": ${r.ambiguous.map(nodeLabel).join(", ")}. Ask which one.`,
+      { recovery: "review" },
+    );
+  return r.node;
+}
+
+const linkInput = z
+  .object({
+    space: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .describe('A Knowledge Space or Section ("Mathematics", "University › Mathematics").'),
+  })
+  .strict();
+
+export const addKnowledgeLinkTool: ToolDefinition = {
+  name: "history.addKnowledgeLink",
+  capability: "history",
+  operation: "addKnowledgeLink",
+  description:
+    '"Relacioná esta conversación con Mathematics", "esto pertenece a Work": tags THIS conversation with a Knowledge Space or Section, so it shows there in History. Organizes only; it grants no access.',
+  input: linkInput,
+  async describe(raw) {
+    return { summary: `Tag conversation with ${linkInput.parse(raw).space}` };
+  },
+  async run(raw, env) {
+    const q = linkInput.parse(raw);
+    const node = await nodeFor(env, q.space);
+    await linksPort(env).set(currentThread(env), node.id, "linked", "manual");
+    return { output: { linked: nodeLabel(node) } };
+  },
+};
+
+export const removeKnowledgeLinkTool: ToolDefinition = {
+  name: "history.removeKnowledgeLink",
+  capability: "history",
+  operation: "removeKnowledgeLink",
+  description:
+    '"Sacá este chat de Client A": removes a Space/Section tag from THIS conversation. ELISE won\'t add it back on its own.',
+  input: linkInput,
+  async describe(raw) {
+    return { summary: `Untag conversation from ${linkInput.parse(raw).space}` };
+  },
+  async run(raw, env) {
+    const q = linkInput.parse(raw);
+    const node = await nodeFor(env, q.space);
+    await linksPort(env).set(currentThread(env), node.id, "removed", "manual");
+    return { output: { removed: nodeLabel(node) } };
+  },
+};
+
+const listLinksInput = z
+  .object({
+    space: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .optional()
+      .describe("A Space or Section: its conversations. Omit for this conversation's tags."),
+    limit: z.number().int().min(1).max(20).default(10),
+  })
+  .strict();
+
+export const listKnowledgeLinksTool: ToolDefinition = {
+  name: "history.listKnowledgeLinks",
+  capability: "history",
+  operation: "listKnowledgeLinks",
+  description:
+    '"¿Qué conversaciones tengo relacionadas con University?": conversations tagged with a Space (its Sections included) or a Section, newest first. Without `space`: the tags of this conversation.',
+  input: listLinksInput,
+  async describe() {
+    return { summary: "History tags" };
+  },
+  async run(raw, env) {
+    const q = listLinksInput.parse(raw);
+    const port = linksPort(env);
+    const nodes = await port.nodes();
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    if (!q.space) {
+      const links = await port.linksOf([currentThread(env)]);
+      return {
+        output: {
+          tags: links
+            .filter((l) => l.state === "linked" && byId.has(l.spaceId))
+            .map((l) => ({ space: nodeLabel(byId.get(l.spaceId)!), by: l.source })),
+        },
+      };
+    }
+    const node = await nodeFor(env, q.space);
+    const ids = node.parentId
+      ? [node.id]
+      : [node.id, ...nodes.filter((n) => n.parentId === node.id).map((n) => n.id)];
+    const threads = await port.threadsFor(ids, q.limit * 3);
+    const seen = new Set<string>();
+    const list = threads
+      .filter((t) => !seen.has(t.thread.id) && seen.add(t.thread.id))
+      .slice(0, q.limit);
+    return {
+      output: {
+        space: nodeLabel(node),
+        conversations: list.map((t) => ({
+          title: t.title ?? "Untitled",
+          date: t.at.slice(0, 10),
+          ...(byId.get(t.spaceId) && t.spaceId !== node.id
+            ? { section: byId.get(t.spaceId)!.name }
+            : {}),
+          modality: t.thread.kind === "session" ? "voice" : "text",
+        })),
+        ...(list.length ? {} : { note: "No conversations are tagged with it yet. Say so." }),
+      },
+    };
+  },
+};
+
 export const HISTORY_TOOLS = [
   searchHistoryTool,
+  addKnowledgeLinkTool,
+  removeKnowledgeLinkTool,
+  listKnowledgeLinksTool,
   getHistoryContextTool,
   getInteractionTool,
   getRecentHistoryTool,

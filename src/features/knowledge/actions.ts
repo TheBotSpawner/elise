@@ -26,9 +26,7 @@ import {
   createSection,
   ensureSectionProfile,
   moveItem,
-  setSectionPurpose,
 } from "@/application/sections-service";
-import { SECTION_PURPOSES } from "@/core/contexts/model";
 import { toPublicError, type PublicError } from "@/core/errors";
 
 export type KnowledgeResult<T = null> = { ok: true; value: T } | { ok: false; error: PublicError };
@@ -78,7 +76,6 @@ export async function createSpaceAction(input: SpaceFields & { parentId: string 
           await createSection(auth, {
             ...fields,
             parentId: id.parse(input.parentId),
-            purpose: "general",
           })
         ).id
       : createSpace(auth, fields);
@@ -92,7 +89,6 @@ const sectionInput = z
     description: z.string().trim().max(1000).nullable(),
     icon: z.string().nullable(),
     color: z.string().nullable(),
-    purpose: z.enum(SECTION_PURPOSES),
   })
   .strict();
 
@@ -102,16 +98,6 @@ export async function createSectionAction(input: z.input<typeof sectionInput>) {
     const q = sectionInput.parse(input);
     return createSection(await requireAuthContext(), q);
   });
-}
-
-export async function setSectionPurposeAction(spaceId: string, purpose: string) {
-  return run(async () =>
-    setSectionPurpose(
-      await requireAuthContext(),
-      id.parse(spaceId),
-      z.enum(SECTION_PURPOSES).parse(purpose),
-    ),
-  );
 }
 
 /** An uploaded document moves between a Space and its Sections; nothing is copied. */

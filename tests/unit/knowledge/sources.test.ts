@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { chunkDocument } from "@/core/knowledge/chunking";
 import {
+  contentMatchesType,
   isNeedsAttention,
   parseCsv,
   parseDocument,
@@ -36,10 +37,13 @@ describe("parsers", () => {
   });
 
   it("turns CSV rows into self-contained passages", () => {
-    const doc = parseCsv("Clients", 'Name,Status,Notes\nRSFA,Active,"Filing, email"\nACME,,Paused');
+    const doc = parseCsv(
+      "Clients",
+      'Name,Status,Notes\nINITECH,Active,"Filing, email"\nNORTHWIND,,Paused',
+    );
     expect(doc.sections[0]!.blocks).toEqual([
-      "Name: RSFA; Status: Active; Notes: Filing, email",
-      "Name: ACME; Notes: Paused",
+      "Name: INITECH; Status: Active; Notes: Filing, email",
+      "Name: NORTHWIND; Notes: Paused",
     ]);
   });
 
@@ -62,13 +66,30 @@ describe("parsers", () => {
     ).rejects.toSatisfy(isNeedsAttention);
   });
 
+  it("does not trust the declared type: content must match it", async () => {
+    // An HTML page renamed to .pdf, a binary renamed to .txt, a non-ZIP .docx.
+    for (const [mimeType, data] of [
+      ["application/pdf", enc("<html><script>alert(1)</script>" + "x".repeat(80))],
+      ["text/plain", new Uint8Array([0x4d, 0x5a, 0x00, 0x00, ...enc("a".repeat(80))])],
+      [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        enc("plain text pretending to be a docx".repeat(4)),
+      ],
+    ] as const)
+      await expect(parseDocument({ title: "x", mimeType, data })).rejects.toSatisfy(
+        isNeedsAttention,
+      );
+    expect(contentMatchesType("text/plain", enc("hola"))).toBe(true);
+    expect(contentMatchesType("application/pdf", enc("%PDF-1.7 …"))).toBe(true);
+  });
+
   it("reads plain text into chunkable paragraphs", async () => {
     const doc = await parseDocument({
       title: "Notes",
       mimeType: "text/plain",
-      data: enc("First paragraph about the launch.\n\nSecond paragraph about RSFA filing."),
+      data: enc("First paragraph about the launch.\n\nSecond paragraph about Initech filing."),
     });
-    expect(chunkDocument(doc)[0]!.content).toContain("RSFA filing");
+    expect(chunkDocument(doc)[0]!.content).toContain("Initech filing");
   });
 });
 
@@ -99,14 +120,14 @@ describe("Google Drive", () => {
           version: "42",
           webViewLink: "https://docs.google.com/document/d/d1",
         },
-        ["Clients", "RSFA"],
+        ["Clients", "Initech"],
       ),
     ).toMatchObject({
       externalId: "d1",
       itemType: "google_doc",
       revision: "42",
       url: "https://docs.google.com/document/d/d1",
-      path: ["Clients", "RSFA"],
+      path: ["Clients", "Initech"],
     });
     expect(toExternalItem({ id: "x", name: "a.zip", mimeType: "application/zip" }, [])).toBeNull();
   });
@@ -138,12 +159,12 @@ describe("Google Drive", () => {
       ],
     ]);
     const items = await new GoogleDriveClient(http).listSelection(
-      [{ id: "root-folder", kind: "folder", name: "RSFA" }],
+      [{ id: "root-folder", kind: "folder", name: "Initech" }],
       100,
     );
     expect(items.map((i) => [i.externalId, i.itemType, i.path.join("/")])).toEqual([
-      ["f2", "google_sheet", "RSFA/Contracts"],
-      ["f1", "drive_file", "RSFA"],
+      ["f2", "google_sheet", "Initech/Contracts"],
+      ["f1", "drive_file", "Initech"],
     ]);
   });
 
@@ -188,12 +209,12 @@ describe("Notion", () => {
       object: "page",
       id: "p",
       properties: {
-        Name: { type: "title", title: [{ plain_text: "RSFA onboarding" }] },
+        Name: { type: "title", title: [{ plain_text: "Initech onboarding" }] },
         Status: { type: "status", status: { name: "Active" } },
         Tags: { type: "multi_select", multi_select: [{ name: "client" }, { name: "email" }] },
       },
     };
-    expect(pageTitle(page)).toBe("RSFA onboarding");
+    expect(pageTitle(page)).toBe("Initech onboarding");
     expect(propertyLines(page)).toEqual(["Status: Active", "Tags: client, email"]);
   });
 
@@ -203,7 +224,7 @@ describe("Notion", () => {
         object: "page",
         id: "root",
         last_edited_time: "t1",
-        properties: { title: { type: "title", title: [{ plain_text: "RSFA" }] } },
+        properties: { title: { type: "title", title: [{ plain_text: "Initech" }] } },
       },
       sub: {
         object: "page",
@@ -244,11 +265,11 @@ describe("Notion", () => {
     });
     const unauthorized = vi.fn(async () => {});
     const client = new NotionClient(async () => "token", unauthorized, fetchImpl);
-    const items = await client.listSelection([{ id: "root", kind: "page", name: "RSFA" }], 100);
+    const items = await client.listSelection([{ id: "root", kind: "page", name: "Initech" }], 100);
     expect(items.map((i) => [i.externalId, i.itemType, i.revision, i.path.join("/")])).toEqual([
       ["root", "notion_page", "t1", ""],
-      ["sub", "notion_page", "t2", "RSFA"],
-      ["row", "notion_database_page", "t3", "RSFA"],
+      ["sub", "notion_page", "t2", "Initech"],
+      ["row", "notion_database_page", "t3", "Initech"],
     ]);
   });
 

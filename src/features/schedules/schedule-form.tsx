@@ -12,6 +12,7 @@ import {
   type ScheduleInput,
 } from "@/core/schedules/schedule";
 import { addDays, todayIn } from "@/core/time";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -86,7 +87,7 @@ export function ScheduleForm({
         ? await updateScheduleAction(scheduleId, v)
         : await createScheduleAction(v);
       if (!result.ok) {
-        toast.error(result.error.message || t.errors.codes[result.error.code]);
+        toast.error(errorText(t, result.error));
         return;
       }
       onDone();

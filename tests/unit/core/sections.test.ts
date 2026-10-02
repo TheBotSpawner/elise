@@ -5,8 +5,6 @@ import type { ProviderFactory } from "@/core/agents/tools";
 import {
   activeContextOf,
   contextLabel,
-  kindForPurpose,
-  purposeOf,
   resolveContext,
   type ContextProfile,
   type ContextStore,
@@ -24,21 +22,21 @@ import { toolForAction } from "@/core/workspace/registry";
 
 import { makeCtx, makePorts } from "../../fixtures/core-fakes";
 
-// UTN › Administración, UTN › Legislación; Firbot Solutions › RSFA; Posgrado › Administración.
-const UTN = "10000000-0000-4000-8000-000000000001";
+// University › Administración, University › Physics; Northwind Studio › Initech; Posgrado › Administración.
+const University = "10000000-0000-4000-8000-000000000001";
 const ADMIN = "10000000-0000-4000-8000-000000000002";
 const LEGIS = "10000000-0000-4000-8000-000000000003";
-const FIRBOT = "10000000-0000-4000-8000-000000000004";
-const RSFA = "10000000-0000-4000-8000-000000000005";
+const NORTHWIND = "10000000-0000-4000-8000-000000000004";
+const INITECH = "10000000-0000-4000-8000-000000000005";
 const POSGRADO = "10000000-0000-4000-8000-000000000006";
 const ADMIN2 = "10000000-0000-4000-8000-000000000007";
 
 const SPACES: SpaceInfo[] = [
-  { id: UTN, name: "UTN", parentId: null, path: "UTN" },
-  { id: ADMIN, name: "Administración", parentId: UTN, path: "UTN › Administración" },
-  { id: LEGIS, name: "Legislación", parentId: UTN, path: "UTN › Legislación" },
-  { id: FIRBOT, name: "Firbot Solutions", parentId: null, path: "Firbot Solutions" },
-  { id: RSFA, name: "RSFA", parentId: FIRBOT, path: "Firbot Solutions › RSFA" },
+  { id: University, name: "University", parentId: null, path: "University" },
+  { id: ADMIN, name: "Administración", parentId: University, path: "University › Administración" },
+  { id: LEGIS, name: "Physics", parentId: University, path: "University › Physics" },
+  { id: NORTHWIND, name: "Northwind Studio", parentId: null, path: "Northwind Studio" },
+  { id: INITECH, name: "Initech", parentId: NORTHWIND, path: "Northwind Studio › Initech" },
   { id: POSGRADO, name: "Posgrado", parentId: null, path: "Posgrado" },
   { id: ADMIN2, name: "Administración", parentId: POSGRADO, path: "Posgrado › Administración" },
 ];
@@ -83,7 +81,7 @@ function sectionProfile(
 
 const ADMINISTRACION = sectionProfile("Administración", ADMIN);
 const ADMINISTRACION_POSGRADO = sectionProfile("Administración", ADMIN2);
-const RSFA_CLIENT = sectionProfile("RSFA", RSFA, "client");
+const INITECH_CLIENT = sectionProfile("Initech", INITECH, "client");
 
 function hit(spaceId: string, score: number, title = "Doc"): KnowledgeHit {
   return {
@@ -107,18 +105,10 @@ function hit(spaceId: string, score: number, title = "Doc"): KnowledgeHit {
 }
 
 describe("Space › Section model", () => {
-  it("purposes map onto the existing context kinds and back", () => {
-    expect(kindForPurpose("study")).toBe("study");
-    expect(kindForPurpose("client")).toBe("client");
-    expect(kindForPurpose("general")).toBe("custom");
-    expect(purposeOf("work")).toBe("client");
-    expect(purposeOf("custom")).toBe("general");
-  });
-
   it("a Section reads with its Space everywhere", () => {
-    expect(contextLabel(ADMINISTRACION)).toBe("UTN › Administración");
-    expect(activeContextOf(RSFA_CLIENT)).toMatchObject({
-      name: "Firbot Solutions › RSFA",
+    expect(contextLabel(ADMINISTRACION)).toBe("University › Administración");
+    expect(activeContextOf(INITECH_CLIENT)).toMatchObject({
+      name: "Northwind Studio › Initech",
       kind: "client",
     });
     expect(contextLabel({ name: "Legacy", section: null })).toBe("Legacy");
@@ -129,19 +119,19 @@ describe("inheritance and retrieval scope", () => {
   it("a Section searches its own sources plus its parent's general ones — never its siblings", () => {
     const s = scopeSpaces(SPACES, [ADMIN]);
     expect(s.primary).toEqual([ADMIN]);
-    expect(s.spaceIds.sort()).toEqual([ADMIN, UTN].sort());
+    expect(s.spaceIds.sort()).toEqual([ADMIN, University].sort());
     expect(s.spaceIds).not.toContain(LEGIS);
   });
 
   it("a Space searches its general sources and its Sections (relevance decides)", () => {
-    const s = scopeSpaces(SPACES, [UTN]);
-    expect(s.primary.sort()).toEqual([UTN, ADMIN, LEGIS].sort());
+    const s = scopeSpaces(SPACES, [University]);
+    expect(s.primary.sort()).toEqual([University, ADMIN, LEGIS].sort());
     expect(s.spaceIds.sort()).toEqual(s.primary.sort());
   });
 
   it("Section first: inherited passages weigh less, own passages keep their score", () => {
     const own = hit(ADMIN, 0.5);
-    const inherited = hit(UTN, 0.52);
+    const inherited = hit(University, 0.52);
     const ranked = preferPrimary([inherited, own], [ADMIN]).sort((a, b) => b.score - a.score);
     expect(ranked[0]!.spaceId).toBe(ADMIN);
     expect(ranked[1]!.score).toBeCloseTo(0.52 * INHERITED_WEIGHT);
@@ -154,20 +144,20 @@ describe("context resolution with Sections", () => {
     resolveContext({ message, profiles, entities: [], activeId: null });
 
   it("resolves a Section by its name", () => {
-    expect(resolve("Volvamos a Administración", [ADMINISTRACION, RSFA_CLIENT])).toMatchObject({
+    expect(resolve("Volvamos a Administración", [ADMINISTRACION, INITECH_CLIENT])).toMatchObject({
       kind: "match",
       profile: { id: ADMINISTRACION.id },
     });
-    expect(resolve("Poneme al día con RSFA", [ADMINISTRACION, RSFA_CLIENT])).toMatchObject({
+    expect(resolve("Poneme al día con Initech", [ADMINISTRACION, INITECH_CLIENT])).toMatchObject({
       kind: "match",
-      profile: { id: RSFA_CLIENT.id },
+      profile: { id: INITECH_CLIENT.id },
     });
   });
 
   it("same-named Sections in two Spaces are ambiguous until the Space is named", () => {
     const both = [ADMINISTRACION, ADMINISTRACION_POSGRADO];
     expect(resolve("Volvamos a Administración", both).kind).toBe("ambiguous");
-    expect(resolve("Volvamos a Administración de UTN", both)).toMatchObject({
+    expect(resolve("Volvamos a Administración de University", both)).toMatchObject({
       kind: "match",
       profile: { id: ADMINISTRACION.id },
     });
@@ -178,12 +168,12 @@ describe("context resolution with Sections", () => {
       list: async () => [ADMINISTRACION, ADMINISTRACION_POSGRADO],
     } as unknown as ContextStore;
     await expect(findProfile(store, "Administración")).rejects.toMatchObject({
-      message: expect.stringContaining("UTN › Administración"),
+      message: expect.stringContaining("University › Administración"),
     });
     expect((await findProfile(store, "Posgrado › Administración")).id).toBe(
       ADMINISTRACION_POSGRADO.id,
     );
-    expect((await findProfile(store, "UTN Administración")).id).toBe(ADMINISTRACION.id);
+    expect((await findProfile(store, "University Administración")).id).toBe(ADMINISTRACION.id);
   });
 });
 
@@ -197,7 +187,7 @@ function setup(profiles: ContextProfile[]) {
     search: async (q: { spaceIds: string[] | null }) => {
       searches.push(q.spaceIds);
       return {
-        hits: [hit(UTN, 0.9, "Reglamento UTN"), hit(ADMIN, 0.85, "Weber")].filter(
+        hits: [hit(University, 0.9, "Reglamento University"), hit(ADMIN, 0.85, "Weber")].filter(
           (h) => !q.spaceIds || q.spaceIds.includes(h.spaceId),
         ),
         semantic: true,
@@ -222,7 +212,7 @@ function setup(profiles: ContextProfile[]) {
     }),
     create: async (input: NewContext) => {
       created.push(input);
-      return { ...RSFA_CLIENT, id: uid(), name: input.name };
+      return { ...INITECH_CLIENT, id: uid(), name: input.name };
     },
     associate: async () => {},
     lastInteraction: async () => null,
@@ -242,35 +232,37 @@ describe("knowledge.search in a Section", () => {
       args: { query: "teoría organizacional" },
     });
     expect(out.status).toBe("succeeded");
-    expect(searches[0]!.sort()).toEqual([ADMIN, UTN].sort());
+    expect(searches[0]!.sort()).toEqual([ADMIN, University].sort());
     const evidence = (out as { output: { evidence: { space: string }[] } }).output.evidence;
     // 0.85 (own) beats 0.9 × 0.85 (inherited).
-    expect(evidence[0]!.space).toBe("UTN › Administración");
-    expect(evidence.map((e) => e.space)).toContain("UTN");
+    expect(evidence[0]!.space).toBe("University › Administración");
+    expect(evidence.map((e) => e.space)).toContain("University");
   });
 
   it("an active Section context scopes search the same way, with no Space selected", async () => {
     const { ports, searches } = setup([ADMINISTRACION]);
     await executeToolCall(
       ports,
-      makeCtx({ context: { id: ADMINISTRACION.id, name: "UTN › Administración", kind: "study" } }),
+      makeCtx({
+        context: { id: ADMINISTRACION.id, name: "University › Administración", kind: "study" },
+      }),
       { name: "knowledge.search", args: { query: "Weber" } },
     );
-    expect(searches[0]!.sort()).toEqual([ADMIN, UTN].sort());
+    expect(searches[0]!.sort()).toEqual([ADMIN, University].sort());
     expect(searches[0]).not.toContain(LEGIS);
   });
 
   it('from the root Space, results name the Section they come from ("which subjects cover X?")', async () => {
     const { ports, searches } = setup([]);
-    const out = await executeToolCall(ports, makeCtx({ knowledgeSpaceId: UTN }), {
+    const out = await executeToolCall(ports, makeCtx({ knowledgeSpaceId: University }), {
       name: "knowledge.search",
       args: { query: "teoría organizacional" },
     });
-    expect(searches[0]!.sort()).toEqual([UTN, ADMIN, LEGIS].sort());
+    expect(searches[0]!.sort()).toEqual([University, ADMIN, LEGIS].sort());
     const spaces = (out as { output: { evidence: { space: string }[] } }).output.evidence.map(
       (e) => e.space,
     );
-    expect(spaces).toContain("UTN › Administración");
+    expect(spaces).toContain("University › Administración");
   });
 });
 
@@ -279,11 +271,11 @@ describe("ELISE creating a Section", () => {
     const { ports, created } = setup([]);
     const proposed = await executeToolCall(ports, makeCtx(), {
       name: "contexts.propose",
-      args: { name: "Mazalup", kind: "client", space: "Firbot Solutions" },
+      args: { name: "Globex", kind: "client", space: "Northwind Studio" },
     });
     expect(proposed.status).toBe("succeeded");
     const display = (proposed as { display: { proposal: { space: unknown } } }).display;
-    expect(display.proposal.space).toEqual({ id: FIRBOT, name: "Firbot Solutions" });
+    expect(display.proposal.space).toEqual({ id: NORTHWIND, name: "Northwind Studio" });
     const call = toolForAction(
       {
         id: "s",
@@ -296,13 +288,13 @@ describe("ELISE creating a Section", () => {
       "create_context",
       "",
     );
-    expect(call).toMatchObject({ name: "contexts.create", args: { space: FIRBOT } });
+    expect(call).toMatchObject({ name: "contexts.create", args: { space: NORTHWIND } });
     const made = await executeToolCall(ports, makeCtx(), {
       name: "contexts.create",
-      args: { name: "Mazalup", kind: "client", space: FIRBOT },
+      args: { name: "Globex", kind: "client", space: NORTHWIND },
     });
     expect(made.status).toBe("succeeded");
-    expect(created[0]).toMatchObject({ name: "Mazalup", parentSpaceId: FIRBOT });
+    expect(created[0]).toMatchObject({ name: "Globex", parentSpaceId: NORTHWIND });
   });
 
   it("a Section can't be created under a Section, nor under an unknown Space", async () => {

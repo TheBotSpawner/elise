@@ -93,7 +93,7 @@ describe("turn detection", () => {
   });
 
   it("a barge-in turn starts mid-speech with the earlier noise floor", () => {
-    const d = new TurnDetector(VOICE_TURN, { floor: 0.002 });
+    const d = new TurnDetector(VOICE_TURN, { floor: 0.002, resumed: true });
     const c = { now: 0 };
     expect(feed(d, c, 300, 0.1)).toEqual([]);
     expect(feed(d, c, VOICE_TURN.endSilenceMs + 50, 0.002)).toEqual(["pause", "end"]);
@@ -101,7 +101,7 @@ describe("turn detection", () => {
 
   it("knows when a sentence sounds cut off", () => {
     expect(looksUnfinished("Quiero que me prepares la")).toBe(true);
-    expect(looksUnfinished("Mandale un mail a Rod y")).toBe(true);
+    expect(looksUnfinished("Mandale un mail a Alex y")).toBe(true);
     expect(looksUnfinished("Prepare me for the meeting with")).toBe(true);
     expect(looksUnfinished("Tengo que pensar,")).toBe(true);
     expect(looksUnfinished("¿Qué tengo hoy?")).toBe(false);
@@ -174,7 +174,7 @@ describe("wake phrase matching", () => {
 const NOW = new Date("2026-10-01T15:00:00Z");
 const pending = (over: Partial<PendingForVoice> = {}): PendingForVoice => ({
   id: crypto.randomUUID(),
-  summary: "Send email to Rod",
+  summary: "Send email to Alex",
   createdAt: new Date(NOW.getTime() - 30_000).toISOString(),
   sameInteraction: true,
   fromLastReply: true,
@@ -267,7 +267,7 @@ describe("shortcut matching", () => {
   it("a question or a sentence that merely contains the phrase is normal conversation", () => {
     expect(matchShortcut("¿A qué hora arrancamos mañana?", [ARRANCAMOS])).toEqual({ kind: "none" });
     expect(matchShortcut("A qué hora arrancamos mañana", [ARRANCAMOS])).toEqual({ kind: "none" });
-    expect(matchShortcut("arrancamos con la propuesta de RSFA", [ARRANCAMOS])).toEqual({
+    expect(matchShortcut("arrancamos con la propuesta de Initech", [ARRANCAMOS])).toEqual({
       kind: "none",
     });
   });
@@ -324,7 +324,7 @@ describe("shortcut steps", () => {
         { type: "tasks.show_today", config: {} },
         { type: "appearance.set_theme", config: { theme: "dark" } },
       ]),
-      { contextId: "ctx-rsfa", today: "2026-10-01" },
+      { contextId: "ctx-initech", today: "2026-10-01" },
     );
     expect(calls.map((c) => c.name)).toEqual([
       "briefs.today",
@@ -332,7 +332,7 @@ describe("shortcut steps", () => {
       "tasks.list",
       "appearance.setTheme",
     ]);
-    expect(calls[1]!.args).toMatchObject({ context: "ctx-rsfa", web: false });
+    expect(calls[1]!.args).toMatchObject({ context: "ctx-initech", web: false });
     expect(calls[3]!.args).toEqual({ theme: "dark" });
   });
 });
@@ -364,10 +364,10 @@ class FakeShortcuts implements ShortcutStore {
   async markRun() {}
 }
 
-const RSFA: ContextProfile = {
+const INITECH: ContextProfile = {
   id: "11111111-2222-4333-8444-555555555555",
   kind: "client",
-  name: "RSFA",
+  name: "Initech",
   description: null,
   aliases: [],
   icon: null,
@@ -383,7 +383,7 @@ const RSFA: ContextProfile = {
 function shortcutPorts() {
   const { ports, log } = makePorts();
   const store = new FakeShortcuts();
-  const contexts = { list: async () => [RSFA] } as unknown as ContextStore;
+  const contexts = { list: async () => [INITECH] } as unknown as ContextStore;
   ports.providers = {
     get: ((capability: string) =>
       capability === "shortcuts" ? store : contexts) as ProviderFactory["get"],
@@ -393,10 +393,10 @@ function shortcutPorts() {
 
 describe("shortcut tools", () => {
   const def = {
-    name: "RSFA Brief",
-    phrases: ["RSFA Brief"],
+    name: "Initech Brief",
+    phrases: ["Initech Brief"],
     steps: [{ type: "work.brief" }],
-    context: "RSFA",
+    context: "Initech",
   };
 
   it("propose saves nothing and shows a Surface whose Save builds the create call server-side", async () => {
@@ -413,7 +413,7 @@ describe("shortcut tools", () => {
     );
     expect(call).toMatchObject({
       name: "shortcuts.create",
-      args: { name: "RSFA Brief", context: RSFA.id },
+      args: { name: "Initech Brief", context: INITECH.id },
     });
   });
 
@@ -424,10 +424,10 @@ describe("shortcut tools", () => {
       args: def,
     });
     expect(created.status).toBe("succeeded");
-    expect(store.items[0]).toMatchObject({ name: "RSFA Brief", contextId: RSFA.id });
+    expect(store.items[0]).toMatchObject({ name: "Initech Brief", contextId: INITECH.id });
     const again = await executeToolCall(ports, makeCtx(), {
       name: "shortcuts.create",
-      args: { ...def, name: "Other", phrases: ["rsfa brief"] },
+      args: { ...def, name: "Other", phrases: ["initech brief"] },
     });
     expect(again).toMatchObject({ status: "failed", error: { code: "CONFLICT" } });
   });

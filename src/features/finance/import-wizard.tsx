@@ -9,6 +9,7 @@ import type { ImportInspection, ImportPreviewView } from "@/application/finance-
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Label, Select } from "@/components/ui/input";
 import type { FinanceMapping } from "@/core/finance/import";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
 import {
@@ -48,7 +49,7 @@ export function ImportWizard({ importId, status }: { importId: string; status: s
       setPreview(null);
       const r = await inspectImportAction(importId, sheet);
       if (!r.ok) {
-        setStage({ kind: "error", message: r.error.message || t.errors.codes[r.error.code] });
+        setStage({ kind: "error", message: errorText(t, r.error) });
         return;
       }
       setInspection(r.value);
@@ -76,7 +77,7 @@ export function ImportWizard({ importId, status }: { importId: string; status: s
     startTransition(async () => {
       setError(null);
       const r = await previewImportAction(importId, m);
-      if (!r.ok) setError(r.error.message || t.errors.codes[r.error.code]);
+      if (!r.ok) setError(errorText(t, r.error));
       else setPreview({ ...r.value, sameFile: inspection?.sameFile ?? null });
     });
 
@@ -219,7 +220,7 @@ export function ImportWizard({ importId, status }: { importId: string; status: s
                 if (!r.ok) {
                   // Keep the mapping: the user can fix what's wrong and try again.
                   setStage({ kind: "mapping" });
-                  setError(r.error.message || t.errors.codes[r.error.code]);
+                  setError(errorText(t, r.error));
                   return;
                 }
                 if (r.value.status === "completed")

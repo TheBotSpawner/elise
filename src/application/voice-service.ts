@@ -5,6 +5,8 @@ import { VOICE_LIMITS, type VoiceLanguage } from "@/core/voice/providers";
 import { toSpeakable } from "@/core/voice/speech-text";
 import { getSpeechInputProvider, getSpeechOutputProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
+import { withUsageScope } from "@/infrastructure/observability/usage";
+import { rateLimit } from "@/infrastructure/rate-limit";
 
 import type { AuthContext } from "./auth-context";
 
@@ -13,19 +15,18 @@ import type { AuthContext } from "./auth-context";
  * stored or logged; only the transcript enters the interaction, as ordinary user input.
  */
 
-const WINDOW_MS = 60_000;
 const LIMITS = { transcribe: 40, speak: 160 } as const;
-// ponytail: per-instance window; move to a shared store if abuse across instances matters.
-const hits = new Map<string, number[]>();
+/** A provider that stops answering must not leave the voice session waiting forever. */
+const TRANSCRIBE_TIMEOUT_MS = 20_000;
+const SPEAK_TIMEOUT_MS = 15_000;
 
 function limit(auth: AuthContext, kind: keyof typeof LIMITS) {
-  const key = `${kind}:${auth.userId}`;
-  const now = Date.now();
-  const recent = (hits.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
-  if (recent.length >= LIMITS[kind])
-    throw new AppError("RATE_LIMITED", "Too many voice requests. Wait a moment and try again.");
-  recent.push(now);
-  hits.set(key, recent);
+  rateLimit(
+    `voice.${kind}:${auth.userId}`,
+    LIMITS[kind],
+    60_000,
+    "Too many voice requests. Wait a moment and try again.",
+  );
 }
 
 export type TranscribeStreamEvent =
@@ -54,37 +55,56 @@ export async function transcribeUtterance(
   const started = Date.now();
   const encoder = new TextEncoder();
 
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (e: TranscribeStreamEvent) =>
-        controller.enqueue(encoder.encode(`${JSON.stringify(e)}\n`));
-      try {
-        for await (const event of provider.transcribe({
-          audio: bytes,
-          mimeType: audio.type,
-          language,
-          // Recognition hints only (names), never instructions.
-          context: auth.profile.displayName
-            ? `Speaker: ${auth.profile.displayName}. Assistant: ELISE.`
-            : "Assistant: ELISE.",
-        })) {
-          if (event.type === "partial") send(event);
-          else send({ ...event, ms: Date.now() - started });
-        }
-        logger.info("voice.transcribed", {
-          model: provider.model,
-          bytes: bytes.length,
-          latency_ms: Date.now() - started,
-        });
-      } catch (error) {
-        const code = error instanceof AppError ? error.code : "PROVIDER_UNAVAILABLE";
-        logger.warn("voice.transcription_failed", { code });
-        send({ type: "error", code });
-      } finally {
-        controller.close();
-      }
-    },
-  });
+  const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
+  return withUsageScope(
+    scope,
+    () =>
+      new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const send = (e: TranscribeStreamEvent) =>
+            controller.enqueue(encoder.encode(`${JSON.stringify(e)}\n`));
+          try {
+            for await (const event of provider.transcribe(
+              {
+                audio: bytes,
+                mimeType: audio.type,
+                language,
+                // Recognition hints only (names), never instructions.
+                context: auth.profile.displayName
+                  ? `Speaker: ${auth.profile.displayName}. Assistant: ELISE.`
+                  : "Assistant: ELISE.",
+              },
+              AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
+            )) {
+              if (event.type === "partial") send(event);
+              else send({ ...event, ms: Date.now() - started });
+            }
+            logger.info("voice.transcribed", {
+              model: provider.model,
+              bytes: bytes.length,
+              latency_ms: Date.now() - started,
+            });
+          } catch (error) {
+            const code =
+              error instanceof AppError
+                ? error.code
+                : error instanceof DOMException && error.name === "TimeoutError"
+                  ? "TIMEOUT"
+                  : "PROVIDER_UNAVAILABLE";
+            logger.warn("voice.transcription_failed", {
+              code,
+              provider_status:
+                error instanceof AppError ? error.details?.providerStatus : undefined,
+              bytes: bytes.length,
+              mime: type,
+            });
+            send({ type: "error", code });
+          } finally {
+            controller.close();
+          }
+        },
+      }),
+  );
 }
 
 /** One sentence of the reply → streamed PCM audio (spoken text is sanitized, capped). */
@@ -101,11 +121,13 @@ export async function synthesizeSentence(
   const spoken = toSpeakable(text).slice(0, VOICE_LIMITS.maxSpokenChars);
   if (!spoken) throw new AppError("VALIDATION_ERROR", "Nothing to say");
   const provider = getSpeechOutputProvider();
-  const stream = await provider.synthesize({
-    text: spoken,
-    language: language ?? auth.profile.locale,
-    voice: auth.profile.voice.voice,
-  });
+  const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
+  const stream = await withUsageScope(scope, () =>
+    provider.synthesize(
+      { text: spoken, language: language ?? auth.profile.locale, voice: auth.profile.voice.voice },
+      AbortSignal.timeout(SPEAK_TIMEOUT_MS),
+    ),
+  );
   return { stream, sampleRate: provider.format.sampleRate };
 }
 

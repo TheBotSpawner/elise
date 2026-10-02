@@ -6,7 +6,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
-import { SECTION_PURPOSES, type SectionPurpose } from "@/core/contexts/model";
 import {
   DEFAULT_SPACE_COLOR,
   DEFAULT_SPACE_ICON,
@@ -14,15 +13,16 @@ import {
   type SpaceColor,
   type SpaceIcon,
 } from "@/core/knowledge/appearance";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
-import { cn } from "@/lib/utils";
 
 import { createSectionAction } from "./actions";
 import { AppearancePicker, SpaceGlyph } from "./appearance";
 
 /**
- * "+ New section" (ADR-018): a name, what it's for, and a look. Its context — study progress,
- * client intelligence — comes with it; nothing else to set up.
+ * "+ New section" (ADR-018/020): a name, a look and an optional description. A Section is a
+ * part of its Space, not a category: Study, Work Intelligence and Meeting Prep come from what
+ * the user asks, never from a type chosen here.
  */
 export function SectionDialog({
   open,
@@ -38,7 +38,6 @@ export function SectionDialog({
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [purpose, setPurpose] = useState<SectionPurpose>("general");
   const [look, setLook] = useState<{ icon: SpaceIcon; color: SpaceColor }>({
     icon: DEFAULT_SPACE_ICON,
     color: parent.color ?? DEFAULT_SPACE_COLOR,
@@ -50,7 +49,6 @@ export function SectionDialog({
   const close = () => {
     setName("");
     setDescription("");
-    setPurpose("general");
     setLookTouched(false);
     setError(null);
     onClose();
@@ -65,11 +63,10 @@ export function SectionDialog({
       description: description.trim() || null,
       icon: look.icon,
       color: look.color,
-      purpose,
     });
     setBusy(false);
     if (!r.ok) {
-      setError(r.error.message || t.errors.codes[r.error.code]);
+      setError(errorText(t, r.error));
       return;
     }
     close();
@@ -111,36 +108,6 @@ export function SectionDialog({
             />
           </div>
         </div>
-
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-2 text-xs font-medium text-muted">{s.purposeQuestion}</legend>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {SECTION_PURPOSES.map((p) => (
-              <label
-                key={p}
-                className={cn(
-                  "flex cursor-pointer flex-col gap-0.5 rounded-xl border px-3 py-2.5 transition-colors",
-                  purpose === p
-                    ? "border-accent-line bg-accent-soft"
-                    : "border-border hover:border-border-strong",
-                )}
-              >
-                <span className="flex items-center gap-2 text-[14px]">
-                  <input
-                    type="radio"
-                    name="section-purpose"
-                    value={p}
-                    checked={purpose === p}
-                    onChange={() => setPurpose(p)}
-                    className="size-3.5 accent-[var(--color-accent)]"
-                  />
-                  {s.purposes[p]}
-                </span>
-                <span className="pl-5.5 text-[12.5px] text-muted">{s.purposeHints[p]}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
 
         <div className="flex flex-col gap-2">
           <span className="text-xs font-medium text-muted">{t.knowledge.appearance}</span>

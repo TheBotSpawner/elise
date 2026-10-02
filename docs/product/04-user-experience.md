@@ -429,8 +429,8 @@ Personal
 leo@gmail.com
 Default for Personal
 
-Firbot
-leo@firbot.com
+Acme
+leo@acme.com
 Default for Work
 
 [ + Add account ]
@@ -487,7 +487,7 @@ Ejemplo:
 ```text
 Knowledge
 
-Firbot
+Acme
 Clients
 Study
 Personal
@@ -517,7 +517,7 @@ Los Knowledge Spaces pueden crearse de tres formas.
 El usuario crea:
 
 ```text
-Firbot
+Acme
 Client A
 University
 Personal
@@ -543,7 +543,7 @@ existan archivos por conversación.
 
 ELISE puede detectar grupos y sugerir:
 
-> “Encontré varias páginas relacionadas con RSFA. ¿Querés crear un Space para este cliente?”
+> “Encontré varias páginas relacionadas con Client A. ¿Querés crear un Space para este cliente?”
 
 ## During connection
 
@@ -1119,7 +1119,7 @@ Ejemplo:
 Which account should I use?
 
 Personal
-Firbot
+Acme
 ```
 
 Las preguntas deben ser:

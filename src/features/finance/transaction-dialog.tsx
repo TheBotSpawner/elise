@@ -14,6 +14,7 @@ import type {
   FinanceTransaction,
   TransactionType,
 } from "@/core/capabilities/finance";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -143,7 +144,7 @@ export function TransactionDialog({
           })
         : await financeToolAction("finance.createTransaction", fields, key);
       if (!r.ok) {
-        setError(r.error.message || t.errors.codes[r.error.code]);
+        setError(errorText(t, r.error));
         return;
       }
       toast.success(editing ? t.finance.saved : t.finance.recorded);
@@ -357,7 +358,7 @@ export function TransactionDialog({
                     transaction: transaction!.id,
                   });
                   if (!r.ok) {
-                    setError(r.error.message || t.errors.codes[r.error.code]);
+                    setError(errorText(t, r.error));
                     return;
                   }
                   toast.success(t.finance.archived);

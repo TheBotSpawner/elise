@@ -802,7 +802,7 @@ export const filterFields = {
   currency: z.array(currencyField).max(10).optional(),
   category: text(80).optional().describe("Category name; includes its sub-categories."),
   account: text(80).optional(),
-  counterparty: text(200).optional().describe("Merchant, provider or client, e.g. OpenAI, Firbot."),
+  counterparty: text(200).optional().describe("Merchant, provider or client, e.g. OpenAI, Acme."),
   project: text(120).optional(),
   paymentMethod: text(80).optional(),
   text: text(200).optional(),
@@ -853,7 +853,7 @@ export const createTransactionInput = z
     currency: currencyField.optional(),
     date: isoDate.optional().describe("Local date; default today."),
     description: text(300).optional(),
-    counterparty: text(200).optional().describe("Who was paid or who paid: OpenAI, Firbot, Coto."),
+    counterparty: text(200).optional().describe("Who was paid or who paid: OpenAI, Acme, Coto."),
     category: text(80)
       .optional()
       .describe("An existing category name (see finance.listCategories)."),
@@ -866,7 +866,9 @@ export const createTransactionInput = z
       .optional()
       .describe('Account or card named by the user ("Visa", "Cash USD").'),
     paymentMethod: text(80).optional(),
-    project: text(120).optional().describe('Project or client it belongs to ("ELISE", "RSFA").'),
+    project: text(120)
+      .optional()
+      .describe('Project or client it belongs to ("ELISE", "Client A").'),
     status: z.enum(["completed", "pending"]).optional(),
     notes: z.string().trim().max(2000).optional(),
   })

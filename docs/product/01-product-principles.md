@@ -301,7 +301,7 @@ Ejemplos:
 
 ```text
 Source:
-Notion → Firbot → Best Practices
+Notion → Acme → Best Practices
 ```
 
 ```text
@@ -356,13 +356,13 @@ Ejemplo:
 
 Si el usuario dice:
 
-> "Respondé a Rod."
+> "Respondé a Alex."
 
 y existe una única conversación claramente identificada, ELISE puede proceder dentro de los permisos configurados.
 
 Si existen múltiples cuentas, personas o contextos posibles, puede preguntar:
 
-> "¿Querés responder desde tu cuenta de Firbot o desde la personal?"
+> "¿Querés responder desde tu cuenta de Acme o desde la personal?"
 
 La interacción ideal minimiza preguntas innecesarias sin inventar certezas.
 

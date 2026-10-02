@@ -42,7 +42,7 @@ describe("XLSX import", () => {
     const bytes = xlsx(
       `<row r="1">${s("A1", "Fecha")}${s("B1", "Tipo")}${s("C1", "Monto")}${s("D1", "Moneda")}${s("E1", "Proveedor")}</row>` +
         `<row r="2">${n("A2", "46264", true)}${s("B2", "Gasto")}${n("C2", "0.30000000000000004")}${s("D2", "USD")}${s("E2", "OpenAI")}</row>` +
-        `<row r="3">${n("A3", "46265", true)}${s("B3", "Ingreso")}${s("C3", "1.500,00")}${s("D3", "ARS")}${s("E3", "RSFA")}</row>`,
+        `<row r="3">${n("A3", "46265", true)}${s("B3", "Ingreso")}${s("C3", "1.500,00")}${s("D3", "ARS")}${s("E3", "Initech")}</row>`,
     );
     expect(spreadsheetKind("Gastos.xlsx")).toBe("xlsx");
     const [sheet] = await parseSpreadsheet(bytes, "xlsx");

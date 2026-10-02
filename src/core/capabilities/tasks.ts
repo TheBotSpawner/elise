@@ -29,7 +29,7 @@ export interface Task {
     providerKey: ProviderKey;
     connectionId: string;
     externalId: string;
-    /** User-facing account name ("ELISE", "Personal", "Firbot"). */
+    /** User-facing account name ("ELISE", "Personal", "Acme"). */
     source: string;
     /** Task list at the provider, when the provider has lists. */
     listId?: string;

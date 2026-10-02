@@ -165,7 +165,7 @@ describe("workspace lifecycle", () => {
       {
         status: "approval_required",
         approvalId: "ap-1",
-        summary: "Send email to Rod",
+        summary: "Send email to Alex",
         reason: "external",
       },
       { key: "c1" },
@@ -183,10 +183,10 @@ describe("workspace lifecycle", () => {
   it("a new primary intent clears the previous intent's Surfaces; settings never do", () => {
     let s = applyOp(emptyWorkspace(), {
       op: "intent",
-      intent: { id: "i1", kind: "meeting_prep", description: "Rod", startedAt: AT },
+      intent: { id: "i1", kind: "meeting_prep", description: "Alex", startedAt: AT },
       at: AT,
     });
-    s = present(s, summaryDraft("summary:rod"));
+    s = present(s, summaryDraft("summary:alex"));
     expect(s.surfaces[0]!.intentId).toBe("i1");
     const settings = applyOp(s, {
       op: "intent",
@@ -272,7 +272,13 @@ function event(
     end: new Date(Date.parse(startUtc) + 30 * 60_000).toISOString(),
     allDay: false,
     attendees: [
-      { email: "leo@firbot.com", name: "Leo", response: "accepted", self: true, organizer: true },
+      {
+        email: "leo@northwind.com",
+        name: "Leo",
+        response: "accepted",
+        self: true,
+        organizer: true,
+      },
       ...attendees.map((a) => ({
         email: a.email,
         name: a.name ?? null,
@@ -284,15 +290,20 @@ function event(
     status: "confirmed",
     url: "https://calendar.google.com/event?eid=1",
     meetingUrl: "https://meet.google.com/abc-defg-hij",
-    provenance: { providerKey: "google", connectionId: GOOGLE, externalId: id, source: "Firbot" },
+    provenance: {
+      providerKey: "google",
+      connectionId: GOOGLE,
+      externalId: id,
+      source: "Northwind",
+    },
     ...over,
   };
 }
 
 describe("results as Surfaces", () => {
   it("maps results deterministically and never makes empty Surfaces", () => {
-    const e = event("e1", "Weekly with Rod", "2026-09-29T16:00:00Z", [
-      { email: "rod@rsfa.co.nz", name: "Rod" },
+    const e = event("e1", "Weekly with Alex", "2026-09-29T16:00:00Z", [
+      { email: "alex@example.com", name: "Alex" },
     ]);
     const one = surfacesFromOutcome(
       "calendar.listEvents",
@@ -366,13 +377,13 @@ describe("results as Surfaces", () => {
         status: "succeeded",
         display: {
           kind: "task_list",
-          tasks: [task("t1", "Send Rod proposal"), task("t2", "Other")],
+          tasks: [task("t1", "Send Alex proposal"), task("t2", "Other")],
         },
       },
       { key: "c" },
     );
     const s = present(emptyWorkspace(), list!);
-    const done = task("t1", "Send Rod proposal", "completed");
+    const done = task("t1", "Send Alex proposal", "completed");
     const next = applyOps(
       s,
       reconcileOps(
@@ -435,7 +446,7 @@ describe("surface actions", () => {
 
 describe("follow-up references", () => {
   it("describes visible Surfaces with handles and item ids, not payloads", () => {
-    const mail = new InMemoryEmailProvider(GOOGLE, "Firbot", "leo@firbot.com");
+    const mail = new InMemoryEmailProvider(GOOGLE, "Northwind", "leo@northwind.com");
     mail.addMessage({
       id: "m1",
       threadId: "t1",
@@ -516,7 +527,7 @@ describe("ui tools", () => {
       args: {
         type: "summary",
         title: "Brief",
-        sections: [{ kind: "facts", heading: "Facts", items: ["30 min with Rod"] }],
+        sections: [{ kind: "facts", heading: "Facts", items: ["30 min with Alex"] }],
       },
     });
     expect(summary.status).toBe("succeeded");
@@ -608,52 +619,52 @@ describe("orchestration reads", () => {
 
 const BA = "America/Argentina/Buenos_Aires";
 const NOW = new Date("2026-09-29T15:00:00Z"); // 12:00 in Buenos Aires
-const ROD = event(
-  "rod",
-  "Weekly with Rod",
+const ALEX = event(
+  "alex",
+  "Weekly with Alex",
   "2026-09-29T16:00:00Z",
-  [{ email: "rod@rsfa.co.nz", name: "Rod Smith" }],
+  [{ email: "alex@example.com", name: "Alex Smith" }],
   {
-    description: "Agenda: https://docs.example.com/rsfa-plan",
+    description: "Agenda: https://docs.example.com/initech-plan",
   },
 );
 const DENTIST = event("dentist", "Dentist", "2026-09-29T20:00:00Z", [], { meetingUrl: null });
-const ANA = event("ana", "Firbot sync", "2026-09-30T13:00:00Z", [
-  { email: "ana@firbot.com", name: "Ana" },
+const ANA = event("ana", "Northwind sync", "2026-09-30T13:00:00Z", [
+  { email: "ana@northwind.com", name: "Ana" },
 ]);
 
 describe("meeting resolution", () => {
   it("picks the next meeting without hints, and follows the user's hints", () => {
-    const events = [ANA, DENTIST, ROD];
-    expect(pickMeeting(events, {}, NOW, BA).event?.id).toBe(ROD.id);
+    const events = [ANA, DENTIST, ALEX];
+    expect(pickMeeting(events, {}, NOW, BA).event?.id).toBe(ALEX.id);
     expect(pickMeeting(events, { with: "Ana" }, NOW, BA).event?.id).toBe(ANA.id);
     expect(pickMeeting(events, { time: "17:00" }, NOW, BA).event?.id).toBe(DENTIST.id);
-    expect(pickMeeting(events, { about: "firbot" }, NOW, BA).event?.id).toBe(ANA.id);
+    expect(pickMeeting(events, { about: "northwind" }, NOW, BA).event?.id).toBe(ANA.id);
   });
 
   it("never guesses: no match gives nothing, equal matches ask", () => {
-    expect(pickMeeting([ROD, ANA], { with: "Zelda" }, NOW, BA)).toEqual({
+    expect(pickMeeting([ALEX, ANA], { with: "Zelda" }, NOW, BA)).toEqual({
       event: null,
       ambiguous: [],
     });
-    const rod2 = event("rod2", "Rod follow-up", "2026-09-30T16:00:00Z", [
-      { email: "rod@rsfa.co.nz", name: "Rod Smith" },
+    const alex2 = event("alex2", "Alex follow-up", "2026-09-30T16:00:00Z", [
+      { email: "alex@example.com", name: "Alex Smith" },
     ]);
-    const pick = pickMeeting([ROD, rod2], { with: "Rod" }, NOW, BA);
+    const pick = pickMeeting([ALEX, alex2], { with: "Alex" }, NOW, BA);
     expect(pick.event).toBeNull();
-    expect(pick.ambiguous.map((e) => e.id).sort()).toEqual([ROD.id, rod2.id].sort());
+    expect(pick.ambiguous.map((e) => e.id).sort()).toEqual([ALEX.id, alex2.id].sort());
     const declined = event("x", "Declined", "2026-09-29T15:30:00Z", []);
     declined.attendees[0]!.response = "declined";
     expect(pickMeeting([declined], {}, NOW, BA).event).toBeNull();
   });
 
   it("relates tasks through title words, first names and company domains", () => {
-    const keywords = meetingKeywords(ROD);
-    expect(keywords).toEqual(expect.arrayContaining(["rod", "rsfa"]));
+    const keywords = meetingKeywords(ALEX);
+    expect(keywords).toEqual(expect.arrayContaining(["alex", "example"]));
     const related = relatedTasks(
       [
-        task("a", "Send Rod proposal"),
-        task("b", "Review RSFA contract"),
+        task("a", "Send Alex proposal"),
+        task("b", "Review Example contract"),
         task("c", "Buy milk"),
         task("d", "Product catalog"),
       ],
@@ -678,12 +689,12 @@ const knowledgeHit: KnowledgeHit = {
   itemId: "55555555-5555-4555-8555-555555555555",
   versionId: "v",
   versionNumber: 1,
-  title: "RSFA plan",
+  title: "Initech plan",
   itemType: "file",
   sourceType: "google_drive",
-  sourceUrl: "https://docs.google.com/document/d/rsfa",
+  sourceUrl: "https://docs.google.com/document/d/initech",
   spaceId: "22222222-2222-4222-8222-222222222222",
-  spaceName: "Work › RSFA",
+  spaceName: "Work › Initech",
   headingPath: ["Scope"],
   page: null,
   content: "Phase 2 starts in October.",
@@ -708,8 +719,8 @@ const SESSION: RecallSession = {
   id: "66666666-6666-4666-8666-666666666666",
   conversationId: "77777777-7777-4777-8777-777777777777",
   modality: "text",
-  title: "RSFA pricing",
-  summary: "Decided annual pricing for RSFA.",
+  title: "Initech pricing",
+  summary: "Decided annual pricing for Initech.",
   topics: [],
   startedAt: "2026-09-20T12:00:00Z",
   lastActivityAt: "2026-09-20T12:00:00Z",
@@ -722,7 +733,7 @@ function recallReader(): RecallReader {
         {
           chunkId: "c",
           sessionId: SESSION.id,
-          content: "User: annual pricing for RSFA",
+          content: "User: annual pricing for Initech",
           startedAt: SESSION.startedAt,
           endedAt: SESSION.startedAt,
           similarity: 0.6,
@@ -739,17 +750,18 @@ function recallReader(): RecallReader {
 }
 
 function meetingSetup(opts: { emailFails?: boolean; noCalendar?: boolean } = {}) {
-  const mail = new InMemoryEmailProvider(GOOGLE, "Firbot", "leo@firbot.com");
+  const mail = new InMemoryEmailProvider(GOOGLE, "Northwind", "leo@northwind.com");
   mail.addMessage({
     id: "m1",
     threadId: "t1",
     subject: "Proposal v2",
-    from: { email: "rod@rsfa.co.nz", name: "Rod Smith" },
+    from: { email: "alex@example.com", name: "Alex Smith" },
     date: "2026-09-27T12:00:00Z",
   });
   if (opts.emailFails) mail.failReads = new Error("Gmail down");
   const tasks = new InMemoryTaskProvider();
-  for (const t of [task("a", "Send Rod proposal"), task("b", "Buy milk")]) tasks.tasks.set(t.id, t);
+  for (const t of [task("a", "Send Alex proposal"), task("b", "Buy milk")])
+    tasks.tasks.set(t.id, t);
   const bindings = [
     ...(opts.noCalendar
       ? []
@@ -758,7 +770,7 @@ function meetingSetup(opts: { emailFails?: boolean; noCalendar?: boolean } = {})
             connectionId: GOOGLE,
             capability: "calendar",
             providerKey: "google",
-            label: "Firbot",
+            label: "Northwind",
             isDefault: true,
           }),
         ]),
@@ -766,14 +778,14 @@ function meetingSetup(opts: { emailFails?: boolean; noCalendar?: boolean } = {})
       connectionId: GOOGLE,
       capability: "email",
       providerKey: "google",
-      label: "Firbot",
+      label: "Northwind",
       isDefault: true,
     }),
     { ...NATIVE_BINDING, capability: "tasks" as const },
   ];
   const { ports } = makePorts(bindings);
   const byCapability: Record<string, unknown> = {
-    calendar: new Calendar([ROD, DENTIST, ANA]) as unknown as CalendarProvider,
+    calendar: new Calendar([ALEX, DENTIST, ANA]) as unknown as CalendarProvider,
     email: mail,
     tasks,
     knowledge: knowledgeReader(),
@@ -781,10 +793,10 @@ function meetingSetup(opts: { emailFails?: boolean; noCalendar?: boolean } = {})
     web_search: {
       search: async () => [
         {
-          url: "https://rsfa.co.nz/about",
-          title: "About RSFA",
-          domain: "rsfa.co.nz",
-          snippet: "RSFA is a financial advisory firm.",
+          url: "https://example.com/about",
+          title: "About Initech",
+          domain: "example.com",
+          snippet: "Initech is a financial advisory firm.",
           publishedAt: null,
           retrievedAt: NOW.toISOString(),
           kind: "web",
@@ -819,7 +831,7 @@ describe("meeting prep", () => {
     const { ports, ws, ctx } = meetingSetup();
     const out = await executeToolCall(ports, ctx, {
       name: "meeting.prepare",
-      args: { with: "Rod" },
+      args: { with: "Alex" },
     });
     expect(out.status).toBe("succeeded");
     if (out.status !== "succeeded") return;
@@ -834,14 +846,17 @@ describe("meeting prep", () => {
     };
     expect(o).toMatchObject({
       found: true,
-      meeting: { title: "Weekly with Rod" },
+      meeting: { title: "Weekly with Alex" },
       unavailable: [],
     });
-    expect(o.openItems.map((t) => t.title)).toEqual(["Send Rod proposal"]);
+    expect(o.openItems.map((t) => t.title)).toEqual(["Send Alex proposal"]);
     expect(o.communication).toHaveLength(1);
     expect(o.recentContext).toHaveLength(1);
     expect(o.documents).toHaveLength(1);
-    expect(ws.value.intent).toMatchObject({ kind: "meeting_prep", description: "Weekly with Rod" });
+    expect(ws.value.intent).toMatchObject({
+      kind: "meeting_prep",
+      description: "Weekly with Alex",
+    });
     const types = ws.value.surfaces.map((s) => s.type);
     expect(types[0]).toBe("meeting");
     // Sparse by rule: at most six; the least important (the person card) gave way to links.
@@ -881,8 +896,8 @@ describe("meeting prep", () => {
       links: { url: string }[];
     };
     expect(links.links.map((l) => l.url).sort()).toEqual([
-      "https://docs.example.com/rsfa-plan",
-      "https://docs.google.com/document/d/rsfa",
+      "https://docs.example.com/initech-plan",
+      "https://docs.google.com/document/d/initech",
     ]);
   });
 
@@ -920,6 +935,6 @@ describe("meeting prep", () => {
     expect(json).toContain("untrustedPassage");
     // Surfaces carry snapshots, not bodies.
     expect(JSON.stringify(ws.value.surfaces)).not.toContain('"body"');
-    expect(surfaceId("meeting", ROD.id)).toBe(surfaceId("meeting", ROD.id));
+    expect(surfaceId("meeting", ALEX.id)).toBe(surfaceId("meeting", ALEX.id));
   });
 });

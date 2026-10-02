@@ -55,7 +55,7 @@ export interface Shortcut {
   phrases: string[];
   language: "es" | "en" | null;
   steps: ShortcutStep[];
-  /** Used by steps that need a context and don't name one ("RSFA Brief" → RSFA). */
+  /** Used by steps that need a context and don't name one ("Client A Brief" → Client A). */
   contextId: string | null;
   requiresConfirmation: boolean;
   lastRunAt: string | null;

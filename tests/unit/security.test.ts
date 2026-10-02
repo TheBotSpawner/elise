@@ -17,6 +17,17 @@ describe("redactSensitive", () => {
     );
     expect(out).toMatchObject({ event: "x", nested: { access_token: "[REDACTED]" } });
   });
+
+  it("removes provider tokens inside free text (error causes)", () => {
+    const text = String(
+      redactSensitive(
+        "google said ya29.a0AfH6SMBxyz123456 refresh 1//0gAbCdEfGhIjKlMnOpQrStUv " +
+          "client GOCSPX-abcdefghijkl notion ntn_1234567890abcdefghijKLMN " +
+          "secret_ABCDEFGHIJKLMNOPQRSTuv tavily tvly-dev-abcdefghij",
+      ),
+    );
+    expect(text).not.toMatch(/ya29\.a0|1\/\/0gAb|GOCSPX-a|ntn_1234|secret_ABCD|tvly-dev/);
+  });
 });
 
 describe("toPublicError", () => {

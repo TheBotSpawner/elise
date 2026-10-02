@@ -174,7 +174,7 @@ describe("recall retrieval", () => {
 
   it("keeps lexical matches even with low similarity, with a link to the interaction", () => {
     const [r] = groupRecall(
-      [hit(S1, "User: Firbot pricing", { similarity: 0.1, keywordMatched: true })],
+      [hit(S1, "User: Northwind pricing", { similarity: 0.1, keywordMatched: true })],
       [session(S1, "2026-09-01T12:00:00Z")],
     );
     expect(r).toMatchObject({
@@ -187,7 +187,7 @@ describe("recall retrieval", () => {
   it("detects references to earlier conversations (EN/ES), not ordinary requests", () => {
     for (const m of [
       "What did we decide about the pricing?",
-      "¿Qué hablamos ayer sobre Firbot?",
+      "¿Qué hablamos ayer sobre Northwind?",
       "te acordás de lo que te dije del viaje",
       "the last time we talked about ELISE",
     ])
@@ -255,7 +255,7 @@ describe("history tools", () => {
     // makeCtx: 2026-09-29 12:00 in Buenos Aires (UTC-3).
     const out = await executeToolCall(ports, makeCtx(), {
       name: "history.search",
-      args: { query: "Firbot", period: "yesterday" },
+      args: { query: "Northwind", period: "yesterday" },
     });
     expect(out).toMatchObject({ status: "succeeded", output: { enough: false } });
     expect(recall.lastSearch?.from?.toISOString()).toBe("2026-09-28T03:00:00.000Z");

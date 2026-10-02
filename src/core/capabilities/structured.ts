@@ -92,11 +92,11 @@ export interface StructuredSource {
   /** Connection-scoped reference (pass back as `source`). */
   id: string;
   name: string;
-  /** Words that point at this source ("projects, Firbot"). */
+  /** Words that point at this source ("projects, Acme"). */
   context: string | null;
   providerKey: ProviderKey;
   connectionId: string;
-  /** Connection name ("Firbot Workspace"). */
+  /** Connection name ("Acme Workspace"). */
   account: string;
   semanticType: SemanticType;
   fields: FieldMapping[];

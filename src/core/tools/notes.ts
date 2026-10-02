@@ -100,7 +100,7 @@ export const createNoteTool: ToolDefinition = {
   capability: "notes",
   operation: "create",
   description:
-    'Save a note ("save this as a note in Firbot"). Write a short title and the content in the user\'s words; set `space` when they name a Knowledge Space so it becomes searchable there. Confirm where it was saved.',
+    'Save a note ("save this as a note in Acme"). Write a short title and the content in the user\'s words; set `space` when they name a Knowledge Space so it becomes searchable there. Confirm where it was saved.',
   input: createNoteInput,
   async describe(raw) {
     return { summary: `Save note “${createNoteInput.parse(raw).title}”` };

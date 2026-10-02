@@ -74,7 +74,7 @@ const definition = {
     .min(1)
     .max(120)
     .optional()
-    .describe('A Context Profile the steps use by default ("RSFA Brief" → RSFA).'),
+    .describe('A Context Profile the steps use by default ("Client A Brief" → Client A).'),
   requiresConfirmation: z.boolean().default(false),
 };
 
@@ -242,7 +242,7 @@ export const updateShortcutTool: ToolDefinition = {
   capability: "shortcuts",
   operation: "update",
   description:
-    "\"Cambiá 'arrancamos' por 'vamos'\", \"que RSFA Brief también busque en la web\": changes a Shortcut's name, phrases, steps or context.",
+    "\"Cambiá 'arrancamos' por 'vamos'\", \"que Client A Brief también busque en la web\": changes a Shortcut's name, phrases, steps or context.",
   input: updateInput,
   async describe(raw, env) {
     const s = await findShortcut(env, updateInput.parse(raw).shortcut);
@@ -327,7 +327,7 @@ export const runShortcutTool: ToolDefinition = {
   capability: "shortcuts",
   operation: "run",
   description:
-    '"Corré mi shortcut RSFA Brief": what a Shortcut runs. Then call exactly these tools, in order, with these arguments — each still under its own permissions and approvals.',
+    '"Corré mi shortcut Client A Brief": what a Shortcut runs. Then call exactly these tools, in order, with these arguments — each still under its own permissions and approvals.',
   input: z.object({ shortcut: ref }).strict(),
   async describe() {
     return { summary: "Run shortcut" };

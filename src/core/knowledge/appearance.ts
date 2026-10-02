@@ -52,19 +52,19 @@ export function spaceColor(value: string | null | undefined): SpaceColor {
     : DEFAULT_SPACE_COLOR;
 }
 
-/** A sensible starting look for common Space names ("UTN" → graduation cap, blue). */
+/** A sensible starting look for common Space names ("University" → graduation cap, blue). */
 export function suggestAppearance(name: string): { icon: SpaceIcon; color: SpaceColor } | null {
   const n = name.trim().toLowerCase();
   const rules: [RegExp, SpaceIcon, SpaceColor][] = [
     [
-      /\b(utn|uni|universidad|university|study|estudio|course|curso|facultad|college)\b/,
+      /\b(university|uni|universidad|study|estudio|course|curso|facultad|college)\b/,
       "graduation",
       "blue",
     ],
-    [/\b(work|trabajo|firbot|office|oficina|startup|company|empresa)\b/, "briefcase", "cyan"],
+    [/\b(work|trabajo|office|oficina|startup|company|empresa)\b/, "briefcase", "cyan"],
     [/\b(personal|me|yo|family|familia)\b/, "user", "violet"],
     [/\b(home|casa|hogar)\b/, "home", "violet"],
-    [/\b(rsfa|client|clients|cliente|clientes|agency)\b/, "building", "green"],
+    [/\b(client-a|client|clients|cliente|clientes|agency)\b/, "building", "green"],
     [/\b(trip|travel|viaje|japan|japón|japon|vacaciones)\b/, "plane", "amber"],
     [/\b(finance|finanzas|money|plata)\b/, "wallet", "teal"],
     [/\b(code|dev|software|elise|app)\b/, "code", "cyan"],

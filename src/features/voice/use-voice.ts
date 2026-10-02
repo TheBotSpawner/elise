@@ -69,6 +69,7 @@ export function useVoice({
           micProblem: (e) => (e instanceof MicError ? e.problem : "not_supported"),
           wake,
           online: () => navigator.onLine,
+          trace: voiceTrace(),
         },
         toPrefs(prefs),
       ),
@@ -203,4 +204,21 @@ function reportTimings(marks: VoiceMarks) {
     body: JSON.stringify(marks),
     keepalive: true,
   }).catch(() => {});
+}
+
+/**
+ * Voice diagnostics (development, or `localStorage["elise.voiceDebug"] = "1"`): one console line
+ * per lifecycle event with timings. Never audio, never transcript text.
+ */
+function voiceTrace() {
+  let on = process.env.NODE_ENV !== "production";
+  try {
+    on ||= window.localStorage.getItem("elise.voiceDebug") === "1";
+  } catch {
+    // Storage unavailable: production stays quiet.
+  }
+  return on
+    ? (event: string, data?: Record<string, unknown>) =>
+        console.debug(`[voice] ${event} ${JSON.stringify(data ?? {})}`)
+    : undefined;
 }

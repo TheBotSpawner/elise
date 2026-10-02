@@ -1,5 +1,3 @@
-import type { AIProvider, ModelTier } from "../agents/ai-provider";
-import { AppError } from "../errors";
 import {
   ASSESSMENTS,
   STUDY_LIMITS,
@@ -10,6 +8,9 @@ import {
   type StudyMode,
   type StudyPreferences,
 } from "./model";
+import type { AIProvider } from "../agents/ai-provider";
+import { MODEL_POLICY, type ModelChoice } from "../agents/model-policy";
+import { AppError } from "../errors";
 
 /**
  * The AI steps of Study (ADR-016 §11-13), behind the AIProvider port: concepts from the
@@ -25,8 +26,7 @@ async function complete(
   ai: AIProvider,
   instructions: string,
   content: string,
-  tier: ModelTier,
-  reasoning: "minimal" | "low",
+  { tier, reasoning }: ModelChoice,
 ) {
   let out = "";
   for await (const e of ai.streamTurn({
@@ -86,8 +86,7 @@ export async function extractConcepts(
     ai,
     CONCEPTS.replace("{max}", String(max)),
     `Subject: ${input.subject}\n\n${passages(input.evidence)}`,
-    "fast",
-    "low",
+    MODEL_POLICY.study_concepts,
   );
   const refs = new Set(input.evidence.map((e) => e.ref));
   const list = Array.isArray(json?.concepts) ? (json!.concepts as Record<string, unknown>[]) : [];
@@ -165,8 +164,7 @@ export async function generateQuestion(
         ]
           .filter(Boolean)
           .join("\n\n"),
-        "fast",
-        "minimal",
+        MODEL_POLICY.study_question,
       ).catch(() => null)
     : null;
   const question = typeof json?.question === "string" ? json.question.trim().slice(0, 600) : "";
@@ -255,8 +253,7 @@ export async function evaluateAnswer(
     ]
       .filter(Boolean)
       .join("\n\n"),
-    "fast",
-    "low",
+    MODEL_POLICY.study_evaluate,
   );
   const assessment = (ASSESSMENTS as readonly string[]).includes(String(json?.assessment))
     ? (json!.assessment as Assessment)

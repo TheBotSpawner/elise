@@ -169,7 +169,7 @@ Esto puede parecer redundante en MVP, pero permite evolucionar hacia:
 ```text
 User
 ├── Personal
-├── Firbot Team
+├── Acme Team
 └── Client Workspace
 ```
 
@@ -1731,7 +1731,7 @@ Risk level HIGH.
 When useful, show:
 
 ```text
-Using Firbot Gmail
+Using Acme Gmail
 ```
 
 ```text

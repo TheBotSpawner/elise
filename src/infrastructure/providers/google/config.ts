@@ -13,7 +13,7 @@ export function isGoogleConfigured(): boolean {
     env.GOOGLE_OAUTH_CLIENT_ID &&
     env.GOOGLE_OAUTH_CLIENT_SECRET &&
     env.ELISE_ENCRYPTION_KEY &&
-    process.env.SUPABASE_SECRET_KEY,
+    env.SUPABASE_SECRET_KEY,
   );
 }
 

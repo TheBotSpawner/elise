@@ -19,7 +19,7 @@ export interface EmailProvenance {
   connectionId: string;
   /** Provider message/draft id. */
   externalId: string;
-  /** User-facing account name ("Personal", "Firbot"). */
+  /** User-facing account name ("Personal", "Acme"). */
   source: string;
   /** Address of the account the item lives in. */
   account: string | null;
@@ -359,7 +359,7 @@ export interface FollowUp {
   lastMessageAt: string;
   lastMessageId: string;
   snippet: string;
-  /** Explainable evidence, e.g. "latest message is from Rod · no later reply from you". */
+  /** Explainable evidence, e.g. "latest message is from Alex · no later reply from you". */
   reasons: string[];
   confidence: "high" | "medium" | "low";
   source: string;

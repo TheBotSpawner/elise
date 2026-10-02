@@ -891,14 +891,14 @@ No crear una copia separada editable.
 
 Caso:
 
-> “Guardá esto como una nota de RSFA.”
+> “Guardá esto como una nota de Client A.”
 
 ELISE:
 
 ```text
 extract useful content
 suggest title
-resolve RSFA entity/space
+resolve Client A entity/space
 create Note
 index
 ```
@@ -914,7 +914,7 @@ Structured Data debe poder relacionarse mediante entities.
 Ejemplo:
 
 ```text
-Client: RSFA
+Client: Client A
 
 linked:
 ├── Tasks
@@ -926,7 +926,7 @@ linked:
 
 Esto habilita:
 
-> “Poneme al día con RSFA.”
+> “Poneme al día con Client A.”
 
 sin crear un silo por módulo.
 
@@ -1361,7 +1361,7 @@ Ejemplos:
 
 > “Mostrame gastos de software de este mes.”
 
-> “Qué tareas tengo de Firbot?”
+> “Qué tareas tengo de Acme?”
 
 > “Cuántas veces fui al gym esta semana?”
 
@@ -1497,7 +1497,7 @@ AI responde con contexto.
 
 User:
 
-> “Gasté 85 USD en herramientas para Firbot.”
+> “Gasté 85 USD en herramientas para Acme.”
 
 Flow:
 
@@ -1511,7 +1511,7 @@ Expense
 85
 USD
 Software/Tools
-Entity: Firbot
+Entity: Acme
  ↓
 validation
  ↓

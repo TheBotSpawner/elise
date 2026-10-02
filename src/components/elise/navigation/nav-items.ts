@@ -5,6 +5,7 @@ import {
   Repeat,
   StickyNote,
   Wallet,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -33,6 +34,7 @@ export const MY_ELISE: { key: CapabilityKey; href: string | null; icon: LucideIc
   { key: "goals", href: "/my-elise/goals", icon: Target },
   { key: "notes", href: "/my-elise/notes", icon: StickyNote },
   { key: "finance", href: "/my-elise/finance", icon: Wallet },
+  { key: "shortcuts", href: "/my-elise/shortcuts", icon: Zap },
 ];
 
 export type ActiveSection = SectionKey | "myElise" | "settings" | "approvals" | null;

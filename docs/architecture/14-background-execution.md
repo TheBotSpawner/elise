@@ -755,7 +755,7 @@ No hardcodear una cuenta para siempre si el Schedule no lo especificó.
 Si el usuario pidió:
 
 ```text
-"Use only Firbot Gmail"
+"Use only Acme Gmail"
 ```
 
 entonces el job conserva ese binding específico.

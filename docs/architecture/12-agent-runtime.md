@@ -1307,8 +1307,8 @@ El runtime puede incluir resumen compacto de entidades relevantes.
 Ejemplo:
 
 ```text
-Rod Schubert
-Organization: RSFA
+Alex Morgan
+Organization: Client A
 Relationship: client contact
 ```
 
@@ -1706,11 +1706,11 @@ Response → confirmation
 
 User:
 
-> “Preparame para la reunión con Rod.”
+> “Preparame para la reunión con Alex.”
 
 ```text
 Entity Resolution
-→ Rod / RSFA
+→ Alex / Client A
 
 Calendar
 → identify meeting
@@ -1719,10 +1719,10 @@ Email
 → recent relevant threads
 
 Knowledge
-→ RSFA Space
+→ Client A Space
 
 Tasks
-→ open RSFA items
+→ open Client A items
 
 Context Builder
 → compact package

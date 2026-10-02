@@ -14,6 +14,7 @@ import {
 import { SentenceChunker } from "@/core/voice/speech-text";
 import {
   BargeInDetector,
+  calibrateFloor,
   isSelfEcho,
   looksUnfinished,
   TurnDetector,
@@ -67,6 +68,7 @@ export type StreamEvent =
   | { type: "tool_finished"; outcome?: { status: string } }
   | { type: "workspace" }
   | { type: "text"; delta: string }
+  | { type: "spoken"; delta: string }
   | { type: "finished"; failed: boolean }
   | { type: string };
 
@@ -114,11 +116,15 @@ export interface VoiceDeps {
   micProblem?: (error: unknown) => "permission_denied" | "no_microphone" | "not_supported";
   wake?: WakeEngine | null;
   online?: () => boolean;
+  /** Development diagnostics: lifecycle events with timings, never audio or full text. */
+  trace?: (event: string, data?: Record<string, unknown>) => void;
 }
 
 interface SpokenTurn {
   language: VoiceLanguage | null;
   chunker: SentenceChunker;
+  /** The model's spoken synthesis (ADR-019). Once it arrives, only it is spoken. */
+  spokenChunker: SentenceChunker | null;
   t0: number;
   marks: VoiceMarks;
   textDone: boolean;
@@ -137,6 +143,9 @@ interface Snapshot {
 
 /** Fired when voice preferences change without a reload (Settings, or ELISE herself). */
 export const VOICE_PREFS_EVENT = "elise:voice-prefs";
+
+/** Longest wait for a transcript before the turn is treated as not understood. */
+const TRANSCRIBE_TIMEOUT_MS = 25_000;
 
 /** Voice carries the synthesis; a long answer is spoken up to here, the rest is on screen. */
 export const SPOKEN_LIMIT = 420;
@@ -157,6 +166,16 @@ export class VoiceController {
   /** Bumped whenever the user speaks again after a pause: a snapshot older than this is stale. */
   private voiceVersion = 0;
   private floor = 0;
+  /** The room has been measured this session (once, while arming). */
+  private calibrated = false;
+  /** Calibration frames while arming (null when not calibrating). */
+  private calibration: number[] | null = null;
+  private calibrationStart = 0;
+  /**
+   * Monotonic capture generation: every utterance gets a new one, and async work (snapshot,
+   * transcription) that finishes after a newer utterance started is ignored.
+   */
+  private capture = 0;
   private t0 = 0;
   private marks: VoiceMarks = {};
   private lastActivity = 0;
@@ -211,8 +230,15 @@ export class VoiceController {
   }
 
   private act(event: VoiceEvent) {
+    const from = this.state.phase;
     this.state = voiceReducer(this.state, event);
+    if (this.state.phase !== from)
+      this.trace("phase", { from, to: this.state.phase, via: event.type });
     this.deps.onState(this.state);
+  }
+
+  private trace(event: string, data: Record<string, unknown> = {}) {
+    this.deps.trace?.(event, { at: Math.round(this.now), ...data });
   }
 
   private mark(key: keyof VoiceMarks) {
@@ -253,13 +279,22 @@ export class VoiceController {
     try {
       await mic.open();
       if (this.state.phase !== "arming") return;
-      this.act({ type: "mic_ready" });
-      this.lastActivity = this.now;
-      this.listen();
+      if (this.calibrated) return this.ready();
+      // Still "arming": measure the room first, so "listening" is never a half-deaf promise.
+      this.calibration = [];
+      this.calibrationStart = this.now;
+      this.trace("calibration_started");
+      this.startTicker();
     } catch (error) {
       mic.close();
       this.act({ type: "mic_failed", problem: this.deps.micProblem?.(error) ?? "not_supported" });
     }
+  }
+
+  private ready() {
+    this.act({ type: "mic_ready" });
+    this.lastActivity = this.now;
+    this.listen();
   }
 
   /** A fresh utterance: recorder on, turn detection from zero (the room is calibrated). */
@@ -269,11 +304,15 @@ export class VoiceController {
     this.dropSnapshot();
     mic.discard();
     mic.begin();
-    this.detector = new TurnDetector();
+    this.capture++;
+    // A new utterance: any speculative transcript of an earlier one is stale.
+    this.voiceVersion++;
+    this.detector = new TurnDetector(VOICE_TURN, { floor: this.floor });
     this.bargeTurn = false;
     this.finishing = false;
     this.t0 = this.now;
     this.marks = { listening: 0 };
+    this.trace("listen", { floor: this.floor, capture: this.capture });
     this.startTicker();
   }
 
@@ -302,16 +341,27 @@ export class VoiceController {
       if (this.barge.frame(mic.rms(), this.player.rms(), now)) this.bargeIn();
       return;
     }
+    if (this.calibration && this.state.phase === "arming") {
+      this.calibration.push(mic.rms());
+      if (now - this.calibrationStart < VOICE_TURN.calibrateMs) return;
+      this.floor = calibrateFloor(this.calibration, VOICE_TURN);
+      this.calibration = null;
+      this.calibrated = true;
+      this.trace("calibrated", { floor: this.floor });
+      return this.ready();
+    }
     if (!isHearing(this.state) || !this.detector || this.finishing) return;
     const signal = this.detector.frame(mic.rms(), now);
     if (this.detector.noiseFloor) this.floor = this.detector.noiseFloor;
     switch (signal) {
       case "speech_start":
+        this.trace("speech_start", { sinceListen: Math.round(now - this.t0), floor: this.floor });
         this.lastActivity = now;
         this.mark("speechStart");
         this.act({ type: "speech_start" });
         break;
       case "pause":
+        this.trace("pause", { sinceListen: Math.round(now - this.t0) });
         this.takeSnapshot();
         break;
       case "resumed":
@@ -320,15 +370,19 @@ export class VoiceController {
         this.dropSnapshot();
         break;
       case "end":
+        this.trace("turn_end", { sinceListen: Math.round(now - this.t0) });
         void this.finishTurn();
         break;
       case "no_speech":
+        this.trace("discard", { reason: "no_speech" });
         // Nobody spoke: keep listening, or sleep once it has been long enough.
         if (now - this.lastActivity >= VOICE_TURN.sleepAfterMs) this.sleep("inactivity");
         else {
           mic.discard();
           mic.begin();
-          this.detector = new TurnDetector();
+          this.capture++;
+          this.voiceVersion++;
+          this.detector = new TurnDetector(VOICE_TURN, { floor: this.floor });
         }
         break;
     }
@@ -363,6 +417,7 @@ export class VoiceController {
   private async finishTurn() {
     const mic = this.mic;
     if (!mic || !isHearing(this.state)) return;
+    const capture = this.capture;
     this.finishing = true;
     this.mark("speechEnd");
     this.mark("turnDetected");
@@ -370,16 +425,37 @@ export class VoiceController {
     const snap = this.snap?.version === this.voiceVersion ? this.snap : null;
     this.snap = null;
     const utterance = await mic.finish();
-    let result = snap ? await snap.promise : null;
+    // Transcription is bounded: a hung request ends as "didn't catch that", never a session
+    // stuck in finalizing_input (the server gives up at 20 s).
+    this.trace("finalize", { snapshot: Boolean(snap) });
+    let result = snap
+      ? await Promise.race([
+          snap.promise,
+          new Promise<null>((done) => setTimeout(() => done(null), TRANSCRIBE_TIMEOUT_MS)),
+        ])
+      : null;
+    // An empty speculative transcript is not evidence that nothing was said: transcribe all.
+    if (result && !result.text.trim()) {
+      this.trace("discard", { reason: "empty_speculative" });
+      result = null;
+    }
+    const speculative = Boolean(result);
     if (result) this.mark("speculative");
     if (!result && utterance.blob.size) {
       const abort = new AbortController();
-      result = await this.deps.transcribe(
-        utterance.blob,
-        (text) => this.act({ type: "partial", text }),
-        abort.signal,
-      );
+      const timer = setTimeout(() => abort.abort(), TRANSCRIBE_TIMEOUT_MS);
+      result = await this.deps
+        .transcribe(utterance.blob, (text) => this.act({ type: "partial", text }), abort.signal)
+        .finally(() => clearTimeout(timer));
+      // The provider failed (not "nothing said"): one retry of the same audio, never more.
+      if (!result && !abort.signal.aborted && (!this.deps.online || this.deps.online())) {
+        this.trace("discard", { reason: "stt_failed_retrying" });
+        result = await this.deps
+          .transcribe(utterance.blob, () => {}, AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS))
+          .catch(() => null);
+      }
     }
+    if (capture !== this.capture) return this.trace("discard", { reason: "session_mismatch" });
     if (this.state.phase !== "finalizing_input") return; // ended meanwhile
     if (!result) {
       if (this.deps.online && !this.deps.online()) return this.network(false);
@@ -389,8 +465,13 @@ export class VoiceController {
       return;
     }
     let text = result.text.trim();
+    this.trace("transcript", { chars: text.length, speculative });
     // Her own voice leaking back after a barge-in is not the user talking.
-    if (text && this.bargeTurn && isSelfEcho(text, this.lastSpoken)) text = "";
+    if (text && this.bargeTurn && isSelfEcho(text, this.lastSpoken)) {
+      this.trace("discard", { reason: "echo_rejected" });
+      text = "";
+    }
+    if (!text) this.trace("discard", { reason: "empty_final", speculative });
     this.act({ type: "transcript", text });
     if (!text) {
       if ((this.state.phase as VoicePhase) === "sleeping") this.afterSleep();
@@ -407,6 +488,7 @@ export class VoiceController {
     this.turn = {
       language,
       chunker: new SentenceChunker(),
+      spokenChunker: null,
       t0: this.t0,
       marks: { ...this.marks },
       textDone: false,
@@ -444,14 +526,23 @@ export class VoiceController {
       case "workspace":
         turn.marks.firstSurface ??= since();
         break;
-      case "text":
+      case "spoken":
         if ("delta" in event) {
+          turn.marks.firstText ??= since();
+          turn.spokenChunker ??= new SentenceChunker();
+          for (const sentence of turn.spokenChunker.push(event.delta)) this.say(turn, sentence);
+        }
+        break;
+      case "text":
+        // Fallback for a reply without a spoken part: speak the answer itself, capped.
+        if ("delta" in event && !turn.spokenChunker) {
           turn.marks.firstText ??= since();
           for (const sentence of turn.chunker.push(event.delta)) this.say(turn, sentence);
         }
         break;
       case "finished":
-        for (const sentence of turn.chunker.flush()) this.say(turn, sentence);
+        for (const sentence of (turn.spokenChunker ?? turn.chunker).flush())
+          this.say(turn, sentence);
         turn.textDone = true;
         if (!this.player?.speaking) this.complete();
         break;
@@ -462,7 +553,9 @@ export class VoiceController {
     if (turn.capped || !this.player) return;
     if (turn.spokenChars > 0 && turn.spokenChars + sentence.length > SPOKEN_LIMIT) {
       turn.capped = true;
-      this.player.speak(REST_ON_SCREEN[turn.language ?? this.prefs.language], turn.language);
+      // The model's own synthesis already points to the screen; only a fallback reply says so.
+      if (!turn.spokenChunker)
+        this.player.speak(REST_ON_SCREEN[turn.language ?? this.prefs.language], turn.language);
       return;
     }
     turn.spokenChars += sentence.length;
@@ -471,6 +564,7 @@ export class VoiceController {
   }
 
   private onAudioStart() {
+    this.trace("tts_playback_started");
     if (this.turn) this.turn.marks.audioStart ??= Math.round(this.now - this.turn.t0);
     this.act({ type: "speaking" });
     // Barge-in: the mic keeps listening while she speaks, the recorder already on.
@@ -484,6 +578,7 @@ export class VoiceController {
   private complete() {
     const turn = this.turn;
     if (!turn) return;
+    this.trace("tts_playback_ended");
     turn.marks.turnComplete = Math.round(this.now - turn.t0);
     this.turn = null;
     this.barge = null;
@@ -510,7 +605,9 @@ export class VoiceController {
     this.act({ type: "barge_in" });
     this.act({ type: "speech_start" });
     this.dropSnapshot();
-    this.detector = new TurnDetector(VOICE_TURN, { floor: this.floor });
+    this.capture++;
+    this.voiceVersion++;
+    this.detector = new TurnDetector(VOICE_TURN, { floor: this.floor, resumed: true });
     this.bargeTurn = true;
     this.finishing = false;
     this.t0 = this.now;
@@ -654,6 +751,9 @@ export class VoiceController {
   end() {
     this.stopTicker();
     this.dropSnapshot();
+    // A new session measures the room again (it may be another room, another device).
+    this.calibrated = false;
+    this.calibration = null;
     this.mic?.close();
     this.deps.wake?.stop();
     this.player?.stop();

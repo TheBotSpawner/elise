@@ -14,12 +14,12 @@ import {
 } from "../../fixtures/core-fakes";
 
 const PERSONAL = "11111111-1111-4111-8111-111111111111";
-const FIRBOT = "22222222-2222-4222-8222-222222222222";
+const NORTHWIND = "22222222-2222-4222-8222-222222222222";
 const OTHER_WORKSPACE = "33333333-3333-4333-8333-333333333333";
 
-function setup(overrides: { firbotStatus?: "connected" | "needs_reauthorization" } = {}) {
+function setup(overrides: { northwindStatus?: "connected" | "needs_reauthorization" } = {}) {
   const personal = new InMemoryTaskProvider(PERSONAL, "Personal", "google");
-  const firbot = new InMemoryTaskProvider(FIRBOT, "Firbot", "google");
+  const northwind = new InMemoryTaskProvider(NORTHWIND, "Northwind", "google");
   const bindings = [
     NATIVE_BINDING,
     binding({
@@ -29,41 +29,41 @@ function setup(overrides: { firbotStatus?: "connected" | "needs_reauthorization"
       accountLabel: "leo@gmail.com",
     }),
     binding({
-      connectionId: FIRBOT,
+      connectionId: NORTHWIND,
       providerKey: "google",
-      label: "Firbot",
-      accountLabel: "leo@firbot.com",
-      contextLabel: "Firbot",
-      connectionStatus: overrides.firbotStatus ?? "connected",
+      label: "Northwind",
+      accountLabel: "leo@northwind.com",
+      contextLabel: "Northwind",
+      connectionStatus: overrides.northwindStatus ?? "connected",
     }),
   ];
   const {
     ports,
     tasks: native,
     log,
-  } = makePorts(bindings, { [PERSONAL]: personal, [FIRBOT]: firbot });
-  return { ports, native, personal, firbot, log, bindings };
+  } = makePorts(bindings, { [PERSONAL]: personal, [NORTHWIND]: northwind });
+  return { ports, native, personal, northwind, log, bindings };
 }
 
 describe("Tasks across ELISE and Google", () => {
   it("writes to the configured default (ELISE) when no account is named", async () => {
-    const { ports, native, personal, firbot } = setup();
+    const { ports, native, personal, northwind } = setup();
     const out = await executeToolCall(ports, makeCtx(), {
       name: "tasks.create",
       args: { title: "Review the proposal" },
     });
     expect(out.status).toBe("succeeded");
     expect(native.tasks.size).toBe(1);
-    expect(personal.tasks.size + firbot.tasks.size).toBe(0);
+    expect(personal.tasks.size + northwind.tasks.size).toBe(0);
   });
 
   it("resolves an explicitly named provider or account", async () => {
-    const { ports, personal, firbot, native } = setup();
+    const { ports, personal, northwind, native } = setup();
     await executeToolCall(ports, makeCtx(), {
       name: "tasks.create",
-      args: { title: "A", destination: "Firbot" },
+      args: { title: "A", destination: "Northwind" },
     });
-    expect(firbot.tasks.size).toBe(1);
+    expect(northwind.tasks.size).toBe(1);
     await executeToolCall(ports, makeCtx(), {
       name: "tasks.create",
       args: { title: "B", destination: "Google Personal" },
@@ -77,7 +77,7 @@ describe("Tasks across ELISE and Google", () => {
   });
 
   it("asks which account when a named write destination is ambiguous", async () => {
-    const { ports, personal, firbot } = setup();
+    const { ports, personal, northwind } = setup();
     const out = await executeToolCall(ports, makeCtx(), {
       name: "tasks.create",
       args: { title: "X", destination: "Google" },
@@ -86,10 +86,10 @@ describe("Tasks across ELISE and Google", () => {
       status: "clarification_required",
       options: [
         { label: "Personal", account: "leo@gmail.com" },
-        { label: "Firbot", account: "leo@firbot.com" },
+        { label: "Northwind", account: "leo@northwind.com" },
       ],
     });
-    expect(personal.tasks.size + firbot.tasks.size).toBe(0);
+    expect(personal.tasks.size + northwind.tasks.size).toBe(0);
   });
 
   it("reports unknown destinations with the available account names", async () => {
@@ -103,39 +103,43 @@ describe("Tasks across ELISE and Google", () => {
   });
 
   it("aggregates safe reads across accounts and preserves provenance", async () => {
-    const { ports, native, personal, firbot } = setup();
+    const { ports, native, personal, northwind } = setup();
     await native.create({ title: "Native" });
     await personal.create({ title: "Personal task" });
-    await firbot.create({ title: "Firbot task" });
+    await northwind.create({ title: "Northwind task" });
     const out = await executeToolCall(ports, makeCtx(), { name: "tasks.list", args: {} });
     expect(out.status).toBe("succeeded");
     const tasks =
       out.status === "succeeded" && out.display?.kind === "task_list" ? out.display.tasks : [];
-    expect(tasks.map((t) => t.provenance.source).sort()).toEqual(["ELISE", "Firbot", "Personal"]);
+    expect(tasks.map((t) => t.provenance.source).sort()).toEqual([
+      "ELISE",
+      "Northwind",
+      "Personal",
+    ]);
   });
 
   it("keeps partial results when one account fails, and says which", async () => {
-    const { ports, personal, firbot } = setup();
+    const { ports, personal, northwind } = setup();
     await personal.create({ title: "Still visible" });
-    firbot.list = async () => {
+    northwind.list = async () => {
       throw new AppError("AUTH_EXPIRED", "revoked");
     };
     const out = await executeToolCall(ports, makeCtx(), { name: "tasks.list", args: {} });
     expect(out).toMatchObject({
       status: "succeeded",
-      output: { unavailable: [{ account: "Firbot", error: "AUTH_EXPIRED" }] },
+      output: { unavailable: [{ account: "Northwind", error: "AUTH_EXPIRED" }] },
     });
   });
 
   it("routes follow-up writes to the account an existing task lives in", async () => {
-    const { ports, firbot, native } = setup();
-    const task = await firbot.create({ title: "Firbot task" });
+    const { ports, northwind, native } = setup();
+    const task = await northwind.create({ title: "Northwind task" });
     const out = await executeToolCall(ports, makeCtx(), {
       name: "tasks.complete",
       args: { taskId: task.id },
     });
     expect(out.status).toBe("succeeded");
-    expect(firbot.tasks.get(task.id)?.status).toBe("completed");
+    expect(northwind.tasks.get(task.id)?.status).toBe("completed");
     expect(native.tasks.size).toBe(0);
   });
 
@@ -150,10 +154,10 @@ describe("Tasks across ELISE and Google", () => {
   });
 
   it("fails closed on a revoked account instead of writing elsewhere", async () => {
-    const { ports, native, personal } = setup({ firbotStatus: "needs_reauthorization" });
+    const { ports, native, personal } = setup({ northwindStatus: "needs_reauthorization" });
     const out = await executeToolCall(ports, makeCtx(), {
       name: "tasks.create",
-      args: { title: "X", destination: "Firbot" },
+      args: { title: "X", destination: "Northwind" },
     });
     expect(out).toMatchObject({
       status: "failed",
@@ -163,7 +167,7 @@ describe("Tasks across ELISE and Google", () => {
   });
 
   it("excludes revoked accounts from aggregated reads", () => {
-    const { bindings } = setup({ firbotStatus: "needs_reauthorization" });
+    const { bindings } = setup({ northwindStatus: "needs_reauthorization" });
     const r = resolveBindings(bindings, { capability: "tasks", operationKind: "read" });
     expect(r.kind === "resolved" && r.bindings.map((b) => b.label)).toEqual(["ELISE", "Personal"]);
   });

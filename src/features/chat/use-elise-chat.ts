@@ -26,6 +26,9 @@ export interface SendOptions {
   voice?: VoiceTurnMeta;
 }
 
+/** No streamed event for this long: the turn is treated as lost (the server caps a turn at 60 s). */
+const STREAM_IDLE_MS = 90_000;
+
 type StreamListener = (event: ChatStreamEvent | { type: "finished"; failed: boolean }) => void;
 
 /**
@@ -58,6 +61,11 @@ export function useEliseChat(initial: {
   }, []);
   /** A turn sent while another still streams (e.g. the user interrupted ELISE): sent next. */
   const queued = useRef<{ text: string; options: SendOptions } | null>(null);
+  /** The text of the turn in flight: the same text again (double Enter, a repeated voice
+   * finalization, a reconnect) is a duplicate, not a new turn. */
+  const inFlight = useRef<string | null>(null);
+  /** A typed turn that failed: the composer offers its text back instead of losing it. */
+  const [failedDraft, setFailedDraft] = useState<{ text: string; at: number } | null>(null);
 
   const patchAssistant = useCallback((id: string, patch: (m: ChatMessage) => ChatMessage) => {
     setMessages((all) => all.map((m) => (m.id === id ? patch(m) : m)));
@@ -68,9 +76,11 @@ export function useEliseChat(initial: {
       const message = text.trim();
       if (!message) return;
       if (abort.current) {
+        if (inFlight.current === message || queued.current?.text === message) return;
         queued.current = { text: message, options };
         return;
       }
+      inFlight.current = message;
       const emit = (e: Parameters<StreamListener>[0]) => listeners.current.forEach((fn) => fn(e));
 
       const assistantId = crypto.randomUUID();
@@ -100,6 +110,17 @@ export function useEliseChat(initial: {
       const controller = new AbortController();
       abort.current = controller;
       let failed: PublicError | undefined;
+      // A stream that goes silent (network dropped mid-turn) must not leave ELISE "thinking".
+      let idleTimer = 0;
+      let timedOut = false;
+      const touch = () => {
+        window.clearTimeout(idleTimer);
+        idleTimer = window.setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, STREAM_IDLE_MS);
+      };
+      touch();
       // Text deltas are applied once per frame: a long answer arriving in a burst (after a
       // research run) committed one render per token and hit React's nested-update limit.
       let pendingText = "";
@@ -145,6 +166,7 @@ export function useEliseChat(initial: {
         for (;;) {
           const { value, done } = await reader.read();
           if (done) break;
+          touch();
           buffer += value;
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
@@ -230,9 +252,9 @@ export function useEliseChat(initial: {
           }
         }
       } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
+        if (timedOut || !(error instanceof DOMException && error.name === "AbortError")) {
           failed = {
-            code: "PROVIDER_UNAVAILABLE",
+            code: timedOut ? "TIMEOUT" : "PROVIDER_UNAVAILABLE",
             message: "",
             retryable: true,
             recovery: "retry",
@@ -240,6 +262,10 @@ export function useEliseChat(initial: {
           };
         }
       } finally {
+        window.clearTimeout(idleTimer);
+        inFlight.current = null;
+        if (failed && options.modality !== "voice")
+          setFailedDraft({ text: message, at: Date.now() });
         flushText();
         patchAssistant(assistantId, (m) => ({ ...m, streaming: false, error: failed }));
         setRunState("idle");
@@ -304,6 +330,7 @@ export function useEliseChat(initial: {
     subscribe,
     send,
     stop,
+    failedDraft,
     busy: runState === "thinking" || runState === "using_tools",
     orbState,
     trackApproval,

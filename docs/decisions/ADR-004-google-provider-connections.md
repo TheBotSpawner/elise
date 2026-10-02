@@ -22,7 +22,7 @@ capability tools for native and external providers (`07`, `08`, `15`, `17`).
    and are requested incrementally on the same connection.
 3. **One connection per Google account per workspace** (`external_account_id` = Google `sub`).
    Reconnecting must use the same account (mismatch is rejected); connecting the same account
-   again updates it. Users alias connections ("Personal", "Firbot") and add a context label.
+   again updates it. Users alias connections ("Personal", "Acme") and add a context label.
 4. **Single-use OAuth state.** A random state (only its SHA-256 is stored) in `oauth_states`,
    bound to user + workspace + provider, 10-minute expiry, consumed with `delete … returning`.
    The PKCE verifier is stored encrypted.

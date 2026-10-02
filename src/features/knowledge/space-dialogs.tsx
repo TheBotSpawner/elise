@@ -17,6 +17,7 @@ import {
   type SpaceIcon,
 } from "@/core/knowledge/appearance";
 import { withDescendants } from "@/core/knowledge/model";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
 import { createSpaceAction, moveSpaceAction, updateSpaceAction } from "./actions";
@@ -62,7 +63,7 @@ export function CreateSpaceDialog({
     icon: DEFAULT_SPACE_ICON,
     color: DEFAULT_SPACE_COLOR,
   });
-  // Until the user picks a look, it follows the name ("UTN" -> graduation cap, blue).
+  // Until the user picks a look, it follows the name ("University" -> graduation cap, blue).
   const [lookTouched, setLookTouched] = useState(false);
   const [parentId, setParentId] = useState<string>("");
   const [busy, setBusy] = useState(false);
@@ -114,7 +115,7 @@ export function CreateSpaceDialog({
     }
     if (files?.length) {
       const r = await uploadFiles(created.value, files);
-      if (!r.ok) toast.error(r.error.message || t.errors.codes[r.error.code]);
+      if (!r.ok) toast.error(errorText(t, r.error));
       else toast.success(t.knowledge.uploaded(r.value));
     }
     const add = choice === "drive" ? "?add=drive" : choice === "notion" ? "?add=notion" : "";

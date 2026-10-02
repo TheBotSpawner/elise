@@ -85,6 +85,10 @@ export function isPrivateAddress(ip: string): boolean {
   if ((first & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
   if ((first & 0xff00) === 0xff00) return true; // multicast
   if (addr.startsWith("64:ff9b:") || addr.startsWith("2001:db8:")) return true;
+  // Anything else in ::/8 (IPv4-compatible, unspecified forms), 6to4 (2002::/16, embeds an
+  // IPv4), Teredo (2001:0::/32) and the discard prefix (100::/64) can tunnel to internal hosts.
+  if (addr.startsWith("::") || first === 0x2002 || first === 0x100) return true;
+  if (/^2001:0{0,4}:/.test(addr)) return true;
   return false;
 }
 

@@ -17,3 +17,16 @@ export function getDictionary(locale: Locale): Dictionary {
 }
 
 export type { Dictionary };
+
+/**
+ * User-facing text for an error returned by a server action. Server messages are English and
+ * already free of internals (toPublicError hides INTERNAL_ERROR); other locales get the
+ * localized text for the code instead of mixing languages.
+ */
+export function errorText(t: Dictionary, error: { code: string; message?: string }): string {
+  const codes = t.errors.codes as Record<string, string>;
+  if (t.errors.useServerMessages && error.message && error.code !== "INTERNAL_ERROR") {
+    return error.message;
+  }
+  return codes[error.code] ?? codes.INTERNAL_ERROR;
+}

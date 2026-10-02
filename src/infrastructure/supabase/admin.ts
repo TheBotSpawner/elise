@@ -3,6 +3,7 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { supabasePublicConfig } from "@/config/env";
+import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
 
 import type { Database } from "./database.types";
@@ -17,7 +18,7 @@ let admin: SupabaseClient<Database> | undefined;
  */
 export function createAdminClient(): SupabaseClient<Database> {
   if (admin) return admin;
-  const secret = process.env.SUPABASE_SECRET_KEY;
+  const secret = serverEnv().SUPABASE_SECRET_KEY;
   if (!secret) {
     throw new AppError("CAPABILITY_UNAVAILABLE", "SUPABASE_SECRET_KEY is not configured", {
       recovery: "configure",

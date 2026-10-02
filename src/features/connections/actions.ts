@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import {
+  safeReturnPath,
   disconnectConnection,
   renameConnection,
   setCapabilityEnabled,
@@ -18,7 +19,7 @@ import { toPublicError, type PublicError } from "@/core/errors";
 
 export type ConnectionActionResult = { ok: true } | { ok: false; error: PublicError };
 
-const capability = z.enum(["tasks", "calendar", "email", "knowledge"]);
+const capability = z.enum(["tasks", "calendar", "email", "knowledge", "finance"]);
 
 async function origin(): Promise<string> {
   const h = await headers();
@@ -42,27 +43,30 @@ export async function connectGoogle(form: FormData): Promise<void> {
     .uuid()
     .optional()
     .parse(form.get("connectionId") || undefined);
+  const returnPath = safeReturnPath(form.get("returnTo"));
   let url: string;
   try {
     url = await startGoogleConnection(auth, {
       capabilities: form.getAll("capability").map(String),
       connectionId,
       origin: await origin(),
+      returnPath,
     });
   } catch (error) {
-    redirect(`/connections?error=${toPublicError(error).code}`);
+    redirect(`${returnPath}?error=${toPublicError(error).code}`);
   }
   redirect(url);
 }
 
 /** Starts Notion's consent (the user picks the pages ELISE may read). */
-export async function connectNotion(): Promise<void> {
+export async function connectNotion(form?: FormData): Promise<void> {
   const auth = await requireAuthContext();
+  const returnPath = safeReturnPath(form?.get("returnTo"));
   let url: string;
   try {
-    url = await startNotionConnection(auth, await origin());
+    url = await startNotionConnection(auth, await origin(), returnPath);
   } catch (error) {
-    redirect(`/connections?error=${toPublicError(error).code}`);
+    redirect(`${returnPath}?error=${toPublicError(error).code}`);
   }
   redirect(url);
 }

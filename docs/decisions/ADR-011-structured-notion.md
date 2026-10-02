@@ -40,7 +40,7 @@ the source, and written back to it.
    Filters and writes address properties by id, so they survive renames.
 4. **Mapping, not copies.** `structured_sources` stores, per workspace:
    - the connection, database id and data source id;
-   - a name, a context hint ("projects, Firbot") and a semantic type (`generic`, with `habits`
+   - a name, a context hint ("projects, Acme") and a semantic type (`generic`, with `habits`
      reserved for a canonical capability later);
    - a schema fingerprint and snapshot;
    - field mappings (key, label, property id and name, type, writable);

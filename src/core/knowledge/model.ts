@@ -54,7 +54,7 @@ export interface SpaceInfo {
   id: string;
   name: string;
   parentId: string | null;
-  /** "Work › Firbot › RSFA" */
+  /** "Work › Acme › Client A" */
   path: string;
 }
 
@@ -147,7 +147,7 @@ export interface KnowledgeReader {
   ): Promise<{ total: number; items: { itemId: string; title: string; preview: string }[] }>;
 }
 
-/** Space plus all its descendants: searching "Work" includes "Work › Firbot". */
+/** Space plus all its descendants: searching "Work" includes "Work › Acme". */
 export function withDescendants(
   spaces: readonly SpaceInfo[],
   rootIds: readonly string[],

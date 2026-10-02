@@ -832,7 +832,7 @@ I found a time tomorrow.
 ┌──────────────────────────────┐
 │ Client Meeting               │
 │ Tuesday · 15:00–15:45        │
-│ Firbot Calendar              │
+│ Acme Calendar              │
 │                              │
 │ [ Create event ]             │
 └──────────────────────────────┘

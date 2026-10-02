@@ -89,7 +89,7 @@ email.send
 
 Action:
 Send draft #123 to client@example.com
-using Gmail Firbot
+using Gmail Acme
 ```
 
 Las Actions tienen:
@@ -304,7 +304,7 @@ Puede consultar:
 
 ```text
 Gmail Personal
-Gmail Firbot
+Gmail Acme
 ```
 
 si ambas son relevantes.
@@ -589,7 +589,7 @@ Connections:
 
 ```text
 Gmail Personal
-Gmail Firbot
+Gmail Acme
 ```
 
 No context.
@@ -612,14 +612,14 @@ No pedir aprobación sobre una acción cuyo destino todavía es ambiguo.
 
 User:
 
-> “Respondé este mail de RSFA.”
+> “Respondé este mail de Client A.”
 
 Context:
 
 ```text
-RSFA
+Client A
 → work
-→ Firbot Gmail
+→ Acme Gmail
 ```
 
 ELISE puede resolver cuenta automáticamente.
@@ -693,7 +693,7 @@ Body hash / snapshot:
 ...
 
 Connection:
-Gmail Firbot
+Gmail Acme
 ```
 
 Si el contenido cambia sustancialmente después:
@@ -721,7 +721,7 @@ Ejemplo:
 Send email
 
 From:
-Firbot Gmail
+Acme Gmail
 
 To:
 Client X
@@ -838,7 +838,7 @@ Remember this
 Ejemplos:
 
 ```text
-Always use Firbot Gmail for RSFA
+Always use Acme Gmail for Client A
 
 Allow task creation automatically
 
@@ -1891,8 +1891,8 @@ Policy Engine debe soportarlo.
 Ejemplo:
 
 ```text
-RSFA:
-Use Firbot Gmail
+Client A:
+Use Acme Gmail
 Send → Always Ask
 ```
 

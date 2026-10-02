@@ -65,9 +65,26 @@ export function useRealtimeRefresh(
         fire,
       );
     }
-    channel.subscribe();
+    // Realtime is a hint, not the source of truth: events missed while the channel was down
+    // (sleep, network loss, a hidden tab) are reconciled by re-reading the server's state when
+    // the channel comes back, the tab is shown again or the network returns.
+    let dropped = false;
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED" && dropped) fire();
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED")
+        dropped = true;
+    });
+    let hiddenAt = 0;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") hiddenAt = Date.now();
+      else if (hiddenAt && Date.now() - hiddenAt > 30_000) fire();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", fire);
     return () => {
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", fire);
       void supabase.removeChannel(channel);
     };
   }, [workspaceId, key, router]);

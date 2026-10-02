@@ -13,6 +13,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { createClient } from "@/infrastructure/supabase/client";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -70,10 +71,7 @@ export function SourcesView({
   ) {
     startTransition(async () => {
       const r = await fn();
-      if (!r.ok)
-        toast.error(
-          r.error?.message || t.errors.codes[r.error!.code as keyof typeof t.errors.codes],
-        );
+      if (!r.ok) toast.error(errorText(t, r.error!));
       else {
         if (success) toast.success(success);
         router.refresh();
@@ -86,7 +84,7 @@ export function SourcesView({
     try {
       const prepared = await prepareFileImportAction({ name: f.name, size: f.size, type: f.type });
       if (!prepared.ok) {
-        toast.error(prepared.error.message || t.errors.codes[prepared.error.code]);
+        toast.error(errorText(t, prepared.error));
         return;
       }
       const { error } = await createClient()

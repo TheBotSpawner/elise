@@ -18,6 +18,7 @@ import { LiveWorkspace, SurfaceCard } from "@/features/workspace/live-workspace"
 import type { SurfaceHandlers } from "@/features/workspace/surfaces";
 import { useWorkspaceController } from "@/features/workspace/use-workspace";
 import { useIsDesktop, useIsWide } from "@/hooks/use-is-desktop";
+import { useOnline } from "@/hooks/use-online";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +56,10 @@ export function ChatSurface({
   initialWorkspace,
   contexts = [],
   run,
+  firstPrompts,
 }: {
+  /** Right after onboarding: first prompts built from what was set up (ADR-019). */
+  firstPrompts?: string[] | null;
   /** "Run" from My Elise › Shortcuts: this Shortcut's phrase is sent once, as typed. */
   run?: string | null;
   /** The user's Context Profiles, for switching from the indicator (ADR-016). */
@@ -78,6 +82,7 @@ export function ChatSurface({
   const desktop = useIsDesktop();
   const wide = useIsWide();
   const presence = useOrbPresence();
+  const online = useOnline();
   const {
     messages,
     send,
@@ -92,6 +97,7 @@ export function ChatSurface({
     outOfSync,
     clearOutOfSync,
     getThread,
+    failedDraft,
   } = useEliseChat({
     thread,
     messages: initialMessages,
@@ -100,6 +106,10 @@ export function ChatSurface({
   });
   const empty = messages.length === 0;
   const ranRef = useRef(false);
+  // "?welcome=1" is a one-time landing: a reload shows the normal Home.
+  useEffect(() => {
+    if (firstPrompts) window.history.replaceState(null, "", "/");
+  }, [firstPrompts]);
   useEffect(() => {
     if (!run || ranRef.current) return;
     ranRef.current = true;
@@ -230,6 +240,17 @@ export function ChatSurface({
         empty ? "bottom-full mb-3 md:top-full md:bottom-auto md:mt-3 md:mb-0" : "bottom-full mb-3",
       )}
     >
+      {!online && (
+        <div className="flex justify-center">
+          <span
+            role="status"
+            className="inline-flex h-8 items-center gap-2 rounded-full border border-border-strong bg-[var(--menu-bg)] px-3 text-[13px] text-muted backdrop-blur"
+          >
+            <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-warning" />
+            {t.chat.offline}
+          </span>
+        </div>
+      )}
       {voiceOn && (
         <VoiceBar
           state={voiceSession.state}
@@ -275,6 +296,9 @@ export function ChatSurface({
       sendLabel={t.chat.send}
       stopLabel={t.chat.stop}
       voice={voiceOn ? <MicButton state={voiceSession.state} handlers={voiceHandlers} /> : null}
+      offline={!online}
+      offlineLabel={t.chat.offline}
+      restore={failedDraft}
     />
   );
 
@@ -343,6 +367,24 @@ export function ChatSurface({
               {t.chat.emptyTitle}
             </h1>
             {ambient && <Ambient ambient={ambient} />}
+            {firstPrompts && firstPrompts.length > 0 && (
+              <div className="mt-6 flex max-w-[720px] flex-col items-center gap-3">
+                <p className="type-label text-faint">{t.onboarding.firstPromptsTitle}</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {firstPrompts.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => void send(prompt)}
+                      className="min-h-11 rounded-full border border-border-strong px-4 text-[14px] transition-colors hover:border-accent-line hover:bg-accent-soft"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+                {voiceOn && <p className="text-[13px] text-muted">{t.onboarding.voiceHint}</p>}
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
         <div className="fixed inset-x-4 bottom-7 z-30 md:relative md:inset-auto md:mt-9 md:w-[720px]">

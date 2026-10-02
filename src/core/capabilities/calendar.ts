@@ -16,7 +16,7 @@ export interface CalendarProvenance {
   providerKey: ProviderKey;
   connectionId: string;
   externalId: string;
-  /** User-facing account name ("Personal", "Firbot"). */
+  /** User-facing account name ("Personal", "Acme"). */
   source: string;
 }
 

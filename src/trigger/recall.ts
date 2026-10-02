@@ -2,6 +2,7 @@ import { AbortTaskRunError, schedules, task } from "@trigger.dev/sdk";
 import { z } from "zod";
 
 import { indexConversation, indexVoiceSession, sweepRecall } from "@/application/recall-service";
+import { withUsageScope } from "@/infrastructure/observability/usage";
 
 /**
  * Thin Trigger.dev entry points for Universal Recall (ADR-012). Indexing is idempotent, so
@@ -25,9 +26,11 @@ export const recallIndexTask = task({
     const parsed = indexPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid recall payload");
     const { workspaceId, conversationId, sessionId } = parsed.data;
-    return conversationId
-      ? indexConversation(workspaceId, conversationId)
-      : indexVoiceSession(workspaceId, sessionId!);
+    return withUsageScope({ workspaceId, feature: "recall_index" }, () =>
+      conversationId
+        ? indexConversation(workspaceId, conversationId)
+        : indexVoiceSession(workspaceId, sessionId!),
+    );
   },
 });
 
