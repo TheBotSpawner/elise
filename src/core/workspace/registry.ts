@@ -948,7 +948,29 @@ function describeSpec(spec: VisualizationSpec): string {
       return `${head}: ${spec.rows.map((r) => `${r.label} ${r.summary}`).join(", ")}`;
     case "table":
       return `${head}: ${spec.rows.length} rows`;
+    case "dot":
+      return `${head}${ref(spec)}: ${spec.rows
+        .map(
+          (r) =>
+            `${r.label}=${r.value}${r.deltaPct != null ? ` (${r.deltaPct > 0 ? "+" : ""}${r.deltaPct}%)` : ""}${src(spec, r.source)}${r.uncertain ? " uncertain" : ""}`,
+        )
+        .join(", ")}`;
+    case "range":
+      return `${head}${ref(spec)}: ${spec.scenarios
+        .map((r) => `${r.label}=${r.value}${src(spec, r.source)}`)
+        .join(", ")}`;
   }
+}
+
+/** Provenance in the description: the user may ask where a number came from. */
+function src(spec: VisualizationSpec, i: number | undefined): string {
+  const s = i === undefined ? undefined : spec.sources?.[i];
+  if (!s) return "";
+  return s.url ? ` [${s.title} ${s.url}]` : ` [${s.title}]`;
+}
+function ref(spec: VisualizationSpec): string {
+  const r = "reference" in spec ? spec.reference : undefined;
+  return r ? ` (reference ${r.label}=${r.value}${src(spec, r.source)})` : "";
 }
 
 function undoFor(c: z.infer<typeof change>): ToolCallSpec | null {

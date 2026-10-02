@@ -20,6 +20,7 @@ import {
   useNumberFormat,
   type ChartSize,
 } from "./charts";
+import { DotChart, PointsTable, RangeChart, SourcesFooter } from "./scale-charts";
 
 const CHART_H: Record<ChartSize, number> = { small: 120, medium: 170, large: 230, focus: 380 };
 
@@ -28,9 +29,12 @@ export function Visualization({ spec, size }: { spec: VisualizationSpec; size: C
   const { t } = useI18n();
   const [view, setView] = useState<"chart" | "table">("chart");
   const series = spec.type === "line" || spec.type === "area" || spec.type === "bar";
+  const points = spec.type === "dot" || spec.type === "range";
+  const toggle = series || points;
   return (
     <div className="flex min-h-0 flex-col gap-3">
-      {(spec.insight || series) && (
+      {spec.subtitle && <p className="-mb-1 text-[12px] text-muted">{spec.subtitle}</p>}
+      {(spec.insight || toggle) && (
         <div className="flex items-start gap-3">
           {spec.insight && (
             <p
@@ -42,7 +46,7 @@ export function Visualization({ spec, size }: { spec: VisualizationSpec; size: C
               {spec.insight}
             </p>
           )}
-          {series && (
+          {toggle && (
             <div
               role="group"
               aria-label={t.canvas.viz.view}
@@ -66,7 +70,14 @@ export function Visualization({ spec, size }: { spec: VisualizationSpec; size: C
           )}
         </div>
       )}
-      {series && view === "table" ? <SeriesTable spec={spec} /> : <Chart spec={spec} size={size} />}
+      {view === "table" && series ? (
+        <SeriesTable spec={spec} />
+      ) : view === "table" && points ? (
+        <PointsTable spec={spec} />
+      ) : (
+        <Chart spec={spec} size={size} />
+      )}
+      {spec.sources && <SourcesFooter sources={spec.sources} />}
     </div>
   );
 }
@@ -77,9 +88,13 @@ function Chart({ spec, size }: { spec: VisualizationSpec; size: ChartSize }) {
       return <Kpi spec={spec} size={size} />;
     case "line":
     case "area":
-      return <LineChart spec={spec} height={CHART_H[size]} />;
+      return <LineChart spec={withReference(spec)} height={CHART_H[size]} />;
     case "bar":
-      return <BarChart spec={spec} height={CHART_H[size]} />;
+      return <BarChart spec={withReference(spec)} height={CHART_H[size]} />;
+    case "dot":
+      return <DotChart spec={spec} />;
+    case "range":
+      return <RangeChart spec={spec} />;
     case "hbar":
       return <HBars spec={spec} />;
     case "distribution":
@@ -93,6 +108,15 @@ function Chart({ spec, size }: { spec: VisualizationSpec; size: ChartSize }) {
     case "table":
       return <DataTable spec={spec} />;
   }
+}
+
+/** A typed reference (current level, budget) is drawn like a target line. */
+function withReference<S extends Extract<VisualizationSpec, { type: "line" | "area" | "bar" }>>(
+  spec: S,
+): S {
+  return spec.reference && !spec.target
+    ? { ...spec, target: { value: spec.reference.value, label: spec.reference.label } }
+    : spec;
 }
 
 function Kpi({

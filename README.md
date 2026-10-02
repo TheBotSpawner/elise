@@ -197,6 +197,7 @@ reads). See [ADR-015](docs/decisions/ADR-015-web-search-research.md). Morning Br
 | `OPENAI_API_KEY`                                                    | for chat  | Server-only AI provider key                             |
 | `AI_PROFILE_FAST`, `_STANDARD`, `_DEEP`, `_BACKGROUND`              | no        | AI profiles `model[:effort[:tier]]` (docs/performance)  |
 | `ELISE_AI_ROUTING`, `ELISE_TOOL_SELECTION`                          | no        | `adaptive`/`legacy`, `selected`/`all` (ADR-025)         |
+| `VOICE_RUNTIME`                                                     | no        | `legacy` or `live` (GPT-Live voice, ADR-026)            |
 | `NEXT_PUBLIC_APP_URL`                                               | prod      | Base URL for auth redirects                             |
 | `ELISE_ENV`                                                         | no        | `development` / `staging` / `production` log tag        |
 | `CHAT_RATE_LIMIT_PER_MINUTE`                                        | no        | Per-user chat rate limit (default 20)                   |

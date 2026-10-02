@@ -10,9 +10,13 @@ import type {
   ModelTier,
 } from "@/core/agents/ai-provider";
 import { AppError } from "@/core/errors";
+import { logger } from "@/infrastructure/observability/logger";
 import { recordUsage } from "@/infrastructure/observability/usage";
 
 import { effortFor, type AIProfile } from "../profiles";
+
+/** No output this long from a fast or standard call: treated as a provider stall (see streamTurn). */
+const FIRST_OUTPUT_MS = 8_000;
 
 /** OpenAI function names allow [a-zA-Z0-9_-]; ELISE tool names use dots ("tasks.create"). */
 const encodeName = (name: string) => name.replaceAll(".", "__");
@@ -22,6 +26,8 @@ export interface OpenAIProviderOptions {
   apiKey: string;
   /** What each tier means (AI_PROFILE_*), resolved once from configuration. */
   profiles: Record<ModelTier, AIProfile>;
+  /** No output this long from a fast or standard call = a stall (default FIRST_OUTPUT_MS). */
+  firstOutputMs?: number;
 }
 
 /**
@@ -37,7 +43,63 @@ export class OpenAIProvider implements AIProvider {
     this.client = new OpenAI({ apiKey: options.apiKey, maxRetries: 2, timeout: 60_000 });
   }
 
+  /** Tests replace the SDK client. */
+  static withClient(options: OpenAIProviderOptions, client: OpenAI): OpenAIProvider {
+    const p = new OpenAIProvider(options);
+    (p as unknown as { client: OpenAI }).client = client;
+    return p;
+  }
+
+  /**
+   * One model turn, guarded against provider stalls: measured first-output times for fast calls
+   * are 1.4 s p50 / 7.7 s p99, but ~1% stall for 19–30 s with no output at all. When nothing
+   * has been produced after FIRST_OUTPUT_MS, the call is abandoned and retried once (nothing
+   * was streamed, so retrying is safe). Deep synthesis may legitimately think longer: unguarded.
+   */
   async *streamTurn(request: AITurnRequest): AsyncIterable<AIStreamEvent> {
+    const guarded = request.tier !== "deep";
+    for (let attempt = 0; ; attempt++) {
+      const controller = new AbortController();
+      const relay = () => controller.abort();
+      request.signal?.addEventListener("abort", relay, { once: true });
+      let produced = false;
+      let stalled = false;
+      const timer =
+        guarded && attempt === 0
+          ? setTimeout(() => {
+              stalled = true;
+              controller.abort();
+            }, this.options.firstOutputMs ?? FIRST_OUTPUT_MS)
+          : undefined;
+      try {
+        yield* this.attempt(request, controller.signal, () => {
+          produced = true;
+          clearTimeout(timer);
+        });
+        return;
+      } catch (error) {
+        if (stalled && !produced && !request.signal?.aborted) {
+          recordUsage({
+            operation: "llm",
+            provider: this.id,
+            model: this.options.profiles[request.tier].model,
+            status: "failed",
+          });
+          continue;
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+        request.signal?.removeEventListener("abort", relay);
+      }
+    }
+  }
+
+  private async *attempt(
+    request: AITurnRequest,
+    signal: AbortSignal,
+    onOutput: () => void,
+  ): AsyncIterable<AIStreamEvent> {
     const profile = this.options.profiles[request.tier];
     const model = profile.model;
     const effort = effortFor(model, request.reasoning ?? profile.reasoning);
@@ -66,7 +128,7 @@ export class OpenAIProvider implements AIProvider {
           // Fast mode (priority processing) only where the profile asks for it.
           ...(profile.serviceTier ? { service_tier: profile.serviceTier } : {}),
         },
-        { signal: request.signal },
+        { signal },
       );
     } catch (error) {
       recordUsage({ operation: "llm", provider: this.id, model, status: "failed" });
@@ -76,6 +138,9 @@ export class OpenAIProvider implements AIProvider {
     try {
       for await (const event of stream) {
         switch (event.type) {
+          case "response.output_item.added":
+            onOutput();
+            break;
           case "response.output_text.delta":
             yield { type: "text_delta", delta: event.delta };
             break;
@@ -152,6 +217,17 @@ function toOpenAIItem(item: AIInputItem): OpenAI.Responses.ResponseInputItem {
 /** Translate provider errors into ELISE errors; raw provider messages never leave this file. */
 function normalizeError(error: unknown): AppError {
   if (error instanceof AppError) return error;
+  // Billing problems are configuration, not an outage: say so (the account owner can fix it).
+  const code = (error as { code?: unknown } | null)?.code;
+  if (
+    code === "credit_balance_exhausted" ||
+    code === "insufficient_quota" ||
+    code === "billing_hard_limit_reached"
+  )
+    return new AppError("AI_NOT_CONFIGURED", "ELISE's AI account has no credits left", {
+      recovery: "configure",
+      details: { providerCode: code },
+    });
   if (error instanceof OpenAI.APIError) {
     if (error.status === 401 || error.status === 403) {
       return new AppError("AI_NOT_CONFIGURED", "The AI provider rejected the credentials", {
@@ -161,6 +237,12 @@ function normalizeError(error: unknown): AppError {
     if (error.status === 429)
       return new AppError("RATE_LIMITED", "The AI provider is busy. Try again shortly.");
     if (error.status === 400) {
+      // Which part of the request was rejected (codes and params only, never content).
+      logger.warn("ai.provider_rejected", {
+        code: error.code ?? null,
+        param: error.param ?? null,
+        type: error.type ?? null,
+      });
       return new AppError("AI_PROVIDER_ERROR", "The AI provider rejected the request", {
         details: { providerStatus: 400 },
       });
@@ -169,5 +251,11 @@ function normalizeError(error: unknown): AppError {
   if (error instanceof Error && error.name === "AbortError") {
     return new AppError("TIMEOUT", "The response was cancelled");
   }
+  logger.warn("ai.provider_error", {
+    name: error instanceof Error ? error.name : typeof error,
+    status: error instanceof OpenAI.APIError ? error.status : null,
+    code: error instanceof OpenAI.APIError ? (error.code ?? null) : null,
+    message: error instanceof Error ? error.message.slice(0, 200) : null,
+  });
   return new AppError("AI_PROVIDER_ERROR", "The AI provider is not responding", { cause: error });
 }

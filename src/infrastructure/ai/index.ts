@@ -11,6 +11,8 @@ import { OpenAIProvider } from "./openai/provider";
 import { OpenAISpeechInput, OpenAISpeechOutput } from "./openai/speech";
 import { resolveProfiles } from "./profiles";
 
+export { createLiveWebRtcSession } from "./openai/live";
+
 let provider: AIProvider | undefined;
 let embeddings: EmbeddingProvider | undefined;
 let speechIn: SpeechInputProvider | undefined;

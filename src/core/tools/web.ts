@@ -468,7 +468,7 @@ export const researchTool: ToolDefinition = {
         durationMs: Date.now() - started,
         findings: evidence,
         ...(gaps.length ? { gaps } : {}),
-        instructions: `${WEB_ANSWER} Structure a research answer as: summary; key findings; conflicting or uncertain information (only if there is some); a possible next step. For comparisons, compare on the same criteria and use ui.present {type:'summary'} for the comparison. Name the gaps honestly. The research is complete: answer now, without further web searches, unless the user asks.`,
+        instructions: `${WEB_ANSWER} Structure a research answer as: summary; key findings; conflicting or uncertain information (only if there is some); a possible next step. For comparisons, compare on the same criteria. When the findings contain comparable numbers from at least two sources (same metric, unit and horizon — e.g. several forecasts for the same date), call ui.visualize in this same response with each number and its exact source URL (and a sourced current/reference value if you have one); otherwise use ui.present {type:'summary'} for a qualitative comparison. Name the gaps honestly. The research is complete: answer now, without further web searches, unless the user asks.`,
       },
       // The same Surface, final: it updates in place and the thread links to it.
       display: { kind: "web_research", question: q.question, retrievedAt, subquestions: subs },

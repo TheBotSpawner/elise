@@ -238,7 +238,15 @@ export async function* runElise(run: RunInput): AsyncGenerator<RuntimeEvent> {
       // - the answer is already written and the only calls arranged the screen (ui.*);
       // - every call succeeded with a result that confirms itself (e.g. a new accent color).
       const loaded = calls.some((c) => c.name === MORE_TOOLS);
-      if (!loaded && real.length && spoke && real.every((c) => c.name.startsWith("ui."))) {
+      // Only when they worked: a rejected chart goes back to the model to fix, never vanishes.
+      if (
+        !loaded &&
+        real.length &&
+        spoke &&
+        real.every(
+          (c) => c.name.startsWith("ui.") && outcomes.get(c.callId)?.status === "succeeded",
+        )
+      ) {
         yield { type: "done", text, tools: traces, usage, model };
         return;
       }

@@ -25,12 +25,20 @@ type RunState = "idle" | "thinking" | "using_tools" | "approving";
 export interface SendOptions {
   modality?: TurnModality;
   voice?: VoiceTurnMeta;
+  /** A GPT-Live delegation (ADR-026): runs through /api/voice/live/delegate, same events. */
+  live?: { delegationId: string; sessionId?: string | null };
 }
 
 /** No streamed event for this long: the turn is treated as lost (the server caps a turn at 60 s). */
 const STREAM_IDLE_MS = 90_000;
 
-type StreamListener = (event: ChatStreamEvent | { type: "finished"; failed: boolean }) => void;
+export type StreamListener = (
+  event:
+    | ChatStreamEvent
+    | { type: "finished"; failed: boolean }
+    /** A turn starts: what was said or typed, and whether it is a live delegation. */
+    | { type: "turn_started"; text: string; live: boolean },
+) => void;
 
 /**
  * Streams a turn from /api/chat (NDJSON) and keeps the interaction's state. Typed and spoken
@@ -83,6 +91,7 @@ export function useEliseChat(initial: {
       }
       inFlight.current = message;
       const emit = (e: Parameters<StreamListener>[0]) => listeners.current.forEach((fn) => fn(e));
+      emit({ type: "turn_started", text: message, live: Boolean(options.live) });
 
       const assistantId = crypto.randomUUID();
       setMessages((all) => [
@@ -136,20 +145,33 @@ export function useEliseChat(initial: {
       };
 
       try {
-        const response = await fetch("/api/chat", {
+        const current = thread.current;
+        const response = await fetch(options.live ? "/api/voice/live/delegate" : "/api/chat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            ...(thread.current?.kind === "conversation"
-              ? { conversationId: thread.current.id }
-              : {}),
-            ...(thread.current?.kind === "session" ? { sessionId: thread.current.id } : {}),
-            message,
-            ...(!thread.current && initial.spaceId ? { spaceId: initial.spaceId } : {}),
-            ...(options.modality === "voice" ? { modality: "voice", voice: options.voice } : {}),
-            // Only while the user is sharing it for this session (ADR-023).
-            ...(sharedLocation() ? { here: sharedLocation() } : {}),
-          }),
+          body: JSON.stringify(
+            options.live
+              ? {
+                  delegationId: options.live.delegationId,
+                  conversationId: current?.kind === "conversation" ? current.id : null,
+                  sessionId:
+                    current?.kind === "session" ? current.id : (options.live.sessionId ?? null),
+                  text: message,
+                }
+              : {
+                  ...(thread.current?.kind === "conversation"
+                    ? { conversationId: thread.current.id }
+                    : {}),
+                  ...(thread.current?.kind === "session" ? { sessionId: thread.current.id } : {}),
+                  message,
+                  ...(!thread.current && initial.spaceId ? { spaceId: initial.spaceId } : {}),
+                  ...(options.modality === "voice"
+                    ? { modality: "voice", voice: options.voice }
+                    : {}),
+                  // Only while the user is sharing it for this session (ADR-023).
+                  ...(sharedLocation() ? { here: sharedLocation() } : {}),
+                },
+          ),
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {

@@ -185,7 +185,16 @@ const bind = (text: string, p: PendingForVoice[], modality: "voice" | "text" = "
 
 describe("voice approvals", () => {
   it("only a pure yes/no is an approval intent", () => {
-    for (const t of ["Sí", "Sí, envialo", "Aprobalo", "Confirmo", "dale", "yes, send it"])
+    for (const t of [
+      "Sí",
+      "Sí, envialo",
+      "Aprobalo",
+      "Confirmo",
+      "dale",
+      "yes, send it",
+      "Sí. Borrala",
+      "sí, eliminala",
+    ])
       expect(approvalIntent(t)).toBe("approve");
     for (const t of ["No", "Cancelalo", "Dejalo", "no, gracias"])
       expect(approvalIntent(t)).toBe("reject");
@@ -193,6 +202,7 @@ describe("voice approvals", () => {
       "Sí, pero cambiá el asunto",
       "¿Sí?... qué tengo hoy",
       "no sé qué tengo mañana",
+      "Borrá la tarea de mañana",
       "",
     ])
       expect(approvalIntent(t)).toBeNull();

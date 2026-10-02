@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { requireAuthContext } from "@/application/auth-context";
-import { recentTurnPerf } from "@/application/perf-service";
+import { recentLivePerf, recentTurnPerf } from "@/application/perf-service";
 import { isAdmin } from "@/application/usage-service";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { Card } from "@/components/ui/card";
@@ -21,7 +21,7 @@ const pair = ([a, b]: [number | null, number | null]) => `${ms(a)} / ${ms(b)}`;
 export default async function PerfPage() {
   const auth = await requireAuthContext();
   if (!isEnabled("usagePage") || !isAdmin(auth)) notFound();
-  const { turns, groups } = await recentTurnPerf(auth);
+  const [{ turns, groups }, live] = await Promise.all([recentTurnPerf(auth), recentLivePerf(auth)]);
 
   return (
     <PageContainer>
@@ -55,6 +55,46 @@ export default async function PerfPage() {
           </tbody>
         </table>
       </Card>
+
+      {live.length > 0 && (
+        <Card className="mb-6 overflow-x-auto p-0">
+          <table className="w-full min-w-[640px] text-left text-[13px]">
+            <caption className="px-3 pt-3 text-left text-fg">
+              Live voice sessions (GPT-Live)
+            </caption>
+            <thead className="text-faint">
+              <tr className="border-b border-border">
+                {[
+                  "When",
+                  "Connect",
+                  "First audio p50 / p90",
+                  "Barge-in stop p50",
+                  "Delegations",
+                  "Billed",
+                ].map((h) => (
+                  <th key={h} scope="col" className="px-3 py-2 font-medium">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {live.map((s) => (
+                <tr key={s.at} className="border-b border-border">
+                  <td className="px-3 py-2">{new Date(s.at).toLocaleString()}</td>
+                  <td className="px-3 py-2 font-mono">{ms(s.connectMs)}</td>
+                  <td className="px-3 py-2 font-mono">{pair(s.firstAudio)}</td>
+                  <td className="px-3 py-2 font-mono">{ms(s.interruptStop)}</td>
+                  <td className="px-3 py-2">{s.delegations}</td>
+                  <td className="px-3 py-2 font-mono">
+                    {s.usageSeconds == null ? "–" : `${s.usageSeconds} s`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
 
       <div className="flex flex-col gap-3">
         {turns.map(({ runId, at, status, perf }) => {

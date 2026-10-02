@@ -10,7 +10,11 @@ const APPROVE = new Set(
   (
     "si sí dale ok okay confirmo confirmalo confirmado aprobalo apruebo aprobado aprobar " +
     "envialo enviala mandalo mandala hacelo hazlo adelante listo yes yeah yep approve approved " +
-    "confirm go ahead send it do it please por favor claro"
+    "confirm go ahead send it do it please por favor claro " +
+    // Saying the action itself confirms it ("sí, borrala"); the binding still needs exactly one
+    // pending approval of this interaction.
+    "borralo borrala borralos eliminalo eliminala agendalo agendala crealo creala guardalo " +
+    "guardala invitalo invitala publicalo delete remove"
   ).split(" "),
 );
 const REJECT = new Set(

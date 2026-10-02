@@ -22,6 +22,40 @@ export interface PerfGroup {
   total: [number | null, number | null];
 }
 
+export interface LiveSessionPerf {
+  at: string;
+  connectMs: number | null;
+  firstAudio: [number | null, number | null];
+  interruptStop: number | null;
+  delegations: number;
+  usageSeconds: number | null;
+}
+
+/** GPT-Live sessions (ADR-026): numbers kept with each voice session, newest first. Admins only. */
+export async function recentLivePerf(auth: AuthContext, limit = 20): Promise<LiveSessionPerf[]> {
+  if (!isAdmin(auth)) throw new AppError("PERMISSION_DENIED", "Not available");
+  const { data } = await createAdminClient()
+    .from("interaction_sessions")
+    .select("metadata, last_activity_at")
+    .is("conversation_id", null)
+    .not("metadata->live", "is", null)
+    .order("last_activity_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []).map((s) => {
+    const live = ((s.metadata ?? {}) as { live?: Record<string, unknown> }).live ?? {};
+    const audio = (live.firstAudioMs as number[] | undefined) ?? [];
+    const stops = ((live.interruptStopMs as number[] | undefined) ?? []).filter((x) => x >= 0);
+    return {
+      at: s.last_activity_at,
+      connectMs: (live.connectMs as number | undefined) ?? null,
+      firstAudio: [percentile(audio, 50), percentile(audio, 90)],
+      interruptStop: percentile(stops, 50),
+      delegations: (live.delegations as number | undefined) ?? 0,
+      usageSeconds: (live.usageSeconds as number | undefined) ?? null,
+    };
+  });
+}
+
 /**
  * Recent turn timings for the internal performance page (ADR-025). Numbers and names only —
  * the perf record never holds content. Admins (ELISE_ADMIN_EMAILS) only.

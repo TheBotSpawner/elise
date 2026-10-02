@@ -31,8 +31,35 @@ const format = z
   })
   .strict();
 
+/** Where a number comes from: a page or document ELISE actually read (ADR-027). */
+const sourceItem = z
+  .object({
+    title: z.string().trim().min(1).max(120),
+    url: z
+      .string()
+      .max(2000)
+      .refine((u) => /^https:\/\//.test(u) || u.startsWith("/"), "https or internal links only")
+      .nullable(),
+  })
+  .strict();
+
+/** Index into the chart's `sources` (provenance of one datapoint). */
+const sourceRef = z.number().int().min(0).max(11);
+
+/** A typed reference value (current level, budget, goal…), never a decorative line. */
+const reference = z.object({ value, label, source: sourceRef.optional() }).strict();
+
+/** A few evidence-backed notes pinned to a category or time label ("Current level"). */
+const annotations = z
+  .array(z.object({ at: label, text: z.string().trim().min(1).max(40) }).strict())
+  .max(3);
+
 const base = {
   title: z.string().trim().min(1).max(120),
+  /** Secondary line: metric, unit, horizon ("Year-end 2026 targets · index points"). */
+  subtitle: z.string().trim().max(120).optional(),
+  /** The pages/documents the numbers come from; datapoints point into this list. */
+  sources: z.array(sourceItem).max(12).optional(),
   /** One sentence that says what the chart answers ("Below August's pace from the 15th"). */
   insight: z.string().trim().max(240).optional(),
   format: format.default({ kind: "number" }),
@@ -56,6 +83,8 @@ export const VISUALIZATION_TYPES = [
   "progress",
   "streak",
   "table",
+  "dot",
+  "range",
 ] as const;
 export type VisualizationType = (typeof VISUALIZATION_TYPES)[number];
 
@@ -94,6 +123,8 @@ export const visualizationSpec = z
         x: z.array(label).min(2).max(62),
         series: z.array(series).min(1).max(3),
         target: target.optional(),
+        reference: reference.optional(),
+        annotations: annotations.optional(),
       })
       .strict(),
     z
@@ -105,6 +136,8 @@ export const visualizationSpec = z
         series: z.array(series).min(1).max(2),
         highlight: z.array(z.number().int().min(0)).max(24).optional(),
         target: target.optional(),
+        reference: reference.optional(),
+        annotations: annotations.optional(),
       })
       .strict(),
     z
@@ -116,6 +149,60 @@ export const visualizationSpec = z
           .min(1)
           .max(12),
         highlight: z.array(label).max(12).optional(),
+      })
+      .strict(),
+    z
+      .object({
+        /**
+         * Values of the same metric compared across categories (analysts, companies…), as dots
+         * on one scale — better than bars when values are close. Optional reference with
+         * deltas computed by ELISE, not the model.
+         */
+        type: z.literal("dot"),
+        ...base,
+        rows: z
+          .array(
+            z
+              .object({
+                label,
+                value,
+                /** Versus the reference, computed deterministically. */
+                delta: value.optional(),
+                deltaPct: value.optional(),
+                source: sourceRef.optional(),
+                /** Weakly evidenced: shown hollow and said so. */
+                uncertain: z.boolean().optional(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(12),
+        reference: reference.optional(),
+        annotations: annotations.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        /**
+         * Scenarios or an estimate range (bear/base/bull, low/consensus/high) on one scale. A
+         * range is not a probability distribution unless the source says so.
+         */
+        type: z.literal("range"),
+        ...base,
+        scenarios: z
+          .array(
+            z
+              .object({
+                label,
+                value,
+                kind: z.enum(["low", "base", "high", "scenario"]).default("scenario"),
+                source: sourceRef.optional(),
+              })
+              .strict(),
+          )
+          .min(2)
+          .max(8),
+        reference: reference.optional(),
       })
       .strict(),
     z
@@ -203,6 +290,14 @@ export const visualizationSpec = z
       for (const r of spec.rows)
         if (r.length !== spec.columns.length)
           ctx.addIssue({ code: "custom", message: "Every row needs one cell per column" });
+    // A datapoint's source must exist in the chart's source list.
+    const n = spec.sources?.length ?? 0;
+    const refs: (number | undefined)[] = [];
+    if (spec.type === "dot") refs.push(...spec.rows.map((r) => r.source));
+    if (spec.type === "range") refs.push(...spec.scenarios.map((r) => r.source));
+    if ("reference" in spec && spec.reference) refs.push(spec.reference.source);
+    if (refs.some((r) => r !== undefined && r >= n))
+      ctx.addIssue({ code: "custom", message: "A datapoint points to a missing source" });
     if (spec.format.kind === "currency" && !spec.format.currency)
       ctx.addIssue({ code: "custom", message: "A currency chart needs a currency code" });
   });

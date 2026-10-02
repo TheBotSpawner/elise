@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react";
 
 import type { VoicePreferences } from "@/application/auth-context";
-import type { ChatStreamEvent } from "@/application/chat-protocol";
 import type { VoiceLanguage } from "@/core/voice/providers";
 import { initialVoice, type VoiceState } from "@/core/voice/session";
-import type { SendOptions } from "@/features/chat/use-elise-chat";
+import type { SendOptions, StreamListener } from "@/features/chat/use-elise-chat";
 import { useI18n } from "@/lib/i18n/client";
 
 import { Microphone, MicError } from "./microphone";
@@ -19,8 +18,6 @@ import {
 } from "./voice-controller";
 import { WebSpeechWakeEngine } from "./wake-engine";
 
-type Listener = (event: ChatStreamEvent | { type: "finished"; failed: boolean }) => void;
-
 /** React binding of the voice session: browser audio in, the chat stream out. */
 export function useVoice({
   prefs,
@@ -30,7 +27,7 @@ export function useVoice({
 }: {
   prefs: VoicePreferences;
   send: (text: string, options?: SendOptions) => Promise<void>;
-  subscribe: (fn: Listener) => () => void;
+  subscribe: (fn: StreamListener) => () => void;
   /** Shared with the Orb: the live input or output amplitude. */
   level: { current: number };
 }) {
@@ -79,7 +76,13 @@ export function useVoice({
     () => controller.update({ send: (text, options) => void send(text, options) }),
     [controller, send],
   );
-  useEffect(() => subscribe((event) => controller.onStream(event)), [controller, subscribe]);
+  useEffect(
+    () =>
+      subscribe((event) => {
+        if (event.type !== "turn_started") controller.onStream(event);
+      }),
+    [controller, subscribe],
+  );
 
   // Server props changed (navigation) or a live change was announced.
   const prefsKey = JSON.stringify(toPrefs(prefs));
@@ -194,7 +197,13 @@ async function transcribe(
 }
 
 function reportTimings(marks: VoiceMarks) {
-  if (process.env.NODE_ENV !== "production") {
+  let debug = process.env.NODE_ENV !== "production";
+  try {
+    debug ||= window.localStorage.getItem("elise.voiceDebug") === "1";
+  } catch {
+    // Storage unavailable.
+  }
+  if (debug) {
     const w = window as unknown as { __eliseVoiceTimings?: VoiceMarks[] };
     (w.__eliseVoiceTimings ??= []).push(marks);
   }

@@ -6,6 +6,7 @@ import type { ApprovalReason } from "@/core/agents/policy";
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { PublicError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
+import type { DelegationResult } from "@/core/voice/live";
 import type { WorkspaceOp } from "@/core/workspace/model";
 
 /** Tool outcome as the UI needs it (model-facing output stripped). */
@@ -56,7 +57,12 @@ export type ChatStreamEvent =
   /** Live Workspace changes, applied in the browser with the same reducer (ADR-013). */
   | { type: "workspace"; ops: WorkspaceOp[]; version: number }
   | { type: "done"; messageId: string | null }
-  | { type: "error"; error: PublicError };
+  | { type: "error"; error: PublicError }
+  /**
+   * GPT-Live delegation (ADR-026): what ELISE verified, compact, for the voice model to say.
+   * `content` is appended to the Live session as is; the Canvas already has the detail.
+   */
+  | { type: "delegation"; delegationId: string; result: DelegationResult; content: string };
 
 /** Stored in messages.metadata for assistant messages so history re-renders cards. */
 export interface AssistantMessageMetadata {
@@ -67,4 +73,6 @@ export interface AssistantMessageMetadata {
   shortcut?: { id: string; name: string };
   /** This turn resolved a pending approval from a spoken answer (ADR-017 §16). */
   voiceApproval?: { approvalId: string; decision: "approved" | "rejected" };
+  /** Said by GPT-Live on its own (conversation only, no backend work), ADR-026. */
+  live?: boolean;
 }

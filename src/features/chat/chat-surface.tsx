@@ -2,7 +2,7 @@
 
 import { AnimatePresence } from "motion/react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { VoicePreferences } from "@/application/auth-context";
 import { useOrbPresence } from "@/components/elise/orb/orb-presence";
@@ -11,6 +11,7 @@ import { threadUrl, type ThreadRef } from "@/core/interaction";
 import { WORKSPACE_LIMITS, type WorkspaceState } from "@/core/workspace/model";
 import { ContextIndicator, type ContextOption } from "@/features/contexts/context-indicator";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
+import { useLiveVoice } from "@/features/voice/use-live-voice";
 import { useVoice } from "@/features/voice/use-voice";
 import type { DockCaption } from "@/features/workspace/canvas/dock";
 import { LiveCanvas } from "@/features/workspace/canvas/live-canvas";
@@ -122,7 +123,24 @@ export function ChatSurface({
     void send(run);
   }, [run, send]);
   // Voice is another way into the same ELISE (ADR-014): same send, same stream, same Surfaces.
-  const voiceSession = useVoice({ prefs: voice, send, subscribe, level: presence.level });
+  const legacyVoice = useVoice({ prefs: voice, send, subscribe, level: presence.level });
+  const liveVoice = useLiveVoice({
+    prefs: voice,
+    send,
+    stop,
+    getThread,
+    subscribe,
+    level: presence.level,
+  });
+  // GPT-Live when the deployment offers it (ADR-026); `?voice=legacy|live` compares both.
+  const [runtime] = useState(() => {
+    const asked =
+      typeof window === "undefined"
+        ? null
+        : new URLSearchParams(window.location.search).get("voice");
+    return asked === "legacy" || asked === "live" ? asked : (voice.runtime ?? "legacy");
+  });
+  const voiceSession = runtime === "live" ? liveVoice : legacyVoice;
   const voiceOn = voice.enabled && voiceSession.supported;
   const phase = voiceSession.state.phase;
   const last = messages.at(-1);

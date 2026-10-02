@@ -20,6 +20,8 @@ export interface VoicePreferences {
   /** A sleeping session wakes on the wake phrase (where the device can detect it). */
   wakeEnabled: boolean;
   wakePhrase: "elise" | "hey_elise" | "oye_elise" | "liz";
+  /** Which voice runtime this deployment offers (ADR-026); set by the page, not stored. */
+  runtime?: "legacy" | "live";
 }
 
 export interface AuthContext {

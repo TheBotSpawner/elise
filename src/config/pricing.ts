@@ -27,6 +27,8 @@ export const MODEL_PRICES: Record<string, TokenPrice> = {
 export const UNIT_PRICES: Record<string, number> = {
   // Speech: rough per-unit equivalents of the token prices.
   "speech:characters": 0.000015,
+  // GPT-Live (ADR-026): $0.05 per minute of session, billed per second.
+  "speech:openai-live": 0.05 / 60,
   "transcription:seconds": 0.0001,
   // Web search: a basic Tavily search is one credit; OpenAI hosted search is billed per call.
   "web_search:tavily": 0.008,

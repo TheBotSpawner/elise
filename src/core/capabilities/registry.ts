@@ -324,6 +324,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     operations: {
       listSurfaces: READ,
       present: READ,
+      // Charts planned from sourced evidence (ADR-027).
+      visualize: READ,
       update: READ,
       focus: READ,
       dismiss: READ,

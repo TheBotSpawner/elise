@@ -5,6 +5,7 @@ import { listConnections } from "@/application/connections-service";
 import { contextOptions } from "@/application/contexts-service";
 import { loadVoiceSession } from "@/application/interaction-thread";
 import { listSpaces } from "@/application/knowledge-service";
+import { liveVoiceEnabled } from "@/application/live-voice-service";
 import { latestBrief } from "@/application/schedules-service";
 import { shortcutStore } from "@/application/shortcuts-service";
 import { openTasks } from "@/application/tasks-service";
@@ -71,6 +72,7 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
       voice={{
         ...auth.profile.voice,
         wakeEnabled: auth.profile.voice.wakeEnabled && isEnabled("wakePhrase", auth),
+        runtime: liveVoiceEnabled() ? "live" : "legacy",
       }}
       timezone={auth.profile.timezone}
       workspaceId={auth.workspaceId}

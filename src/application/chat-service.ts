@@ -73,19 +73,57 @@ export interface ChatTurnInput {
   voice?: VoiceTurnMeta;
   /** The position the user shared for this session (ADR-023): never stored or logged. */
   here?: LatLng;
+  /**
+   * A GPT-Live delegation (ADR-026): the voice model already acknowledged; the reply is a
+   * compact verified result, and false starts in the transcript are expected.
+   */
+  live?: { delegationId: string };
   /** When the request arrived and how long auth took (performance telemetry). */
   receivedAt?: number;
   authMs?: number;
 }
 
+/** Where a turn's events go: an HTTP stream, a GPT-Live delegation, a test… */
+export type TurnEventSink = (event: ChatStreamEvent) => void;
+
 /**
- * askElise(): one chat turn through the single ELISE Core runtime, streamed as events.
- * Persists the conversation, messages and AI run; the model never touches the database.
+ * A turn ready to run (ADR-026): setup done (auth checks, rate limit, thread, history, run row,
+ * context), nothing streamed yet. Errors before this point are request errors.
+ */
+export interface PreparedTurn {
+  thread: ThreadRef;
+  runId: string;
+  /** Runs the turn, emitting its events in order; resolves when the turn is fully persisted. */
+  run(emit: TurnEventSink, opts?: { signal?: AbortSignal }): Promise<void>;
+}
+
+/**
+ * HTTP adapter: one chat turn as newline-delimited JSON (POST /api/chat). Typed and spoken
+ * turns of the legacy voice pipeline both come through here.
  */
 export async function startChatTurn(
   auth: AuthContext,
   input: ChatTurnInput,
+  signal?: AbortSignal,
 ): Promise<ReadableStream<Uint8Array>> {
+  const turn = await prepareTurn(auth, input);
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      await turn.run((event) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`)), {
+        signal,
+      });
+      controller.close();
+    },
+  });
+}
+
+/**
+ * ELISE's turn engine (ADR-026): one turn through the single ELISE Core runtime, independent
+ * of transport. Persists the conversation or voice session, messages and AI run; the model
+ * never touches the database. Every adapter (HTTP chat, GPT-Live delegation) runs this.
+ */
+export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Promise<PreparedTurn> {
   const perf = new TurnPerf(input.receivedAt ?? Date.now(), input.modality ?? "text");
   if (input.authMs != null) {
     perf.span("auth", input.authMs);
@@ -299,6 +337,7 @@ export async function startChatTurn(
     recallEvidence,
     workspace: describeWorkspace(workspace.state(), auth.profile.timezone),
     modality,
+    voiceDelivery: input.live ? "live" : "speech",
     web,
     location: location ? { here: Boolean(here) } : null,
     activeContext: activeProfile ? describeActiveContext(activeProfile) : null,
@@ -333,9 +372,7 @@ export async function startChatTurn(
         })
       : { tools: allTools, rest: [] };
   perf.mark("context_built");
-  const encoder = new TextEncoder();
-  // Every model, Web and speech call made by this turn is attributed to it (start() runs
-  // synchronously inside the scope, so the whole turn inherits it).
+  // Every model, Web and speech call made by this turn is attributed to it.
   const usageScope = {
     workspaceId: auth.workspaceId,
     userId: auth.userId,
@@ -343,424 +380,424 @@ export async function startChatTurn(
     aiRunId: runId,
   };
 
-  return withUsageScope(
-    usageScope,
-    () =>
-      new ReadableStream<Uint8Array>({
-        async start(controller) {
-          const send = (event: ChatStreamEvent) => {
-            if (event.type === "text" || event.type === "spoken") perf.mark("first_text");
-            if (event.type === "workspace" && event.ops.some((o) => o.op === "present"))
-              perf.mark("first_surface");
-            if (event.type !== "conversation") perf.mark("first_event");
-            controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
-          };
-          perf.mark("stream_start");
-          send({ type: "conversation", thread: thread.ref, runId });
-          workspace.attach(
-            (ops, version) => send({ type: "workspace", ops, version }),
-            (step, parent) => {
-              // Orchestration steps show in the activity trace, nested under their tool.
-              const nest = parent ? { parentId: parent } : {};
-              if (step.status === "running") {
-                traces.set(step.id, { callId: step.id, name: step.tool, ...nest });
-                stepStarted.set(step.id, Date.now());
-                send({ type: "tool_started", callId: step.id, name: step.tool, ...nest });
-                return;
-              }
-              const outcome: ClientToolOutcome =
-                step.status === "done"
-                  ? { status: "succeeded" }
-                  : {
-                      status: "failed",
-                      error: toPublicError(
-                        new AppError(
-                          step.status === "unavailable"
-                            ? "CAPABILITY_UNAVAILABLE"
-                            : "PROVIDER_UNAVAILABLE",
-                          "Source unavailable",
-                        ),
-                      ),
-                    };
-              const durationMs = Date.now() - (stepStarted.get(step.id) ?? Date.now());
-              traces.set(step.id, {
-                callId: step.id,
-                name: step.tool,
-                outcome,
-                durationMs,
-                ...nest,
-              });
-              send({
-                type: "tool_finished",
-                callId: step.id,
-                name: step.tool,
-                outcome,
-                durationMs,
-              });
-            },
-          );
-
-          const contextAtStart = workspace.state().context?.id ?? null;
-          const traces = new Map<string, ClientToolTrace>();
-          const stepStarted = new Map<string, number>();
-          const started = Date.now();
-          let finalText = "";
-          let failure: ReturnType<typeof toPublicError> | null = null;
-          let usage: { inputTokens: number; outputTokens: number } | null = null;
-          const splitter = modality === "voice" ? new SpokenSplitter() : null;
-          let model: string | null = null;
-
-          try {
-            if (approval.kind === "resolve") {
-              await answerVoiceApproval(approval);
+  return {
+    thread: thread.ref,
+    runId,
+    run: (emit, opts = {}) =>
+      withUsageScope(usageScope, async () => {
+        const signal = opts.signal;
+        const send = (event: ChatStreamEvent) => {
+          if (event.type === "text" || event.type === "spoken") perf.mark("first_text");
+          if (event.type === "workspace" && event.ops.some((o) => o.op === "present"))
+            perf.mark("first_surface");
+          if (event.type !== "conversation") perf.mark("first_event");
+          emit(event);
+        };
+        perf.mark("stream_start");
+        send({ type: "conversation", thread: thread.ref, runId });
+        workspace.attach(
+          (ops, version) => send({ type: "workspace", ops, version }),
+          (step, parent) => {
+            // Orchestration steps show in the activity trace, nested under their tool.
+            const nest = parent ? { parentId: parent } : {};
+            if (step.status === "running") {
+              traces.set(step.id, { callId: step.id, name: step.tool, ...nest });
+              stepStarted.set(step.id, Date.now());
+              send({ type: "tool_started", callId: step.id, name: step.tool, ...nest });
               return;
             }
-            if (ranShortcut) {
-              void shortcutStore(auth)
-                .markRun(ranShortcut.id)
-                .catch(() => undefined);
-              logger.info("shortcut.run", {
-                run_id: runId,
-                steps: ranShortcut.steps.length,
-                modality,
-              });
-              trackEvent(auth, "shortcut_run", { modality, steps: ranShortcut.steps.length });
-              await auth.db.from("audit_events").insert({
-                workspace_id: auth.workspaceId,
-                user_id: auth.userId,
-                event_type: "shortcut.run",
-                resource_type: "shortcut",
-                resource_id: ranShortcut.id,
-                origin: "ai",
-                result: "success",
-                metadata: { steps: ranShortcut.steps.map((x) => x.type) },
-              });
-            }
-            for await (const event of runElise({
-              ai,
-              ports,
-              ctx: {
-                ...toolContext(auth, "ai", runId, thread.ref),
-                // The conversation's Space, else the Section this message named.
-                knowledgeSpaceId: activeSpace?.id ?? mentioned?.id ?? null,
-                userMessage: input.message,
-                workspace,
-                voiceWake: input.voice?.wake ?? null,
-                here,
-                // Live: a context activated by a tool applies to the rest of the run.
-                get context() {
-                  const c = workspace.state().context;
-                  return c
-                    ? {
-                        id: c.id,
-                        name: c.name,
-                        kind: c.kind,
-                        sectionSpaceId:
-                          contexts.profiles.find((p) => p.id === c.id)?.section?.spaceId ?? null,
-                      }
-                    : null;
-                },
+            const outcome: ClientToolOutcome =
+              step.status === "done"
+                ? { status: "succeeded" }
+                : {
+                    status: "failed",
+                    error: toPublicError(
+                      new AppError(
+                        step.status === "unavailable"
+                          ? "CAPABILITY_UNAVAILABLE"
+                          : "PROVIDER_UNAVAILABLE",
+                        "Source unavailable",
+                      ),
+                    ),
+                  };
+            const durationMs = Date.now() - (stepStarted.get(step.id) ?? Date.now());
+            traces.set(step.id, {
+              callId: step.id,
+              name: step.tool,
+              outcome,
+              durationMs,
+              ...nest,
+            });
+            send({
+              type: "tool_finished",
+              callId: step.id,
+              name: step.tool,
+              outcome,
+              durationMs,
+            });
+          },
+        );
+
+        const contextAtStart = workspace.state().context?.id ?? null;
+        const traces = new Map<string, ClientToolTrace>();
+        const stepStarted = new Map<string, number>();
+        const started = Date.now();
+        let finalText = "";
+        let failure: ReturnType<typeof toPublicError> | null = null;
+        let usage: { inputTokens: number; outputTokens: number } | null = null;
+        const splitter = modality === "voice" ? new SpokenSplitter() : null;
+        let model: string | null = null;
+
+        try {
+          if (approval.kind === "resolve") {
+            await answerVoiceApproval(approval);
+            return;
+          }
+          if (ranShortcut) {
+            void shortcutStore(auth)
+              .markRun(ranShortcut.id)
+              .catch(() => undefined);
+            logger.info("shortcut.run", {
+              run_id: runId,
+              steps: ranShortcut.steps.length,
+              modality,
+            });
+            trackEvent(auth, "shortcut_run", { modality, steps: ranShortcut.steps.length });
+            await auth.db.from("audit_events").insert({
+              workspace_id: auth.workspaceId,
+              user_id: auth.userId,
+              event_type: "shortcut.run",
+              resource_type: "shortcut",
+              resource_id: ranShortcut.id,
+              origin: "ai",
+              result: "success",
+              metadata: { steps: ranShortcut.steps.map((x) => x.type) },
+            });
+          }
+          for await (const event of runElise({
+            ai,
+            ports,
+            ctx: {
+              ...toolContext(auth, "ai", runId, thread.ref),
+              // The conversation's Space, else the Section this message named.
+              knowledgeSpaceId: activeSpace?.id ?? mentioned?.id ?? null,
+              userMessage: input.message,
+              workspace,
+              voiceWake: input.voice?.wake ?? null,
+              here,
+              // Live: a context activated by a tool applies to the rest of the run.
+              get context() {
+                const c = workspace.state().context;
+                return c
+                  ? {
+                      id: c.id,
+                      name: c.name,
+                      kind: c.kind,
+                      sectionSpaceId:
+                        contexts.profiles.find((p) => p.id === c.id)?.section?.spaceId ?? null,
+                    }
+                  : null;
               },
-              // Adaptive: stable instructions, per-turn context last (prompt caching, ADR-025).
-              instructions: adaptive ? context.cached.instructions : context.instructions,
-              input: adaptive ? context.cached.input : context.input,
-              // A Shortcut's steps run first, through the same executor and policy (ADR-017 §12).
-              ...(preset ? { preset } : {}),
-              ...route,
-              ...(adaptive ? { escalate: escalateAfter } : {}),
-              tools: selection.tools,
-              moreTools: selection.rest,
-            })) {
-              switch (event.type) {
-                case "model_call": {
-                  const s = event.stats;
-                  const rel = (t: number | null) => (t == null ? null : t - perf.origin);
-                  perf.model({
-                    model: s.model,
-                    profile: s.tier,
-                    reasoning: s.reasoning,
-                    serviceTier: s.serviceTier,
-                    start: s.start - perf.origin,
-                    firstEvent: rel(s.firstEvent),
-                    firstText: rel(s.firstText),
-                    end: s.end - perf.origin,
-                    inputTokens: s.usage?.inputTokens ?? 0,
-                    cachedTokens: s.usage?.cachedTokens ?? 0,
-                    outputTokens: s.usage?.outputTokens ?? 0,
-                    reasoningTokens: s.usage?.reasoningTokens ?? 0,
-                    toolsExposed: s.toolsExposed,
-                    toolCalls: s.toolCalls,
-                  });
-                  break;
-                }
-                case "text": {
-                  // Voice: the spoken synthesis and the on-screen answer travel separately.
-                  if (!splitter) {
-                    send(event);
-                    break;
-                  }
-                  const part = splitter.push(event.delta);
-                  if (part.spoken) send({ type: "spoken", delta: part.spoken });
-                  if (part.display) send({ type: "text", delta: part.display });
-                  break;
-                }
-                case "status":
-                case "tool_started":
-                  if (event.type === "tool_started") {
-                    traces.set(event.callId, { callId: event.callId, name: event.name });
-                    stepStarted.set(event.callId, Date.now());
-                    workspace.current = event.callId;
-                    beginIntent(event.name);
-                    if (event.name === "meeting.prepare")
-                      logger.info("meeting_prep.started", { run_id: runId });
-                  }
+            },
+            // Adaptive: stable instructions, per-turn context last (prompt caching, ADR-025).
+            instructions: adaptive ? context.cached.instructions : context.instructions,
+            input: adaptive ? context.cached.input : context.input,
+            // A Shortcut's steps run first, through the same executor and policy (ADR-017 §12).
+            ...(preset ? { preset } : {}),
+            ...route,
+            ...(adaptive ? { escalate: escalateAfter } : {}),
+            ...(signal ? { signal } : {}),
+            tools: selection.tools,
+            moreTools: selection.rest,
+          })) {
+            switch (event.type) {
+              case "model_call": {
+                const s = event.stats;
+                const rel = (t: number | null) => (t == null ? null : t - perf.origin);
+                perf.model({
+                  model: s.model,
+                  profile: s.tier,
+                  reasoning: s.reasoning,
+                  serviceTier: s.serviceTier,
+                  start: s.start - perf.origin,
+                  firstEvent: rel(s.firstEvent),
+                  firstText: rel(s.firstText),
+                  end: s.end - perf.origin,
+                  inputTokens: s.usage?.inputTokens ?? 0,
+                  cachedTokens: s.usage?.cachedTokens ?? 0,
+                  outputTokens: s.usage?.outputTokens ?? 0,
+                  reasoningTokens: s.usage?.reasoningTokens ?? 0,
+                  toolsExposed: s.toolsExposed,
+                  toolCalls: s.toolCalls,
+                });
+                break;
+              }
+              case "text": {
+                // Voice: the spoken synthesis and the on-screen answer travel separately.
+                if (!splitter) {
                   send(event);
                   break;
-                case "tool_finished": {
-                  const outcome = toClientOutcome(event.outcome);
-                  const durationMs = Date.now() - (stepStarted.get(event.callId) ?? Date.now());
-                  perf.tool({
-                    name: event.name,
-                    start: (stepStarted.get(event.callId) ?? Date.now()) - perf.origin,
-                    end: perf.now(),
-                    ok: event.outcome.status === "succeeded",
-                  });
-                  workspace.current = null;
-                  // Every result ELISE fetched is presented by the application, never "drawn".
-                  const surfaceIds = event.name.startsWith("ui.")
-                    ? []
-                    : workspace.present(event.name, event.callId, event.outcome);
-                  if (event.name === "meeting.prepare") logMeetingPrep(event.outcome, durationMs);
-                  if (event.outcome.status === "succeeded" && TOOL_EVENTS[event.name])
-                    trackEvent(auth, TOOL_EVENTS[event.name]!, { modality });
-                  const shown = surfaceIds.length ? { surfaceIds } : {};
-                  traces.set(event.callId, {
-                    callId: event.callId,
-                    name: event.name,
-                    outcome,
-                    durationMs,
-                    ...shown,
-                  });
-                  send({
-                    type: "tool_finished",
-                    callId: event.callId,
-                    name: event.name,
-                    outcome,
-                    durationMs,
-                    ...shown,
-                  });
-                  break;
                 }
-                case "done":
-                  finalText = finishSpoken(event.text);
-                  usage = event.usage;
-                  model = event.model;
-                  await persistAssistant(finalText, {
-                    tools: [...traces.values()],
-                    toolNotes: toolNotes(event.tools),
-                  });
-                  break;
-                case "error":
-                  finalText = finishSpoken(event.text);
-                  failure = event.error;
-                  await persistAssistant(finalText, {
-                    tools: [...traces.values()],
-                    toolNotes: toolNotes(event.tools),
-                    error: event.error,
-                  });
-                  send({ type: "error", error: event.error });
-                  break;
+                const part = splitter.push(event.delta);
+                if (part.spoken) send({ type: "spoken", delta: part.spoken });
+                if (part.display) send({ type: "text", delta: part.display });
+                break;
               }
+              case "status":
+              case "tool_started":
+                if (event.type === "tool_started") {
+                  traces.set(event.callId, { callId: event.callId, name: event.name });
+                  stepStarted.set(event.callId, Date.now());
+                  workspace.current = event.callId;
+                  beginIntent(event.name);
+                  if (event.name === "meeting.prepare")
+                    logger.info("meeting_prep.started", { run_id: runId });
+                }
+                send(event);
+                break;
+              case "tool_finished": {
+                const outcome = toClientOutcome(event.outcome);
+                const durationMs = Date.now() - (stepStarted.get(event.callId) ?? Date.now());
+                perf.tool({
+                  name: event.name,
+                  start: (stepStarted.get(event.callId) ?? Date.now()) - perf.origin,
+                  end: perf.now(),
+                  ok: event.outcome.status === "succeeded",
+                });
+                workspace.current = null;
+                // Every result ELISE fetched is presented by the application, never "drawn".
+                const surfaceIds = event.name.startsWith("ui.")
+                  ? []
+                  : workspace.present(event.name, event.callId, event.outcome);
+                if (event.name === "meeting.prepare") logMeetingPrep(event.outcome, durationMs);
+                if (event.outcome.status === "succeeded" && TOOL_EVENTS[event.name])
+                  trackEvent(auth, TOOL_EVENTS[event.name]!, { modality });
+                const shown = surfaceIds.length ? { surfaceIds } : {};
+                traces.set(event.callId, {
+                  callId: event.callId,
+                  name: event.name,
+                  outcome,
+                  durationMs,
+                  ...shown,
+                });
+                send({
+                  type: "tool_finished",
+                  callId: event.callId,
+                  name: event.name,
+                  outcome,
+                  durationMs,
+                  ...shown,
+                });
+                break;
+              }
+              case "done":
+                finalText = finishSpoken(event.text);
+                usage = event.usage;
+                model = event.model;
+                await persistAssistant(finalText, {
+                  tools: [...traces.values()],
+                  toolNotes: toolNotes(event.tools),
+                });
+                break;
+              case "error":
+                finalText = finishSpoken(event.text);
+                failure = event.error;
+                await persistAssistant(finalText, {
+                  tools: [...traces.values()],
+                  toolNotes: toolNotes(event.tools),
+                  error: event.error,
+                });
+                send({ type: "error", error: event.error });
+                break;
             }
-          } catch (error) {
-            failure = toPublicError(error);
-            send({ type: "error", error: failure });
-          } finally {
-            await workspace.flush();
-            await finishRun();
-            controller.close();
           }
+        } catch (error) {
+          failure = toPublicError(error);
+          send({ type: "error", error: failure });
+        } finally {
+          await workspace.flush();
+          await finishRun();
+        }
 
-          /**
-           * The text kept on screen and in History. A voice reply that was only spoken still
-           * shows on screen (the same words), so nothing ELISE said is missing from the thread.
-           */
-          function finishSpoken(text: string): string {
-            if (!splitter) return text;
-            const rest = splitter.flush();
-            if (rest.spoken) send({ type: "spoken", delta: rest.spoken });
-            if (rest.display) send({ type: "text", delta: rest.display });
-            const display = splitter.display.trim();
-            if (display) return display;
-            const spoken = splitter.spoken.trim();
-            if (spoken) send({ type: "text", delta: spoken });
-            return spoken;
-          }
+        /**
+         * The text kept on screen and in History. A voice reply that was only spoken still
+         * shows on screen (the same words), so nothing ELISE said is missing from the thread.
+         */
+        function finishSpoken(text: string): string {
+          if (!splitter) return text;
+          const rest = splitter.flush();
+          if (rest.spoken) send({ type: "spoken", delta: rest.spoken });
+          if (rest.display) send({ type: "text", delta: rest.display });
+          const display = splitter.display.trim();
+          if (display) return display;
+          const spoken = splitter.spoken.trim();
+          if (spoken) send({ type: "text", delta: spoken });
+          return spoken;
+        }
 
-          /** A request's first tool sets a lightweight intent when there is none yet. */
-          function beginIntent(toolName: string) {
-            if (workspace.state().intent || toolName.startsWith("meeting.")) return;
-            const kind = intentForTool(toolName);
-            if (!kind) return;
-            const at = new Date().toISOString();
-            workspace.apply([
-              {
-                op: "intent",
-                intent: {
-                  id: `intent:${runId}`,
-                  kind,
-                  description: input.message.slice(0, 160),
-                  startedAt: at,
-                },
-                at,
+        /** A request's first tool sets a lightweight intent when there is none yet. */
+        function beginIntent(toolName: string) {
+          if (workspace.state().intent || toolName.startsWith("meeting.")) return;
+          const kind = intentForTool(toolName);
+          if (!kind) return;
+          const at = new Date().toISOString();
+          workspace.apply([
+            {
+              op: "intent",
+              intent: {
+                id: `intent:${runId}`,
+                kind,
+                description: input.message.slice(0, 160),
+                startedAt: at,
               },
-            ]);
-          }
+              at,
+            },
+          ]);
+        }
 
-          function logMeetingPrep(outcome: ToolCallOutcome, latencyMs: number) {
-            const out = (outcome.status === "succeeded" ? outcome.output : null) as {
-              found?: boolean;
-              unavailable?: string[];
-            } | null;
-            logger.info("meeting_prep.completed", {
-              run_id: runId,
-              status: outcome.status,
-              found: Boolean(out?.found),
-              unavailable_sources: out?.unavailable?.length ?? 0,
-              surfaces: workspace.state().surfaces.length,
-              latency_ms: latencyMs,
-            });
-          }
+        function logMeetingPrep(outcome: ToolCallOutcome, latencyMs: number) {
+          const out = (outcome.status === "succeeded" ? outcome.output : null) as {
+            found?: boolean;
+            unavailable?: string[];
+          } | null;
+          logger.info("meeting_prep.completed", {
+            run_id: runId,
+            status: outcome.status,
+            found: Boolean(out?.found),
+            unavailable_sources: out?.unavailable?.length ?? 0,
+            surfaces: workspace.state().surfaces.length,
+            latency_ms: latencyMs,
+          });
+        }
 
-          async function persistAssistant(text: string, metadata: AssistantMessageMetadata) {
-            const messageId = await thread.addAssistantTurn(text, modality, {
-              ...metadata,
-              ...(ranShortcut ? { shortcut: { id: ranShortcut.id, name: ranShortcut.name } } : {}),
-            });
-            if (!failure) send({ type: "done", messageId });
-          }
+        async function persistAssistant(text: string, metadata: AssistantMessageMetadata) {
+          const messageId = await thread.addAssistantTurn(text, modality, {
+            ...metadata,
+            ...(ranShortcut ? { shortcut: { id: ranShortcut.id, name: ranShortcut.name } } : {}),
+          });
+          if (!failure) send({ type: "done", messageId });
+        }
 
-          /**
-           * The spoken answer resolved one pending approval: the same resolution as the Approve
-           * button (audited as voice), then a reply that states only what really happened.
-           */
-          async function answerVoiceApproval(a: Extract<typeof approval, { kind: "resolve" }>) {
-            const at = new Date().toISOString();
-            let outcome: Awaited<ReturnType<typeof resolveApproval>> = null;
-            let problem: string | null = null;
-            try {
-              outcome = await resolveApproval(auth, a.approvalId, a.decision, "voice");
-            } catch (error) {
-              problem = toPublicError(error).message;
-            }
-            const display = outcome?.status === "succeeded" ? outcome.display : undefined;
-            if (!problem)
-              workspace.apply(
-                approvalDecidedOps(workspace.state(), a.approvalId, a.decision, display, at),
-              );
-            const es = auth.profile.locale === "es";
-            const failedRun = outcome && outcome.status !== "succeeded";
-            const text = problem
+        /**
+         * The spoken answer resolved one pending approval: the same resolution as the Approve
+         * button (audited as voice), then a reply that states only what really happened.
+         */
+        async function answerVoiceApproval(a: Extract<typeof approval, { kind: "resolve" }>) {
+          const at = new Date().toISOString();
+          let outcome: Awaited<ReturnType<typeof resolveApproval>> = null;
+          let problem: string | null = null;
+          try {
+            outcome = await resolveApproval(auth, a.approvalId, a.decision, "voice");
+          } catch (error) {
+            problem = toPublicError(error).message;
+          }
+          const display = outcome?.status === "succeeded" ? outcome.display : undefined;
+          if (!problem)
+            workspace.apply(
+              approvalDecidedOps(workspace.state(), a.approvalId, a.decision, display, at),
+            );
+          const es = auth.profile.locale === "es";
+          const failedRun = outcome && outcome.status !== "succeeded";
+          const text = problem
+            ? es
+              ? `No pude resolverla: ${problem}`
+              : `I couldn't resolve it: ${problem}`
+            : a.decision === "rejected"
               ? es
-                ? `No pude resolverla: ${problem}`
-                : `I couldn't resolve it: ${problem}`
-              : a.decision === "rejected"
+                ? `Listo, no lo hago: ${a.summary}.`
+                : `Okay, I won't: ${a.summary}.`
+              : failedRun
                 ? es
-                  ? `Listo, no lo hago: ${a.summary}.`
-                  : `Okay, I won't: ${a.summary}.`
-                : failedRun
-                  ? es
-                    ? `La aprobé, pero no se pudo completar: ${a.summary}.`
-                    : `Approved, but it couldn't be completed: ${a.summary}.`
-                  : es
-                    ? `Hecho: ${a.summary}.`
-                    : `Done: ${a.summary}.`;
-            logger.info("voice.approval_resolved", {
-              run_id: runId,
-              decision: a.decision,
-              status: problem ? "failed" : (outcome?.status ?? "rejected"),
-            });
-            finalText = text;
-            send({ type: "text", delta: text });
-            await persistAssistant(text, {
-              voiceApproval: { approvalId: a.approvalId, decision: a.decision },
-            });
-          }
+                  ? `La aprobé, pero no se pudo completar: ${a.summary}.`
+                  : `Approved, but it couldn't be completed: ${a.summary}.`
+                : es
+                  ? `Hecho: ${a.summary}.`
+                  : `Done: ${a.summary}.`;
+          logger.info("voice.approval_resolved", {
+            run_id: runId,
+            decision: a.decision,
+            status: problem ? "failed" : (outcome?.status ?? "rejected"),
+          });
+          finalText = text;
+          send({ type: "text", delta: text });
+          await persistAssistant(text, {
+            voiceApproval: { approvalId: a.approvalId, decision: a.decision },
+          });
+        }
 
-          async function finishRun() {
-            const latency = Date.now() - started;
-            perf.mark("complete");
-            perf.intent = workspace.state().intent?.kind ?? null;
-            const perfSummary = perf.summary();
-            // Numbers and names only (docs/performance).
-            logger.info("turn.perf", {
-              run_id: runId,
-              modality,
-              intent: perfSummary.intent,
-              ...perfSummary.metrics,
-              spans: perfSummary.spans,
-              tools: perfSummary.tools.map((t) => `${t.name}:${t.end - t.start}`),
-            });
-            await Promise.all([
-              auth.db
-                .from("ai_runs")
-                .update({
-                  status: failure ? "failed" : "completed",
-                  completed_at: new Date().toISOString(),
-                  latency_ms: latency,
-                  token_usage: { ...(usage ?? {}), perf: perfSummary } as unknown as Json,
-                  tool_call_count: traces.size,
-                  error_code: failure?.code ?? null,
-                  ...(model ? { model_key: model } : {}),
-                })
-                .eq("id", runId),
-              thread.touch(),
-            ]);
-            if (modality === "voice") trackEvent(auth, "voice_used", { failed: Boolean(failure) });
-            if (!failure) void trackFirstTurn(auth).catch(() => undefined);
-            if ([...traces.values()].some((x) => x.name.startsWith("knowledge.")))
-              void syncDueSources(auth.workspaceId).catch(() => 0);
-            // History tags (ADR-020): after the reply, from evidence; never delays the turn.
-            if (!failure) {
-              const sectionOf = (id: string | null | undefined) =>
-                contexts.profiles.find((p) => p.id === id)?.section?.spaceId ?? null;
-              const active = sectionOf(workspace.state().context?.id);
-              const scoped = activeSpace?.id ?? null;
-              const strong = [
-                ...(active && active !== sectionOf(contextAtStart) ? [active] : []),
-                ...(scoped && thread.isNew ? [scoped] : []),
-              ];
-              void autoLinkThread(auth, thread.ref, {
-                activeSpaceIds: active ? [active] : [],
-                // The Section the request was resolved to: linked even if its Knowledge
-                // had no answer.
-                resolvedSpaceIds: mentioned ? [mentioned.id] : [],
-                scopedSpaceIds: scoped ? [scoped] : [],
-                strongSpaceIds: strong,
-              });
-            }
-            // Recall indexing never delays or fails the chat (spoken turns included).
-            queueRecallIndex(auth.workspaceId, thread.ref);
-            logger.info("ai_run.finished", {
-              run_id: runId,
-              request_id: input.requestId,
-              workspace_id: auth.workspaceId,
-              status: failure ? "failed" : "completed",
-              error_code: failure?.code,
-              latency_ms: latency,
-              tool_calls: traces.size,
-              // Which tools ran (names only): routing is diagnosable without content.
-              tools: [...new Set([...traces.values()].map((x) => x.name))],
-              input_tokens: usage?.inputTokens,
-              output_tokens: usage?.outputTokens,
-              response_chars: finalText.length,
-              modality,
-              thread: thread.ref.kind,
+        async function finishRun() {
+          const latency = Date.now() - started;
+          perf.mark("complete");
+          perf.intent = workspace.state().intent?.kind ?? null;
+          const perfSummary = perf.summary();
+          // Numbers and names only (docs/performance).
+          logger.info("turn.perf", {
+            run_id: runId,
+            modality,
+            intent: perfSummary.intent,
+            ...perfSummary.metrics,
+            spans: perfSummary.spans,
+            tools: perfSummary.tools.map((t) => `${t.name}:${t.end - t.start}`),
+          });
+          await Promise.all([
+            auth.db
+              .from("ai_runs")
+              .update({
+                status: failure ? "failed" : "completed",
+                completed_at: new Date().toISOString(),
+                latency_ms: latency,
+                token_usage: { ...(usage ?? {}), perf: perfSummary } as unknown as Json,
+                tool_call_count: traces.size,
+                error_code: failure?.code ?? null,
+                ...(model ? { model_key: model } : {}),
+              })
+              .eq("id", runId),
+            thread.touch(),
+          ]);
+          if (modality === "voice") trackEvent(auth, "voice_used", { failed: Boolean(failure) });
+          if (!failure) void trackFirstTurn(auth).catch(() => undefined);
+          if ([...traces.values()].some((x) => x.name.startsWith("knowledge.")))
+            void syncDueSources(auth.workspaceId).catch(() => 0);
+          // History tags (ADR-020): after the reply, from evidence; never delays the turn.
+          if (!failure) {
+            const sectionOf = (id: string | null | undefined) =>
+              contexts.profiles.find((p) => p.id === id)?.section?.spaceId ?? null;
+            const active = sectionOf(workspace.state().context?.id);
+            const scoped = activeSpace?.id ?? null;
+            const strong = [
+              ...(active && active !== sectionOf(contextAtStart) ? [active] : []),
+              ...(scoped && thread.isNew ? [scoped] : []),
+            ];
+            void autoLinkThread(auth, thread.ref, {
+              activeSpaceIds: active ? [active] : [],
+              // The Section the request was resolved to: linked even if its Knowledge
+              // had no answer.
+              resolvedSpaceIds: mentioned ? [mentioned.id] : [],
+              scopedSpaceIds: scoped ? [scoped] : [],
+              strongSpaceIds: strong,
             });
           }
-        },
+          // Recall indexing never delays or fails the chat (spoken turns included).
+          queueRecallIndex(auth.workspaceId, thread.ref);
+          logger.info("ai_run.finished", {
+            run_id: runId,
+            request_id: input.requestId,
+            workspace_id: auth.workspaceId,
+            status: failure ? "failed" : "completed",
+            error_code: failure?.code,
+            latency_ms: latency,
+            tool_calls: traces.size,
+            // Which tools ran (names only): routing is diagnosable without content.
+            tools: [...new Set([...traces.values()].map((x) => x.name))],
+            input_tokens: usage?.inputTokens,
+            output_tokens: usage?.outputTokens,
+            response_chars: finalText.length,
+            modality,
+            thread: thread.ref.kind,
+          });
+        }
       }),
-  );
+  };
 }
 
 /**

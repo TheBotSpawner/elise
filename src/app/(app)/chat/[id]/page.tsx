@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireAuthContext } from "@/application/auth-context";
 import { contextOptions } from "@/application/contexts-service";
 import { loadConversation } from "@/application/conversations-service";
+import { liveVoiceEnabled } from "@/application/live-voice-service";
 import { loadWorkspace } from "@/application/workspace-service";
 import { ChatSurface } from "@/features/chat/chat-surface";
 
@@ -25,7 +26,7 @@ export default async function ConversationPage({ params }: PageProps<"/chat/[id]
       key={id}
       thread={{ kind: "conversation", id }}
       initialMessages={messages}
-      voice={auth.profile.voice}
+      voice={{ ...auth.profile.voice, runtime: liveVoiceEnabled() ? "live" : "legacy" }}
       timezone={auth.profile.timezone}
       workspaceId={auth.workspaceId}
       initialWorkspace={workspace}

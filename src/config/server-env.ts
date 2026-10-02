@@ -14,6 +14,8 @@ const serverEnvSchema = z.object({
   AI_PROFILE_DEEP: z.string().min(1).optional(),
   AI_PROFILE_BACKGROUND: z.string().min(1).optional(),
   /** Chat routing: "adaptive" (fast/deep by request) or "legacy" (everything standard). */
+  /** Voice runtime (ADR-026): "live" (GPT-Live + ELISE delegation) or "legacy" (STT → ELISE → TTS). */
+  VOICE_RUNTIME: z.enum(["legacy", "live"]).default("legacy"),
   ELISE_AI_ROUTING: z.enum(["legacy", "adaptive"]).default("adaptive"),
   /** Tool exposure: "selected" (core + relevant groups, rest on demand) or "all". */
   ELISE_TOOL_SELECTION: z.enum(["all", "selected"]).default("selected"),
