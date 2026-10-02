@@ -35,6 +35,7 @@ import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { ContextKind, ContextStore } from "../contexts/model";
 import type { KnowledgeReader } from "../knowledge/model";
+import type { LatLng, LocationCapability } from "../location/model";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
 import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
@@ -77,6 +78,11 @@ export interface ToolContext {
   } | null;
   /** What this device can do for the wake phrase, as the browser reported it (voice turns). */
   voiceWake?: WakeStatus | null;
+  /**
+   * Where the user is, only when they shared it for this session (ADR-023): coarse, never
+   * stored, never logged, never sent back in a tool output.
+   */
+  here?: LatLng | null;
 }
 
 /** Capability → provider contract. Grows as capabilities are implemented. */
@@ -98,6 +104,8 @@ export interface CapabilityProviders {
   settings: SettingsStore;
   /** The public web: search, read, and save to Knowledge when asked (ADR-015). */
   web_search: WebCapability;
+  /** Places, addresses and travel times (ADR-023). */
+  location: LocationCapability;
   /** Context Profiles and people: the organizational layer (ADR-016). */
   contexts: ContextStore;
   /** Study sessions and progress, plus AI for questions and evaluation (ADR-016). */
@@ -343,7 +351,9 @@ export type ToolDisplay =
   | { kind: "study_summary"; summary: SurfacePayloads["study_summary"] }
   /** Continuous voice and Shortcuts (ADR-017). */
   | { kind: "morning_brief"; brief: MorningBrief }
-  | { kind: "shortcut"; shortcut: SurfacePayloads["shortcut"] };
+  | { kind: "shortcut"; shortcut: SurfacePayloads["shortcut"] }
+  | { kind: "map"; map: SurfacePayloads["map"] }
+  | { kind: "place"; place: SurfacePayloads["place"] };
 
 export interface StructuredSourceRef {
   id: string;

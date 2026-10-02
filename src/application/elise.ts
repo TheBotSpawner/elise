@@ -23,6 +23,7 @@ import { HABIT_TOOLS } from "@/core/tools/habits";
 import { HISTORY_TOOLS } from "@/core/tools/history";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { LIST_TOOLS } from "@/core/tools/lists";
+import { LOCATION_TOOLS } from "@/core/tools/location";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { PLANNING_TOOLS } from "@/core/tools/planning";
@@ -68,6 +69,7 @@ import { SupabaseRecallReader } from "@/infrastructure/supabase/repositories/rec
 
 import type { AuthContext } from "./auth-context";
 import { contextStore } from "./contexts-service";
+import { locationCapability } from "./location-service";
 import { syncNoteToKnowledge } from "./notes-knowledge";
 import { settingsStore } from "./settings-service";
 import { shortcutStore } from "./shortcuts-service";
@@ -93,6 +95,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...WORKSPACE_TOOLS,
   ...MEETING_TOOLS,
   ...WEB_TOOLS,
+  ...LOCATION_TOOLS,
   ...CONTEXT_TOOLS,
   ...STUDY_TOOLS,
   ...PLANNING_TOOLS,
@@ -309,6 +312,10 @@ function providerFactory(
     // The public web: server-provided, per-workspace limits (ADR-015).
     web_search() {
       return webCapability(auth);
+    },
+    // Places and travel: server-provided, no user connection (ADR-023).
+    location() {
+      return locationCapability(auth);
     },
     // Context Profiles (ADR-016): this workspace's organizational layer, through RLS. Task
     // lists come from every connected provider, read through the executor like any read.

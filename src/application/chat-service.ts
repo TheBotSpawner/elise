@@ -16,6 +16,7 @@ import {
 } from "@/core/contexts/model";
 import { AppError, toPublicError } from "@/core/errors";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
+import { coarse, type LatLng } from "@/core/location/model";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
 import { matchShortcut } from "@/core/shortcuts/match";
 import { stepsToCalls } from "@/core/shortcuts/model";
@@ -49,6 +50,7 @@ import {
 import { autoLinkThread } from "./history-links-service";
 import { openThread } from "./interaction-thread";
 import { syncDueSources } from "./knowledge-background";
+import { locationConfigured } from "./location-service";
 import { queueRecallIndex, searchRecall } from "./recall-service";
 import { enabledShortcuts, shortcutStore } from "./shortcuts-service";
 import { structuredSourcesForChat } from "./structured-service";
@@ -66,6 +68,8 @@ export interface ChatTurnInput {
   /** Spoken turns run the same ELISE; only how the reply is shaped differs. */
   modality?: TurnModality;
   voice?: VoiceTurnMeta;
+  /** The position the user shared for this session (ADR-023): never stored or logged. */
+  here?: LatLng;
 }
 
 /**
@@ -84,6 +88,8 @@ export async function startChatTurn(
 
   const modality: TurnModality = input.modality ?? "text";
   const web = webSearchConfigured() && isEnabled("research", auth);
+  const location = locationConfigured();
+  const here = input.here ? coarse(input.here) : null;
   const thread = await openThread(auth, {
     conversationId: input.conversationId,
     sessionId: input.sessionId,
@@ -215,6 +221,7 @@ export async function startChatTurn(
     workspace: describeWorkspace(workspace.state(), auth.profile.timezone),
     modality,
     web,
+    location: location ? { here: Boolean(here) } : null,
     activeContext: activeProfile ? describeActiveContext(activeProfile) : null,
     contexts: contexts.profiles
       .filter((p) => p.id !== activeProfile?.id)
@@ -327,6 +334,7 @@ export async function startChatTurn(
                 knowledgeSpaceId: activeSpace?.id ?? null,
                 workspace,
                 voiceWake: input.voice?.wake ?? null,
+                here,
                 // Live: a context activated by a tool applies to the rest of the run.
                 get context() {
                   const c = workspace.state().context;
@@ -349,7 +357,11 @@ export async function startChatTurn(
               ...(modality === "voice" ? MODEL_POLICY.voice_turn : MODEL_POLICY.chat),
               tools: toolRegistry
                 .available(capabilities)
-                .filter((t) => web || t.capability !== "web_search"),
+                .filter(
+                  (t) =>
+                    (web || t.capability !== "web_search") &&
+                    (location || t.capability !== "location"),
+                ),
             })) {
               switch (event.type) {
                 case "text": {

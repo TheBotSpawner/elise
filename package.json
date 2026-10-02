@@ -49,6 +49,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@trigger.dev/build": "^4.6.4",
+    "@types/google.maps": "^3.66.4",
     "@types/node": "^24.19.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",

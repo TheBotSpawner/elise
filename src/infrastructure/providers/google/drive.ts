@@ -127,8 +127,11 @@ export class GoogleDriveClient {
     limit: number,
   ): Promise<ExternalItem[]> {
     const items = new Map<string, ExternalItem>();
+    // A folder reachable twice (selected twice, or nested inside another selection) is read once.
+    const visited = new Set<string>();
     const walk = async (folderId: string, path: string[], depth: number) => {
-      if (depth > MAX_DEPTH || items.size >= limit) return;
+      if (depth > MAX_DEPTH || items.size >= limit || visited.has(folderId)) return;
+      visited.add(folderId);
       for (const child of await this.listChildren(folderId)) {
         if (items.size >= limit) return;
         if (child.mimeType === FOLDER) await walk(child.id, [...path, child.name], depth + 1);

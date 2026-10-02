@@ -1,3 +1,4 @@
+import { clipText } from "../text";
 import {
   isSafeHref,
   surfaceId,
@@ -50,8 +51,7 @@ export interface PresentOptions {
   locale?: VizLocale;
 }
 
-const clip = (s: string | null | undefined, n: number) =>
-  !s ? "" : s.length > n ? `${s.slice(0, n - 1)}…` : s;
+const clip = clipText;
 const safe = (url: string | null | undefined) => (url && isSafeHref(url) ? url : null);
 /** Largest stored `result` display; bigger ones stay as inline cards in the thread. */
 const MAX_RESULT_BYTES = 24_000;
@@ -653,6 +653,27 @@ export function surfacesFromOutcome(
             })
           : null,
       ].filter((s): s is SurfaceDraft => s !== null);
+    case "map": {
+      const m = d.map;
+      // A new search or route replaces the map; the locate prompt is one per interaction.
+      const key = m.mode === "locate" ? "locate" : m.mode === "route" ? "route" : "places";
+      return one(
+        draft("map", key, m, opts, {
+          title: m.route ? `${m.route.from} → ${m.route.to}` : m.query,
+          source: { capability: "location", label: null },
+          ref: null,
+          ...(m.mode === "locate" ? { state: "attention" as const } : {}),
+        }),
+      );
+    }
+    case "place":
+      return one(
+        draft("place", d.place.id, d.place, opts, {
+          title: d.place.name,
+          source: { capability: "location", label: d.place.category },
+          ref: { resource: "place", id: d.place.id },
+        }),
+      );
     case "study_question":
       return one(
         draft("study_question", d.question.sessionId, d.question, opts, {
@@ -834,6 +855,7 @@ const INTENT_BY_CAPABILITY: Record<string, IntentKind> = {
   lists: "planning",
   notes: "planning",
   web: "research",
+  location: "planning",
   study: "study",
   work: "work_brief",
   planning: "planning",

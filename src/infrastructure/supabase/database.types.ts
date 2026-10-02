@@ -56,7 +56,7 @@ export type UsageEventRow = {
   workspace_id: string;
   user_id: string | null;
   feature: string;
-  operation: "llm" | "embedding" | "transcription" | "speech" | "web_search" | "web_fetch";
+  operation: "llm" | "embedding" | "transcription" | "speech" | "web_search" | "web_fetch" | "maps";
   provider: string;
   model: string | null;
   input_tokens: number | null;

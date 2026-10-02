@@ -17,6 +17,7 @@ export type CapabilityKey =
   | "settings"
   | "workspace"
   | "web_search"
+  | "location"
   | "contexts"
   | "study"
   | "shortcuts"

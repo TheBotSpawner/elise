@@ -18,6 +18,11 @@ const bodySchema = z
     spaceId: z.uuid().optional(),
     /** A spoken turn: its transcript is ordinary user input, with no extra authority. */
     modality: z.enum(["text", "voice"]).optional(),
+    /** A position the user chose to share for this session (ADR-023); coarse, never stored. */
+    here: z
+      .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) })
+      .strict()
+      .optional(),
     voice: z
       .object({
         durationMs: z.number().int().min(0).max(120_000),

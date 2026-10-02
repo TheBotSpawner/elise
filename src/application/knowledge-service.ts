@@ -32,6 +32,7 @@ import type {
   KnowledgeItemRow,
   KnowledgeSourceRow,
 } from "@/infrastructure/supabase/database.types";
+import { SupabaseKnowledgeStore } from "@/infrastructure/supabase/repositories/knowledge-store";
 import {
   createUploadUrl,
   originalPath,
@@ -43,7 +44,7 @@ import {
 
 import type { AuthContext } from "./auth-context";
 import { googleHttpFor, notionClientFor } from "./elise";
-import { enqueueIngestion, startSync } from "./knowledge-background";
+import { enqueueIngestion, recoverStaleWork, startSync } from "./knowledge-background";
 
 /**
  * Knowledge for the UI (docs/architecture/09): Spaces, uploads, external sources, sync and
@@ -92,6 +93,11 @@ export interface SpaceSummary extends SpaceInfo {
   icon: SpaceIcon;
   color: SpaceColor;
   counts: { ready: number; processing: number; attention: number };
+  /**
+   * Sources directly in this Space/Section: each connected Drive/Notion source is one (however
+   * many files it holds, and even before its first sync), each uploaded document and note is one.
+   */
+  sourceCount: number;
   /** Distinct kinds of source connected to this Space (uploads, Drive, Notion, notes). */
   sourceTypes: KnowledgeSourceRow["source_type"][];
   /** Latest change to the Space or anything in it. */
@@ -109,13 +115,13 @@ export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
         .order("name"),
       auth.db
         .from("knowledge_items")
-        .select("space_id, status, updated_at")
+        .select("space_id, source_id, status, updated_at")
         .eq("workspace_id", auth.workspaceId)
         .is("archived_at", null)
         .neq("status", "removed"),
       auth.db
         .from("knowledge_sources")
-        .select("space_id, source_type")
+        .select("id, space_id, source_type")
         .eq("workspace_id", auth.workspaceId)
         .is("archived_at", null),
       // Read apart: a database without migration 24 still shows Knowledge (just no context).
@@ -133,15 +139,23 @@ export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
   ).map((s) => {
     const row = spaces.find((r) => r.id === s.id);
     const own = (items ?? []).filter((i) => i.space_id === s.id);
+    const ownSources = (sources ?? []).filter((x) => x.space_id === s.id);
+    // Uploads and notes live in one container source per Space: there, each document counts.
+    const containers = new Set(
+      ownSources
+        .filter((x) => x.source_type === "upload" || x.source_type === "note")
+        .map((x) => x.id),
+    );
     return {
       ...s,
       description: row?.description ?? null,
       context: contextOf.get(s.id) ?? null,
       icon: spaceIcon(row?.icon),
       color: spaceColor(row?.color),
-      sourceTypes: [
-        ...new Set((sources ?? []).filter((x) => x.space_id === s.id).map((x) => x.source_type)),
-      ],
+      sourceTypes: [...new Set(ownSources.map((x) => x.source_type))],
+      sourceCount:
+        ownSources.filter((x) => !containers.has(x.id)).length +
+        own.filter((i) => i.source_id && containers.has(i.source_id)).length,
       updatedAt: own.reduce(
         (latest, i) => (i.updated_at > latest ? i.updated_at : latest),
         row?.updated_at ?? "",
@@ -336,6 +350,12 @@ export interface SourceView {
   nextSyncAt: string | null;
   lastErrorCode: string | null;
   counts: { ready: number; processing: number; attention: number };
+  /** Files the last finished sync found in the source (supported types, folders included). */
+  discovered: number | null;
+  /** When the last sync (successful or not) finished. */
+  lastRunAt: string | null;
+  /** A sync in progress: since when. */
+  runningSince: string | null;
 }
 
 export interface ItemView {
@@ -353,12 +373,14 @@ export interface ItemView {
 
 export async function getSpace(auth: AuthContext, spaceId: string) {
   const space = await ownSpace(auth, spaceId);
+  // Lost background work is closed before it's shown, so no state is stale on screen.
+  await recoverStaleWork(auth.workspaceId).catch(() => null);
   const spaces = await listSpaces(auth);
   const [{ data: sources }, { data: items }] = await Promise.all([
     auth.db
       .from("knowledge_sources")
       .select(
-        "id, source_type, display_name, status, last_synced_at, next_sync_at, last_error_code",
+        "id, source_type, display_name, status, last_synced_at, next_sync_at, last_error_code, created_at",
       )
       .eq("workspace_id", auth.workspaceId)
       .eq("space_id", spaceId)
@@ -375,12 +397,19 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       .order("updated_at", { ascending: false })
       .limit(300),
   ]);
+  const sourceIds = (sources ?? []).map((s) => s.id);
+  const runs = new SupabaseKnowledgeStore(createAdminClient());
+  const [active, last] = await Promise.all([
+    runs.activeRuns(auth.workspaceId, sourceIds),
+    runs.lastRuns(auth.workspaceId, sourceIds),
+  ]);
   return {
     space: spaces.find((s) => s.id === spaceId) ?? {
       ...space,
       parentId: space.parent_space_id,
       path: space.name,
       counts: { ready: 0, processing: 0, attention: 0 },
+      sourceCount: 0,
       icon: spaceIcon(space.icon),
       color: spaceColor(space.color),
       sourceTypes: [],
@@ -395,16 +424,34 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
         attention: own.filter((i) => i.status === "needs_attention" || i.status === "failed")
           .length,
       };
+      const run = active.find((r) => r.source_id === s.id);
+      const done = last.find((r) => r.source_id === s.id);
       return {
         id: s.id,
         sourceType: s.source_type,
         name: s.display_name,
         status: s.status,
-        state: sourceState({ status: s.status, lastSyncedAt: s.last_synced_at, counts }),
+        state: sourceState({
+          container: s.source_type === "upload" || s.source_type === "note",
+          status: s.status,
+          lastSyncedAt: s.last_synced_at,
+          createdAt: s.created_at,
+          activeRun: run
+            ? {
+                status: run.status as "queued" | "running",
+                createdAt: run.created_at,
+                startedAt: run.started_at,
+              }
+            : null,
+          counts,
+        }),
         lastSyncedAt: s.last_synced_at,
         nextSyncAt: s.next_sync_at,
         lastErrorCode: s.last_error_code,
         counts,
+        discovered: done?.items_discovered ?? null,
+        lastRunAt: done?.completed_at ?? null,
+        runningSince: run ? (run.started_at ?? run.created_at) : null,
       };
     }),
     items: (items ?? []).map((i): ItemView => ({
@@ -650,7 +697,9 @@ export async function retryItem(auth: AuthContext, itemId: string) {
   if (!data) throw new AppError("NOT_FOUND", "Document not found");
   await createAdminClient()
     .from("knowledge_versions")
-    .update({ status: "pending" })
+    // processed_at marks when it was queued again: stall recovery measures from here, not from
+    // when the version was first created.
+    .update({ status: "pending", processed_at: new Date().toISOString(), error_code: null })
     .eq("id", data.id)
     .eq("workspace_id", auth.workspaceId);
   await createAdminClient()
@@ -911,14 +960,20 @@ async function ownSource(auth: AuthContext, sourceId: string) {
   return data;
 }
 
-/** Sync Now: the same pipeline as the periodic sync. */
-export async function syncNow(auth: AuthContext, sourceId: string) {
+/**
+ * Sync Now / Retry: the same pipeline as the periodic sync, idempotent. A sync already running
+ * is the answer, not an error; one the runtime lost is closed first so it can't block this.
+ */
+export async function syncNow(
+  auth: AuthContext,
+  sourceId: string,
+): Promise<{ status: "started" | "already_syncing" | "not_syncable" }> {
   const source = await ownSource(auth, sourceId);
-  if (source.source_type === "upload") return null;
+  if (source.source_type === "upload" || source.source_type === "note")
+    return { status: "not_syncable" };
+  await recoverStaleWork(auth.workspaceId);
   const runId = await startSync(auth.workspaceId, sourceId, "manual");
-  if (!runId)
-    throw new AppError("CONFLICT", "This source is already syncing", { recovery: "review" });
-  return runId;
+  return { status: runId ? "started" : "already_syncing" };
 }
 
 /**

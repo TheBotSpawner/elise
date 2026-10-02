@@ -6,6 +6,11 @@ import type { KnowledgeHit } from "./model";
  */
 export const RETRIEVAL = {
   candidates: 16,
+  /**
+   * Candidates searched separately in what a Section inherits from its Space, so a large
+   * Section can't crowd the parent's material out of the candidate list.
+   */
+  inheritedCandidates: 8,
   maxEvidence: 8,
   /** Total characters of evidence handed to the model per search. */
   budgetChars: 9000,
@@ -46,6 +51,15 @@ export function isEvidence(hit: KnowledgeHit): boolean {
  */
 /** Inherited (parent Space) passages weigh a little less than the Section's own. */
 export const INHERITED_WEIGHT = 0.85;
+
+/** Two candidate lists as one, each chunk once (the Section's own copy first). */
+export function mergeHits(
+  own: readonly KnowledgeHit[],
+  inherited: readonly KnowledgeHit[],
+): KnowledgeHit[] {
+  const seen = new Set(own.map((h) => h.chunkId));
+  return [...own, ...inherited.filter((h) => !seen.has(h.chunkId))];
+}
 
 /** Section-first ordering: same evidence, the Section's own sources ahead on near-ties. */
 export function preferPrimary(hits: readonly KnowledgeHit[], primary: readonly string[] | null) {

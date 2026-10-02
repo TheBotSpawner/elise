@@ -8,6 +8,7 @@ import type {
   VersionToIngest,
 } from "@/core/knowledge/ingest";
 import type { KnowledgeSourceType } from "@/core/knowledge/model";
+import { SOURCE_LIFECYCLE } from "@/core/knowledge/source-state";
 import type {
   ExternalItem,
   KnownItem,
@@ -313,7 +314,7 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
     const { data, error } = await this.db
       .from("knowledge_items")
       .select(
-        "id, external_id, status, knowledge_versions!knowledge_versions_knowledge_item_id_fkey(version_number, source_revision)",
+        "id, external_id, status, error_code, knowledge_versions!knowledge_versions_knowledge_item_id_fkey(version_number, source_revision)",
       )
       .eq("source_id", sourceId);
     check(error, "load items");
@@ -328,6 +329,7 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
         externalId: i.external_id,
         status: i.status,
         revision: newest?.source_revision ?? null,
+        errorCode: i.error_code,
       };
     });
   }
@@ -489,13 +491,110 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
       .eq("workspace_id", workspaceId);
   }
 
-  /** Runs the runtime never started or lost must not block a source forever. */
-  async expireStaleSyncs(before: Date) {
-    await this.db
+  /**
+   * Work the runtime never started or never finished must not block a source (or keep it
+   * "preparing") forever. Stalled runs close as failed and their source says it needs
+   * attention (a source that synced before stays searchable); stalled ingestions fail their
+   * version, and the item keeps its last good version if it had one. Returns what it closed.
+   */
+  async recoverStale(now: Date, workspaceId: string | null) {
+    const ago = (m: number) => new Date(now.getTime() - m * 60_000).toISOString();
+    const at = now.toISOString();
+    const L = SOURCE_LIFECYCLE;
+    const inWorkspace = <T extends { eq: (c: string, v: string) => T }>(q: T) =>
+      workspaceId ? q.eq("workspace_id", workspaceId) : q;
+    const closed: { source_id: string; workspace_id: string; error_code: string }[] = [];
+    for (const [status, column, minutes, code] of [
+      ["queued", "created_at", L.queuedStallMinutes, "BACKGROUND_STALLED"],
+      ["running", "started_at", L.runningStallMinutes, "TIMEOUT"],
+    ] as const) {
+      const { data } = await inWorkspace(
+        this.db
+          .from("knowledge_sync_runs")
+          .update({ status: "failed", error_code: code, completed_at: at })
+          .eq("status", status)
+          .lt(column, ago(minutes)),
+      ).select("source_id, workspace_id");
+      closed.push(...(data ?? []).map((r) => ({ ...r, error_code: code })));
+    }
+    for (const r of closed)
+      await this.db
+        .from("knowledge_sources")
+        .update({
+          status: "needs_attention",
+          last_error_code: r.error_code,
+          next_sync_at: new Date(now.getTime() + L.retryAfterMinutes * 60_000).toISOString(),
+        })
+        .eq("id", r.source_id)
+        .eq("workspace_id", r.workspace_id)
+        .is("archived_at", null);
+
+    const { data: versions } = await inWorkspace(
+      this.db
+        .from("knowledge_versions")
+        .update({ status: "failed", error_code: "BACKGROUND_STALLED", processed_at: at })
+        .in("status", ["pending", "processing"])
+        .lt("created_at", ago(L.ingestStallMinutes))
+        // A retried version is measured from when it was queued again (processed_at).
+        .or(`processed_at.is.null,processed_at.lt.${ago(L.ingestStallMinutes)}`),
+    ).select("knowledge_item_id, workspace_id");
+    for (const v of versions ?? []) {
+      const current = await this.hasCurrent(v.knowledge_item_id);
+      await this.db
+        .from("knowledge_items")
+        .update(
+          current
+            ? { status: "ready", status_detail: null }
+            : { status: "needs_attention", status_detail: null, error_code: "BACKGROUND_STALLED" },
+        )
+        .eq("id", v.knowledge_item_id)
+        .eq("workspace_id", v.workspace_id)
+        .in("status", ["queued", "processing"]);
+    }
+    return { runs: closed.length, versions: (versions ?? []).length };
+  }
+
+  /** The sync in progress per source (at most one, by a unique index). */
+  async activeRuns(workspaceId: string, sourceIds: string[]) {
+    if (!sourceIds.length) return [];
+    const { data } = await this.db
       .from("knowledge_sync_runs")
-      .update({ status: "failed", error_code: "TIMEOUT", completed_at: new Date().toISOString() })
-      .in("status", ["queued", "running"])
-      .lt("created_at", before.toISOString());
+      .select("source_id, status, created_at, started_at")
+      .eq("workspace_id", workspaceId)
+      .in("source_id", sourceIds)
+      .in("status", ["queued", "running"]);
+    return data ?? [];
+  }
+
+  /** The latest finished sync per source: what it found and when (source details). */
+  async lastRuns(workspaceId: string, sourceIds: string[]) {
+    if (!sourceIds.length) return [];
+    const { data } = await this.db
+      .from("knowledge_sync_runs")
+      .select("source_id, status, completed_at, items_discovered, items_failed, error_code")
+      .eq("workspace_id", workspaceId)
+      .in("source_id", sourceIds)
+      .not("completed_at", "is", null)
+      .order("completed_at", { ascending: false })
+      .limit(sourceIds.length * 5);
+    const latest = new Map<string, NonNullable<typeof data>[number]>();
+    for (const r of data ?? []) if (!latest.has(r.source_id)) latest.set(r.source_id, r);
+    return [...latest.values()];
+  }
+
+  /** The first (or a manual) sync could not even be queued: say so instead of "preparing". */
+  async markSourceAttention(workspaceId: string, sourceId: string, code: string, now: Date) {
+    await this.db
+      .from("knowledge_sources")
+      .update({
+        status: "needs_attention",
+        last_error_code: code,
+        next_sync_at: new Date(
+          now.getTime() + SOURCE_LIFECYCLE.retryAfterMinutes * 60_000,
+        ).toISOString(),
+      })
+      .eq("id", sourceId)
+      .eq("workspace_id", workspaceId);
   }
 
   async setVersionRuntime(workspaceId: string, versionId: string, runtimeJobId: string) {

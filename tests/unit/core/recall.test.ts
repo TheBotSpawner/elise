@@ -457,7 +457,10 @@ describe("self-control tools", () => {
     const names = ports.registry.available(new Set(CAPABILITY_KEYS)).map((t) => t.name);
     expect(names).toContain("connections.list");
     expect(
-      names.filter((n) => /disconnect|prompt|policy|permission|rls|secret|code|css/i.test(n)),
+      // "code" as in source code ("location.geocode" is an address lookup).
+      names.filter((n) =>
+        /disconnect|prompt|policy|permission|rls|secret|(?<!geo)code|css/i.test(n),
+      ),
     ).toEqual([]);
   });
 });

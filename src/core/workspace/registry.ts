@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { mapPayload, placePayload, type MapPayload } from "./location";
 import { mediaPayload } from "./media";
 import {
   ACTION_IDS,
@@ -479,6 +480,10 @@ export const PAYLOADS = {
   visualization: z.object({ spec: visualizationSpec }),
   /** Images, video and link previews from URLs the workspace already holds (ADR-021). */
   media: mediaPayload,
+  /** Places, a route or a travel-time comparison on a map (ADR-023). */
+  map: mapPayload,
+  /** One place in detail (ADR-023). */
+  place: placePayload,
   /** Any other tool result, rendered by its existing card. */
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
 } satisfies Record<SurfaceType, z.ZodType>;
@@ -873,6 +878,21 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     describe: (p) =>
       `${p.kind}: ${p.items.map((m, i) => `${i + 1}) ${q(m.title || m.domain)} (${m.url})`).join("; ")}`,
   },
+  map: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 72,
+    actions: (p) => [...link("open", p.route?.mapsUrl ?? null), expand],
+    describe: describeMap,
+  },
+  place: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 66,
+    actions: (p) => [...link("open", p.mapsUrl), expand],
+    describe: (p) =>
+      `${q(p.name)}${p.address ? ` · ${p.address}` : ""}${p.openNow == null ? "" : p.openNow ? " · open now" : " · closed now"} (place ${p.id})`,
+  },
   result: {
     sizes: ["small", "medium", "large"],
     size: "medium",
@@ -881,6 +901,29 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     describe: (p) => p.display.kind,
   },
 };
+
+const minutes = (s: number | null) => (s == null ? "no route" : `${Math.round(s / 60)} min`);
+const km = (m: number) => `${(m / 1000).toFixed(1)} km`;
+
+/** Numbered, so "the second one" and "that café" resolve to a place id. */
+function describeMap(p: MapPayload): string {
+  if (p.mode === "locate") return "Waiting for the user to share their location";
+  if (p.route)
+    return `${p.route.mode} route ${q(p.route.from)} → ${q(p.route.to)}: ${minutes(p.route.durationSeconds)}, ${km(p.route.distanceMeters)}`;
+  if (p.comparison)
+    return `${p.comparison.mode} times: ${p.comparison.rows
+      .map(
+        (r) =>
+          `${q(p.comparison!.origins[r.origin] ?? "")} → ${q(r.destination)} ${minutes(r.durationSeconds)}`,
+      )
+      .join("; ")}`;
+  return `${q(p.query)}: ${p.places
+    .map(
+      (x, i) =>
+        `${i + 1}) ${q(x.name)}${x.distanceMeters != null ? ` ${x.distanceMeters} m` : ""}${x.rating ? ` ★${x.rating}` : ""} (place ${x.id})`,
+    )
+    .join("; ")}`;
+}
 
 /** A chart, compactly: its template, title and the numbers it shows (so ELISE can talk about it). */
 function describeSpec(spec: VisualizationSpec): string {

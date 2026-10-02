@@ -27,6 +27,8 @@ import {
   Zap,
   BarChart3,
   Image as ImageIcon,
+  Map as MapIcon,
+  MapPin,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -42,6 +44,7 @@ import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 import type { VisualSize } from "./canvas/composition";
+import { MapBody, PlaceBody } from "./canvas/map";
 import { MediaBody } from "./canvas/media";
 import { Visualization } from "./viz/visualization";
 
@@ -82,6 +85,8 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   shortcut: Zap,
   visualization: BarChart3,
   media: ImageIcon,
+  map: MapIcon,
+  place: MapPin,
   result: Sparkles,
 };
 
@@ -897,6 +902,21 @@ export function SurfaceBody({
       return (
         <MediaBody
           p={surface.payload as SurfacePayloads["media"]}
+          size={size ?? (large ? "large" : "medium")}
+        />
+      );
+    case "map":
+      return (
+        <MapBody
+          p={surface.payload as SurfacePayloads["map"]}
+          size={size ?? (large ? "large" : "medium")}
+          onPrompt={handlers.onPrompt}
+        />
+      );
+    case "place":
+      return (
+        <PlaceBody
+          p={surface.payload as SurfacePayloads["place"]}
           size={size ?? (large ? "large" : "medium")}
         />
       );

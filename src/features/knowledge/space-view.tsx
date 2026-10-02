@@ -125,6 +125,17 @@ export function SpaceView({
   const [versionFor, setVersionFor] = useState<string | null>(null);
   useRealtimeRefresh(workspaceId, ["knowledge_items", "knowledge_sources", "knowledge_sync_runs"]);
 
+  /** Sync now / Retry: an active sync is the answer, not an error. */
+  function syncSource(sourceId: string) {
+    startTransition(async () => {
+      const r = await syncNowAction(sourceId);
+      if (!r.ok) return void toast.error(errorText(t, r.error));
+      if (r.value.status === "already_syncing") toast(t.knowledge.alreadySyncing);
+      else if (r.value.status === "started") toast.success(t.knowledge.syncing);
+      router.refresh();
+    });
+  }
+
   function act<T>(fn: () => Promise<KnowledgeResult<T>>, success?: string) {
     startTransition(async () => {
       const r = await fn();
@@ -162,7 +173,7 @@ export function SpaceView({
   const visible = showAll ? items : items.slice(0, RECENT);
 
   return (
-    <div className="flex flex-col gap-10">
+    <div className="flex flex-col gap-7">
       <header className="flex flex-col gap-3">
         <nav aria-label={t.knowledge.breadcrumb} className="text-[13px] text-muted">
           <Link href="/knowledge" className="hover:text-fg">
@@ -203,7 +214,7 @@ export function SpaceView({
           )}
           <Button variant="ghost" onClick={() => setEditingSpace(true)}>
             <Pencil />
-            {t.knowledge.editSpace}
+            {isSection ? t.knowledge.editSection : t.knowledge.editSpace}
           </Button>
           <Button
             variant="ghost"
@@ -253,7 +264,7 @@ export function SpaceView({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[14.5px] font-medium">{c.name}</span>
                       <span className="block truncate text-[12.5px] text-muted">
-                        {t.knowledge.itemCount(c.counts.ready + c.counts.processing)}
+                        {t.knowledge.sourceCount(c.sourceCount)}
                       </span>
                     </span>
                   </Link>
@@ -323,7 +334,7 @@ export function SpaceView({
                   </p>
                   <p className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted">
                     {s.sourceType === "upload" || s.sourceType === "note" ? (
-                      t.knowledge.itemCount(itemsOf(s.sourceType))
+                      t.knowledge.documentCount(itemsOf(s.sourceType))
                     ) : (
                       <>
                         <span className="text-faint">{t.knowledge.sourceTypes[s.sourceType]}</span>
@@ -358,21 +369,30 @@ export function SpaceView({
                     </Link>
                   )}
                   {s.state === "needs_attention" &&
-                    ["AUTH_EXPIRED", "AUTH_ERROR", "PERMISSION_DENIED"].includes(
+                    (["AUTH_EXPIRED", "AUTH_ERROR", "PERMISSION_DENIED"].includes(
                       s.lastErrorCode ?? "",
-                    ) && (
+                    ) ? (
                       <Link
                         href="/connections"
                         className={buttonVariants({ size: "sm", variant: "ghost" })}
                       >
                         {t.brief.reconnect}
                       </Link>
-                    )}
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={pending}
+                        onClick={() => syncSource(s.id)}
+                      >
+                        {t.knowledge.sourceDetails.retry}
+                      </Button>
+                    ))}
                   <SourceMenu
                     source={s}
                     disabled={pending}
                     when={relative}
-                    onSyncNow={() => act(() => syncNowAction(s.id), t.knowledge.syncing)}
+                    onSyncNow={() => syncSource(s.id)}
                     onRemove={() => {
                       if (window.confirm(t.knowledge.removeSourceConfirm))
                         act(() => removeSourceAction(s.id));
@@ -386,7 +406,7 @@ export function SpaceView({
       </section>
 
       {conversations.length > 0 && (
-        <section className="flex flex-col gap-2 border-t border-border pt-8">
+        <section className="flex flex-col gap-2 border-t border-border pt-6">
           <h2 className="type-label text-faint">
             {isSection ? t.history.related : t.history.recent}
           </h2>
@@ -409,7 +429,7 @@ export function SpaceView({
         </section>
       )}
 
-      <section className="flex flex-col gap-3 border-t border-border pt-8">
+      <section className="flex flex-col gap-3 border-t border-border pt-6">
         <h2 className="type-label text-faint">
           {t.knowledge.recent} ·{" "}
           {t.knowledge.counts(space.counts.ready, space.counts.processing, space.counts.attention)}

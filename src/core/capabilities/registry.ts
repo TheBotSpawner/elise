@@ -198,6 +198,21 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       saveToKnowledge: WRITE,
     },
   },
+  // Places, addresses and travel (ADR-023): server-provided, no user connection, read-only.
+  // Opening a place on a map, calling or booking stay with the user.
+  location: {
+    key: "location",
+    status: "available",
+    internal: true,
+    operations: {
+      searchPlaces: READ,
+      getPlace: READ,
+      geocode: READ,
+      reverseGeocode: READ,
+      getRoute: READ,
+      compareTravelTimes: READ,
+    },
+  },
   // Context Profiles (ADR-016): an organizational layer over the user's data. Proposing,
   // activating and briefing only read (each source under its own permissions); creating or
   // changing a profile is an audited write; archiving asks when ELISE proposes it.

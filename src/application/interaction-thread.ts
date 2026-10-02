@@ -4,6 +4,8 @@ import { MAX_HISTORY_MESSAGES, type HistoryMessage } from "@/core/agents/context
 import { AppError } from "@/core/errors";
 import { conciseTitle } from "@/core/history/links";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
+import { wellFormed } from "@/core/text";
+import { logger } from "@/infrastructure/observability/logger";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 import type { Json } from "@/infrastructure/supabase/database.types";
 
@@ -34,7 +36,8 @@ export interface Thread {
 }
 
 type Meta = AssistantMessageMetadata & { modality?: TurnModality; voice?: VoiceTurnMeta };
-const json = (v: unknown) => JSON.parse(JSON.stringify(v)) as Json;
+// Well-formed before storage: a split character must never cost the user an answer.
+const json = (v: unknown) => wellFormed(JSON.parse(JSON.stringify(v))) as Json;
 const notes = (m: Json | null) => ((m as Meta | null)?.toolNotes ?? []).slice(0, 10);
 
 export async function openThread(
@@ -111,17 +114,19 @@ function conversationThread(auth: AuthContext, id: string, isNew: boolean): Thre
       if (error) throw new AppError("NOT_FOUND", "Conversation not found", { cause: error });
     },
     async addAssistantTurn(text, modality, metadata) {
-      const { data } = await auth.db
+      const { data, error } = await auth.db
         .from("messages")
         .insert({
           conversation_id: id,
           workspace_id: auth.workspaceId,
           role: "assistant",
-          content: text,
+          content: text.toWellFormed(),
           metadata: json({ ...metadata, ...(modality === "voice" ? { modality } : {}) }),
         })
         .select("id")
         .single();
+      // Never silent: an answer that couldn't be stored is a bug worth seeing.
+      if (error) logger.error("chat.assistant_save_failed", { code: error.code });
       return data?.id ?? null;
     },
     async touch() {

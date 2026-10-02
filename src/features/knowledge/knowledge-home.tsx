@@ -47,8 +47,13 @@ function SpaceCard({ space, subspaces }: { space: SpaceSummary; subspaces: Space
         )}
         <span className="flex items-center gap-1.5">
           {items > 0 && <span aria-hidden className={cn("size-1.5 rounded-full", dot)} />}
-          {items > 0
-            ? `${t.knowledge.itemCount(items)} · ${t.knowledge.counts(c.ready, c.processing, c.attention)}`
+          {space.sourceCount > 0
+            ? [
+                t.knowledge.sourceCount(space.sourceCount),
+                items > 0 && t.knowledge.counts(c.ready, c.processing, c.attention),
+              ]
+                .filter(Boolean)
+                .join(" · ")
             : t.knowledge.counts(0, 0, 0)}
         </span>
         {space.updatedAt && <span>{t.knowledge.updated(relative(space.updatedAt))}</span>}

@@ -18,6 +18,8 @@ const serverEnvSchema = z.object({
   WEB_SEARCH_PROVIDER: z.enum(["openai", "tavily"]).optional(),
   OPENAI_WEB_SEARCH_MODEL: z.string().min(1).default("gpt-4.1-mini"),
   TAVILY_API_KEY: z.string().min(1).optional(),
+  /** Location (ADR-023): server key restricted to Places (New), Routes and Geocoding. */
+  GOOGLE_MAPS_SERVER_API_KEY: z.string().min(1).optional(),
   NOTION_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   NOTION_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),

@@ -3,9 +3,16 @@ import { z } from "zod";
 import type { KnowledgeEvidence, ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { clip } from "../capabilities/email";
 import { AppError } from "../errors";
+import { matchKey, usableAlias } from "../history/links";
 import { compactDiff, diffParagraphs } from "../knowledge/diff";
 import { scopeSpaces, type KnowledgeHit, type SpaceInfo } from "../knowledge/model";
-import { citationLabel, preferPrimary, RETRIEVAL, selectEvidence } from "../knowledge/retrieval";
+import {
+  citationLabel,
+  mergeHits,
+  preferPrimary,
+  RETRIEVAL,
+  selectEvidence,
+} from "../knowledge/retrieval";
 
 /**
  * Knowledge tools (docs/architecture/09 §31-37, 72). Scope first — the active Space, or the
@@ -47,14 +54,17 @@ async function resolveScope(
 ): Promise<Scope & { spaces: SpaceInfo[] }> {
   const spaces = await reader(env).spaces();
   if (opts.space) {
-    const wanted = opts.space.toLowerCase();
-    const match = spaces.filter(
-      (s) =>
-        s.id === opts.space || s.name.toLowerCase() === wanted || s.path.toLowerCase() === wanted,
-    );
+    // Same identity rules as History tags: case, accents and II/2 don't matter, and a Section
+    // is also found by its description ("Análisis Matemático II" → UTN › AMII).
+    const wanted = matchKey(opts.space);
+    const names = (s: SpaceInfo) =>
+      [s.name, s.path, ...(s.aliases ?? []).filter(usableAlias)].map(matchKey);
+    const match = spaces.filter((s) => s.id === opts.space || names(s).includes(wanted));
     const loose = match.length
       ? match
-      : spaces.filter((s) => s.path.toLowerCase().includes(wanted));
+      : wanted.length >= 3
+        ? spaces.filter((s) => names(s).some((n) => n.includes(wanted)))
+        : [];
     if (!loose.length) {
       throw new AppError(
         "NOT_FOUND",
@@ -162,9 +172,27 @@ export const searchKnowledgeTool: ToolDefinition = {
     let fallback = false;
     const search = (spaceIds: string[] | null, itemIds: string[] | null) =>
       reader(env).search({ text: q.query, spaceIds, itemIds, limit: RETRIEVAL.candidates });
+    /**
+     * Section first, then what it inherits: the Section's own sources, and separately a few
+     * candidates from its parent Space, so inherited material is always considered.
+     */
+    const tiered = async (all: string[] | null, own: string[] | null, itemIds: string[] | null) => {
+      const parent = all && own && !itemIds ? all.filter((id) => !own.includes(id)) : [];
+      if (!parent.length) return search(all, itemIds);
+      const [mine, inherited] = await Promise.all([
+        search(own, null),
+        reader(env).search({
+          text: q.query,
+          spaceIds: parent,
+          itemIds: null,
+          limit: RETRIEVAL.inheritedCandidates,
+        }),
+      ]);
+      return { hits: mergeHits(mine.hits, inherited.hits), semantic: mine.semantic };
+    };
     let { hits, semantic } = byContext
-      ? await search(byContext.spaceIds, byContext.itemIds)
-      : await search(scope.searchIds, q.itemId ? [q.itemId] : null);
+      ? await tiered(byContext.spaceIds, byContext.primary, byContext.itemIds)
+      : await tiered(scope.searchIds, scope.spaceIds, q.itemId ? [q.itemId] : null);
     // Section first: its own passages ahead of what it inherits from the parent Space.
     hits = preferPrimary(hits, byContext ? byContext.primary : scope.spaceIds);
     if (byContext) {

@@ -63,6 +63,8 @@ and delete it (files, workspace, user) afterwards. The model is mocked at `/api/
    (https, no trailing slash), `ELISE_ENV=production`, `OPENAI_API_KEY`, `ELISE_ENCRYPTION_KEY`
    (32 random bytes, base64 — never rotate without `_PREVIOUS`), `SUPABASE_SECRET_KEY`, Google
    and Notion OAuth pairs, `TRIGGER_SECRET_KEY` (`tr_prod_…`), optional `TAVILY_API_KEY`,
+   optional `GOOGLE_MAPS_SERVER_API_KEY` + `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` +
+   `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` (Location, ADR-023: separate restricted keys),
    `ELISE_ADMIN_EMAILS`. `NEXT_PUBLIC_*` are inlined at build: redeploy after changing them.
 3. **Trigger.dev**: `npx trigger.dev deploy` with the production key; check the cron tasks
    (schedules every minute, knowledge sync 10 min, finance 15 min, recall sweep 15 min).

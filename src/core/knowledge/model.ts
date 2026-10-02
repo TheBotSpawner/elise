@@ -56,6 +56,8 @@ export interface SpaceInfo {
   parentId: string | null;
   /** "Work › Acme › Client A" */
   path: string;
+  /** What else the user calls it (its description), for resolving "Análisis Matemático II". */
+  aliases?: string[];
 }
 
 export interface KnowledgeHit {
@@ -183,7 +185,7 @@ export function scopeSpaces(
 }
 
 export function spacePaths(
-  spaces: readonly { id: string; name: string; parentId: string | null }[],
+  spaces: readonly { id: string; name: string; parentId: string | null; aliases?: string[] }[],
 ): SpaceInfo[] {
   const byId = new Map(spaces.map((s) => [s.id, s]));
   return spaces.map((s) => {

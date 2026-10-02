@@ -31,6 +31,13 @@ export const UNIT_PRICES: Record<string, number> = {
   // Web search: a basic Tavily search is one credit; OpenAI hosted search is billed per call.
   "web_search:tavily": 0.008,
   "web_search:openai": 0.01,
+  // Maps (ADR-023), per request (matrix: per element), list prices with the field masks used.
+  "maps:google_maps.places.search": 0.035,
+  "maps:google_maps.places.details": 0.02,
+  "maps:google_maps.places.photo": 0.007,
+  "maps:google_maps.geocode": 0.005,
+  "maps:google_maps.routes": 0.01,
+  "maps:google_maps.routes.matrix": 0.01,
 };
 
 export function priceFor(model: string | null | undefined): TokenPrice | null {

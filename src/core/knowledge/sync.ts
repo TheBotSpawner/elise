@@ -1,6 +1,7 @@
 import type { BackgroundRuntime } from "../background/runtime";
 import { toAppError } from "../errors";
 import type { KnowledgeItemType, KnowledgeSourceType } from "./model";
+import { TRANSIENT_CODES } from "./source-state";
 
 /**
  * Incremental sync of an external Knowledge source (docs/architecture/09 §17-19, 54): list the
@@ -47,6 +48,8 @@ export interface KnownItem {
   status: string;
   /** Revision of the newest version ELISE has for it. */
   revision: string | null;
+  /** Why it isn't ready, when it isn't (a stalled or transient failure is retried). */
+  errorCode?: string | null;
 }
 
 export interface SyncCounts {
@@ -103,7 +106,13 @@ export function planSync(known: readonly KnownItem[], external: readonly Externa
   for (const item of external) {
     const k = byId.get(item.externalId);
     if (!k) created.push(item);
-    else if (k.status === "removed" || k.revision !== item.revision)
+    else if (
+      k.status === "removed" ||
+      k.revision !== item.revision ||
+      // Same file, but its last ingestion never finished for a reason worth retrying.
+      ((k.status === "failed" || k.status === "needs_attention") &&
+        TRANSIENT_CODES.has(k.errorCode ?? ""))
+    )
       updated.push({ itemId: k.id, item });
   }
   const removed = known
@@ -127,7 +136,13 @@ export async function syncSource(
   const loaded = await ports.store.loadRun(job.workspaceId, job.syncRunId);
   if (!loaded || loaded.run.status !== "queued") return null;
   const { run, source } = loaded;
+  const started = ports.now().getTime();
   await ports.store.markRunning(run);
+  ports.log?.("knowledge.sync_started", {
+    sync_run_id: run.id,
+    source_id: source.id,
+    provider: source.sourceType,
+  });
   const counts: SyncCounts = { discovered: 0, created: 0, updated: 0, removed: 0, failed: 0 };
   const next = new Date(ports.now().getTime() + SYNC_INTERVAL_MINUTES * 60_000);
 
@@ -144,7 +159,14 @@ export async function syncSource(
       nextSyncAt: next,
       sourceStatus: "needs_attention",
     });
-    ports.log?.("knowledge.sync_failed", { sync_run_id: run.id, code: e.code });
+    ports.log?.("knowledge.sync_failed", {
+      sync_run_id: run.id,
+      source_id: source.id,
+      provider: source.sourceType,
+      stage: "list",
+      code: e.code,
+      duration_ms: ports.now().getTime() - started,
+    });
     return counts;
   }
 
@@ -179,6 +201,12 @@ export async function syncSource(
     nextSyncAt: next,
     sourceStatus: "ready",
   });
-  ports.log?.("knowledge.sync_completed", { sync_run_id: run.id, ...counts });
+  ports.log?.("knowledge.sync_completed", {
+    sync_run_id: run.id,
+    source_id: source.id,
+    provider: source.sourceType,
+    ...counts,
+    duration_ms: ports.now().getTime() - started,
+  });
   return counts;
 }

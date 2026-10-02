@@ -14,6 +14,7 @@ import {
 } from "@/core/interaction";
 import { WAKE_LABELS, WAKE_PHRASES, type WakePhrase } from "@/core/voice/wake";
 import { applyOps, emptyWorkspace, type WorkspaceState } from "@/core/workspace/model";
+import { sharedLocation } from "@/features/location/shared-location";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { applyAppearance } from "@/lib/theme";
 
@@ -146,6 +147,8 @@ export function useEliseChat(initial: {
             message,
             ...(!thread.current && initial.spaceId ? { spaceId: initial.spaceId } : {}),
             ...(options.modality === "voice" ? { modality: "voice", voice: options.voice } : {}),
+            // Only while the user is sharing it for this session (ADR-023).
+            ...(sharedLocation() ? { here: sharedLocation() } : {}),
           }),
           signal: controller.signal,
         });

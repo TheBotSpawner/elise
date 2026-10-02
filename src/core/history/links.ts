@@ -14,6 +14,11 @@ export interface KnowledgeNode {
   parentId: string | null;
   parentName: string | null;
   archived: boolean;
+  /**
+   * Other names the user gave it: its description or a one-line context ("AMII" →
+   * "Análisis Matemático II"). Written by the user, never invented.
+   */
+  aliases?: string[];
 }
 
 export type LinkSource = "automatic" | "manual";
@@ -94,6 +99,12 @@ export function scoreEvidence(e: ThreadEvidence, nodes: KnowledgeNode[]): Scored
       c = Math.max(c, kTurns >= 2 ? 0.85 : 0.75);
       why.push("knowledge");
     }
+    // One turn that drew on its material (two passages or more) is about it too: retrieval is
+    // the system agreeing with the user's topic.
+    if (kTurns === 1 && kPassages >= 2 && c < 0.8) {
+      c = 0.8;
+      if (!why.includes("knowledge")) why.push("knowledge");
+    }
     // The user naming a Space/Section exactly ("UTN", "Client A") says what the conversation is
     // about: once is enough. Generic names ("Personal", "Trabajo") need it said twice.
     const mentions = e.mentionTurns.get(node.id) ?? 0;
@@ -149,18 +160,49 @@ export function isGenericName(name: string): boolean {
   );
 }
 
-/** Exact, word-bounded mentions of nodes in one user turn (accents and case ignored). */
+/** Roman numerals as words ("Análisis II") read as digits ("análisis 2"); "i", "v", "x" don't. */
+const ROMAN: Record<string, string> = {
+  ii: "2",
+  iii: "3",
+  iv: "4",
+  vi: "6",
+  vii: "7",
+  viii: "8",
+  ix: "9",
+};
+
+/** Comparable form: no case, accents or punctuation; Roman numerals II–IX as digits. */
+export function matchKey(text: string): string {
+  return nameKey(text)
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(" ")
+    .map((w) => ROMAN[w] ?? w)
+    .join(" ");
+}
+
+/** An alias worth matching: a short identity phrase, not a paragraph or an everyday word. */
+export function usableAlias(alias: string): boolean {
+  const k = matchKey(alias);
+  const words = k.split(" ").filter(Boolean).length;
+  return k.length >= 5 && words <= 6 && !isGenericName(k);
+}
+
+/** Word-bounded mentions of nodes in one user turn: name, "Space Section", or an alias. */
 export function mentionedNodes(text: string, nodes: KnowledgeNode[]): string[] {
-  const hay = ` ${nameKey(text).replace(/[^\p{L}\p{N}]+/gu, " ")} `;
+  const hay = ` ${matchKey(text)} `;
   const hit = (name: string) => {
-    const k = nameKey(name)
-      .replace(/[^\p{L}\p{N}]+/gu, " ")
-      .trim();
+    const k = matchKey(name);
     return k.length >= HISTORY_LINKS.minMentionChars && hay.includes(` ${k} `);
   };
   return nodes
     .filter((n) => !n.archived)
-    .filter((n) => hit(n.name) || (n.parentName ? hit(`${n.parentName} ${n.name}`) : false))
+    .filter(
+      (n) =>
+        hit(n.name) ||
+        (n.parentName ? hit(`${n.parentName} ${n.name}`) : false) ||
+        (n.aliases ?? []).some((a) => usableAlias(a) && hit(a)),
+    )
     .map((n) => n.id);
 }
 

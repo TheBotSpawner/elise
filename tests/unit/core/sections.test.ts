@@ -232,7 +232,8 @@ describe("knowledge.search in a Section", () => {
       args: { query: "teoría organizacional" },
     });
     expect(out.status).toBe("succeeded");
-    expect(searches[0]!.sort()).toEqual([ADMIN, University].sort());
+    // Section first, then (separately) what it inherits, so the parent is always considered.
+    expect(searches).toEqual([[ADMIN], [University]]);
     const evidence = (out as { output: { evidence: { space: string }[] } }).output.evidence;
     // 0.85 (own) beats 0.9 × 0.85 (inherited).
     expect(evidence[0]!.space).toBe("University › Administración");
@@ -248,8 +249,8 @@ describe("knowledge.search in a Section", () => {
       }),
       { name: "knowledge.search", args: { query: "Weber" } },
     );
-    expect(searches[0]!.sort()).toEqual([ADMIN, University].sort());
-    expect(searches[0]).not.toContain(LEGIS);
+    expect(searches).toEqual([[ADMIN], [University]]);
+    expect(searches.flat()).not.toContain(LEGIS);
   });
 
   it('from the root Space, results name the Section they come from ("which subjects cover X?")', async () => {

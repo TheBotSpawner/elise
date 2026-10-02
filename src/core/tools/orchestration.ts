@@ -1,5 +1,6 @@
 import type { ToolCallOutcome } from "../agents/executor";
 import type { ToolDisplay, ToolRunEnv } from "../agents/tools";
+import { clipText } from "../text";
 import type { SurfaceDraft, WorkspaceOp } from "../workspace/model";
 
 /**
@@ -67,5 +68,4 @@ export function present(env: ToolRunEnv, drafts: (SurfaceDraft | null)[]) {
   if (ops.length) env.ctx.workspace?.apply(ops);
 }
 
-export const clip = (s: string | null | undefined, n: number) =>
-  !s ? "" : s.length > n ? `${s.slice(0, n - 1)}…` : s;
+export const clip = clipText;

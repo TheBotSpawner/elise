@@ -162,6 +162,23 @@ npm run dev                         # http://localhost:3000
 Without Supabase variables the app still builds and starts; `/login` explains what is missing.
 Without `OPENAI_API_KEY`, everything works except chat, which reports that AI is not configured.
 
+### Location + Maps
+
+Places, addresses, routes and travel-time comparisons (`location.*` tools, Map and Place
+Surfaces). Optional, from Google Maps Platform in one Cloud project with billing:
+
+1. Enable **Places API (New)**, **Routes API**, **Geocoding API** and **Maps JavaScript API**.
+   Never the legacy Places, Directions or Distance Matrix APIs.
+2. Server key → `GOOGLE_MAPS_SERVER_API_KEY`, restricted to the first three APIs.
+3. Browser key → `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, restricted to the Maps JavaScript API and
+   to your app's HTTP referrers.
+4. Map Management → create a **JavaScript, Vector** Map ID → `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID`.
+5. Apply migration `20261006000025_location.sql` (maps calls in `usage_events`).
+
+Without the server key the tools are not offered; without the browser key places and routes
+render as lists. The user's position is used only after they tap "Share my location", rounded to
+~110 m, kept in memory for 15 minutes, never stored or logged (ADR-023).
+
 ### Web Search + Research
 
 Web search needs no connection: with `OPENAI_API_KEY` set, ELISE uses OpenAI's hosted web search
@@ -174,27 +191,29 @@ reads). See [ADR-015](docs/decisions/ADR-015-web-search-research.md). Morning Br
 
 ## Environment variables
 
-| Variable                                                           | Required  | Purpose                                                 |
-| ------------------------------------------------------------------ | --------- | ------------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | yes       | Auth + data (browser-safe; RLS enforces access)         |
-| `OPENAI_API_KEY`                                                   | for chat  | Server-only AI provider key                             |
-| `OPENAI_MODEL`, `OPENAI_MODEL_FAST`                                | no        | Model names (defaults `gpt-5-mini` / `gpt-5-nano`)      |
-| `NEXT_PUBLIC_APP_URL`                                              | prod      | Base URL for auth redirects                             |
-| `ELISE_ENV`                                                        | no        | `development` / `staging` / `production` log tag        |
-| `CHAT_RATE_LIMIT_PER_MINUTE`                                       | no        | Per-user chat rate limit (default 20)                   |
-| `SUPABASE_SECRET_KEY`                                              | Google    | Server-only: encrypted credential store                 |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`             | Google    | OAuth client for Calendar/Tasks/Gmail connections       |
-| `ELISE_ENCRYPTION_KEY` (+ optional `_PREVIOUS`)                    | Google    | AES-256-GCM key for OAuth credentials at rest           |
-| `TRIGGER_SECRET_KEY`                                               | Schedules | Trigger.dev secret key (one per environment)            |
-| `TRIGGER_PROJECT_REF`                                              | no        | Overrides the project ref in `trigger.config.ts`        |
-| `OPENAI_EMBEDDING_MODEL`                                           | no        | Knowledge embeddings (default `text-embedding-3-small`) |
-| `NOTION_OAUTH_CLIENT_ID`, `NOTION_OAUTH_CLIENT_SECRET`             | Notion    | Notion public integration for Knowledge                 |
-| `OPENAI_TRANSCRIBE_MODEL`, `OPENAI_TTS_MODEL`                      | no        | Voice (defaults `gpt-transcribe` / `gpt-4o-mini-tts`)   |
-| `OPENAI_WEB_SEARCH_MODEL`                                          | no        | Web search via OpenAI (default `gpt-4.1-mini`)          |
-| `TAVILY_API_KEY`                                                   | no        | Use Tavily for web search (faster; else OpenAI)         |
-| `WEB_SEARCH_PROVIDER`                                              | no        | Force `openai` or `tavily`                              |
-| `ELISE_ADMIN_EMAILS`                                               | no        | Who may open the internal usage page (`/admin/usage`)   |
-| `ELISE_FLAGS`                                                      | no        | Feature flag overrides (`src/config/flags.ts`)          |
+| Variable                                                            | Required  | Purpose                                                 |
+| ------------------------------------------------------------------- | --------- | ------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`  | yes       | Auth + data (browser-safe; RLS enforces access)         |
+| `OPENAI_API_KEY`                                                    | for chat  | Server-only AI provider key                             |
+| `OPENAI_MODEL`, `OPENAI_MODEL_FAST`                                 | no        | Model names (defaults `gpt-5-mini` / `gpt-5-nano`)      |
+| `NEXT_PUBLIC_APP_URL`                                               | prod      | Base URL for auth redirects                             |
+| `ELISE_ENV`                                                         | no        | `development` / `staging` / `production` log tag        |
+| `CHAT_RATE_LIMIT_PER_MINUTE`                                        | no        | Per-user chat rate limit (default 20)                   |
+| `SUPABASE_SECRET_KEY`                                               | Google    | Server-only: encrypted credential store                 |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`              | Google    | OAuth client for Calendar/Tasks/Gmail connections       |
+| `ELISE_ENCRYPTION_KEY` (+ optional `_PREVIOUS`)                     | Google    | AES-256-GCM key for OAuth credentials at rest           |
+| `TRIGGER_SECRET_KEY`                                                | Schedules | Trigger.dev secret key (one per environment)            |
+| `TRIGGER_PROJECT_REF`                                               | no        | Overrides the project ref in `trigger.config.ts`        |
+| `OPENAI_EMBEDDING_MODEL`                                            | no        | Knowledge embeddings (default `text-embedding-3-small`) |
+| `NOTION_OAUTH_CLIENT_ID`, `NOTION_OAUTH_CLIENT_SECRET`              | Notion    | Notion public integration for Knowledge                 |
+| `OPENAI_TRANSCRIBE_MODEL`, `OPENAI_TTS_MODEL`                       | no        | Voice (defaults `gpt-transcribe` / `gpt-4o-mini-tts`)   |
+| `OPENAI_WEB_SEARCH_MODEL`                                           | no        | Web search via OpenAI (default `gpt-4.1-mini`)          |
+| `TAVILY_API_KEY`                                                    | no        | Use Tavily for web search (faster; else OpenAI)         |
+| `WEB_SEARCH_PROVIDER`                                               | no        | Force `openai` or `tavily`                              |
+| `GOOGLE_MAPS_SERVER_API_KEY`                                        | no        | Location: places, routes, geocoding (ADR-023)           |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | no        | Location: the map in the browser (restricted key)       |
+| `ELISE_ADMIN_EMAILS`                                                | no        | Who may open the internal usage page (`/admin/usage`)   |
+| `ELISE_FLAGS`                                                       | no        | Feature flag overrides (`src/config/flags.ts`)          |
 
 ## Scripts
 

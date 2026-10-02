@@ -37,12 +37,19 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
   async spaces(): Promise<SpaceInfo[]> {
     const { data, error } = await this.db
       .from("knowledge_spaces")
-      .select("id, name, parent_space_id")
+      .select("id, name, parent_space_id, description")
       .eq("workspace_id", this.workspaceId)
       .eq("status", "active")
       .order("name");
     if (error) throw new AppError("INTERNAL_ERROR", "Could not load Spaces", { cause: error });
-    return spacePaths(data.map((s) => ({ id: s.id, name: s.name, parentId: s.parent_space_id })));
+    return spacePaths(
+      data.map((s) => ({
+        id: s.id,
+        name: s.name,
+        parentId: s.parent_space_id,
+        aliases: s.description ? [s.description] : [],
+      })),
+    );
   }
 
   async search(q: {
@@ -125,6 +132,23 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
         },
       ];
     });
+    // Development only: enough to see why a passage was or wasn't found — ids, sources and
+    // scores, never document text or the user's question.
+    if (process.env.NODE_ENV !== "production")
+      logger.info("knowledge.search_debug", {
+        keywords: keywordQuery(q.text).split(" | ").length,
+        scope: q.spaceIds ?? "all",
+        items_scope: q.itemIds?.length ?? null,
+        candidates: hits.map((h) => ({
+          chunk: h.chunkId,
+          item: h.itemId,
+          source: h.sourceType,
+          space: h.spaceId,
+          score: Number(h.score.toFixed(4)),
+          similarity: h.similarity === null ? null : Number(h.similarity.toFixed(4)),
+          keyword: h.keywordMatched,
+        })),
+      });
     logger.info("knowledge.search", {
       workspace_id: this.workspaceId,
       scoped_spaces: q.spaceIds?.length ?? "all",

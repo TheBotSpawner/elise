@@ -22,9 +22,16 @@ export class SupabaseHistoryLinks implements HistoryLinksPort {
   async nodes(): Promise<KnowledgeNode[]> {
     const { data } = await this.db
       .from("knowledge_spaces")
-      .select("id, name, parent_space_id, status")
+      .select("id, name, parent_space_id, status, description")
       .eq("workspace_id", this.workspaceId);
     const rows = data ?? [];
+    // A one-line context is an alias too ("Análisis Matemático II · 2026"); read apart so a
+    // database without the context column still works.
+    const { data: contexts } = await this.db
+      .from("knowledge_spaces")
+      .select("id, context")
+      .eq("workspace_id", this.workspaceId);
+    const contextOf = new Map((contexts ?? []).map((r) => [r.id, r.context]));
     const names = new Map(rows.map((r) => [r.id, r.name]));
     return rows.map((r) => ({
       id: r.id,
@@ -32,6 +39,9 @@ export class SupabaseHistoryLinks implements HistoryLinksPort {
       parentId: r.parent_space_id,
       parentName: r.parent_space_id ? (names.get(r.parent_space_id) ?? null) : null,
       archived: r.status !== "active",
+      aliases: [r.description, contextOf.get(r.id)?.split(/\r?\n/)[0]].filter((x): x is string =>
+        Boolean(x?.trim()),
+      ),
     }));
   }
 

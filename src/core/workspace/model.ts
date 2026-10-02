@@ -35,6 +35,8 @@ export const SURFACE_TYPES = [
   "shortcut",
   "visualization",
   "media",
+  "map",
+  "place",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
@@ -108,7 +110,8 @@ export interface SurfaceRef {
     | "settings"
     | "web_page"
     | "context_profile"
-    | "study_session";
+    | "study_session"
+    | "place";
   id: string;
 }
 

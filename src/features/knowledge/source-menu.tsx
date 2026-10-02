@@ -94,10 +94,28 @@ export function SourceMenu({
           <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-[14px]">
             <dt className="text-muted">{k.sourceDetails.state}</dt>
             <dd>{k.sourceState[s.state]}</dd>
+            {s.runningSince && (
+              <>
+                <dt className="text-muted">{k.sourceDetails.runningSince}</dt>
+                <dd>{when(s.runningSince)}</dd>
+              </>
+            )}
             <dt className="text-muted">{k.sourceDetails.lastSync}</dt>
             <dd>{s.lastSyncedAt ? when(s.lastSyncedAt) : "—"}</dd>
-            <dt className="text-muted">{k.sourceDetails.nextCheck}</dt>
-            <dd>{s.nextSyncAt ? when(s.nextSyncAt) : "—"}</dd>
+            {s.lastRunAt && s.lastRunAt !== s.lastSyncedAt && (
+              <>
+                <dt className="text-muted">{k.sourceDetails.lastRun}</dt>
+                <dd>{when(s.lastRunAt)}</dd>
+              </>
+            )}
+            {s.state !== "needs_attention" && s.nextSyncAt && (
+              <>
+                <dt className="text-muted">{k.sourceDetails.nextCheck}</dt>
+                <dd>{when(s.nextSyncAt)}</dd>
+              </>
+            )}
+            <dt className="text-muted">{k.sourceDetails.discovered}</dt>
+            <dd>{s.discovered ?? "—"}</dd>
             <dt className="text-muted">{k.sourceDetails.indexed}</dt>
             <dd>
               {s.counts.ready}
@@ -107,12 +125,41 @@ export function SourceMenu({
             {s.state === "needs_attention" && s.lastErrorCode && (
               <>
                 <dt className="text-muted">{k.sourceDetails.lastError}</dt>
-                <dd>{errorText(t, { code: s.lastErrorCode })}</dd>
+                <dd>
+                  {k.sourceDetails.errors[s.lastErrorCode] ??
+                    errorText(t, { code: s.lastErrorCode })}
+                </dd>
               </>
             )}
           </dl>
           {s.state === "needs_attention" && s.counts.ready > 0 && (
             <p className="mt-4 text-[13px] text-muted">{k.sourceDetails.stillAvailable}</p>
+          )}
+          {s.state === "needs_attention" && (
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  setDetails(false);
+                  onRemove();
+                }}
+                className="h-9 rounded-full px-4 text-[13.5px] text-muted hover:text-danger-text disabled:opacity-50"
+              >
+                {k.sourceDetails.remove}
+              </button>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  setDetails(false);
+                  onSyncNow();
+                }}
+                className="h-9 rounded-full bg-fg px-4 text-[13.5px] font-medium text-bg disabled:opacity-50"
+              >
+                {k.sourceDetails.retry}
+              </button>
+            </div>
           )}
         </Dialog>
       )}

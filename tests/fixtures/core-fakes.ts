@@ -22,6 +22,7 @@ import { HABIT_TOOLS } from "@/core/tools/habits";
 import { HISTORY_TOOLS } from "@/core/tools/history";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { LIST_TOOLS } from "@/core/tools/lists";
+import { LOCATION_TOOLS } from "@/core/tools/location";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { PLANNING_TOOLS } from "@/core/tools/planning";
@@ -244,6 +245,7 @@ export function makePorts(
       ...WORKSPACE_TOOLS,
       ...MEETING_TOOLS,
       ...WEB_TOOLS,
+      ...LOCATION_TOOLS,
       ...CONTEXT_TOOLS,
       ...STUDY_TOOLS,
       ...PLANNING_TOOLS,

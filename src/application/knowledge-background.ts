@@ -125,6 +125,8 @@ function knowledgeRuntime(): BackgroundRuntime {
  */
 export async function syncDueSources(workspaceId: string, spaceIds: string[] | null = null) {
   const store = new SupabaseKnowledgeStore(createAdminClient());
+  // Work lost by the runtime is closed first, so it can't block the restart below.
+  await recoverStaleWork(workspaceId);
   const due = (await store.dueSources(new Date(), 20)).filter(
     (s) => s.workspace_id === workspaceId && (!spaceIds || spaceIds.includes(s.space_id)),
   );
@@ -178,10 +180,39 @@ export async function runSync(job: {
   workspaceId: string;
   syncRunId: string;
 }): Promise<SyncCounts | null> {
-  return syncSource(syncPorts(await workspaceContext(job.workspaceId)), job);
+  try {
+    return await syncSource(syncPorts(await workspaceContext(job.workspaceId)), job);
+  } catch (error) {
+    // Anything that escaped the sync (loading the workspace, the store) still closes the run:
+    // a crashed task must never leave its source "preparing".
+    const code = (error as { code?: string }).code ?? "INTERNAL_ERROR";
+    const store = new SupabaseKnowledgeStore(createAdminClient());
+    const loaded = await store.loadRun(job.workspaceId, job.syncRunId).catch(() => null);
+    await store.failRun(job.workspaceId, job.syncRunId, code).catch(() => undefined);
+    if (loaded)
+      await store
+        .markSourceAttention(job.workspaceId, loaded.source.id, code, new Date())
+        .catch(() => undefined);
+    log("knowledge.sync_crashed", { sync_run_id: job.syncRunId, code });
+    throw error;
+  }
 }
 
-/** Starts one sync of a source (manual, initial or periodic), at most one at a time. */
+/** Closes syncs and ingestions the runtime lost (see SOURCE_LIFECYCLE). Cheap when none. */
+export async function recoverStaleWork(workspaceId: string | null) {
+  const closed = await new SupabaseKnowledgeStore(createAdminClient()).recoverStale(
+    new Date(),
+    workspaceId,
+  );
+  if (closed.runs || closed.versions) log("knowledge.stale_recovered", closed);
+  return closed;
+}
+
+/**
+ * Starts one sync of a source (manual, initial or periodic), at most one at a time: null when
+ * one is already active. If the runtime refuses the job, the run closes and the source says it
+ * needs attention — it never sits "preparing" waiting for work nobody will do.
+ */
 export async function startSync(
   workspaceId: string,
   sourceId: string,
@@ -190,6 +221,7 @@ export async function startSync(
   const store = new SupabaseKnowledgeStore(createAdminClient());
   const runId = await store.createSyncRun(workspaceId, sourceId, trigger);
   if (!runId) return null;
+  log("knowledge.sync_queued", { sync_run_id: runId, source_id: sourceId, trigger });
   try {
     const { runtimeJobId } = await knowledgeRuntime().enqueue({
       type: "knowledge.sync",
@@ -198,7 +230,10 @@ export async function startSync(
     });
     await store.setRunRuntime(workspaceId, runId, runtimeJobId);
   } catch (error) {
-    await store.failRun(workspaceId, runId, "BACKGROUND_ERROR");
+    const code = (error as { code?: string }).code ?? "BACKGROUND_ERROR";
+    await store.failRun(workspaceId, runId, code);
+    await store.markSourceAttention(workspaceId, sourceId, code, new Date());
+    log("knowledge.sync_enqueue_failed", { sync_run_id: runId, source_id: sourceId, code });
     throw error;
   }
   return runId;
@@ -222,7 +257,7 @@ export async function enqueueIngestion(workspaceId: string, versionId: string, f
 export async function dispatchKnowledgeSyncs(): Promise<{ started: number }> {
   const store = new SupabaseKnowledgeStore(createAdminClient());
   const now = new Date();
-  await store.expireStaleSyncs(new Date(now.getTime() - 45 * 60_000));
+  await recoverStaleWork(null);
   let started = 0;
   for (const source of await store.dueSources(now, 50)) {
     const id = await startSync(source.workspace_id, source.id, "scheduled").catch(() => null);

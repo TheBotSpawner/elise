@@ -4,6 +4,7 @@ import { executeToolCall, type ToolCallOutcome } from "@/core/agents/executor";
 import type { ToolDisplay } from "@/core/agents/tools";
 import { AppError, toAppError, toPublicError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
+import { wellFormed } from "@/core/text";
 import {
   approvalDecidedOps,
   presentOps,
@@ -11,6 +12,7 @@ import {
   supersededOps,
   surfacesFromOutcome,
 } from "@/core/workspace/from-results";
+import { forStorage } from "@/core/workspace/location";
 import {
   applyOps,
   emptyWorkspace,
@@ -167,8 +169,9 @@ export async function saveWorkspace(auth: AuthContext, thread: ThreadRef, state:
       user_id: auth.userId,
       conversation_id: thread.kind === "conversation" ? thread.id : null,
       session_id: thread.kind === "session" ? thread.id : null,
-      intent: (state.intent ?? null) as unknown as Json,
-      surfaces: state.surfaces as unknown as Json,
+      intent: wellFormed(state.intent ?? null) as unknown as Json,
+      // The user's shared position never reaches storage (ADR-023).
+      surfaces: wellFormed(state.surfaces.map(forStorage)) as unknown as Json,
       focus_id: state.focusId,
       turn: state.turn,
       next_handle: state.nextHandle,
