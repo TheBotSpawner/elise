@@ -105,8 +105,14 @@ export function locationCapability(
     searchPlaces: (q) => step("search", JSON.stringify(q), place, (p, s) => p.searchPlaces(q, s)),
     getPlace: (id, lang) =>
       step("place", `${id}:${lang}`, place, (p, s) => p.getPlace(id, lang, s)),
-    geocode: (a, lang) =>
-      step("geocode", `${a.toLowerCase()}:${lang}`, place, (p, s) => p.geocode(a, lang, s)),
+    geocode: (a, lang, near) =>
+      step(
+        "geocode",
+        // The bias is part of the key, at ~1 km so nearby turns share it.
+        `${a.toLowerCase()}:${lang}:${near ? `${near.lat.toFixed(2)},${near.lng.toFixed(2)}` : ""}`,
+        place,
+        (p, s) => p.geocode(a, lang, near, s),
+      ),
     reverseGeocode: (at, lang) =>
       step("reverse", `${at.lat},${at.lng}:${lang}`, place, (p, s) =>
         p.reverseGeocode(at, lang, s),

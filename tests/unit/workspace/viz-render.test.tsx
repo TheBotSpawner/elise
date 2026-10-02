@@ -71,3 +71,64 @@ describe("comparison charts", () => {
     expect(screen.getByText("Scenarios, not probabilities.")).toBeTruthy();
   });
 });
+
+const schedule = (view: "timeline" | "calendar" | "agenda" | "intervals", over = {}) =>
+  visualizationSpec.parse({
+    type: "temporal",
+    title: "Course schedule",
+    view,
+    today: "2026-08-01",
+    sources: [{ title: "Syllabus · p. 2", url: "/knowledge/items/doc-1", excerpt: "Finals on…" }],
+    events: [
+      { title: "Classes start", start: "2026-08-03", kind: "start", source: 0 },
+      { title: "Midterm", start: "2026-08-20", kind: "exam", importance: "high", source: 0 },
+      { title: "Finals", start: "2026-08-24", end: "2026-08-25", kind: "exam", source: 0 },
+      { title: "Term ends", start: "2026-08-28", kind: "end", source: 0, conflict: true },
+    ],
+    ...over,
+  });
+
+describe("temporal views", () => {
+  it("timeline: ranges stay ranges, the source passage opens on demand, conflicts are labelled", () => {
+    view(schedule("timeline"));
+    expect(screen.getByText(/^Aug 24\s–\s25$/)).toBeTruthy();
+    expect(screen.getByText("Sources disagree")).toBeTruthy();
+    expect(screen.queryByText("Finals on…")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Midterm/ }));
+    expect(screen.getByText("Finals on…")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Syllabus · p. 2" }).getAttribute("href")).toBe(
+      "/knowledge/items/doc-1",
+    );
+  });
+
+  it("calendar: a month grid whose dated days name their events", () => {
+    view(schedule("calendar"));
+    expect(screen.getByRole("grid", { name: /August 2026/ })).toBeTruthy();
+    expect(screen.getByRole("gridcell", { name: /Midterm/ })).toBeTruthy();
+    // A two-day range marks both days.
+    expect(screen.getAllByRole("gridcell", { name: /Finals/ })).toHaveLength(2);
+  });
+
+  it("a focus shows only its events and can reveal the rest", () => {
+    view(schedule("timeline", { focus: { kinds: ["exam"] } }));
+    expect(screen.queryByText("Classes start")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show all 4" }));
+    expect(screen.getByText("Classes start")).toBeTruthy();
+  });
+
+  it("agenda and intervals render in dark mode without errors", () => {
+    view(
+      schedule("agenda", {
+        events: [
+          { title: "Standup", start: "2026-08-03T09:00", end: "2026-08-03T09:15", kind: "meeting" },
+          { title: "Review", start: "2026-08-03T16:30", kind: "meeting" },
+        ],
+        sources: undefined,
+      }),
+      true,
+    );
+    expect(screen.getByText("09:00–09:15")).toBeTruthy();
+    view(schedule("intervals"), true);
+    expect(screen.getAllByText("Finals").length).toBeGreaterThan(0);
+  });
+});

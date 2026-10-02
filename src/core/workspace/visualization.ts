@@ -40,6 +40,8 @@ const sourceItem = z
       .max(2000)
       .refine((u) => /^https:\/\//.test(u) || u.startsWith("/"), "https or internal links only")
       .nullable(),
+    /** The passage the datapoint was read from (documents), shown on demand. */
+    excerpt: z.string().trim().max(300).optional(),
   })
   .strict();
 
@@ -85,10 +87,32 @@ export const VISUALIZATION_TYPES = [
   "table",
   "dot",
   "range",
+  "temporal",
 ] as const;
 export type VisualizationType = (typeof VISUALIZATION_TYPES)[number];
 
 const DAY_STATES = ["done", "miss", "rest", "today", "future"] as const;
+
+/** Temporal representations (ADR-028): the planner picks one from the events' density. */
+export const TEMPORAL_VIEWS = ["timeline", "calendar", "agenda", "intervals", "list"] as const;
+export type TemporalView = (typeof TEMPORAL_VIEWS)[number];
+export const TEMPORAL_KINDS = [
+  "start",
+  "end",
+  "exam",
+  "deadline",
+  "holiday",
+  "break",
+  "meeting",
+  "delivery",
+  "milestone",
+  "general",
+] as const;
+export type TemporalKind = (typeof TEMPORAL_KINDS)[number];
+/** A day ("2026-03-25"), a local time ("2026-03-25T09:30") or a whole month ("2026-03"). */
+export const TEMPORAL_WHEN = /^\d{4}-\d{2}(-\d{2}(T\d{2}:\d{2})?)?$/;
+const when = z.string().regex(TEMPORAL_WHEN, "YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM");
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const visualizationSpec = z
   .discriminatedUnion("type", [
@@ -207,6 +231,50 @@ export const visualizationSpec = z
       .strict(),
     z
       .object({
+        /**
+         * Dated events (a course schedule, deadlines, an itinerary, today's agenda) in the
+         * representation their density calls for. Every event keeps its source; a focus only
+         * narrows what is shown, so "solo los parciales" never loses the rest.
+         */
+        type: z.literal("temporal"),
+        ...base,
+        view: z.enum(TEMPORAL_VIEWS),
+        events: z
+          .array(
+            z
+              .object({
+                title: z.string().trim().min(1).max(100),
+                start: when,
+                /** Inclusive end of a range ("22–23 Sep") or a timed event. */
+                end: when.optional(),
+                kind: z.enum(TEMPORAL_KINDS).default("general"),
+                importance: z.enum(["high", "normal", "low"]).default("normal"),
+                detail: z.string().trim().max(160).optional(),
+                /** A repeating pattern in words ("every Tuesday"); never expanded into dates. */
+                recurrence: z.string().trim().max(60).optional(),
+                source: sourceRef.optional(),
+                /** Another source gives a different date for the same event. */
+                conflict: z.boolean().optional(),
+                uncertain: z.boolean().optional(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(40),
+        focus: z
+          .object({
+            kinds: z.array(z.enum(TEMPORAL_KINDS)).max(10).optional(),
+            from: day.optional(),
+            to: day.optional(),
+          })
+          .strict()
+          .optional(),
+        /** The user's local date, for the "today" marker. */
+        today: day,
+      })
+      .strict(),
+    z
+      .object({
         type: z.literal("diverging"),
         ...base,
         rows: z.array(z.object({ label, value }).strict()).min(1).max(12),
@@ -295,6 +363,12 @@ export const visualizationSpec = z
     const refs: (number | undefined)[] = [];
     if (spec.type === "dot") refs.push(...spec.rows.map((r) => r.source));
     if (spec.type === "range") refs.push(...spec.scenarios.map((r) => r.source));
+    if (spec.type === "temporal") {
+      refs.push(...spec.events.map((e) => e.source));
+      for (const e of spec.events)
+        if (e.end && e.end < e.start)
+          ctx.addIssue({ code: "custom", message: `"${e.title}" ends before it starts` });
+    }
     if ("reference" in spec && spec.reference) refs.push(spec.reference.source);
     if (refs.some((r) => r !== undefined && r >= n))
       ctx.addIssue({ code: "custom", message: "A datapoint points to a missing source" });

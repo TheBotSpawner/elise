@@ -13,9 +13,11 @@ import {
   type VoiceEvent,
   type VoiceState,
 } from "@/core/voice/session";
+import { acknowledgement, PROGRESS_TTL_MS, stillSayable } from "@/core/voice/speech-plan";
 import { SentenceChunker, SpokenSplitter, toSpeakable } from "@/core/voice/speech-text";
 import { calibrateFloor, TurnDetector, VOICE_TURN } from "@/core/voice/turn";
 import { emptyWorkspace } from "@/core/workspace/model";
+import type { SpeakOptions } from "@/features/voice/speech-player";
 import {
   VoiceController,
   type MicPort,
@@ -223,13 +225,16 @@ class FakeMic implements MicPort {
 
 class FakePlayer implements PlayerPort {
   spoken: string[] = [];
+  /** Every line with its options: validity is checked when a test "plays" it. */
+  lines: { text: string; options: SpeakOptions }[] = [];
   stopped = 0;
   chimes = 0;
   speaking = false;
   onStart: (() => void) | null = null;
   onIdle: (() => void) | null = null;
   onError: (() => void) | null = null;
-  speak(text: string) {
+  speak(text: string, _language?: unknown, options: SpeakOptions = {}) {
+    this.lines.push({ text, options });
     this.spoken.push(text);
     if (!this.speaking) {
       this.speaking = true;
@@ -932,5 +937,100 @@ describe("spoken vs display (ADR-019)", () => {
       display: "Hoy tenés 2 < 3 reuniones.",
     });
     expect(run(["Termina con <spo"])).toEqual({ spoken: "", display: "Termina con <spo" });
+  });
+});
+
+// ── Voice + Canvas on one lifecycle (ADR-028) ───────────────────────────────
+
+describe("speech follows the real state of the work", () => {
+  /** What would actually be heard if each queued line started playing now. */
+  const audible = (p: FakePlayer) =>
+    p.lines.filter((l) => !l.options.valid || l.options.valid()).map((l) => l.text);
+
+  it("acknowledges as soon as the work starts, concurrently with the tool", async () => {
+    const { controller, player, say, timings } = setup();
+    await controller.start();
+    await say();
+    controller.onStream({ type: "conversation" });
+    controller.onStream({ type: "tool_started", name: "web.discover" });
+    // The ack is queued at ACTIVITY_STARTED, before any result exists.
+    expect(player.spoken).toEqual(["Lo busco."]);
+    expect(audible(player)).toEqual(["Lo busco."]);
+    player.lines[0]!.options.onBegin?.();
+    controller.onStream({ type: "workspace" });
+    controller.onStream({ type: "tool_finished", outcome: { status: "succeeded" } });
+    controller.onStream({ type: "spoken", delta: "Encontré seis publicaciones. " });
+    controller.onStream({ type: "finished", failed: false });
+    player.finishPlaying();
+    expect(timings[0]).toMatchObject({
+      ackReady: expect.any(Number),
+      ackTts: expect.any(Number),
+      firstTool: expect.any(Number),
+      firstSurface: expect.any(Number),
+      toolsDone: expect.any(Number),
+      resultSpeech: expect.any(Number),
+    });
+  });
+
+  it("a progress line not yet played when results arrive is dropped — never 'voy a buscar' after the Canvas", async () => {
+    const { controller, player, say } = setup();
+    await controller.start();
+    await say();
+    controller.onStream({ type: "tool_started", name: "location.getRoute" });
+    controller.onStream({ type: "workspace" });
+    controller.onStream({ type: "tool_finished", outcome: { status: "succeeded" } });
+    controller.onStream({ type: "spoken", delta: "Son unos 18 minutos en auto. " });
+    // The ack's moment passed (the route is on screen and the result is being said).
+    expect(audible(player)).toEqual(["Son unos 18 minutos en auto."]);
+  });
+
+  it("the model's own preamble is released when the tool starts, not after it finishes", async () => {
+    const { controller, player, say } = setup();
+    await controller.start();
+    await say();
+    // No trailing space: before, this sentence waited for the post-tool answer to be spoken.
+    controller.onStream({ type: "spoken", delta: "Dejame revisar tu agenda." });
+    expect(player.spoken).toEqual([]);
+    controller.onStream({ type: "tool_started", name: "calendar.listEvents" });
+    expect(player.spoken).toEqual(["Dejame revisar tu agenda."]);
+    // …and no second, deterministic acknowledgement on top of it.
+    controller.onStream({ type: "tool_started", name: "email.search" });
+    expect(player.spoken).toHaveLength(1);
+  });
+
+  it("results, approvals and conversational replies are never dropped; instant tools get no ack", async () => {
+    const { controller, player, say } = setup();
+    await controller.start();
+    await say();
+    controller.onStream({ type: "tool_started", name: "settings.update" });
+    expect(player.spoken).toEqual([]);
+    controller.onStream({ type: "tool_finished", outcome: { status: "approval_required" } });
+    controller.onStream({ type: "spoken", delta: "¿Lo cambio? " });
+    controller.onStream({ type: "finished", failed: false });
+    expect(audible(player)).toEqual(["¿Lo cambio?"]);
+  });
+
+  it("a stale progress line expires even while work continues", () => {
+    const line = { category: "progress" as const, createdAt: 0 };
+    const running = { running: 1, started: true, resultQueued: false };
+    expect(stillSayable(line, running, 1_000)).toBe(true);
+    expect(stillSayable(line, running, PROGRESS_TTL_MS + 1)).toBe(false);
+    expect(stillSayable(line, { ...running, running: 0 }, 1_000)).toBe(false);
+    expect(
+      stillSayable({ ...line, category: "result" }, { ...running, resultQueued: true }, 99_000),
+    ).toBe(true);
+    expect(acknowledgement("knowledge.search", "es")).toBe("Reviso el material.");
+    expect(acknowledgement("history.search", "en")).toBe("Searching our conversations.");
+    expect(acknowledgement("ui.present", "es")).toBeNull();
+  });
+
+  it("an interruption stops speech at once; nothing queued plays after it", async () => {
+    const { controller, player, say } = setup();
+    await controller.start();
+    await say();
+    controller.onStream({ type: "tool_started", name: "web.search" });
+    controller.interrupt();
+    expect(player.stopped).toBeGreaterThan(0);
+    expect(audible(player)).toEqual([]);
   });
 });

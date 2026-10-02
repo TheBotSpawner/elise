@@ -391,8 +391,12 @@ export class GoogleMapsLocation implements LocationProvider {
     });
   }
 
-  geocode(address: string, language: "es" | "en", signal?: AbortSignal) {
-    return this.geocodeQuery(`address=${encodeURIComponent(address)}`, language, signal);
+  geocode(address: string, language: "es" | "en", near?: LatLng | null, signal?: AbortSignal) {
+    // A viewport bias (±0.3°, ~30 km) around the context: a preference, not a filter.
+    const bounds = near
+      ? `&bounds=${near.lat - 0.3},${near.lng - 0.3}|${near.lat + 0.3},${near.lng + 0.3}`
+      : "";
+    return this.geocodeQuery(`address=${encodeURIComponent(address)}${bounds}`, language, signal);
   }
 
   reverseGeocode(at: LatLng, language: "es" | "en", signal?: AbortSignal) {

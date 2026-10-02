@@ -21,6 +21,7 @@ import {
   type ChartSize,
 } from "./charts";
 import { DotChart, PointsTable, RangeChart, SourcesFooter } from "./scale-charts";
+import { TemporalChart } from "./temporal-chart";
 
 const CHART_H: Record<ChartSize, number> = { small: 120, medium: 170, large: 230, focus: 380 };
 
@@ -107,6 +108,8 @@ function Chart({ spec, size }: { spec: VisualizationSpec; size: ChartSize }) {
       return <Streak spec={spec} />;
     case "table":
       return <DataTable spec={spec} />;
+    case "temporal":
+      return <TemporalChart spec={spec} size={size} />;
   }
 }
 

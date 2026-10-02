@@ -90,7 +90,13 @@ export interface LocationProvider {
   readonly id: string;
   searchPlaces(q: PlaceSearch, signal?: AbortSignal): Promise<Place[]>;
   getPlace(id: string, language: "es" | "en", signal?: AbortSignal): Promise<Place | null>;
-  geocode(address: string, language: "es" | "en", signal?: AbortSignal): Promise<Place[]>;
+  /** `near` biases ambiguous addresses toward a region (never restricts them). */
+  geocode(
+    address: string,
+    language: "es" | "en",
+    near?: LatLng | null,
+    signal?: AbortSignal,
+  ): Promise<Place[]>;
   reverseGeocode(at: LatLng, language: "es" | "en", signal?: AbortSignal): Promise<Place[]>;
   route(
     r: {
@@ -128,6 +134,61 @@ export const LOCATION_LIMITS = {
   /** A shared position is forgotten after this long. */
   sharedTtlMs: 15 * 60_000,
 } as const;
+
+/**
+ * The device's own position (ADR-028), as any runtime reports it (browser now; Desktop
+ * Companion or a native app later). Ephemeral: one recent sample in memory, never a history.
+ */
+export type DeviceLocationStatus = "allowed" | "blocked" | "unavailable" | "needs_permission";
+
+export interface DeviceLocation {
+  status: DeviceLocationStatus;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  /** Epoch ms. */
+  capturedAt: number;
+  source: "device";
+}
+
+export const DEVICE_LOCATION_LIMITS = {
+  /** A sample this recent is reused as is. */
+  freshMs: 2 * 60_000,
+  /** Older than this it is never used (the user may have moved). */
+  maxAgeMs: 15 * 60_000,
+  /** Worse than this (IP-level guesses) it isn't used as "here". */
+  maxAccuracyMeters: 5_000,
+  /** How long a turn may wait for a fresh fix before going on without it. */
+  captureTimeoutMs: 3_500,
+} as const;
+
+/**
+ * Whether a turn can use the sample as is, should refresh it first, or has nothing usable.
+ * A location question ("¿cuánto tardo…?", "cafés cerca") refreshes anything not fresh; other
+ * turns reuse a sample still within its age, so "here" keeps working in follow-ups.
+ */
+export function deviceLocationPlan(
+  sample: Pick<DeviceLocation, "capturedAt" | "accuracyMeters"> | null,
+  now: number,
+  locationTurn: boolean,
+): "use" | "refresh" | "none" {
+  const age = sample ? now - sample.capturedAt : Number.POSITIVE_INFINITY;
+  if (sample && age <= DEVICE_LOCATION_LIMITS.freshMs) return "use";
+  if (locationTurn) return "refresh";
+  return sample && age <= DEVICE_LOCATION_LIMITS.maxAgeMs ? "use" : "none";
+}
+
+/** A sample good enough to stand for "here" right now. */
+export function usableDeviceLocation(
+  sample: Pick<DeviceLocation, "capturedAt" | "accuracyMeters"> | null,
+  now: number,
+): boolean {
+  return (
+    !!sample &&
+    now - sample.capturedAt <= DEVICE_LOCATION_LIMITS.maxAgeMs &&
+    sample.accuracyMeters <= DEVICE_LOCATION_LIMITS.maxAccuracyMeters
+  );
+}
 
 /** A shared position, made coarse before it leaves the browser and again on the server. */
 export function coarse(p: LatLng): LatLng {

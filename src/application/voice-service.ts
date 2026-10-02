@@ -2,6 +2,7 @@ import "server-only";
 
 import { AppError } from "@/core/errors";
 import { VOICE_LIMITS, type VoiceLanguage } from "@/core/voice/providers";
+import { acknowledgements } from "@/core/voice/speech-plan";
 import { toSpeakable } from "@/core/voice/speech-text";
 import { getSpeechInputProvider, getSpeechOutputProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
@@ -121,6 +122,21 @@ export async function synthesizeSentence(
   const spoken = toSpeakable(text).slice(0, VOICE_LIMITS.maxSpokenChars);
   if (!spoken) throw new AppError("VALIDATION_ERROR", "Nothing to say");
   const provider = getSpeechOutputProvider();
+  // The acknowledgements (ADR-028) are a few fixed lines: synthesized once per instance and
+  // voice, then served from memory, so "Lo busco." plays while the work starts, not ~2 s later.
+  const fixed = ACKNOWLEDGEMENT_LINES.has(spoken);
+  const key = `${auth.profile.voice.voice}|${spoken}`;
+  const cached = fixed ? ackAudio.get(key) : undefined;
+  if (cached)
+    return {
+      stream: new ReadableStream({
+        start(c) {
+          c.enqueue(cached);
+          c.close();
+        },
+      }),
+      sampleRate: provider.format.sampleRate,
+    };
   const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
   const stream = await withUsageScope(scope, () =>
     provider.synthesize(
@@ -128,16 +144,34 @@ export async function synthesizeSentence(
       AbortSignal.timeout(SPEAK_TIMEOUT_MS),
     ),
   );
-  return { stream, sampleRate: provider.format.sampleRate };
+  if (!fixed) return { stream, sampleRate: provider.format.sampleRate };
+  const [live, copy] = stream.tee();
+  void new Response(copy)
+    .arrayBuffer()
+    .then((b) => b.byteLength && ackAudio.set(key, new Uint8Array(b)))
+    .catch(() => undefined);
+  return { stream: live, sampleRate: provider.format.sampleRate };
 }
+
+const ACKNOWLEDGEMENT_LINES = new Set([
+  ...acknowledgements("es").map(toSpeakable),
+  ...acknowledgements("en").map(toSpeakable),
+]);
+// Bounded by construction: ~30 fixed lines × the few voices (~40 KB each). Not user content.
+const ackAudio = new Map<string, Uint8Array>();
 
 /** Latency of one voice turn, in milliseconds from the moment the microphone opened. */
 export const VOICE_TIMINGS = [
   "speechEnd",
   "transcriptFinal",
   "runtimeStart",
+  "ackReady",
+  "ackTts",
   "firstTool",
+  "firstSurface",
+  "toolsDone",
   "firstText",
+  "resultSpeech",
   "audioStart",
   "turnComplete",
 ] as const;

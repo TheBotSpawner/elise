@@ -195,6 +195,7 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       searchNews: READ,
       open: READ,
       research: READ,
+      discover: READ,
       saveToKnowledge: WRITE,
     },
   },
@@ -326,6 +327,7 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       present: READ,
       // Charts planned from sourced evidence (ADR-027).
       visualize: READ,
+      timeline: READ,
       update: READ,
       focus: READ,
       dismiss: READ,

@@ -15,6 +15,11 @@ const body = z
     conversationId: z.uuid().nullable(),
     sessionId: z.uuid().nullable(),
     text: z.string().trim().min(1).max(4000),
+    /** The user's position, only while they share it (ADR-023/028); coarse, never stored. */
+    here: z
+      .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) })
+      .strict()
+      .optional(),
   })
   .strict();
 

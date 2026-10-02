@@ -8,6 +8,7 @@ import zlib from "node:zlib";
 
 import { AppError } from "@/core/errors";
 import { extractPage, normalizeDate } from "@/core/web/extract";
+import { extractItems, itemLinks, readLimitation } from "@/core/web/items";
 import { WEB_LIMITS, type WebPage } from "@/core/web/model";
 import { checkUrl, cleanUrl, domainOf, isPrivateAddress } from "@/core/web/url";
 
@@ -156,9 +157,10 @@ export async function fetchPage(rawUrl: string): Promise<WebPage> {
         current = new URL(res.location, check.url).toString();
         continue;
       }
-      if (res.status === 401 || res.status === 403)
+      if (res.status === 401 || res.status === 403 || res.status === 429)
         throw new AppError("PERMISSION_DENIED", "The site doesn't allow reading this page", {
           recovery: "review",
+          details: { limitation: "blocked" },
         });
       if (res.status >= 400)
         throw new AppError("NOT_FOUND", `The page answered ${res.status}`, { recovery: "review" });
@@ -176,10 +178,26 @@ export async function fetchPage(rawUrl: string): Promise<WebPage> {
             canonicalUrl: null,
             text: raw.trim(),
           };
-      const text = extracted.text.slice(0, WEB_LIMITS.pageChars);
+      const finalUrl = cleanUrl(check.url.toString());
+      // Structured items (schema.org JSON-LD) are read even where the visible text is thin.
+      const items = isHtml ? extractItems(raw, finalUrl) : [];
+      const limitation = isHtml ? readLimitation(raw, extracted.text, rawUrl, finalUrl) : null;
+      // A verification page that answered 200 is not the page: say what really happened.
+      if (limitation && !items.length)
+        throw limitation === "blocked"
+          ? new AppError("PERMISSION_DENIED", "The site blocks automated reading of this page", {
+              recovery: "review",
+              details: { limitation },
+            })
+          : new AppError("NOT_FOUND", "This page only shows its content in a browser", {
+              recovery: "review",
+              details: { limitation },
+            });
+      const text = (
+        extracted.text.trim() ? extracted.text : items.map((i) => `• ${i.title}`).join("\n")
+      ).slice(0, WEB_LIMITS.pageChars);
       if (!text.trim())
         throw new AppError("NOT_FOUND", "The page has no readable text", { recovery: "review" });
-      const finalUrl = cleanUrl(check.url.toString());
       return {
         requestedUrl: rawUrl,
         url: finalUrl,
@@ -191,6 +209,8 @@ export async function fetchPage(rawUrl: string): Promise<WebPage> {
         retrievedAt,
         text,
         truncated: res.truncated || extracted.text.length > WEB_LIMITS.pageChars,
+        ...(items.length ? { items } : {}),
+        ...(isHtml && !items.length ? { itemLinks: itemLinks(raw, finalUrl) } : {}),
       };
     }
     throw new AppError("NOT_FOUND", "Too many redirects", { recovery: "review" });

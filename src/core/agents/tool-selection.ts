@@ -27,6 +27,10 @@ export const CORE_GROUPS: ReadonlySet<string> = new Set([
   "tasks",
 ]);
 
+/** A message about places or travel (the browser also refreshes the device location for it). */
+export const LOCATION_SIGNAL =
+  /\b(tard[oa]\w*|ruta|c[oó]mo llego|d[oó]nde (queda|est[aá])|cerca|near\w*|mapa|maps?|direcci[oó]n|address|km|kil[oó]metros?|viaje|llegar|desde .+ hasta|caf[eé]s?|restaurant\w*|farmacias?|routes?|how long|drive|walk\w*|en auto|caminando|colectivo|subte|tr[aá]nsito|por ac[aá]|around here|d[oó]nde estoy|where am i)\b/i;
+
 /** Words that point to a group (Spanish and English). Deliberately generous: a false positive
  * costs a few hundred tokens, a false negative an extra round trip. */
 const SIGNALS: readonly [string, RegExp][] = [
@@ -56,13 +60,10 @@ const SIGNALS: readonly [string, RegExp][] = [
     "schedules",
     /\b(program[aá]\w*|todos los d[ií]as|cada (d[ií]a|lunes|martes|mi[eé]rcoles|jueves|viernes|semana|mañana)|every (day|morning|week\w*)|morning brief|resumen (matutino|diario)|recordame cada)\b/i,
   ],
-  [
-    "location",
-    /\b(tard[oa]\w*|ruta|c[oó]mo llego|d[oó]nde (queda|est[aá])|cerca|near\w*|mapa|maps?|direcci[oó]n|address|km|kil[oó]metros?|viaje|llegar|desde .+ hasta|caf[eé]s?|restaurant\w*|farmacias?|routes?|how long|drive|walk\w*|en auto|caminando|colectivo|subte|tr[aá]nsito)\b/i,
-  ],
+  ["location", LOCATION_SIGNAL],
   [
     "web",
-    /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|clima|weather)\b/i,
+    /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|clima|weather|publicaci\w*|anuncios?|listings?|ofertas?|productos?|opciones|departamentos?|alquiler\w*|en venta|comprar|usados?|cursos?|buscame|encontrame|find me)\b/i,
   ],
 ];
 
@@ -74,6 +75,7 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   web_source: "web",
   web_news: "web",
   web_research: "web",
+  web_collection: "web",
   context_overview: "contexts",
   context_proposal: "contexts",
   study_question: "study",

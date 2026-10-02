@@ -206,6 +206,14 @@ function reportTimings(marks: VoiceMarks) {
   if (debug) {
     const w = window as unknown as { __eliseVoiceTimings?: VoiceMarks[] };
     (w.__eliseVoiceTimings ??= []).push(marks);
+    // The turn's lifecycle in order (ADR-028): speech end → ack → tools → Surface → result.
+    console.debug(
+      `[voice] timeline ${Object.entries(marks)
+        .filter((e): e is [string, number] => typeof e[1] === "number")
+        .sort((a, b) => a[1] - b[1])
+        .map(([k, v]) => `${k} ${v}ms`)
+        .join(" → ")}`,
+    );
   }
   void fetch("/api/voice/metrics", {
     method: "POST",

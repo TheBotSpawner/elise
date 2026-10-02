@@ -290,6 +290,42 @@ export const PAYLOADS = {
       )
       .max(4),
   }),
+  /** Concrete items found on the web (ADR-028): listings, products, options — each sourced. */
+  web_collection: z.object({
+    query: text(300),
+    domain: text(200).nullable(),
+    retrievedAt: text(40),
+    /** Still reading: results arrive progressively. */
+    searching: z.boolean(),
+    requested: z.number().int().min(1).max(12),
+    status: z.enum(["sufficient", "partial", "insufficient"]),
+    items: z
+      .array(
+        z.object({
+          title: text(200),
+          url: href,
+          domain: text(200),
+          price: z.number().finite().nullable(),
+          currency: z
+            .string()
+            .regex(/^[A-Z]{3}$/)
+            .nullable(),
+          image: href.nullable(),
+          attributes: z.array(z.object({ label: text(40), value: text(60) })).max(6),
+          /** Known only from the search index: its page couldn't be read. */
+          fromIndex: z.boolean(),
+        }),
+      )
+      .max(12),
+    limitations: z
+      .array(
+        z.object({
+          domain: text(200),
+          reason: z.enum(["blocked", "dynamic", "no_items", "not_found"]),
+        }),
+      )
+      .max(6),
+  }),
   // ── Contexts, Work and Study (ADR-016) ──
   context_overview: z.object({
     contextId: text(100),
@@ -715,6 +751,22 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
         )
         .join("; "),
   },
+  web_collection: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    // The concrete items answer the question: they lead.
+    priority: 82,
+    actions: () => [expand],
+    describe: (p) =>
+      `${p.items.length}/${p.requested} ${p.status}${p.searching ? " (searching)" : ""}: ${p.items
+        .map(
+          (it, i) =>
+            `${i + 1}) ${q(it.title)}${it.price !== null ? ` · ${it.currency ?? ""} ${it.price}` : ""} · ${it.domain} (${it.url})`,
+        )
+        .join(
+          "; ",
+        )}${p.limitations.length ? ` — limits: ${p.limitations.map((l) => `${l.domain} ${l.reason}`).join(", ")}` : ""}`,
+  },
   context_overview: {
     sizes: ["small", "medium", "large"],
     size: "medium",
@@ -959,6 +1011,17 @@ function describeSpec(spec: VisualizationSpec): string {
       return `${head}${ref(spec)}: ${spec.scenarios
         .map((r) => `${r.label}=${r.value}${src(spec, r.source)}`)
         .join(", ")}`;
+    case "temporal":
+      return `${spec.view} ${q(spec.title)}${
+        spec.focus
+          ? ` (showing ${[spec.focus.kinds?.join("/"), spec.focus.from, spec.focus.to].filter(Boolean).join(" ")})`
+          : ""
+      }: ${spec.events
+        .map(
+          (e) =>
+            `${e.start}${e.end ? `..${e.end}` : ""} ${e.kind}${e.importance === "high" ? "!" : ""} ${q(e.title)}${src(spec, e.source)}${e.conflict ? " CONFLICT" : ""}`,
+        )
+        .join("; ")}`;
   }
 }
 

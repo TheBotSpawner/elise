@@ -1,3 +1,5 @@
+import type { WebItem } from "./items";
+
 /**
  * Web (ADR-015): the current external world, as evidence. Distinct from Knowledge (the user's
  * own sources), Recall (past interactions) and structured providers (private live data).
@@ -52,6 +54,10 @@ export interface WebPage {
   /** Readable text (boilerplate removed), capped. */
   text: string;
   truncated: boolean;
+  /** Concrete items the page publishes as structured data (ADR-028). */
+  items?: WebItem[];
+  /** Same-site links that look like item pages, when the page has no structured items. */
+  itemLinks?: string[];
 }
 
 /**

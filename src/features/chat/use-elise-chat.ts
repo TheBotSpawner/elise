@@ -14,7 +14,7 @@ import {
 } from "@/core/interaction";
 import { WAKE_LABELS, WAKE_PHRASES, type WakePhrase } from "@/core/voice/wake";
 import { applyOps, emptyWorkspace, type WorkspaceState } from "@/core/workspace/model";
-import { sharedLocation } from "@/features/location/shared-location";
+import { locationForTurn } from "@/features/location/shared-location";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { applyAppearance } from "@/lib/theme";
 
@@ -146,6 +146,8 @@ export function useEliseChat(initial: {
 
       try {
         const current = thread.current;
+        // The device position, refreshed first only for a location question (ADR-028).
+        const here = await locationForTurn(message);
         const response = await fetch(options.live ? "/api/voice/live/delegate" : "/api/chat", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -157,6 +159,7 @@ export function useEliseChat(initial: {
                   sessionId:
                     current?.kind === "session" ? current.id : (options.live.sessionId ?? null),
                   text: message,
+                  ...(here ? { here } : {}),
                 }
               : {
                   ...(thread.current?.kind === "conversation"
@@ -168,8 +171,8 @@ export function useEliseChat(initial: {
                   ...(options.modality === "voice"
                     ? { modality: "voice", voice: options.voice }
                     : {}),
-                  // Only while the user is sharing it for this session (ADR-023).
-                  ...(sharedLocation() ? { here: sharedLocation() } : {}),
+                  // Only while the user shares it (ADR-023/028).
+                  ...(here ? { here } : {}),
                 },
           ),
           signal: controller.signal,

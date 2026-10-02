@@ -1446,6 +1446,21 @@ export const en = {
     bulk: (n: number) => `${n} records will change`,
   },
   settings: {
+    location: {
+      title: "Location",
+      use: "Use my current location",
+      useHint:
+        "Allow ELISE to use this device's current location for routes, nearby places and local context. Only when you ask; it's never stored or tracked.",
+      allowed: "Allowed",
+      blocked: "Blocked",
+      blockedHint: "Allow location for this site in your browser settings to turn it on.",
+      unavailable: "Unavailable on this device or browser",
+      needsPermission: "Needs permission",
+      accuracy: (m: number) =>
+        m < 1000
+          ? `accurate to about ${Math.max(10, Math.round(m / 10) * 10)} m`
+          : `accurate to about ${Math.round(m / 1000)} km`,
+    },
     privacy: {
       title: "Privacy",
       historyTitle: "Conversations and Recall",
@@ -1460,6 +1475,9 @@ export const en = {
       knowledgeTitle: "Knowledge",
       knowledgeBody:
         "Files you upload are private to you. Removing a document deletes its file and everything ELISE learned from it.",
+      locationTitle: "Location",
+      locationBody:
+        "Your position is sent only with your own messages while you share it, rounded to about 100 m, and used for that answer. ELISE never stores it, logs it or tracks it in the background.",
       webTitle: "Web",
       webBody:
         "ELISE searches the public web when a question needs it. What it found stays in that conversation; pages are saved to Knowledge only when you ask.",
@@ -1587,6 +1605,32 @@ export const en = {
       range: "Range",
       scenarioNote: "Scenarios, not probabilities.",
       point: "Value",
+      temporal: {
+        today: "Today",
+        showing: "Showing",
+        from: "from",
+        to: "to",
+        showAll: (n: number) => `Show all ${n}`,
+        onlyFocus: "Only the selection",
+        none: "No date matches.",
+        more: (n: number) => `${n} more`,
+        conflict: "Sources disagree",
+        allDay: "All day",
+        previousMonth: "Previous month",
+        nextMonth: "Next month",
+        kinds: {
+          start: "Start",
+          end: "End",
+          exam: "Exam",
+          deadline: "Deadline",
+          holiday: "Holiday",
+          break: "Break",
+          meeting: "Meeting",
+          delivery: "Delivery",
+          milestone: "Milestone",
+          general: "Date",
+        },
+      },
       days: {
         done: "Done",
         miss: "Missed",
@@ -1643,6 +1687,7 @@ export const en = {
       web_source: "Web source",
       web_news: "News",
       web_research: "Research",
+      web_collection: "Web results",
       context_overview: "Context",
       context_proposal: "New context",
       commitments: "Commitments",
@@ -1760,6 +1805,18 @@ export const en = {
       retrieved: (when: string) => `Retrieved ${when}`,
       truncated: "Long page: only part of it was read.",
       outlets: (n: number) => `${n} outlets`,
+      collection: {
+        searching: (n: number, of: number) => `Searching… ${n} of ${of} so far`,
+        found: (n: number, of: number) =>
+          n ? `${n} of ${of} requested` : "No concrete items could be read",
+        fromIndex: "from the search index (page not read)",
+        limits: {
+          blocked: "blocks automated reading",
+          dynamic: "only shows its content in a browser",
+          no_items: "no concrete items on the pages read",
+          not_found: "the search found nothing on this site",
+        },
+      },
       status: {
         searching: "Searching…",
         done: "",

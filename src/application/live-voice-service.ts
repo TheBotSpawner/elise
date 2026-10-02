@@ -74,6 +74,8 @@ export interface DelegationRequest {
   conversationId: string | null;
   sessionId: string | null;
   text: string;
+  /** The user's position, when they share it (ADR-023/028); coarse, never stored. */
+  here?: { lat: number; lng: number };
   requestId: string;
   receivedAt: number;
 }
@@ -120,6 +122,7 @@ export async function runDelegation(
   const turn = await prepareTurn(auth, {
     message: req.text,
     modality: "voice",
+    ...(req.here ? { here: req.here } : {}),
     ...(req.conversationId ? { conversationId: req.conversationId } : {}),
     ...(req.sessionId && !req.conversationId ? { sessionId: req.sessionId } : {}),
     requestId: delegationRequest(req.delegationId),

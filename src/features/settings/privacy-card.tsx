@@ -15,6 +15,7 @@ export function PrivacyCard({ t }: { t: Dictionary }) {
     { title: p.connectionsTitle, body: p.connectionsBody, href: "/connections" },
     { title: p.knowledgeTitle, body: p.knowledgeBody, href: "/knowledge" },
     { title: p.webTitle, body: p.webBody, href: null },
+    { title: p.locationTitle, body: p.locationBody, href: null },
   ];
   return (
     <Card className="p-5">

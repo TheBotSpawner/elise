@@ -16,6 +16,7 @@ import {
   Video,
   Globe,
   Newspaper,
+  ShoppingBag,
   Telescope,
   Compass,
   FolderPlus,
@@ -75,6 +76,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   web_source: Globe,
   web_news: Newspaper,
   web_research: Telescope,
+  web_collection: ShoppingBag,
   context_overview: Compass,
   context_proposal: FolderPlus,
   commitments: Handshake,
@@ -877,6 +879,8 @@ export function SurfaceBody({
       return <WebNewsBody p={p} timezone={timezone} large={large} />;
     case "web_research":
       return <WebResearchBody p={p} timezone={timezone} />;
+    case "web_collection":
+      return <WebCollectionBody p={p} timezone={timezone} large={large} />;
     case "context_overview":
       return <ContextOverviewBody p={p} timezone={timezone} />;
     case "context_proposal":
@@ -1003,6 +1007,98 @@ function WebResultsBody({
           </li>
         ))}
       </ol>
+      <RetrievedAt at={p.retrievedAt} timezone={timezone} />
+    </div>
+  );
+}
+
+/**
+ * Concrete items found on the web (ADR-028): each a card with its own link, price and the facts
+ * the site states. Items known only from the search index say so. While reading continues, the
+ * count updates in place; a limitation (the site blocks automated reading) is stated, never hidden.
+ */
+function WebCollectionBody({
+  p,
+  timezone,
+  large,
+}: {
+  p: SurfacePayloads["web_collection"];
+  timezone: string;
+  large: boolean;
+}) {
+  const { t, locale } = useI18n();
+  const c = t.workspace.web.collection;
+  const money = (price: number, currency: string | null) =>
+    currency
+      ? new Intl.NumberFormat(locale, {
+          style: "currency",
+          currency,
+          maximumFractionDigits: 0,
+        }).format(price)
+      : price.toLocaleString(locale);
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[12px] text-muted" aria-live="polite">
+        {p.searching
+          ? c.searching(p.items.length, p.requested)
+          : c.found(p.items.length, p.requested)}
+      </p>
+      {p.items.length > 0 && (
+        <ol className={cn("grid gap-2", large && "sm:grid-cols-2")}>
+          {p.items.slice(0, large ? 12 : 6).map((it) => (
+            <li key={it.url}>
+              <a
+                href={it.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="sf flex min-w-0 gap-3 rounded-xl p-2.5 transition-colors hover:border-accent-line"
+              >
+                {it.image && (
+                  // eslint-disable-next-line @next/next/no-img-element -- remote listing photos; no optimizer for arbitrary hosts.
+                  <img
+                    src={it.image}
+                    alt=""
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    className="size-16 shrink-0 rounded-lg bg-inner object-cover"
+                  />
+                )}
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="line-clamp-2 text-[13.5px] leading-[1.35] font-medium">
+                    {it.title}
+                  </span>
+                  {it.price !== null && (
+                    <span className="font-mono text-[13px] text-fg">
+                      {money(it.price, it.currency)}
+                    </span>
+                  )}
+                  {it.attributes.length > 0 && (
+                    <span className="truncate text-[11.5px] text-muted">
+                      {it.attributes
+                        .filter((a) => a.label !== "brand")
+                        .map((a) => a.value)
+                        .join(" · ")}
+                    </span>
+                  )}
+                  <span className="truncate text-[11px] text-faint">
+                    {it.domain}
+                    {it.fromIndex ? ` · ${c.fromIndex}` : ""}
+                  </span>
+                </span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      )}
+      {p.limitations.length > 0 && (
+        <ul className="flex flex-col gap-1 text-[12px] text-muted">
+          {p.limitations.map((l) => (
+            <li key={`${l.domain}:${l.reason}`}>
+              <span className="text-fg2">{l.domain}</span> · {c.limits[l.reason]}
+            </li>
+          ))}
+        </ul>
+      )}
       <RetrievedAt at={p.retrievedAt} timezone={timezone} />
     </div>
   );

@@ -25,6 +25,7 @@ export const SURFACE_TYPES = [
   "web_source",
   "web_news",
   "web_research",
+  "web_collection",
   "context_overview",
   "context_proposal",
   "commitments",

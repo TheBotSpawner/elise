@@ -13,6 +13,7 @@ import {
   RETRIEVAL,
   selectEvidence,
 } from "../knowledge/retrieval";
+import { representationHint, TEMPORAL_HINT } from "../workspace/representation";
 
 /**
  * Knowledge tools (docs/architecture/09 §31-37, 72). Scope first — the active Space, or the
@@ -218,7 +219,11 @@ export const searchKnowledgeTool: ToolDefinition = {
             }
           : {}),
         instructions: enough
-          ? "Answer from these passages only and cite them inline as [n] with the document name. If they only partly answer, say what is missing. Say when something comes from general knowledge instead."
+          ? `Answer from these passages only and cite them inline as [n] with the document name. If they only partly answer, say what is missing. Say when something comes from general knowledge instead.${
+              representationHint(selected.map((h) => h.content)) === "temporal"
+                ? ` ${TEMPORAL_HINT}`
+                : ""
+            }`
           : `The ${scope.spaceIds ? "selected Space" : "user's Knowledge"} does not contain enough evidence. Say so plainly; do not answer from general knowledge as if it came from their files.${scope.spaceIds ? " Offer to search all Knowledge." : ""}`,
         evidence: selected.map((h, i) => ({
           ref: i + 1,

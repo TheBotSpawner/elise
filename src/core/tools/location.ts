@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import {
   coarse,
+  distanceMeters,
   LOCATION_LIMITS,
   TRAVEL_MODES,
   type LatLng,
@@ -11,6 +12,13 @@ import {
   type TravelMode,
   type Waypoint,
 } from "../location/model";
+import {
+  confidenceOf,
+  implausibleRoute,
+  plausiblePairs,
+  rankCandidates,
+  type Ranked,
+} from "../location/resolve";
 import { clipText as clip } from "../text";
 import { isLocalDateTime, toLocalDateTime, zonedDateTimeToUtc } from "../time";
 import type { MapPayload, PlacePayload } from "../workspace/location";
@@ -150,7 +158,14 @@ export const searchPlacesTool: ToolDefinition = {
       if (w === "unknown_here") return needsLocation(q.query);
       if ("location" in w) near = w.location;
       else {
-        const found = await resolve(env, w);
+        const found =
+          "placeId" in w
+            ? await maps(env).getPlace(w.placeId, env.ctx.locale)
+            : await (async () => {
+                const n = await named(env, w.address, contextAnchors(env));
+                return n.ranked.length && confidenceOf(n.ranked) === "low" ? n : n.ranked[0]?.place;
+              })();
+        if (found && "ranked" in found) return ambiguous(found);
         if (!found)
           return {
             output: {
@@ -159,7 +174,10 @@ export const searchPlacesTool: ToolDefinition = {
             },
           };
         near = found.location;
-        center = { name: clip(found.name, 200), location: found.location };
+        center = {
+          name: clip("address" in w ? w.address : found.name, 200),
+          location: found.location,
+        };
       }
     }
     const places = await maps(env).searchPlaces({
@@ -206,22 +224,82 @@ export const searchPlacesTool: ToolDefinition = {
   },
 };
 
-/** A named place or address → one place (geocoding first, a place search when it fails). */
-async function resolve(env: ToolRunEnv, w: Waypoint): Promise<Place | null> {
-  if ("placeId" in w) return maps(env).getPlace(w.placeId, env.ctx.locale);
-  if ("location" in w) return null;
-  const geo = await maps(env).geocode(w.address, env.ctx.locale);
-  if (geo[0]) return { ...geo[0], name: w.address };
+// ── Resolving what the user named (ADR-028) ──────────────────────────────────
+
+/**
+ * Where the conversation already is: the user's position, then what the map shows. Only breaks
+ * ties between equally good matches — never sent to the model.
+ */
+function contextAnchors(env: ToolRunEnv): LatLng[] {
+  const out: LatLng[] = [];
+  if (env.ctx.here) out.push(coarse(env.ctx.here));
+  const shown = (env.ctx.workspace?.state().surfaces ?? [])
+    .filter((s) => s.type === "map" || s.type === "place")
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  if (shown?.type === "place") out.push((shown.payload as PlacePayload).location);
+  if (shown?.type === "map") {
+    const m = shown.payload as MapPayload;
+    if (m.center) out.push(m.center.location);
+    out.push(...m.places.slice(0, 3).map((p) => p.location));
+    if (m.route?.end) out.push(m.route.end);
+  }
+  return out;
+}
+
+/** An address or place name, with its candidates in the provider's order and ranked. */
+interface Named {
+  text: string;
+  places: Place[];
+  ranked: Ranked[];
+}
+
+/**
+ * The geocoder (biased to the context), plus a place search around the context when the
+ * geocoder alone isn't a clear nearby match for the words.
+ */
+async function named(env: ToolRunEnv, text: string, anchors: LatLng[]): Promise<Named> {
+  const near = anchors[0] ?? null;
+  const geo = await maps(env).geocode(text, env.ctx.locale, near);
+  const first = rankCandidates(text, geo, anchors);
+  const top = first[0];
+  if (top && top.text >= 0.75 && (top.nearKm === null || top.nearKm <= 50))
+    return { text, places: geo, ranked: first };
   const found = await maps(env).searchPlaces({
-    query: w.address,
-    near: null,
-    radiusMeters: null,
+    query: text,
+    near,
+    radiusMeters: near ? LOCATION_LIMITS.maxRadiusMeters : null,
     rank: "relevance",
     openNow: false,
-    limit: 1,
+    limit: 3,
     language: env.ctx.locale,
   });
-  return found[0] ?? null;
+  const places = [...geo, ...found];
+  return { text, places, ranked: rankCandidates(text, places, anchors) };
+}
+
+/** Several equally good matches: show them and ask, instead of routing to a guess. */
+function ambiguous(n: Named) {
+  const options = n.ranked.slice(0, 4).map((r) => r.place);
+  return {
+    output: {
+      found: false,
+      ambiguous: true,
+      which: n.text,
+      candidates: options.map(brief),
+      instructions: `Several places match "${clip(n.text, 120)}" equally well. Ask which one, naming what tells them apart (city, neighbourhood); then call again with its ref. Don't pick one yourself.`,
+    },
+    display: {
+      kind: "map" as const,
+      map: {
+        mode: "places" as const,
+        query: clip(n.text, 200),
+        center: null,
+        places: options.map(mapPlace),
+        route: null,
+        comparison: null,
+      },
+    },
+  };
 }
 
 // ── One place ────────────────────────────────────────────────────────────────
@@ -400,7 +478,9 @@ export const reverseGeocodeTool: ToolDefinition = {
 
 const routeInput = z
   .object({
-    from: place,
+    from: place
+      .optional()
+      .describe('Omit when the user named no origin: it is their current position ("here").'),
     to: place,
     stops: z.array(place).max(LOCATION_LIMITS.stops).default([]),
     mode: z
@@ -428,26 +508,83 @@ export const getRouteTool: ToolDefinition = {
   },
   async run(raw, env) {
     const r = routeInput.parse(raw);
-    const points = [r.from, r.to, ...r.stops].map((p) => waypoint(env, p));
-    if (points.includes("unknown_here")) return needsLocation(`${r.from} → ${r.to}`);
+    // No origin named → the user's position; an explicit origin always wins (ADR-028).
+    const from = r.from ?? HERE;
+    const points = [from, r.to, ...r.stops].map((p) => waypoint(env, p));
+    if (points.includes("unknown_here")) return needsLocation(`${from} → ${r.to}`);
     const [origin, destination, ...stops] = points as Waypoint[];
+    const anchors = contextAnchors(env);
+    // Nothing found for a name: the routing provider resolves the text itself, as before.
+    const [fromN, toN] = (
+      await Promise.all([
+        "address" in origin! ? named(env, origin.address, anchors) : null,
+        "address" in destination! ? named(env, destination.address, anchors) : null,
+      ])
+    ).map((n) => (n?.ranked.length ? n : null));
+    // A settled end is context for the other: "from Palermo to <a street without a city>".
+    const settled = (w: Waypoint, n: Named | null | undefined): LatLng | null =>
+      n
+        ? confidenceOf(n.ranked) === "high"
+          ? n.ranked[0]!.place.location
+          : null
+        : "location" in w
+          ? w.location
+          : null;
+    // A pick far from the settled other end is looked up again around it: the geocoder's one
+    // answer for a street without a city may be in another city (the original mis-route).
+    const around = async (n: Named | null | undefined, at: LatLng | null) => {
+      if (!n || !at || distanceMeters(n.ranked[0]!.place.location, at) <= 50_000) return n ?? null;
+      const again = await named(env, n.text, [at, ...anchors]);
+      return again.ranked.length ? again : n;
+    };
+    const [fromR, toR] = await Promise.all([
+      around(fromN, settled(destination!, toN)),
+      around(toN, settled(origin!, fromN)),
+    ]);
+    for (const n of [fromR, toR]) if (n && confidenceOf(n.ranked) === "low") return ambiguous(n);
+    // Pairs of ends, most plausible first; a fixed end (here, a known place) is its own.
+    const pairs: [Ranked | null, Ranked | null][] =
+      fromR && toR
+        ? plausiblePairs(fromR.ranked, toR.ranked)
+        : fromR
+          ? fromR.ranked.slice(0, 2).map((x) => [x, null])
+          : toR
+            ? toR.ranked.slice(0, 2).map((x) => [null, x])
+            : [[null, null]];
     const departAtIso = departure(env, r.departAt);
     const modes = r.mode ? [r.mode] : COMPARED;
-    const settled = await Promise.allSettled(
-      modes.map((mode) =>
-        maps(env).route({
-          origin: origin!,
-          destination: destination!,
-          stops,
-          mode,
-          departAt: departAtIso,
-          language: env.ctx.locale,
-        }),
-      ),
+    const routeFor = (pair: [Ranked | null, Ranked | null]) =>
+      Promise.allSettled(
+        modes.map((mode) =>
+          maps(env).route({
+            origin: pair[0] ? { placeId: pair[0].place.id } : origin!,
+            destination: pair[1] ? { placeId: pair[1].place.id } : destination!,
+            stops,
+            mode,
+            departAt: departAtIso,
+            language: env.ctx.locale,
+          }),
+        ),
+      );
+    let pair = pairs[0]!;
+    let settledRoutes = await routeFor(pair);
+    let found = settledRoutes.flatMap((s) =>
+      s.status === "fulfilled" && s.value ? [s.value] : [],
     );
-    const found = settled.flatMap((s) => (s.status === "fulfilled" && s.value ? [s.value] : []));
+    // Sanity: no route, or one that doesn't fit its ends → the next plausible pair, once.
+    const doubtful = (x: (typeof found)[number] | undefined) =>
+      !x || (x.start && x.end ? implausibleRoute(x, x.start, x.end) : false);
+    if (doubtful(found[0]) && pairs[1]) {
+      const retry = await routeFor(pairs[1]);
+      const again = retry.flatMap((s) => (s.status === "fulfilled" && s.value ? [s.value] : []));
+      if (again[0] && !doubtful(again[0])) {
+        pair = pairs[1];
+        settledRoutes = retry;
+        found = again;
+      }
+    }
     // Every mode failed with an error (setup, provider): that error is the answer.
-    const firstError = settled.find((s) => s.status === "rejected");
+    const firstError = settledRoutes.find((s) => s.status === "rejected");
     if (!found.length && firstError) throw firstError.reason;
     const route = found[0];
     if (!route)
@@ -457,6 +594,18 @@ export const getRouteTool: ToolDefinition = {
           instructions: `There's no ${modes.join("/")} route between those places. Say so; offer another way to travel.`,
         },
       };
+    // What each named end was taken to be; a contextual pick is said, so a wrong one is caught.
+    const resolvedAs = (n: Named | null, x: Ranked | null) =>
+      n && x
+        ? {
+            said: n.text,
+            taken: x.place.address ?? x.place.name,
+            assumed: confidenceOf(n.ranked) !== "high",
+          }
+        : null;
+    const taken = [resolvedAs(fromR, pair[0]), resolvedAs(toR, pair[1])].filter(
+      (x): x is NonNullable<typeof x> => Boolean(x),
+    );
     const alternatives = found.slice(1).map((x) => ({
       mode: x.mode,
       durationSeconds: Math.round(x.durationSeconds),
@@ -464,9 +613,9 @@ export const getRouteTool: ToolDefinition = {
     }));
     const leave = departAtIso ? new Date(departAtIso) : env.ctx.now;
     const arrival = new Date(leave.getTime() + route.durationSeconds * 1000);
-    const fromHere = r.from.trim().toLowerCase() === HERE;
-    const shown = await workspaceNames(env, [r.from, r.to]);
-    const names = { from: clip(shown(r.from), 200), to: clip(shown(r.to), 200) };
+    const fromHere = from.trim().toLowerCase() === HERE;
+    const shown = await workspaceNames(env, [from, r.to]);
+    const names = { from: clip(shown(from), 200), to: clip(shown(r.to), 200) };
     return {
       output: {
         found: true,
@@ -488,9 +637,15 @@ export const getRouteTool: ToolDefinition = {
         ...(stops.length && route.mode === "transit"
           ? { note: "Transit routes ignore stops." }
           : {}),
-        instructions: alternatives.length
-          ? "The route is on screen. In one or two sentences give the time by each mode (driving first), leaving now. Don't ask for the mode or time; the user can refine."
-          : "The route is on screen. Give the time and arrival in one sentence, mentioning the assumption (leaving now) if no time was given. Travel times are estimates; with traffic for driving.",
+        ...(fromHere ? { from: "the user's current location" } : {}),
+        ...(taken.length ? { resolved: taken } : {}),
+        instructions:
+          (taken.some((t) => t.assumed)
+            ? "An address was taken as the match nearest to the context (resolved, assumed): name it briefly so the user can correct it. "
+            : "") +
+          (alternatives.length
+            ? "The route is on screen. In one or two sentences give the time by each mode (driving first), leaving now. Don't ask for the mode or time; the user can refine."
+            : "The route is on screen. Give the time and arrival in one sentence, mentioning the assumption (leaving now) if no time was given. Travel times are estimates; with traffic for driving."),
       },
       display: {
         kind: "map",

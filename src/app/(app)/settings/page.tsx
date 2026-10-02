@@ -1,6 +1,7 @@
 import { requireAuthContext } from "@/application/auth-context";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { isEnabled } from "@/config/flags";
+import { LocationSettings } from "@/features/settings/location-settings";
 import { PrivacyCard } from "@/features/settings/privacy-card";
 import { SettingsForm } from "@/features/settings/settings-form";
 import { VoiceSettings } from "@/features/settings/voice-settings";
@@ -23,6 +24,9 @@ export default async function SettingsPage() {
       />
       <div className="mt-6">
         <VoiceSettings initial={auth.profile.voice} wakeAllowed={isEnabled("wakePhrase", auth)} />
+      </div>
+      <div className="mt-6">
+        <LocationSettings />
       </div>
       <div className="mt-6">
         <PrivacyCard t={t} />

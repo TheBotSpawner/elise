@@ -1458,6 +1458,22 @@ export const es: Dictionary = {
     bulk: (n: number) => `Van a cambiar ${n} registros`,
   },
   settings: {
+    location: {
+      title: "Ubicación",
+      use: "Usar mi ubicación actual",
+      useHint:
+        "Permití que ELISE use la ubicación actual de este dispositivo para rutas, lugares cercanos y contexto local. Solo cuando lo pedís; nunca se guarda ni se rastrea.",
+      allowed: "Permitida",
+      blocked: "Bloqueada",
+      blockedHint:
+        "Permití la ubicación para este sitio en la configuración del navegador para activarla.",
+      unavailable: "No disponible en este dispositivo o navegador",
+      needsPermission: "Necesita permiso",
+      accuracy: (m: number) =>
+        m < 1000
+          ? `precisión de unos ${Math.max(10, Math.round(m / 10) * 10)} m`
+          : `precisión de unos ${Math.round(m / 1000)} km`,
+    },
     privacy: {
       title: "Privacidad",
       historyTitle: "Conversaciones y memoria",
@@ -1472,6 +1488,9 @@ export const es: Dictionary = {
       knowledgeTitle: "Conocimiento",
       knowledgeBody:
         "Los archivos que subís son privados. Si quitás un documento, se borran el archivo y todo lo que ELISE aprendió de él.",
+      locationTitle: "Ubicación",
+      locationBody:
+        "Tu posición se envía solo con tus propios mensajes mientras la compartís, redondeada a unos 100 m, y se usa para esa respuesta. ELISE nunca la guarda, la registra ni la rastrea en segundo plano.",
       webTitle: "Web",
       webBody:
         "ELISE busca en la web pública cuando una pregunta lo necesita. Lo que encontró queda en esa conversación; las páginas se guardan en Conocimiento solo si lo pedís.",
@@ -1598,6 +1617,32 @@ export const es: Dictionary = {
       range: "Rango",
       scenarioNote: "Escenarios, no probabilidades.",
       point: "Dato",
+      temporal: {
+        today: "Hoy",
+        showing: "Mostrando",
+        from: "desde",
+        to: "hasta",
+        showAll: (n: number) => `Ver las ${n}`,
+        onlyFocus: "Solo la selección",
+        none: "Ninguna fecha coincide.",
+        more: (n: number) => `${n} más`,
+        conflict: "Las fuentes no coinciden",
+        allDay: "Todo el día",
+        previousMonth: "Mes anterior",
+        nextMonth: "Mes siguiente",
+        kinds: {
+          start: "Inicio",
+          end: "Cierre",
+          exam: "Examen",
+          deadline: "Vencimiento",
+          holiday: "Feriado",
+          break: "Receso",
+          meeting: "Reunión",
+          delivery: "Entrega",
+          milestone: "Hito",
+          general: "Fecha",
+        },
+      },
       days: {
         done: "Hecho",
         miss: "No hecho",
@@ -1654,6 +1699,7 @@ export const es: Dictionary = {
       web_source: "Fuente web",
       web_news: "Noticias",
       web_research: "Investigación",
+      web_collection: "Resultados web",
       context_overview: "Contexto",
       context_proposal: "Nuevo contexto",
       commitments: "Compromisos",
@@ -1771,6 +1817,18 @@ export const es: Dictionary = {
       retrieved: (when: string) => `Consultado ${when}`,
       truncated: "Página larga: se leyó solo una parte.",
       outlets: (n: number) => `${n} medios`,
+      collection: {
+        searching: (n: number, of: number) => `Buscando… ${n} de ${of} por ahora`,
+        found: (n: number, of: number) =>
+          n ? `${n} de ${of} pedidos` : "No se pudieron leer resultados concretos",
+        fromIndex: "del índice de búsqueda (página no leída)",
+        limits: {
+          blocked: "bloquea la lectura automática",
+          dynamic: "solo muestra su contenido en un navegador",
+          no_items: "sin resultados concretos en las páginas leídas",
+          not_found: "la búsqueda no encontró nada en este sitio",
+        },
+      },
       status: {
         searching: "Buscando…",
         done: "",

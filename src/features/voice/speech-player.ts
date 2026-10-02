@@ -7,13 +7,19 @@ import type { VoiceLanguage } from "@/core/voice/providers";
  * (16-bit PCM from /api/voice/speak, scheduled on Web Audio). The level is the real output
  * amplitude, so the Orb moves with what ELISE is actually saying. `stop()` cuts it at once.
  */
+/** Per line: whether it may still be said, and a hook when its synthesis starts (telemetry). */
+export interface SpeakOptions {
+  valid?: () => boolean;
+  onBegin?: () => void;
+}
+
 /** No audio for this long (first byte or between chunks): the sentence is skipped. */
 const STALL_MS = 8000;
 
 export class SpeechPlayer {
   private ctx: AudioContext;
   private analyser: AnalyserNode;
-  private queue: { text: string; language: VoiceLanguage | null }[] = [];
+  private queue: ({ text: string; language: VoiceLanguage | null } & SpeakOptions)[] = [];
   private sources = new Set<AudioBufferSourceNode>();
   private controller: AbortController | null = null;
   private nextTime = 0;
@@ -36,8 +42,8 @@ export class SpeechPlayer {
     return this.working || this.sources.size > 0;
   }
 
-  speak(text: string, language: VoiceLanguage | null) {
-    this.queue.push({ text, language });
+  speak(text: string, language: VoiceLanguage | null, options: SpeakOptions = {}) {
+    this.queue.push({ text, language, ...options });
     if (!this.working) void this.drain(this.generation);
   }
 
@@ -46,8 +52,11 @@ export class SpeechPlayer {
     await this.ctx.resume();
     while (this.queue.length && generation === this.generation) {
       const next = this.queue.shift()!;
+      // A line whose moment passed (progress after the results) is dropped, never said late.
+      if (next.valid && !next.valid()) continue;
+      next.onBegin?.();
       try {
-        await this.play(next.text, next.language, generation);
+        await this.play(next.text, next.language, generation, next.valid);
       } catch (error) {
         // An interruption aborts quietly; a stalled or failed sentence is reported and skipped.
         if (this.stalled || !(error instanceof DOMException && error.name === "AbortError"))
@@ -62,7 +71,12 @@ export class SpeechPlayer {
 
   private stalled = false;
 
-  private async play(text: string, language: VoiceLanguage | null, generation: number) {
+  private async play(
+    text: string,
+    language: VoiceLanguage | null,
+    generation: number,
+    valid?: () => boolean,
+  ) {
     const controller = (this.controller = new AbortController());
     // A sentence whose audio stops arriving is skipped (its text is on screen) instead of
     // leaving ELISE "speaking" forever.
@@ -77,7 +91,7 @@ export class SpeechPlayer {
     };
     arm();
     try {
-      await this.stream(text, language, generation, controller, arm);
+      await this.stream(text, language, generation, controller, arm, valid);
     } finally {
       clearTimeout(watchdog);
     }
@@ -89,6 +103,7 @@ export class SpeechPlayer {
     generation: number,
     controller: AbortController,
     arm: () => void,
+    valid?: () => boolean,
   ) {
     const res = await fetch("/api/voice/speak", {
       method: "POST",
@@ -102,8 +117,15 @@ export class SpeechPlayer {
     let carry: Uint8Array | null = null;
     let pending: Uint8Array[] = [];
     let pendingBytes = 0;
+    let started = false;
     const flush = () => {
       if (!pendingBytes || generation !== this.generation) return;
+      // Checked again when the audio arrives: it may have gone stale while synthesizing.
+      if (!started && valid && !valid()) {
+        controller.abort();
+        return;
+      }
+      started = true;
       const bytes = new Uint8Array(pendingBytes);
       let o = 0;
       for (const p of pending) {

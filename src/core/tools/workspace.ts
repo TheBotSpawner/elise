@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { AppError } from "../errors";
-import { visualizeTool } from "./visualize";
+import { timelineTool, visualizeTool } from "./visualize";
 import { isImageUrl, MEDIA_KINDS, mediaPayload, videoEmbed } from "../workspace/media";
 import { SURFACE_SIZES, surfaceId, type Surface, type WorkspaceState } from "../workspace/model";
 import type { WorkspacePort } from "../workspace/port";
@@ -474,6 +474,7 @@ export const WORKSPACE_TOOLS = [
   listSurfacesTool,
   presentTool,
   visualizeTool,
+  timelineTool,
   focusTool,
   pinTool,
   arrangeTool,

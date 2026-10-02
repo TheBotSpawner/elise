@@ -11,6 +11,12 @@ import {
   type VoiceState,
   type WakeStatus,
 } from "@/core/voice/session";
+import {
+  acknowledgement,
+  stillSayable,
+  type SpeechCategory,
+  type SpeechState,
+} from "@/core/voice/speech-plan";
 import { SentenceChunker } from "@/core/voice/speech-text";
 import {
   BargeInDetector,
@@ -21,6 +27,8 @@ import {
   VOICE_TURN,
 } from "@/core/voice/turn";
 import type { WakePhrase } from "@/core/voice/wake";
+
+import type { SpeakOptions } from "./speech-player";
 
 /**
  * One continuous voice session (ADR-014, ADR-017), framework-free so it is tested with fake
@@ -44,7 +52,7 @@ export interface MicPort {
 }
 
 export interface PlayerPort {
-  speak(text: string, language: VoiceLanguage | null): void;
+  speak(text: string, language: VoiceLanguage | null, options?: SpeakOptions): void;
   stop(): void;
   close(): void;
   rms(): number;
@@ -64,7 +72,7 @@ export type Transcriber = (
 
 export type StreamEvent =
   | { type: "conversation" }
-  | { type: "tool_started" }
+  | { type: "tool_started"; name?: string }
   | { type: "tool_finished"; outcome?: { status: string } }
   | { type: "workspace" }
   | { type: "text"; delta: string }
@@ -85,6 +93,10 @@ export type VoiceMarks = Partial<
     | "firstTool"
     | "firstSurface"
     | "firstText"
+    | "ackReady"
+    | "ackTts"
+    | "toolsDone"
+    | "resultSpeech"
     | "audioStart"
     | "bargeIn"
     | "audioStopped"
@@ -133,6 +145,9 @@ interface SpokenTurn {
   spoken: string;
   capped: boolean;
   awaitingApproval: boolean;
+  /** The turn's activity, shared with what is said (ADR-028). */
+  speech: SpeechState;
+  acked: boolean;
 }
 
 interface Snapshot {
@@ -496,6 +511,8 @@ export class VoiceController {
       spoken: "",
       capped: false,
       awaitingApproval: false,
+      speech: { running: 0, started: false, resultQueued: false },
+      acked: false,
     };
     this.deps.send(text, {
       modality: "voice",
@@ -514,13 +531,38 @@ export class VoiceController {
       case "conversation":
         turn.marks.runtimeStart ??= since();
         break;
-      case "tool_started":
+      case "tool_started": {
         turn.marks.firstTool ??= since();
+        turn.speech.started = true;
+        turn.speech.running++;
+        if (!turn.acked) {
+          // ACTIVITY_STARTED: speak now, while the work runs — never after its results.
+          turn.acked = true;
+          // A "what I'm checking" line the model wrote is held for a trailing space that
+          // would only come after the tools: it goes out now, as progress.
+          const held = (turn.spokenChunker ?? turn.chunker).flush();
+          for (const sentence of held) this.say(turn, sentence, "progress");
+          // The model already said what it's checking: no second acknowledgement.
+          const ack =
+            turn.spokenChars || held.length
+              ? null
+              : acknowledgement(
+                  (event as { name?: string }).name ?? "",
+                  turn.language ?? this.prefs.language,
+                );
+          if (ack) {
+            turn.marks.ackReady ??= since();
+            this.say(turn, ack, "progress");
+          }
+        }
         this.act({ type: "tool_started" });
         break;
+      }
       case "tool_finished":
         if ((event as { outcome?: { status: string } }).outcome?.status === "approval_required")
           turn.awaitingApproval = true;
+        turn.speech.running = Math.max(0, turn.speech.running - 1);
+        if (!turn.speech.running) turn.marks.toolsDone = since();
         this.act({ type: "tool_finished" });
         break;
       case "workspace":
@@ -530,27 +572,55 @@ export class VoiceController {
         if ("delta" in event) {
           turn.marks.firstText ??= since();
           turn.spokenChunker ??= new SentenceChunker();
-          for (const sentence of turn.spokenChunker.push(event.delta)) this.say(turn, sentence);
+          for (const sentence of turn.spokenChunker.push(event.delta))
+            this.say(turn, sentence, turn.speech.started ? "result" : "conversational");
         }
         break;
       case "text":
         // Fallback for a reply without a spoken part: speak the answer itself, capped.
         if ("delta" in event && !turn.spokenChunker) {
           turn.marks.firstText ??= since();
-          for (const sentence of turn.chunker.push(event.delta)) this.say(turn, sentence);
+          for (const sentence of turn.chunker.push(event.delta))
+            this.say(turn, sentence, turn.speech.started ? "result" : "conversational");
         }
         break;
       case "finished":
         for (const sentence of (turn.spokenChunker ?? turn.chunker).flush())
-          this.say(turn, sentence);
+          this.say(turn, sentence, turn.speech.started ? "result" : "conversational");
         turn.textDone = true;
         if (!this.player?.speaking) this.complete();
         break;
     }
   }
 
-  private say(turn: SpokenTurn, sentence: string) {
+  private say(turn: SpokenTurn, sentence: string, category: SpeechCategory) {
     if (turn.capped || !this.player) return;
+    if (category === "progress") {
+      // Ephemeral: dropped if, by its turn to play, the work finished or the result is coming.
+      const line = { category, createdAt: this.now };
+      let dropped = false;
+      turn.spoken += ` ${sentence}`;
+      this.player.speak(sentence, turn.language, {
+        valid: () => {
+          const ok = this.turn === turn && stillSayable(line, turn.speech, this.now);
+          if (!ok && !dropped) {
+            dropped = true;
+            this.trace("progress_dropped", { ms: Math.round(this.now - turn.t0) });
+          }
+          return ok;
+        },
+        onBegin: () => {
+          turn.marks.ackTts ??= Math.round(this.now - turn.t0);
+          this.trace("ack_tts_started");
+        },
+      });
+      return;
+    }
+    if (category === "result" && !turn.speech.resultQueued) {
+      // RESULT: from here on, nothing announces work that's already done.
+      turn.speech.resultQueued = true;
+      turn.marks.resultSpeech ??= Math.round(this.now - turn.t0);
+    }
     if (turn.spokenChars > 0 && turn.spokenChars + sentence.length > SPOKEN_LIMIT) {
       turn.capped = true;
       // The model's own synthesis already points to the screen; only a fallback reply says so.
