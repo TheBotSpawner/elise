@@ -123,6 +123,12 @@ export const setThemeTool: ToolDefinition = {
   operation: "setTheme",
   description: '"Switch to light mode", "dark mode", "follow the system": set ELISE\'s theme.',
   input: themeInput,
+  confirm(output, locale) {
+    const theme = (output as { theme: string }).theme;
+    return locale === "es"
+      ? `Listo, cambié al modo ${THEME_ES[theme] ?? theme}.`
+      : `Done — switched to ${theme} mode.`;
+  },
   async describe(raw) {
     return { summary: `Theme → ${themeInput.parse(raw).theme}` };
   },
@@ -141,6 +147,15 @@ export const setThemeTool: ToolDefinition = {
   },
 };
 
+const ACCENT_ES: Record<string, string> = {
+  cyan: "cian",
+  blue: "azul",
+  violet: "violeta",
+  green: "verde",
+  amber: "ámbar",
+};
+const THEME_ES: Record<string, string> = { dark: "oscuro", light: "claro", system: "del sistema" };
+
 const accentInput = z
   .object({
     accent: z
@@ -155,6 +170,12 @@ export const setAccentTool: ToolDefinition = {
   operation: "setAccent",
   description: `"Change your color to green": set ELISE's accent. Only these colors exist: ${ACCENTS.join(", ")} (cyan is the default). Any other color: say which ones are available.`,
   input: accentInput,
+  confirm(output, locale) {
+    const accent = (output as { accent: string }).accent;
+    return locale === "es"
+      ? `Listo, ahora uso el color ${ACCENT_ES[accent] ?? accent}.`
+      : `Done — I'm using ${accent} now.`;
+  },
   async describe(raw) {
     return { summary: `Accent → ${accentInput.parse(raw).accent}` };
   },

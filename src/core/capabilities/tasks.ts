@@ -57,11 +57,48 @@ export interface TaskList {
 const taskId = z.string().trim().min(1).max(600);
 
 const isoDate = z.string().refine(isIsoDate, "Expected a valid date as YYYY-MM-DD");
+/** Titles that only name the kind of thing ("Tarea", "New task"), never what to do. */
+const PLACEHOLDER_TITLES = new Set([
+  "tarea",
+  "nueva tarea",
+  "una tarea",
+  "task",
+  "new task",
+  "a task",
+  "to do",
+  "todo",
+  "pendiente",
+  "recordatorio",
+  "reminder",
+  "sin titulo",
+  "untitled",
+]);
+export const isPlaceholderTitle = (title: string) =>
+  PLACEHOLDER_TITLES.has(
+    title
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .replace(/[^\p{L}\p{N} ]/gu, "")
+      .trim(),
+  );
+
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 
 export const createTaskInput = z
   .object({
-    title: z.string().trim().min(1).max(500),
+    title: z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .describe(
+        "What the user said the task is, in their words. Never a placeholder: if they didn't say, ask.",
+      )
+      // A generic word is not a task: the user never said what to do (ask, don't invent).
+      .refine((t) => !isPlaceholderTitle(t), {
+        message: "That isn't what the task is: ask the user what the task should say.",
+      }),
     description: optionalText(5000),
     notes: optionalText(5000),
     priority: z.enum(TASK_PRIORITIES).optional(),

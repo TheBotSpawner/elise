@@ -3,7 +3,8 @@
 import { ExternalLink, Globe, ImageOff, Play } from "lucide-react";
 import { useState } from "react";
 
-import { embedSrc, videoEmbed, type MediaPayload } from "@/core/workspace/media";
+import type { MediaPayload } from "@/core/workspace/media";
+import { embedSrc, videoEmbed } from "@/core/workspace/media-embed";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 

@@ -809,40 +809,7 @@ export function reconcileOps(
 
 /** Approval decided (here, in another tab or in the Approval Center). */
 /** Approved tools whose work continues in the background (their Surface shows it). */
-const BACKGROUND_TOOLS = new Set(["structured.bulkUpdate"]);
-
-export function approvalDecidedOps(
-  state: WorkspaceState,
-  approvalId: string,
-  decision: "approved" | "rejected",
-  display: ToolDisplay | undefined,
-  at: string,
-): WorkspaceOp[] {
-  return state.surfaces
-    .filter(
-      (s) =>
-        s.type === "approval" &&
-        (s.payload as SurfacePayloads["approval"]).approvalId === approvalId,
-    )
-    .map((s) => {
-      const p = s.payload as SurfacePayloads["approval"];
-      const background = decision === "approved" && BACKGROUND_TOOLS.has(p.tool) && !p.background;
-      return {
-        op: "update" as const,
-        id: s.id,
-        patch: {
-          state: background ? ("loading" as const) : ("ready" as const),
-          payload: {
-            ...p,
-            decision,
-            ...(display ? { display } : {}),
-            ...(background ? { background: "running" as const } : {}),
-          },
-        },
-        at,
-      };
-    });
-}
+export { approvalDecidedOps } from "./approval-ops";
 
 const INTENT_BY_CAPABILITY: Record<string, IntentKind> = {
   meeting: "meeting_prep",

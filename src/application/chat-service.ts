@@ -4,8 +4,9 @@ import { isEnabled } from "@/config/flags";
 import { serverEnv } from "@/config/server-env";
 import { buildContextPackage } from "@/core/agents/context";
 import type { ToolCallOutcome } from "@/core/agents/executor";
-import { MODEL_POLICY } from "@/core/agents/model-policy";
+import { escalateAfter, MODEL_POLICY, routeTurn } from "@/core/agents/model-policy";
 import { runElise, toolNotes } from "@/core/agents/runtime";
+import { selectTools, toolsInNotes } from "@/core/agents/tool-selection";
 import {
   activeContextOf,
   contextLabel,
@@ -18,6 +19,7 @@ import { AppError, toPublicError } from "@/core/errors";
 import { knowledgeMap, resolveMentioned } from "@/core/history/links";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
 import { coarse, type LatLng } from "@/core/location/model";
+import { TurnPerf } from "@/core/perf";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
 import { matchShortcut } from "@/core/shortcuts/match";
 import { stepsToCalls } from "@/core/shortcuts/model";
@@ -71,6 +73,9 @@ export interface ChatTurnInput {
   voice?: VoiceTurnMeta;
   /** The position the user shared for this session (ADR-023): never stored or logged. */
   here?: LatLng;
+  /** When the request arrived and how long auth took (performance telemetry). */
+  receivedAt?: number;
+  authMs?: number;
 }
 
 /**
@@ -81,62 +86,113 @@ export async function startChatTurn(
   auth: AuthContext,
   input: ChatTurnInput,
 ): Promise<ReadableStream<Uint8Array>> {
-  await enforceRateLimit(auth);
+  const perf = new TurnPerf(input.receivedAt ?? Date.now(), input.modality ?? "text");
+  if (input.authMs != null) {
+    perf.span("auth", input.authMs);
+    perf.mark("auth", input.authMs);
+  }
   const ai = getAIProvider();
   const ports = createExecutorPorts(auth);
-  const { bindings } = await ports.bindings();
-  const capabilities = availableCapabilities(bindings);
-
+  const env = serverEnv();
+  const adaptive = env.ELISE_AI_ROUTING === "adaptive";
   const modality: TurnModality = input.modality ?? "text";
   const web = webSearchConfigured() && isEnabled("research", auth);
   const location = locationConfigured();
   const here = input.here ? coarse(input.here) : null;
-  const thread = await openThread(auth, {
-    conversationId: input.conversationId,
-    sessionId: input.sessionId,
-    modality,
-    firstMessage: input.message,
-    spaceId: input.spaceId,
-  });
-  const [history, activeSpace] = await Promise.all([thread.history(), thread.activeSpace()]);
-  const [structuredSources, recallEvidence, contexts, studySession, pendingApprovals, shortcuts] =
-    await Promise.all([
-      capabilities.has("structured") ? structuredSourcesForChat(auth) : [],
-      recallIntent(input.message) ? prefetchRecall(auth, input.message, thread.ref) : null,
-      loadContexts(auth),
+
+  // Setup in dependency phases (ADR-025): independent reads share one round trip. Nothing is
+  // written before the rate limit passes; history is read before this turn's message is saved.
+  const [, { bindings }, contexts, shortcuts, nodes] = await perf.time(
+    "setup.reads",
+    Promise.all([
+      perf.time("rate_limit", enforceRateLimit(auth)),
+      perf.time("bindings", ports.bindings()),
+      perf.time("preload.contexts", loadContexts(auth)),
+      perf.time("preload.shortcuts", enabledShortcuts(auth)),
+      perf.time(
+        "knowledge_nodes",
+        historyLinks(auth)
+          .nodes()
+          .catch(() => []),
+      ),
+    ]),
+  );
+  const capabilities = availableCapabilities(bindings);
+  const thread = await perf.time(
+    "thread",
+    openThread(auth, {
+      conversationId: input.conversationId,
+      sessionId: input.sessionId,
+      modality,
+      firstMessage: input.message,
+      spaceId: input.spaceId,
+    }),
+  );
+  const [
+    history,
+    activeSpace,
+    structuredSources,
+    recallEvidence,
+    studySession,
+    pendingApprovals,
+    workspace,
+  ] = await perf.time(
+    "preload",
+    Promise.all([
+      perf.time("history", thread.history()),
+      thread.activeSpace(),
+      capabilities.has("structured")
+        ? perf.time("preload.structured", structuredSourcesForChat(auth))
+        : [],
+      // Legacy only: an adaptive turn searches Recall with its tool when it needs it, so a
+      // blocking prefetch would only delay the first byte (ADR-025).
+      !adaptive && recallIntent(input.message)
+        ? perf.time("preload.recall", prefetchRecall(auth, input.message, thread.ref))
+        : null,
       thread.isNew
         ? null
-        : studyStore(auth)
-            .activeSession(thread.ref)
-            .catch(() => null),
+        : perf.time(
+            "preload.study",
+            studyStore(auth)
+              .activeSession(thread.ref)
+              .catch(() => null),
+          ),
       // Read now, before this turn's run exists: only earlier runs can have asked.
       modality === "voice" && !thread.isNew
-        ? pendingForInteraction(auth, thread.ref).catch(() => [])
+        ? perf.time(
+            "preload.approvals",
+            pendingForInteraction(auth, thread.ref).catch(() => []),
+          )
         : [],
-      enabledShortcuts(auth),
-    ]);
+      // The interaction's Live Workspace: untouched Surfaces decay at the start of each turn.
+      perf.time("workspace", openWorkspaceSession(auth, thread.ref, thread.isNew)),
+    ]),
+  );
 
-  await thread.addUserTurn(input.message, modality, input.voice);
-
-  const { data: run, error: runError } = await auth.db
-    .from("ai_runs")
-    .insert({
-      workspace_id: auth.workspaceId,
-      user_id: auth.userId,
-      conversation_id: thread.ref.kind === "conversation" ? thread.ref.id : null,
-      interaction_session_id: thread.ref.kind === "session" ? thread.ref.id : null,
-      ai_provider: ai.id,
-      model_key: serverEnv().OPENAI_MODEL,
-      request_id: input.requestId,
-    })
-    .select("id, started_at")
-    .single();
+  const [, { data: run, error: runError }] = await Promise.all([
+    perf.time("user_turn", thread.addUserTurn(input.message, modality, input.voice)),
+    perf.time("run_insert", () =>
+      auth.db
+        .from("ai_runs")
+        .insert({
+          workspace_id: auth.workspaceId,
+          user_id: auth.userId,
+          conversation_id: thread.ref.kind === "conversation" ? thread.ref.id : null,
+          interaction_session_id: thread.ref.kind === "session" ? thread.ref.id : null,
+          ai_provider: ai.id,
+          // The model actually used replaces this when the run finishes.
+          model_key: "pending",
+          request_id: input.requestId,
+        })
+        .select("id, started_at")
+        .single()
+        .then((r) => r),
+    ),
+  ]);
   if (runError || !run)
     throw new AppError("INTERNAL_ERROR", "Could not start the run", { cause: runError });
   const runId = run.id;
 
-  // The interaction's Live Workspace: untouched Surfaces decay at the start of each turn.
-  const workspace = await openWorkspaceSession(auth, thread.ref, thread.isNew);
   workspace.apply([{ op: "turn", at: new Date().toISOString() }]);
   // "Ask ELISE" from a Section starts the conversation in that Section's context (ADR-018).
   const sectionContext =
@@ -152,12 +208,8 @@ export async function startChatTurn(
     );
   }
   // Which area of the user's world this message is about (ADR-016 §5), after the turn's decay.
-  const contextHint = await resolveTurnContext(
-    auth,
-    workspace,
-    thread.ref,
-    input.message,
-    contexts,
+  const contextHint = await perf.time("turn_context", () =>
+    resolveTurnContext(auth, workspace, thread.ref, input.message, contexts),
   );
   const activeProfile = contexts.profiles.find((p) => p.id === workspace.state().context?.id);
 
@@ -206,9 +258,6 @@ export async function startChatTurn(
 
   // Object first (what is the user talking about?), tool second: a Section the message clearly
   // names is resolved here, from the user's own names for it, before the model picks a tool.
-  const nodes = await historyLinks(auth)
-    .nodes()
-    .catch(() => []);
   const mentioned = activeSpace ? null : resolveMentioned(input.message, nodes);
   const resolvedPath = mentioned
     ? mentioned.parentName
@@ -236,13 +285,16 @@ export async function startChatTurn(
     activeSpace: activeSpace?.path ?? null,
     knowledgeMap: knowledgeMap(nodes),
     resolvedSpace: resolvedPath,
-    spaceNotes: await spaceNotes(auth, [
-      activeSpace?.id ?? null,
-      mentioned?.id ?? null,
-      mentioned?.parentId ?? null,
-      activeProfile?.section?.spaceId ?? null,
-      activeProfile?.section?.parentId ?? null,
-    ]).catch(() => []),
+    spaceNotes: await perf.time(
+      "space_notes",
+      spaceNotes(auth, [
+        activeSpace?.id ?? null,
+        mentioned?.id ?? null,
+        mentioned?.parentId ?? null,
+        activeProfile?.section?.spaceId ?? null,
+        activeProfile?.section?.parentId ?? null,
+      ]).catch(() => []),
+    ),
     structuredSources,
     recallEvidence,
     workspace: describeWorkspace(workspace.state(), auth.profile.timezone),
@@ -256,6 +308,31 @@ export async function startChatTurn(
     contextHint: turnHints || null,
     studySession: describeStudy(studySession, contexts.profiles),
   });
+  // Model profile and tool exposure (ADR-025): legacy sends every tool to the standard
+  // profile; adaptive routes by request and exposes the relevant tool groups (rest on demand).
+  const route = adaptive
+    ? routeTurn(input.message)
+    : modality === "voice"
+      ? MODEL_POLICY.voice_turn
+      : MODEL_POLICY.chat;
+  perf.profile = route.tier;
+  const allTools = toolRegistry
+    .available(capabilities)
+    .filter(
+      (t) => (web || t.capability !== "web_search") && (location || t.capability !== "location"),
+    );
+  const selection =
+    env.ELISE_TOOL_SELECTION === "selected"
+      ? selectTools(allTools, {
+          message: input.message,
+          surfaceTypes: workspace.state().surfaces.map((s) => s.type),
+          recentTools: toolsInNotes(
+            history.slice(-4).flatMap((m) => ("toolNotes" in m && m.toolNotes) || []),
+          ),
+          contextKind: activeProfile?.kind ?? null,
+        })
+      : { tools: allTools, rest: [] };
+  perf.mark("context_built");
   const encoder = new TextEncoder();
   // Every model, Web and speech call made by this turn is attributed to it (start() runs
   // synchronously inside the scope, so the whole turn inherits it).
@@ -271,8 +348,14 @@ export async function startChatTurn(
     () =>
       new ReadableStream<Uint8Array>({
         async start(controller) {
-          const send = (event: ChatStreamEvent) =>
+          const send = (event: ChatStreamEvent) => {
+            if (event.type === "text" || event.type === "spoken") perf.mark("first_text");
+            if (event.type === "workspace" && event.ops.some((o) => o.op === "present"))
+              perf.mark("first_surface");
+            if (event.type !== "conversation") perf.mark("first_event");
             controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+          };
+          perf.mark("stream_start");
           send({ type: "conversation", thread: thread.ref, runId });
           workspace.attach(
             (ops, version) => send({ type: "workspace", ops, version }),
@@ -378,21 +461,38 @@ export async function startChatTurn(
                     : null;
                 },
               },
-              instructions: context.instructions,
-              input: context.input,
+              // Adaptive: stable instructions, per-turn context last (prompt caching, ADR-025).
+              instructions: adaptive ? context.cached.instructions : context.instructions,
+              input: adaptive ? context.cached.input : context.input,
               // A Shortcut's steps run first, through the same executor and policy (ADR-017 §12).
               ...(preset ? { preset } : {}),
-              // A spoken turn waits on every second of thinking: less deliberation, same tools.
-              ...(modality === "voice" ? MODEL_POLICY.voice_turn : MODEL_POLICY.chat),
-              tools: toolRegistry
-                .available(capabilities)
-                .filter(
-                  (t) =>
-                    (web || t.capability !== "web_search") &&
-                    (location || t.capability !== "location"),
-                ),
+              ...route,
+              ...(adaptive ? { escalate: escalateAfter } : {}),
+              tools: selection.tools,
+              moreTools: selection.rest,
             })) {
               switch (event.type) {
+                case "model_call": {
+                  const s = event.stats;
+                  const rel = (t: number | null) => (t == null ? null : t - perf.origin);
+                  perf.model({
+                    model: s.model,
+                    profile: s.tier,
+                    reasoning: s.reasoning,
+                    serviceTier: s.serviceTier,
+                    start: s.start - perf.origin,
+                    firstEvent: rel(s.firstEvent),
+                    firstText: rel(s.firstText),
+                    end: s.end - perf.origin,
+                    inputTokens: s.usage?.inputTokens ?? 0,
+                    cachedTokens: s.usage?.cachedTokens ?? 0,
+                    outputTokens: s.usage?.outputTokens ?? 0,
+                    reasoningTokens: s.usage?.reasoningTokens ?? 0,
+                    toolsExposed: s.toolsExposed,
+                    toolCalls: s.toolCalls,
+                  });
+                  break;
+                }
                 case "text": {
                   // Voice: the spoken synthesis and the on-screen answer travel separately.
                   if (!splitter) {
@@ -419,6 +519,12 @@ export async function startChatTurn(
                 case "tool_finished": {
                   const outcome = toClientOutcome(event.outcome);
                   const durationMs = Date.now() - (stepStarted.get(event.callId) ?? Date.now());
+                  perf.tool({
+                    name: event.name,
+                    start: (stepStarted.get(event.callId) ?? Date.now()) - perf.origin,
+                    end: perf.now(),
+                    ok: event.outcome.status === "succeeded",
+                  });
                   workspace.current = null;
                   // Every result ELISE fetched is presented by the application, never "drawn".
                   const surfaceIds = event.name.startsWith("ui.")
@@ -583,6 +689,18 @@ export async function startChatTurn(
 
           async function finishRun() {
             const latency = Date.now() - started;
+            perf.mark("complete");
+            perf.intent = workspace.state().intent?.kind ?? null;
+            const perfSummary = perf.summary();
+            // Numbers and names only (docs/performance).
+            logger.info("turn.perf", {
+              run_id: runId,
+              modality,
+              intent: perfSummary.intent,
+              ...perfSummary.metrics,
+              spans: perfSummary.spans,
+              tools: perfSummary.tools.map((t) => `${t.name}:${t.end - t.start}`),
+            });
             await Promise.all([
               auth.db
                 .from("ai_runs")
@@ -590,7 +708,7 @@ export async function startChatTurn(
                   status: failure ? "failed" : "completed",
                   completed_at: new Date().toISOString(),
                   latency_ms: latency,
-                  token_usage: (usage ?? {}) as Json,
+                  token_usage: { ...(usage ?? {}), perf: perfSummary } as unknown as Json,
                   tool_call_count: traces.size,
                   error_code: failure?.code ?? null,
                   ...(model ? { model_key: model } : {}),

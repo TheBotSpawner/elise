@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import type { ToolDisplay } from "@/core/agents/tools";
-import { briefCapabilities } from "@/core/schedules/schedule";
+import { briefCapabilities } from "@/core/schedules/brief-capabilities";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 

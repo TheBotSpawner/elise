@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { ThreadRef } from "@/core/interaction";
-import { approvalDecidedOps } from "@/core/workspace/from-results";
+import { approvalDecidedOps } from "@/core/workspace/approval-ops";
 import {
   applyOp,
   applyOps,

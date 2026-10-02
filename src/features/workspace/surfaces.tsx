@@ -36,8 +36,8 @@ import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 import type { ToolDisplay } from "@/core/agents/tools";
 import { isSafeHref, type ActionId, type Surface, type SurfaceType } from "@/core/workspace/model";
+import { isOpen } from "@/core/workspace/model";
 import type { SurfacePayloads } from "@/core/workspace/registry";
-import { isOpen } from "@/core/workspace/registry";
 import { ApprovalCard, type ApprovalPhase } from "@/features/chat/approval-card";
 import { DisplayCard } from "@/features/chat/result-cards";
 import { useI18n } from "@/lib/i18n/client";

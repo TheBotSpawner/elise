@@ -7,9 +7,12 @@ import type {
   AIProvider,
   AIStreamEvent,
   AITurnRequest,
+  ModelTier,
 } from "@/core/agents/ai-provider";
 import { AppError } from "@/core/errors";
 import { recordUsage } from "@/infrastructure/observability/usage";
+
+import { effortFor, type AIProfile } from "../profiles";
 
 /** OpenAI function names allow [a-zA-Z0-9_-]; ELISE tool names use dots ("tasks.create"). */
 const encodeName = (name: string) => name.replaceAll(".", "__");
@@ -17,7 +20,8 @@ const decodeName = (name: string) => name.replaceAll("__", ".");
 
 export interface OpenAIProviderOptions {
   apiKey: string;
-  models: { standard: string; fast: string };
+  /** What each tier means (AI_PROFILE_*), resolved once from configuration. */
+  profiles: Record<ModelTier, AIProfile>;
 }
 
 /**
@@ -34,7 +38,9 @@ export class OpenAIProvider implements AIProvider {
   }
 
   async *streamTurn(request: AITurnRequest): AsyncIterable<AIStreamEvent> {
-    const model = this.options.models[request.tier];
+    const profile = this.options.profiles[request.tier];
+    const model = profile.model;
+    const effort = effortFor(model, request.reasoning ?? profile.reasoning);
     const started = Date.now();
     let stream;
     try {
@@ -52,10 +58,13 @@ export class OpenAIProvider implements AIProvider {
           })),
           stream: true,
           store: false,
-          // Only reasoning models accept an effort; others ignore the hint.
-          ...(request.reasoning && /^(gpt-5|o\d)/.test(model)
-            ? { reasoning: { effort: request.reasoning } }
-            : {}),
+          // One routing key for ELISE turns: requests sharing the stable prefix (instructions,
+          // core tools) land where it is cached (ADR-025).
+          prompt_cache_key: `elise:${request.tier}`,
+          // Only reasoning models accept an effort, each its own set (effortFor).
+          ...(effort ? { reasoning: { effort } } : {}),
+          // Fast mode (priority processing) only where the profile asks for it.
+          ...(profile.serviceTier ? { service_tier: profile.serviceTier } : {}),
         },
         { signal: request.signal },
       );
@@ -97,6 +106,8 @@ export class OpenAIProvider implements AIProvider {
             yield {
               type: "completed",
               model: event.response.model,
+              serviceTier: event.response.service_tier ?? null,
+              effort,
               usage: usage
                 ? {
                     inputTokens: usage.input_tokens,

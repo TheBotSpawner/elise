@@ -7,8 +7,16 @@ const serverEnvSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.url().optional(),
   OPENAI_API_KEY: z.string().min(1).optional(),
   // Model names are configuration, never feature code (docs/architecture/12 §16).
-  OPENAI_MODEL: z.string().min(1).default("gpt-5-mini"),
-  OPENAI_MODEL_FAST: z.string().min(1).default("gpt-5-nano"),
+
+  /** AI profiles (ADR-025): "model[:effort[:serviceTier]]"; unset → benchmarked defaults. */
+  AI_PROFILE_FAST: z.string().min(1).optional(),
+  AI_PROFILE_STANDARD: z.string().min(1).optional(),
+  AI_PROFILE_DEEP: z.string().min(1).optional(),
+  AI_PROFILE_BACKGROUND: z.string().min(1).optional(),
+  /** Chat routing: "adaptive" (fast/deep by request) or "legacy" (everything standard). */
+  ELISE_AI_ROUTING: z.enum(["legacy", "adaptive"]).default("adaptive"),
+  /** Tool exposure: "selected" (core + relevant groups, rest on demand) or "all". */
+  ELISE_TOOL_SELECTION: z.enum(["all", "selected"]).default("selected"),
   /** Knowledge embeddings (1536 dimensions are stored). Changing it requires a reindex. */
   OPENAI_EMBEDDING_MODEL: z.string().min(1).default("text-embedding-3-small"),
   /** Voice (ADR-014): speech-to-text for completed utterances, and streamed text-to-speech. */

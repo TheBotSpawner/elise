@@ -145,7 +145,7 @@ Background work (Schedules, Morning Brief) runs on Trigger.dev. The project ref 
 3. Dashboard → **Environment variables** (Development, later Production): add what the tasks
    need — `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
    `SUPABASE_SECRET_KEY`, `ELISE_ENCRYPTION_KEY`, `GOOGLE_OAUTH_CLIENT_ID`,
-   `GOOGLE_OAUTH_CLIENT_SECRET`, `OPENAI_API_KEY` (+ `OPENAI_MODEL`, `OPENAI_EMBEDDING_MODEL`), and
+   `GOOGLE_OAUTH_CLIENT_SECRET`, `OPENAI_API_KEY` (+ optional `AI_PROFILE_*`, `OPENAI_EMBEDDING_MODEL`), and
    `NOTION_OAUTH_CLIENT_ID`/`_SECRET` if you use Notion. In development the CLI also
    loads your local `.env` files.
 4. Run the worker next to the app: `npm run trigger:dev`. The `schedules-dispatch` task runs
@@ -195,7 +195,8 @@ reads). See [ADR-015](docs/decisions/ADR-015-web-search-research.md). Morning Br
 | ------------------------------------------------------------------- | --------- | ------------------------------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`  | yes       | Auth + data (browser-safe; RLS enforces access)         |
 | `OPENAI_API_KEY`                                                    | for chat  | Server-only AI provider key                             |
-| `OPENAI_MODEL`, `OPENAI_MODEL_FAST`                                 | no        | Model names (defaults `gpt-5-mini` / `gpt-5-nano`)      |
+| `AI_PROFILE_FAST`, `_STANDARD`, `_DEEP`, `_BACKGROUND`              | no        | AI profiles `model[:effort[:tier]]` (docs/performance)  |
+| `ELISE_AI_ROUTING`, `ELISE_TOOL_SELECTION`                          | no        | `adaptive`/`legacy`, `selected`/`all` (ADR-025)         |
 | `NEXT_PUBLIC_APP_URL`                                               | prod      | Base URL for auth redirects                             |
 | `ELISE_ENV`                                                         | no        | `development` / `staging` / `production` log tag        |
 | `CHAT_RATE_LIMIT_PER_MINUTE`                                        | no        | Per-user chat rate limit (default 20)                   |

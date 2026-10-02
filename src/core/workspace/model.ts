@@ -505,3 +505,6 @@ export function surfaceId(type: SurfaceType, key: string): string {
   }
   return `${type}:${h.toString(36)}`;
 }
+
+/** A task that still needs doing (shared by the registry and the UI; no schema dependency). */
+export const isOpen = (status: string) => status === "pending" || status === "in_progress";

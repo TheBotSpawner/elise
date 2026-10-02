@@ -54,15 +54,17 @@ const STATUS: Partial<Record<AppError["code"], number>> = {
 };
 
 export async function POST(request: NextRequest) {
+  const receivedAt = Date.now();
   const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
   try {
     const auth = await getAuthContext();
+    const authMs = Date.now() - receivedAt;
     if (!auth) throw new AppError("AUTH_ERROR", "Please sign in", { recovery: "sign_in" });
 
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid message");
 
-    const stream = await startChatTurn(auth, { ...parsed.data, requestId });
+    const stream = await startChatTurn(auth, { ...parsed.data, requestId, receivedAt, authMs });
     return new Response(stream, {
       headers: {
         "content-type": "application/x-ndjson; charset=utf-8",

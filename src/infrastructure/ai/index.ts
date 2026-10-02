@@ -9,6 +9,7 @@ import type { SpeechInputProvider, SpeechOutputProvider } from "@/core/voice/pro
 import { OpenAIEmbeddingProvider } from "./openai/embeddings";
 import { OpenAIProvider } from "./openai/provider";
 import { OpenAISpeechInput, OpenAISpeechOutput } from "./openai/speech";
+import { resolveProfiles } from "./profiles";
 
 let provider: AIProvider | undefined;
 let embeddings: EmbeddingProvider | undefined;
@@ -29,10 +30,7 @@ function apiKey(): string {
 export function getAIProvider(): AIProvider {
   if (provider) return provider;
   const env = serverEnv();
-  provider = new OpenAIProvider({
-    apiKey: apiKey(),
-    models: { standard: env.OPENAI_MODEL, fast: env.OPENAI_MODEL_FAST },
-  });
+  provider = new OpenAIProvider({ apiKey: apiKey(), profiles: resolveProfiles(env) });
   return provider;
 }
 

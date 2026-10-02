@@ -408,6 +408,12 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   pin?(input: TInput, env: ToolRunEnv): Promise<TInput>;
   /** New outbound writes: ask which account instead of using the global default. */
   strictDestination?: boolean;
+  /**
+   * A complete answer for a successful result that needs no interpretation ("Listo, ahora uso
+   * verde."), in the user's language. When every call of a model turn has one, the runtime
+   * answers with it instead of another model call (ADR-025). Only after the tool succeeded.
+   */
+  confirm?(output: TOutput, locale: "es" | "en"): string | null;
   run(input: TInput, env: ToolRunEnv): Promise<ToolRunResult<TOutput>>;
   /**
    * Existing items name the account they live in (see providers/refs.ts). Routing is still

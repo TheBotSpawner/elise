@@ -10,6 +10,7 @@ import {
   SURFACE_STATES,
   SURFACE_TYPES,
   emptyWorkspace,
+  isOpen,
   type ActionId,
   type Surface,
   type SurfaceAction,
@@ -506,7 +507,7 @@ interface SurfaceDefinition<K extends SurfaceType> {
   tool?(p: SurfacePayloads[K], action: ActionId, itemId: string | null): ToolCallSpec | null;
 }
 
-export const isOpen = (status: string) => status === "pending" || status === "in_progress";
+export { isOpen };
 
 const link = (id: ActionId, url: string | null | undefined): SurfaceAction[] =>
   url && isSafeHref(url) ? [{ id, kind: "link", href: url }] : [];

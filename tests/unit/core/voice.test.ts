@@ -658,7 +658,7 @@ describe("voice turns in the runtime", () => {
     const voice = buildContextPackage({ ...base, modality: "voice" }).instructions;
     expect(voice).toContain("This turn is spoken");
     expect(voice).toContain("exactly one approval of this conversation is waiting");
-    expect(voice).toContain("never that something is done");
+    expect(voice).toContain("Never say that something is done");
     expect(buildContextPackage(base).instructions).not.toContain("This turn is spoken");
   });
 

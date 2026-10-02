@@ -50,7 +50,7 @@ describe("runElise (vertical slice with a scripted model)", () => {
       text: "Listo, agregué “Comprar pasta dental” para mañana.",
       usage: { inputTokens: 30, outputTokens: 13 },
     });
-    expect(events.map((e) => e.type)).toEqual([
+    expect(events.map((e) => e.type).filter((t) => t !== "model_call")).toEqual([
       "status",
       "status",
       "tool_started",

@@ -133,12 +133,12 @@ describe("server env", () => {
   it("drops a malformed optional value instead of failing everything", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "not a url");
     vi.stubEnv("WEB_SEARCH_PROVIDER", "bing");
-    vi.stubEnv("OPENAI_MODEL", "gpt-5-mini");
+    vi.stubEnv("AI_PROFILE_FAST", "gpt-6-luna:low");
     const { serverEnv, invalidEnvKeys } = await import("@/config/server-env");
     vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(serverEnv().NEXT_PUBLIC_APP_URL).toBeUndefined();
     expect(serverEnv().WEB_SEARCH_PROVIDER).toBeUndefined();
-    expect(serverEnv().OPENAI_MODEL).toBe("gpt-5-mini");
+    expect(serverEnv().AI_PROFILE_FAST).toBe("gpt-6-luna:low");
     expect(invalidEnvKeys().sort()).toEqual(["NEXT_PUBLIC_APP_URL", "WEB_SEARCH_PROVIDER"]);
   });
 });

@@ -45,6 +45,12 @@ These documents are the source of truth for product and architecture decisions. 
 | -------------------------- | ------------------ |
 | `21-capability-roadmap.md` | Capability roadmap |
 
+## performance/
+
+| Doc         | Topic                                                    |
+| ----------- | -------------------------------------------------------- |
+| `README.md` | Measured latency, AI profiles, cost and quality (ADR-025) |
+
 ## decisions/
 
 Architecture Decision Records. See [decisions/README.md](decisions/README.md).
