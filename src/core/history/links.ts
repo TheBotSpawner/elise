@@ -34,8 +34,8 @@ export const HISTORY_LINKS = {
   maxAutomatic: 3,
   /** Below this, evidence is not enough to link. */
   threshold: 0.7,
-  /** A name the user says must be at least this long to count as a mention. */
-  minMentionChars: 4,
+  /** A name the user says must be at least this long to count as a mention ("UTN"). */
+  minMentionChars: 3,
   /** Chips shown on a History row before "+N". */
   visibleChips: 2,
 } as const;
@@ -94,8 +94,10 @@ export function scoreEvidence(e: ThreadEvidence, nodes: KnowledgeNode[]): Scored
       c = Math.max(c, kTurns >= 2 ? 0.85 : 0.75);
       why.push("knowledge");
     }
-    // A name said once is a mention, not a topic: two user turns at least.
-    if ((e.mentionTurns.get(node.id) ?? 0) >= 2) {
+    // The user naming a Space/Section exactly ("UTN", "Client A") says what the conversation is
+    // about: once is enough. Generic names ("Personal", "Trabajo") need it said twice.
+    const mentions = e.mentionTurns.get(node.id) ?? 0;
+    if (mentions >= (isGenericName(node.name) ? 2 : 1)) {
       c = Math.max(c, 0.75);
       why.push("mentions");
     }
@@ -128,6 +130,23 @@ export function linksToAdd(
       return Boolean(at && at > prior.updatedAt);
     })
     .slice(0, room);
+}
+
+/** Space names that are everyday words: said once, they are not a topic. */
+const GENERIC_NAMES = new Set(
+  (
+    "personal general varios otros otro misc trabajo work casa home hogar vida life notas notes " +
+    "ideas proyectos projects clientes clients estudio study facultad university universidad " +
+    "familia family salud health finanzas finance viajes travel"
+  ).split(" "),
+);
+
+export function isGenericName(name: string): boolean {
+  return GENERIC_NAMES.has(
+    nameKey(name)
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim(),
+  );
 }
 
 /** Exact, word-bounded mentions of nodes in one user turn (accents and case ignored). */

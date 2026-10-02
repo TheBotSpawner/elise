@@ -1,7 +1,9 @@
 import { MessagesSquare, Mic, Plus, Search } from "lucide-react";
 import Link from "next/link";
+import { after } from "next/server";
 
 import { requireAuthContext } from "@/application/auth-context";
+import { autoLinkThread } from "@/application/history-links-service";
 import { historyRows, type HistoryRow } from "@/application/history-service";
 import { EmptyState, PageContainer, PageHeader } from "@/components/shared/page";
 import { buttonVariants } from "@/components/ui/button";
@@ -43,7 +45,14 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
       : params.space
         ? { kind: "space", spaceId: params.space, sectionId: params.section }
         : { kind: "all" };
-  const { rows, nodes } = await historyRows(auth, { q: params.q, filter, sort: params.sort });
+  const { rows, nodes, untaggedRecent } = await historyRows(auth, {
+    q: params.q,
+    filter,
+    sort: params.sort,
+  });
+  // Never delays the page: tags appear on the next visit.
+  if (untaggedRecent.length)
+    after(() => Promise.all(untaggedRecent.map((t) => autoLinkThread(auth, t))));
   const format = new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",

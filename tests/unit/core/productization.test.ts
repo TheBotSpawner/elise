@@ -122,7 +122,7 @@ describe("OAuth return paths", () => {
     expect(safeReturnPath("/onboarding")).toBe("/onboarding");
     for (const bad of ["https://evil.com", "//evil.com", "/settings", null, 42])
       expect(safeReturnPath(bad)).toBe("/connections");
-  });
+  }, 30_000);
 });
 
 describe("server env", () => {

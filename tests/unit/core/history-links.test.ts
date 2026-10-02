@@ -66,16 +66,40 @@ describe("automatic tagging is conservative", () => {
     expect(scoreEvidence(once, NODES)).toEqual([]);
   });
 
-  it("a single mention is not a topic; a weak keyword is not a mention", () => {
+  it("naming a Space or Section exactly links at once; a weak keyword never does", () => {
     const e = emptyEvidence();
+    // "Quiero probar mi carrera de Ingeniería en Sistemas de la UTN": one explicit name.
+    const utn: KnowledgeNode = {
+      id: "utn",
+      name: "UTN",
+      parentId: null,
+      parentName: null,
+      archived: false,
+    };
+    const withUtn = [...NODES, utn];
+    expect(
+      mentionedNodes("Ah, y ELISE, quiero probar mi carrera de ingeniería en la UTN", withUtn),
+    ).toEqual(["utn"]);
+    e.mentionTurns.set("utn", 1);
     e.mentionTurns.set(MATH, 1);
-    expect(scoreEvidence(e, NODES)).toEqual([]);
+    expect(
+      scoreEvidence(e, withUtn)
+        .map((s) => s.spaceId)
+        .sort(),
+    ).toEqual(["utn", MATH].sort());
     // "math" is not "Mathematics"; substrings never count.
     expect(mentionedNodes("can you help with math homework", NODES)).toEqual([]);
     expect(mentionedNodes("Repasemos Mathematics para el examen", NODES)).toEqual([MATH]);
     expect(mentionedNodes("lo de university physics", NODES).sort()).toEqual([UNI, PHYS].sort());
-    e.mentionTurns.set(MATH, 2);
-    expect(scoreEvidence(e, NODES).map((s) => s.spaceId)).toEqual([MATH]);
+  });
+
+  it("a generic Space name said once is not a topic; twice it is", () => {
+    const e = emptyEvidence();
+    e.mentionTurns.set(WORK, 1);
+    e.mentionTurns.set(UNI, 1);
+    expect(scoreEvidence(e, NODES)).toEqual([]);
+    e.mentionTurns.set(WORK, 2);
+    expect(scoreEvidence(e, NODES).map((s) => s.spaceId)).toEqual([WORK]);
   });
 
   it("allows several associations, but never more than a few on its own", () => {

@@ -46,7 +46,7 @@ const titleOf = (summaryTitle: string | null | undefined, raw: string | null) =>
 export async function historyRows(
   auth: AuthContext,
   query: HistoryQuery,
-): Promise<{ rows: HistoryRow[]; nodes: KnowledgeNode[] }> {
+): Promise<{ rows: HistoryRow[]; nodes: KnowledgeNode[]; untaggedRecent: ThreadRef[] }> {
   const [conversations, voice, nodes] = await Promise.all([
     listConversations(auth, 100),
     listVoiceSessions(auth, 50).catch(() => []),
@@ -94,6 +94,16 @@ export async function historyRows(
     chips: tags.get(r.key)?.chips ?? [],
   }));
 
+  // Recent threads without tags get evaluated after the page is sent (same deterministic
+  // rules as after a turn), so conversations from before tagging existed catch up.
+  const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const untaggedRecent = nodes.length
+    ? rows
+        .filter((r) => !r.spaceIds.length && r.at >= monthAgo)
+        .slice(0, 10)
+        .map((r) => r.thread)
+    : [];
+
   const byId = new Map(nodes.map((n) => [n.id, n]));
   rows = rows.filter((r) => matchesFilter(r.spaceIds, query.filter, byId));
 
@@ -121,7 +131,7 @@ export async function historyRows(
   rows.sort((a, b) =>
     query.sort === "oldest" ? a.at.localeCompare(b.at) : b.at.localeCompare(a.at),
   );
-  return { rows, nodes };
+  return { rows, nodes, untaggedRecent };
 }
 
 /**
