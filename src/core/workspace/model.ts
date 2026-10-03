@@ -7,6 +7,7 @@
 export const SURFACE_TYPES = [
   "meeting",
   "calendar_event",
+  "calendar",
   "email_thread",
   "email_list",
   "knowledge_source",
@@ -222,6 +223,7 @@ export type WorkspaceOp =
           | "changedAt"
           | "focusItem"
           | "members"
+          | "query"
         >
       >;
       at: string;

@@ -69,6 +69,7 @@ const SIGNALS: readonly [string, RegExp][] = [
 
 /** Visible Surfaces keep their capability's tools at hand ("open the second email"). */
 const SURFACE_GROUPS: Readonly<Record<string, string>> = {
+  calendar: "calendar",
   email_list: "email",
   email_thread: "email",
   web_results: "web",

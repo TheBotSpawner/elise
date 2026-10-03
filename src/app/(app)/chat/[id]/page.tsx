@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
@@ -19,7 +19,8 @@ export default async function ConversationPage({ params }: PageProps<"/chat/[id]
     loadWorkspace(auth, { kind: "conversation", id }).catch(() => undefined),
     contextOptions(auth),
   ]);
-  if (!messages) notFound();
+  // Deleted or not this user's: back to a fresh Home, which forgets it if the tab had it open.
+  if (!messages) redirect(`/?gone=${id}`);
 
   return (
     <ChatSurface

@@ -36,6 +36,7 @@ import Link from "next/link";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 import type { ToolDisplay } from "@/core/agents/tools";
+import type { CalendarChange } from "@/core/workspace/calendar";
 import { isSafeHref, type ActionId, type Surface, type SurfaceType } from "@/core/workspace/model";
 import { isOpen } from "@/core/workspace/model";
 import type { SurfacePayloads } from "@/core/workspace/registry";
@@ -44,6 +45,7 @@ import { DisplayCard } from "@/features/chat/result-cards";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { CalendarBody } from "./calendar-view";
 import type { VisualSize } from "./canvas/composition";
 import { MapBody, PlaceBody } from "./canvas/map";
 import { MediaBody } from "./canvas/media";
@@ -58,6 +60,7 @@ import { Visualization } from "./viz/visualization";
 export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   meeting: Video,
   calendar_event: CalendarDays,
+  calendar: CalendarDays,
   email_thread: Mail,
   email_list: Mail,
   knowledge_source: FileText,
@@ -104,6 +107,8 @@ export interface SurfaceHandlers {
     display?: ToolDisplay,
   ) => void;
   onApprovalPhase: (phase: ApprovalPhase) => void;
+  /** The Calendar Surface's own controls (view, date, filter; ADR-033). */
+  onCalendar?: (surface: Surface, change: CalendarChange) => void;
   /** "surfaceId:itemId" of the action running now. */
   pending: string | null;
   busy: boolean;
@@ -791,6 +796,15 @@ export function SurfaceBody({
     case "meeting":
     case "calendar_event":
       return <MeetingBody p={p} timezone={timezone} large={large || surface.type === "meeting"} />;
+    case "calendar":
+      return (
+        <CalendarBody
+          p={surface.payload as SurfacePayloads["calendar"]}
+          loading={surface.state === "loading"}
+          focus={size === "focus"}
+          onChange={handlers.onCalendar ? (c) => handlers.onCalendar!(surface, c) : undefined}
+        />
+      );
     case "email_list":
       return <EmailListBody surface={surface} p={p} timezone={timezone} handlers={handlers} />;
     case "email_thread":

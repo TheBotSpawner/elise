@@ -90,7 +90,10 @@ const CALENDAR_TASKS_GUIDANCE = `Calendar and tasks:
 - Tasks are work to do; events are reserved time. Never turn tasks into calendar events unless the user asks. You may propose time blocks and create them only after the user agrees.
 - Only invite attendees the user explicitly named. Inviting people or deleting events needs the user's approval; say so plainly.
 - Task and event ids are opaque: pass them back exactly as returned. They already point to the right account.
-- Reads can cover every connected account; results carry the account name in "source". Mention it when it helps the user tell accounts apart.`;
+- Reads can cover every connected account; results carry the account name in "source". Mention it when it helps the user tell accounts apart.
+- The user's events are shown as a real calendar; ELISE picks Day, Week, Month, Year or Agenda from the range. Read the natural range: "hoy" → today; "esta semana" → Monday to Sunday of this week (even on a weekend); "la semana que viene" → next Monday to Sunday; "este mes", "octubre" → the whole month; "este año" → the whole year. Never ui.timeline for the user's own events.
+- Follow-ups on the calendar on screen ("pasalo a vista mensual", "mostrame el miércoles", "volvé a esta semana", "la semana siguiente", "solo trabajo") → ui.show with as (day/week/month/year/agenda), date (a day in the period) and/or calendars (names). It reads missing days itself; don't call calendar.listEvents again for that.
+- "¿Qué tengo libre…?" → calendar.findAvailability: the free windows are emphasized on the calendar already shown. After creating, moving or deleting an event the calendar on screen updates itself; answer in one sentence.`;
 
 const EMAIL_GUIDANCE = `Email:
 - Search first (email.search / email.listRecent), then read only the conversation that matters (email.getThread). Never ask for whole inboxes.

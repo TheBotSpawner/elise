@@ -17,6 +17,7 @@ import { WAKE_LABELS, WAKE_PHRASES, type WakePhrase } from "@/core/voice/wake";
 import { applyOps, emptyWorkspace, type WorkspaceState } from "@/core/workspace/model";
 import { locationForTurn } from "@/features/location/shared-location";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
+import { rememberThread } from "@/lib/active-thread";
 import { applyAppearance } from "@/lib/theme";
 
 import { draftAttachments, type DraftStore } from "./draft-attachments";
@@ -238,6 +239,8 @@ export function useEliseChat(initial: {
                 accepted = true;
                 if (!thread.current) {
                   thread.current = event.thread;
+                  // The new interaction is now this tab's active one (ADR-032).
+                  rememberThread(event.thread);
                   // Keep the URL reloadable without remounting (a voice session reopens on Home).
                   window.history.replaceState(null, "", threadUrl(event.thread));
                 }

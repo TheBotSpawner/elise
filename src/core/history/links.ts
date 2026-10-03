@@ -482,6 +482,37 @@ export function locationOf(
   return n.parentId && n.parentName ? `${n.parentName} › ${n.name}` : n.name;
 }
 
+// ── Recientes (ADR-032) ─────────────────────────────────────────────────────
+
+export const RECENTS_LIMIT = 10;
+
+/**
+ * "What was I just working on?": the latest activity first across every folder (the rows the
+ * current filter already chose), whatever the list's own order. A short, bounded list.
+ */
+export function recentThreads<T extends { at: string }>(
+  rows: readonly T[],
+  limit = RECENTS_LIMIT,
+): T[] {
+  return [...rows].sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
+}
+
+/** "hace 8 min", "ayer", "12 sept" — compact, for fast scanning. */
+export function relativeWhen(at: string, now: Date, locale: "es" | "en", timeZone: string) {
+  const minutes = Math.max(0, Math.round((now.getTime() - Date.parse(at)) / 60_000));
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "short" });
+  if (minutes < 1) return rtf.format(0, "minute");
+  if (minutes < 60) return rtf.format(-minutes, "minute");
+  if (minutes < 12 * 60) return rtf.format(-Math.round(minutes / 60), "hour");
+  const day = (d: Date) => d.toLocaleDateString("en-CA", { timeZone });
+  const days = Math.round((Date.parse(day(now)) - Date.parse(day(new Date(at)))) / 86_400_000);
+  if (days === 0) return rtf.format(-Math.round(minutes / 60), "hour");
+  if (days < 7) return rtf.format(-days, "day");
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone }).format(
+    new Date(at),
+  );
+}
+
 // ── Titles ───────────────────────────────────────────────────────────────────
 
 const OPENERS = [

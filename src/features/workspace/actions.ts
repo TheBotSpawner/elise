@@ -6,6 +6,7 @@ import { requireAuthContext } from "@/application/auth-context";
 import type { ClientToolOutcome } from "@/application/chat-protocol";
 import {
   applyUserOp,
+  calendarViewOp,
   loadSurfaceDetail,
   loadWorkspace,
   presentFromHistory,
@@ -15,6 +16,7 @@ import {
 } from "@/application/workspace-service";
 import { toPublicError, type PublicError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
+import { CALENDAR_VIEWS } from "@/core/workspace/calendar";
 import { ACTION_IDS, SURFACE_SIZES, type WorkspaceState } from "@/core/workspace/model";
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: PublicError };
@@ -144,5 +146,28 @@ export async function refreshWorkspaceAction(
           operation: "updated" as const,
         })),
     ),
+  );
+}
+
+/** The Calendar Surface's controls (ADR-033): view, date, previous/today/next, filter. */
+const calendarChange = z
+  .object({
+    view: z.enum(CALENDAR_VIEWS).optional(),
+    anchor: z.iso.date().optional(),
+    shift: z.union([z.literal(-1), z.literal(0), z.literal(1)]).optional(),
+    hidden: z.array(z.string().max(1000)).max(50).optional(),
+  })
+  .strict();
+
+export async function calendarViewAction(
+  thread: ThreadRef,
+  surfaceId: string,
+  change: z.input<typeof calendarChange>,
+): Promise<Result<WorkspaceState>> {
+  return run(async () =>
+    calendarViewOp(await requireAuthContext(), threadSchema.parse(thread), {
+      id: id.parse(surfaceId),
+      ...calendarChange.parse(change),
+    }),
   );
 }

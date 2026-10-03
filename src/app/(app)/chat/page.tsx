@@ -1,4 +1,4 @@
-import { MessagesSquare, Mic, Plus, Search } from "lucide-react";
+import { MessagesSquare, Mic, Search } from "lucide-react";
 import Link from "next/link";
 import { after } from "next/server";
 
@@ -6,15 +6,18 @@ import { requireAuthContext } from "@/application/auth-context";
 import { autoLinkThread } from "@/application/history-links-service";
 import { historyRows, type HistoryRow } from "@/application/history-service";
 import { EmptyState, PageContainer, PageHeader } from "@/components/shared/page";
-import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   groupThreads,
   historyFolders,
   locationOf,
+  recentThreads,
+  relativeWhen,
+  RECENTS_LIMIT,
   type HistoryFilter,
   type KnowledgeNode,
 } from "@/core/history/links";
+import { NewChatButton } from "@/features/chat/continuity";
 import { DeleteConversationButton } from "@/features/history/delete-conversation";
 import { HistoryControls, type HistoryParams } from "@/features/history/history-controls";
 import { HistoryFolder } from "@/features/history/history-folder";
@@ -70,13 +73,9 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
   });
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const filtered = params.q || filter.kind !== "all";
+  const now = new Date();
 
-  const newChat = (
-    <Link href="/" className={buttonVariants({ size: "sm" })}>
-      <Plus />
-      {t.chat.newChat}
-    </Link>
-  );
+  const newChat = <NewChatButton />;
 
   const list = (items: HistoryRow[], located = false) => (
     <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
@@ -194,7 +193,31 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
         // Search ignores folders: every match, with where it is filed.
         list(rows, true)
       ) : params.group === "space" ? (
-        folders()
+        // Default: where conversations belong (folders), then what was just worked on.
+        <div className="flex flex-col gap-8">
+          <section aria-labelledby="history-spaces" className="flex flex-col gap-2">
+            <h2 id="history-spaces" className="px-1 type-label text-faint">
+              {t.history.spaces}
+            </h2>
+            {folders()}
+          </section>
+          <Recents
+            rows={recentThreads(rows)}
+            more={rows.length > RECENTS_LIMIT ? moreHref(params) : null}
+            title={
+              filter.kind === "all"
+                ? t.history.recents
+                : t.history.recentsIn(
+                    filter.kind === "untagged"
+                      ? t.history.untagged
+                      : (locationOf(filter.sectionId ?? filter.spaceId, byId) ?? t.history.recents),
+                  )
+            }
+            where={(r) => locationOf(r.primary, byId) ?? t.history.untagged}
+            when={(r) => relativeWhen(r.at, now, locale, auth.profile.timezone)}
+            t={t}
+          />
+        </div>
       ) : params.group === "none" ? (
         list(rows)
       ) : (
@@ -218,6 +241,73 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
   );
 }
 
+/** The same filter, as the full flat list ("Ver más"). */
+function moreHref(p: HistoryParams) {
+  const q = new URLSearchParams({ group: "none" });
+  if (p.space) q.set("space", p.space);
+  if (p.section) q.set("section", p.section);
+  return `/chat?${q}`;
+}
+
+/** Recientes: a short flat list across folders — title, where it is, how long ago. */
+function Recents({
+  rows,
+  title,
+  more,
+  where,
+  when,
+  t,
+}: {
+  rows: HistoryRow[];
+  title: string;
+  more: string | null;
+  where: (r: HistoryRow) => string;
+  when: (r: HistoryRow) => string;
+  t: Dictionary;
+}) {
+  if (!rows.length) return null;
+  return (
+    <section aria-labelledby="history-recents" className="flex flex-col gap-2">
+      <h2 id="history-recents" className="px-1 type-label text-faint">
+        {title}
+      </h2>
+      <ul className="flex flex-col">
+        {rows.map((r) => (
+          <li key={r.key}>
+            <Link
+              href={hrefOf(r)}
+              className="flex min-w-0 items-center justify-between gap-4 rounded-xl px-3 py-2.5 hover:bg-surface-2"
+            >
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-[14px]">
+                  {r.voice && (
+                    <Mic className="size-3.5 shrink-0 text-faint" aria-label={t.voice.history} />
+                  )}
+                  <span className="truncate">
+                    {r.title || (r.voice ? t.voice.historyItem : t.chat.untitled)}
+                  </span>
+                </span>
+                <span className="block truncate text-[12px] text-muted">{where(r)}</span>
+              </span>
+              <time className="shrink-0 font-mono text-[11.5px] text-faint" dateTime={r.at}>
+                {when(r)}
+              </time>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {more && (
+        <Link href={more} className="self-start px-3 text-[13px] text-accent-text hover:underline">
+          {t.history.seeAll}
+        </Link>
+      )}
+    </section>
+  );
+}
+
+const hrefOf = (r: HistoryRow) =>
+  r.thread.kind === "conversation" ? `/chat/${r.thread.id}` : `/?session=${r.thread.id}`;
+
 function Row({
   row: r,
   t,
@@ -233,8 +323,7 @@ function Row({
   location: string | null;
 }) {
   const title = r.title || (r.voice ? t.voice.historyItem : t.chat.untitled);
-  const href =
-    r.thread.kind === "conversation" ? `/chat/${r.thread.id}` : `/?session=${r.thread.id}`;
+  const href = hrefOf(r);
   return (
     <li className="flex items-center gap-1 pr-2 hover:bg-surface-2">
       <Link

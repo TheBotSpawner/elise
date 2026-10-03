@@ -5,7 +5,9 @@ import { toast } from "sonner";
 
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { ThreadRef } from "@/core/interaction";
+import { todayIn } from "@/core/time";
 import { approvalDecidedOps } from "@/core/workspace/approval-ops";
+import { navigate, type CalendarChange, type CalendarPayload } from "@/core/workspace/calendar";
 import {
   applyOp,
   applyOps,
@@ -15,6 +17,7 @@ import {
 } from "@/core/workspace/model";
 import type { SurfacePayloads } from "@/core/workspace/registry";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
+import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { applyAppearance } from "@/lib/theme";
 
@@ -22,6 +25,7 @@ import {
   getWorkspaceAction,
   presentFromHistoryAction,
   refreshWorkspaceAction,
+  calendarViewAction,
   surfaceActionAction,
   surfaceDetailAction,
   workspaceOpAction,
@@ -176,6 +180,39 @@ export function useWorkspaceController({
     [userOp],
   );
 
+  /**
+   * The Calendar Surface's controls (ADR-033): shown at once from what is loaded; the server
+   * persists it and reads more days only when the new view needs them.
+   */
+  const calendar = useCallback(
+    async (surface: Surface, change: CalendarChange) => {
+      const p = surface.payload as CalendarPayload;
+      const { payload, fetch } = navigate(p, change, todayIn(p.timezone));
+      const at = new Date().toISOString();
+      setWorkspace((s) =>
+        applyOp(s, {
+          op: "update",
+          id: surface.id,
+          patch: { payload, ...(fetch ? { state: "loading" as const } : {}) },
+          at,
+        }),
+      );
+      const thread = getThread();
+      if (!thread) return;
+      const result = await calendarViewAction(thread, surface.id, change);
+      const fresh = result.ok ? result.value.surfaces.find((x) => x.id === surface.id) : undefined;
+      if (!result.ok) toast.error(errorText(t, result.error));
+      // Only this Surface converges: a turn may be streaming other changes meanwhile.
+      setWorkspace((s) => ({
+        ...s,
+        surfaces: s.surfaces.map((x) =>
+          x.id !== surface.id ? x : (fresh ?? { ...x, state: "ready" as const }),
+        ),
+      }));
+    },
+    [getThread, setWorkspace, t],
+  );
+
   const arrange = useCallback(
     (order: "time" | "relevance") =>
       userOp({ op: "arrange", order }, (s) =>
@@ -288,6 +325,7 @@ export function useWorkspaceController({
     focus,
     pin,
     arrange,
+    calendar,
     setContext,
     runAction,
     loadDetail,

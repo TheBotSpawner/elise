@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { CALENDAR_VIEWS, MAX_CALENDAR_EVENTS } from "./calendar";
 import { mapPayload, placePayload, type MapPayload } from "./location";
 import { mediaPayload } from "./media";
 import {
@@ -113,9 +114,42 @@ const change = z.object({
   subject: text(200).optional(),
 });
 
+const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const calendarPayloadSchema = z.object({
+  view: z.enum(CALENDAR_VIEWS),
+  anchor: isoDay,
+  range: z.object({ from: isoDay, to: isoDay }),
+  timezone: text(60),
+  events: z
+    .array(
+      z.object({
+        id: text(1000),
+        calendarId: text(1000),
+        calendarName: text(200),
+        account: text(200),
+        title: text(300),
+        start: text(40),
+        end: text(40),
+        allDay: z.boolean(),
+        status: z.enum(["confirmed", "tentative", "cancelled"]),
+        location: text(300).nullable(),
+        description: text(400).nullable(),
+        meetingUrl: href.nullable(),
+        htmlUrl: href.nullable(),
+        attendees: z.number().int().min(0),
+        busy: z.boolean().optional(),
+      }),
+    )
+    .max(MAX_CALENDAR_EVENTS * 2),
+  hidden: z.array(text(1000)).max(50),
+  free: z.array(z.object({ start: text(40), end: text(40) })).max(100),
+  truncated: z.boolean(),
+});
+
 export const PAYLOADS = {
   meeting: eventPayload,
   calendar_event: eventPayload,
+  calendar: calendarPayloadSchema,
   email_list: z.object({ items: z.array(emailItem).max(8), query: text(200).optional() }),
   email_thread: z.object({
     threadId: text(1000),
@@ -564,6 +598,28 @@ const event = <K extends "meeting" | "calendar_event">(priority: number): Surfac
 const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
   meeting: event(100),
   calendar_event: event(70),
+  calendar: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 82,
+    actions: () => [expand],
+    describe: (p, tz) => {
+      const shown = p.events.filter((e) => !p.hidden.includes(e.calendarId));
+      return [
+        `${p.view} view of ${p.anchor} (loaded ${p.range.from}…${p.range.to}`,
+        p.hidden.length ? `, hidden calendars: ${p.hidden.length}` : "",
+        `): `,
+        shown
+          .slice(0, 40)
+          .map((e) =>
+            e.busy
+              ? `busy ${local(e.start, tz)}–${local(e.end, tz).slice(11)}`
+              : `${q(e.title)} ${e.allDay ? `${e.start} all day` : `${local(e.start, tz)}–${local(e.end, tz).slice(11)}`} [${e.calendarName}] (event ${e.id})`,
+          )
+          .join("; ") || "no events",
+      ].join("");
+    },
+  },
   email_list: {
     sizes: ["small", "medium", "large", "expanded"],
     size: "medium",

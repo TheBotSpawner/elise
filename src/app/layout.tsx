@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { Toaster } from "sonner";
 
 import { getAuthContext } from "@/application/auth-context";
+import { RESUME_SCRIPT } from "@/lib/active-thread";
 import { I18nProvider } from "@/lib/i18n/client";
 import { getLocale } from "@/lib/i18n/server";
 import { isTheme, SYSTEM_THEME_SCRIPT, THEME_COOKIE } from "@/lib/theme";
@@ -48,6 +49,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: SYSTEM_THEME_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: RESUME_SCRIPT }} />
       </head>
       <body className="min-h-full">
         <I18nProvider locale={locale}>{children}</I18nProvider>

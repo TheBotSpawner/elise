@@ -305,12 +305,23 @@ describe("results as Surfaces", () => {
     const e = event("e1", "Weekly with Alex", "2026-09-29T16:00:00Z", [
       { email: "alex@example.com", name: "Alex" },
     ]);
+    // One match from a long search is that event's card; a day or week is a calendar (ADR-033).
+    const MONTH_LATER = "2026-10-29T15:00:00.000Z";
     const one = surfacesFromOutcome(
+      "calendar.listEvents",
+      {
+        status: "succeeded",
+        display: { kind: "event_list", events: [e], from: AT, to: MONTH_LATER },
+      },
+      { key: "c" },
+    );
+    expect(one.map((s) => s.type)).toEqual(["calendar_event"]);
+    const day = surfacesFromOutcome(
       "calendar.listEvents",
       { status: "succeeded", display: { kind: "event_list", events: [e], from: AT, to: AT } },
       { key: "c" },
     );
-    expect(one.map((s) => s.type)).toEqual(["calendar_event"]);
+    expect(day.map((s) => s.type)).toEqual(["calendar"]);
     expect(one[0]!.actions.map((a) => a.id)).toEqual(["join", "open_calendar", "expand"]);
     const empty = surfacesFromOutcome(
       "history.search",
@@ -340,7 +351,11 @@ describe("results as Surfaces", () => {
       { status: "succeeded", display: { kind: "event_list", events: [e], from: AT, to: AT } },
       { key: "c" },
     );
-    expect((s!.payload as { meetingUrl: string | null }).meetingUrl).toBeNull();
+    // Shown in a calendar, the unsafe link never reaches the screen.
+    expect(s!.type).toBe("calendar");
+    expect(
+      (s!.payload as { events: { meetingUrl: string | null }[] }).events[0]!.meetingUrl,
+    ).toBeNull();
     expect(s!.actions.map((a) => a.id)).toEqual(["expand"]);
   });
 

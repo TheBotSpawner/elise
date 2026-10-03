@@ -2,6 +2,7 @@
 
 import { AnimatePresence } from "motion/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { VoicePreferences } from "@/application/auth-context";
@@ -18,9 +19,11 @@ import { LiveCanvas } from "@/features/workspace/canvas/live-canvas";
 import { SurfaceView, type CanvasHandlers } from "@/features/workspace/canvas/surface-view";
 import { useWorkspaceController } from "@/features/workspace/use-workspace";
 import { useOnline } from "@/hooks/use-online";
+import { forgetThread, homeArrival, readActiveThread, rememberThread } from "@/lib/active-thread";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { NewChatButton } from "./continuity";
 import type { ChatMessage } from "./types";
 import { useEliseChat } from "./use-elise-chat";
 
@@ -66,7 +69,13 @@ export function ChatSurface({
   contexts = [],
   run,
   firstPrompts,
+  gone = null,
+  fresh = false,
 }: {
+  /** The tab's active interaction no longer exists (deleted, inaccessible): forget it. */
+  gone?: string | null;
+  /** Arrived from "Nueva conversación". */
+  fresh?: boolean;
   /** Right after onboarding: first prompts built from what was set up (ADR-019). */
   firstPrompts?: string[] | null;
   /** "Run" from My Elise › Shortcuts: this Shortcut's phrase is sent once, as typed. */
@@ -111,6 +120,25 @@ export function ChatSurface({
     spaceId: space?.id,
     workspace: initialWorkspace,
   });
+  // The tab's active interaction (ADR-032): an opened one becomes it; a bare Home visit in a
+  // tab that has one opens it again (the pre-paint script kept the fresh Home hidden).
+  const router = useRouter();
+  const threadKind = thread?.kind;
+  const threadId = thread?.id;
+  useEffect(() => {
+    const step = homeArrival({
+      thread: threadKind && threadId ? { kind: threadKind, id: threadId } : null,
+      gone,
+      fresh,
+      pointer: readActiveThread(),
+      search: window.location.search,
+    });
+    if (step.remember) rememberThread(step.remember);
+    if (step.forget) forgetThread(step.forget === "all" ? undefined : step.forget);
+    if (step.cleanUrl) window.history.replaceState(null, "", "/");
+    if (step.open) router.replace(step.open);
+    else delete document.documentElement.dataset.resuming;
+  }, [threadKind, threadId, gone, fresh, router]);
   const ranRef = useRef(false);
   // "?welcome=1" is a one-time landing: a reload shows the normal Home.
   useEffect(() => {
@@ -206,12 +234,22 @@ export function ChatSurface({
     return () => window.clearTimeout(timer);
   }, [confirmationKey]);
 
-  const { focus, pin, dismiss, runAction, approvalResolved, loadDetail, showFromThread, pending } =
-    controller;
+  const {
+    focus,
+    pin,
+    dismiss,
+    runAction,
+    approvalResolved,
+    loadDetail,
+    showFromThread,
+    pending,
+    calendar,
+  } = controller;
   const handlers: CanvasHandlers = useMemo(
     () => ({
       onAction: (surface, action, itemId) => void runAction(surface, action, itemId),
       onPrompt: (text) => void send(text),
+      onCalendar: (surface, change) => void calendar(surface, change),
       // Opening an item inside a Surface is focusing it (the same op as "open the second email").
       onExpand: (surface, itemId) => focus(surface.id, itemId),
       onFocus: (surface, item) => focus(surface.id, item ?? null),
@@ -227,6 +265,7 @@ export function ChatSurface({
     [
       runAction,
       send,
+      calendar,
       focus,
       pin,
       dismiss,
@@ -320,7 +359,7 @@ export function ChatSurface({
   );
 
   return (
-    <main className="relative flex flex-1 flex-col">
+    <main className="elise-home relative flex flex-1 flex-col">
       <LiveCanvas
         workspace={workspace}
         messages={messages}
@@ -340,6 +379,7 @@ export function ChatSurface({
         offline={!online}
         failedDraft={failedDraft}
         notices={notices}
+        newChat={thread || messages.length > 0 ? <NewChatButton /> : null}
         idle={{
           status: <HomeStatus state={orbState} userName={userName} timezone={timezone} />,
           context: space ? (

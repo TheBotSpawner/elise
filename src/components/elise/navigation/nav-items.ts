@@ -40,7 +40,8 @@ export const MY_ELISE: { key: CapabilityKey; href: string | null; icon: LucideIc
 export type ActiveSection = SectionKey | "myElise" | "settings" | "approvals" | null;
 
 export function activeSection(pathname: string): ActiveSection {
-  if (pathname === "/") return "home";
+  // A conversation is the interaction in use, so Home (ADR-032); History is the archive.
+  if (pathname === "/" || /^\/chat\/[^/]+/.test(pathname)) return "home";
   if (pathname.startsWith("/my-elise")) return "myElise";
   if (pathname.startsWith("/settings")) return "settings";
   if (pathname.startsWith("/approvals")) return "approvals";

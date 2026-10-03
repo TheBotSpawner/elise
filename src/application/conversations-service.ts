@@ -51,6 +51,7 @@ export async function loadConversation(
     .select("id")
     .eq("id", conversationId)
     .eq("user_id", auth.userId)
+    .is("archived_at", null)
     .maybeSingle();
   if (!conversation) return null;
 

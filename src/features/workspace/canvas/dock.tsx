@@ -10,6 +10,7 @@ import { ORB_LAYOUT_ID } from "@/components/elise/orb/orb-presence";
 import type { OrbState } from "@/components/elise/orb/orb-states";
 import { isHearing, type VoiceState } from "@/core/voice/session";
 import { DraftAttachmentChips } from "@/features/chat/attachments-ui";
+import { composerDraft } from "@/features/chat/continuity";
 import { AttachToKnowledge } from "@/features/knowledge/attach-dialog";
 import { MicButton, type VoiceHandlers } from "@/features/voice/voice-controls";
 import { useI18n } from "@/lib/i18n/client";
@@ -82,6 +83,16 @@ export function Dock({
   useEffect(() => {
     if (typing && voice) input.current?.focus();
   }, [typing, voice]);
+  // New Chat reads what is typed; once this dock is gone, there is no draft to protect.
+  useEffect(() => {
+    composerDraft.text = draft;
+  }, [draft]);
+  useEffect(
+    () => () => {
+      composerDraft.text = "";
+    },
+    [],
+  );
 
   const submit = () => {
     if (!draft.trim() || busy || offline) return;

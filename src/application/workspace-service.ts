@@ -6,7 +6,13 @@ import { getOperation } from "@/core/capabilities/registry";
 import { AppError, toAppError, toPublicError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import { wellFormed } from "@/core/text";
-import { todayIn } from "@/core/time";
+import { addDays, todayIn } from "@/core/time";
+import {
+  keepPresentation,
+  navigate,
+  type CalendarChange,
+  type CalendarPayload,
+} from "@/core/workspace/calendar";
 import {
   approvalDecidedOps,
   presentOps,
@@ -326,14 +332,48 @@ export class WorkspaceSession implements WorkspacePort {
             key: query ? queryKey(query.tool, query.args) : callId,
             intentId: this.value.intent?.id ?? null,
             locale: this.auth.profile?.locale,
+            timezone: this.auth.profile?.timezone,
           });
+    // Free time asked about days a calendar already shows: emphasized there, not a 2nd calendar.
+    const availability = raw.find(
+      (d) => d.type === "calendar" && toolName.endsWith(".findAvailability"),
+    );
+    const shownCalendar = availability
+      ? this.value.surfaces.find((s) => {
+          if (s.type !== "calendar") return false;
+          const p = s.payload as CalendarPayload;
+          const a = (availability.payload as CalendarPayload).range;
+          return p.events.some((e) => !e.busy) && p.range.from <= a.from && p.range.to >= a.to;
+        })
+      : undefined;
+    if (shownCalendar && availability) {
+      const a = availability.payload as CalendarPayload;
+      this.apply([
+        {
+          op: "update",
+          id: shownCalendar.id,
+          patch: {
+            payload: {
+              ...(shownCalendar.payload as CalendarPayload),
+              free: a.free,
+              view: a.view === "day" ? "day" : (shownCalendar.payload as CalendarPayload).view,
+              anchor: a.range.from,
+            },
+          },
+          at,
+        },
+        { op: "focus", id: shownCalendar.id, item: null, at },
+      ]);
+      return [shownCalendar.id];
+    }
     // A read's single Surface is that query's dataset; a resource card is that resource's.
     const drafts = raw.map((d) => ({
       ...d,
       ...(query && d.type !== "approval" ? { query } : {}),
       ...(query && raw.length === 1 && d.type !== "approval"
         ? {
-            dataset: datasetKey(query.tool, query.args),
+            dataset:
+              d.type === "calendar" ? calendarDataset(query) : datasetKey(query.tool, query.args),
             ...(d.type === "task_list" ? { presentation: "list" as const } : {}),
           }
         : {}),
@@ -385,6 +425,7 @@ export class WorkspaceSession implements WorkspacePort {
           key: queryKey(q.tool, q.args),
           intentId: surface.intentId,
           locale: this.auth.profile?.locale,
+          timezone: this.auth.profile?.timezone,
         });
         // A collection shown as a timeline or table keeps that form when it refreshes.
         const list = drafts.find((d) => d.type === "task_list");
@@ -414,7 +455,18 @@ export class WorkspaceSession implements WorkspacePort {
           return {
             op: "update",
             id: surface.id,
-            patch: { payload: fresh.payload, title: fresh.title, state: "ready" },
+            patch: {
+              // A calendar keeps the view, date and filter the user chose (ADR-033).
+              payload:
+                surface.type === "calendar" && fresh.type === "calendar"
+                  ? keepPresentation(
+                      fresh.payload as CalendarPayload,
+                      surface.payload as CalendarPayload,
+                    )
+                  : fresh.payload,
+              title: fresh.title,
+              state: "ready",
+            },
             at,
           };
         const keep = surface.pinned || this.value.focusId === surface.id;
@@ -601,6 +653,7 @@ export async function presentFromHistory(
       key: callId,
       intentId: s.intent?.id ?? null,
       locale: auth.profile.locale,
+      timezone: auth.profile.timezone,
     });
     focus = drafts[0]?.id ?? null;
     return [...presentOps(drafts, at), ...(focus ? [{ op: "focus" as const, id: focus, at }] : [])];
@@ -694,6 +747,7 @@ export async function runSurfaceAction(
               key: `${surfaceId}:${action}`,
               intentId: s.intent?.id ?? null,
               locale: auth.profile.locale,
+              timezone: auth.profile.timezone,
             }),
             at,
           )),
@@ -879,4 +933,81 @@ export async function markResourceSurfaces(
         .eq("id", row.id)
         .eq("workspace_id", workspaceId);
   }
+}
+
+/**
+ * One calendar on the Canvas (ADR-033): any range or calendar filter of the user's events is the
+ * same dataset, so "la semana que viene" or "solo trabajo" replaces the visible calendar in place.
+ * A text search ("cuándo tengo X") is its own result.
+ */
+export function calendarDataset(query: SurfaceQuery): string {
+  return query.args.search ? datasetKey(query.tool, query.args) : "calendar";
+}
+
+/**
+ * The Calendar Surface's own controls (view, date, previous/today/next, calendar filter):
+ * presentation only, unless the new view needs days that aren't loaded — then the Surface's own
+ * read runs again for exactly that range (never once per event) and updates it in place.
+ */
+export async function calendarViewOp(
+  auth: AuthContext,
+  thread: ThreadRef,
+  op: { id: string } & CalendarChange,
+): Promise<WorkspaceState> {
+  await ownThread(auth, thread);
+  const before = await loadWorkspace(auth, thread);
+  const surface = before.surfaces.find((s) => s.id === op.id && s.type === "calendar");
+  if (!surface) throw new AppError("NOT_FOUND", "That calendar is no longer shown");
+  const timezone = auth.profile.timezone;
+  const { payload, fetch } = navigate(surface.payload as CalendarPayload, op, todayIn(timezone));
+  let next = payload;
+  let query = surface.query;
+  if (fetch) {
+    const tool = query?.tool === "calendar.findAvailability" ? query.tool : "calendar.listEvents";
+    const args = {
+      ...(query?.tool === tool ? query.args : {}),
+      from: fetch.from,
+      // Dates are inclusive for the calendar tools.
+      to: addDays(fetch.to, -1),
+    };
+    const ports = createExecutorPorts(auth);
+    const outcome = await executeToolCall(
+      ports,
+      {
+        ...toolContext(auth, "user_ui", null, thread),
+        workspace: { state: () => before, apply: () => 0, activity: () => {} },
+      },
+      { name: tool, args },
+    );
+    const fresh =
+      outcome.status === "succeeded"
+        ? surfacesFromOutcome(tool, outcome, {
+            key: "calendar",
+            locale: auth.profile.locale,
+            timezone,
+          }).find((d) => d.type === "calendar")
+        : undefined;
+    if (!fresh)
+      throw new AppError("PROVIDER_UNAVAILABLE", "Couldn't read those days of the calendar", {
+        recovery: "retry",
+      });
+    next = {
+      ...(fresh.payload as CalendarPayload),
+      view: payload.view,
+      anchor: payload.anchor,
+      hidden: payload.hidden,
+    };
+    query = { tool, args };
+  }
+  const at = new Date().toISOString();
+  const after = applyOps(before, [
+    {
+      op: "update",
+      id: surface.id,
+      patch: { payload: next, ...(query ? { query } : {}), state: "ready" },
+      at,
+    },
+  ]);
+  await saveWorkspace(auth, thread, after);
+  return after;
 }

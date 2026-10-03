@@ -451,3 +451,8 @@
 .prose-elise h3 {
   font-weight: 500;
 }
+
+/* A bare Home visit in a tab with an active conversation: hidden until it opens (ADR-032). */
+html[data-resuming] .elise-home {
+  visibility: hidden;
+}

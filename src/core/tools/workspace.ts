@@ -1,9 +1,17 @@
 import { z } from "zod";
 
-import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
+import type { ToolDefinition, ToolRunEnv, ToolRunResult } from "../agents/tools";
 import { AppError } from "../errors";
-import { toLocalDateTime } from "../time";
+import { addDays, toLocalDateTime } from "../time";
 import { timelineTool, visualizeTool } from "./visualize";
+import {
+  CALENDAR_VIEWS,
+  calendarsOf,
+  navigate,
+  visibleEvents,
+  type CalendarPayload,
+  type CalendarView,
+} from "../workspace/calendar";
 import { surfacesFromOutcome } from "../workspace/from-results";
 import {
   activeCollection,
@@ -134,6 +142,12 @@ function knownUrls(state: WorkspaceState): Set<string> {
       add(e.htmlUrl);
       for (const m of (e.description ?? "").match(/https:\/\/[^\s<>"')\]]+/g) ?? []) add(m);
     }
+    if (s.type === "calendar")
+      for (const e of (p as SurfacePayloads["calendar"]).events) {
+        add(e.meetingUrl);
+        add(e.htmlUrl);
+        for (const m of (e.description ?? "").match(/https:\/\/[^\s<>"')\]]+/g) ?? []) add(m);
+      }
     if (s.type === "knowledge_result")
       for (const src of (p as SurfacePayloads["knowledge_result"]).sources) add(src.url);
     if (s.type === "knowledge_source" || s.type === "document") add(p.url);
@@ -493,15 +507,91 @@ const showInput = z
       .optional()
       .describe("Only when the user points at a specific one (S2, “the second list”)."),
     as: z
-      .enum(["list", "timeline", "table"])
+      .enum(["list", "timeline", "table", ...CALENDAR_VIEWS])
       .optional()
-      .describe("Another form for the SAME data. It replaces the current view."),
+      .describe(
+        'Another form for the SAME data. It replaces the current view. A calendar: day, week, month, year or agenda ("pasalo a vista mensual").',
+      ),
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe(
+        'Calendar: the day the view moves to ("mostrame el miércoles", "la semana que viene" → a day in that week, "volvé a esta semana" → today). Missing days are read automatically.',
+      ),
+    calendars: z
+      .array(z.string().min(1).max(200))
+      .max(20)
+      .optional()
+      .describe(
+        'Calendar: show only these calendars, by name ("solo trabajo" → ["Trabajo"]); [] shows all again.',
+      ),
     keep: z
       .boolean()
       .default(false)
       .describe('Only if the user asks to keep both ("dejá la lista y mostrame también…").'),
   })
   .strict();
+
+/** The visible calendar, in another view, date or calendar selection (ADR-033). */
+async function showCalendar(
+  surface: Surface,
+  q: z.infer<typeof showInput>,
+  env: ToolRunEnv,
+  at: string,
+): Promise<ToolRunResult<unknown>> {
+  const p = surface.payload as CalendarPayload;
+  const names = q.calendars?.map((n) => n.toLowerCase());
+  const hidden = names
+    ? names.length
+      ? calendarsOf(p.events)
+          .filter((c) => !names.some((n) => c.name.toLowerCase().includes(n)))
+          .map((c) => c.id)
+      : []
+    : undefined;
+  const view = CALENDAR_VIEWS.includes(q.as as CalendarView) ? (q.as as CalendarView) : undefined;
+  const today = toLocalDateTime(env.ctx.now, env.ctx.timezone).slice(0, 10);
+  const { payload, fetch } = navigate(p, { view, anchor: q.date, hidden }, today);
+  let next = payload;
+  let query = surface.query;
+  if (fetch) {
+    if (!env.invoke)
+      throw new AppError("PROVIDER_UNAVAILABLE", "Can't read more of the calendar here");
+    const args = { from: fetch.from, to: addDays(fetch.to, -1) };
+    const fresh = await env.invoke("calendar.listEvents", args);
+    const draft =
+      fresh.status === "succeeded"
+        ? surfacesFromOutcome("calendar.listEvents", fresh, {
+            key: "calendar",
+            timezone: env.ctx.timezone,
+          }).find((d) => d.type === "calendar")
+        : undefined;
+    if (!draft)
+      throw new AppError("PROVIDER_UNAVAILABLE", "Couldn't read those days of the calendar");
+    next = {
+      ...(draft.payload as CalendarPayload),
+      view: payload.view,
+      anchor: payload.anchor,
+      hidden: payload.hidden,
+    };
+    query = { tool: "calendar.listEvents", args };
+  }
+  port(env).apply([
+    { op: "update", id: surface.id, patch: { payload: next, ...(query ? { query } : {}) }, at },
+    { op: "focus", id: surface.id, item: null, at },
+  ]);
+  const shown = visibleEvents(next);
+  return {
+    output: {
+      shown: surface.handle,
+      view: next.view,
+      date: next.anchor,
+      events: shown.length,
+      instructions:
+        "The calendar on screen moved there (same Surface). Answer briefly from it; don't list every event.",
+    },
+  };
+}
 
 export const showTool: ToolDefinition = {
   name: "ui.show",
@@ -529,8 +619,22 @@ export const showTool: ToolDefinition = {
         { recovery: "review" },
       );
     const at = now(env);
+    const calendarTarget =
+      target.type === "calendar"
+        ? target
+        : (q.date || q.calendars || CALENDAR_VIEWS.includes(q.as as CalendarView)) && !q.surface
+          ? state.surfaces.find((s) => s.type === "calendar")
+          : undefined;
+    if (calendarTarget) return showCalendar(calendarTarget, q, env, at);
+    const as = q.as;
+    if (as && as !== "list" && as !== "timeline" && as !== "table")
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "No calendar on screen: read it first (calendar.listEvents), then change its view.",
+        { recovery: "review" },
+      );
     const current = target.presentation ?? (target.type === "task_list" ? "list" : null);
-    if (!q.as || q.as === current) {
+    if (!as || as === current) {
       w.apply([
         {
           op: "focus",
@@ -572,7 +676,7 @@ export const showTool: ToolDefinition = {
       query: target.query,
       dataset,
     };
-    if (q.as === "list") {
+    if (as === "list") {
       const payload = PAYLOADS.task_list.parse(list);
       w.apply([
         {
@@ -591,7 +695,7 @@ export const showTool: ToolDefinition = {
       ]);
       return { output: { shown: "list", items: list.items.length } };
     }
-    const spec = representTasks(list, q.as, {
+    const spec = representTasks(list, as, {
       title,
       locale: env.ctx.locale,
       today: toLocalDateTime(env.ctx.now, env.ctx.timezone).slice(0, 10),
@@ -611,11 +715,11 @@ export const showTool: ToolDefinition = {
         keep: q.keep,
         at,
         surface: {
-          id: surfaceId("visualization", `${dataset}:${q.as}`),
+          id: surfaceId("visualization", `${dataset}:${as}`),
           type: "visualization",
           ...common,
           payload,
-          presentation: q.as,
+          presentation: as,
           members: memberIds(list),
           ...draftDefaults("visualization", payload),
           size: "large",
@@ -625,7 +729,7 @@ export const showTool: ToolDefinition = {
     ]);
     return {
       output: {
-        shown: q.as,
+        shown: as,
         items: list.items.length,
         ...(q.keep ? {} : { replaced: target.handle }),
         instructions:

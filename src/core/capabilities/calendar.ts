@@ -138,10 +138,14 @@ export const listCalendarsInput = z.object({ destination: destinationField }).st
 
 export const listEventsInput = z
   .object({
-    from: when.describe("Start (user's local time). A date means the whole day."),
+    from: when.describe(
+      'Start (user\'s local time). A date means the whole day. "Esta semana" starts on Monday.',
+    ),
     to: when
       .optional()
-      .describe("End (exclusive for times). Defaults to the end of the `from` day."),
+      .describe(
+        "End (a date is inclusive; exclusive for times). Defaults to the end of the `from` day.",
+      ),
     calendar: ref
       .optional()
       .describe("Calendar id from calendar.listCalendars. Omit for all visible calendars."),

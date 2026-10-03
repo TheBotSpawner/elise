@@ -6,10 +6,12 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { signOut } from "@/features/auth/actions";
+import { NewChatButton, useActiveThread } from "@/features/chat/continuity";
+import { homeHref } from "@/lib/active-thread";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-import { ChevronDownIcon, CloseIcon, ComposeIcon, MenuIcon, SettingsIcon } from "../icons";
+import { ChevronDownIcon, CloseIcon, MenuIcon, SettingsIcon } from "../icons";
 import { activeSection, MY_ELISE, SECTIONS } from "./nav-items";
 import type { NavUser } from "./top-nav";
 import { Orb } from "../orb/orb";
@@ -31,6 +33,10 @@ export function MobileHeader({
   const { t } = useI18n();
   const pathname = usePathname();
   const { state: orbState, docked, level } = useOrbPresence();
+  const activeThread = useActiveThread();
+  const home = homeHref(activeThread);
+  // In a conversation (the tab's active one, on Home), the corner offers a new one.
+  const inConversation = docked || (activeThread !== null && activeSection(pathname) === "home");
   const [open, setOpen] = useState(false);
 
   // Close the overlay after navigating.
@@ -63,18 +69,12 @@ export function MobileHeader({
             />
           )}
         </button>
-        <Link href="/" className="flex items-center gap-1" aria-label="ELISE">
+        <Link href={home} className="flex items-center gap-1" aria-label="ELISE">
           {docked && <Orb state={orbState} size={36} levelSource={level} />}
           <span className="pl-[0.34em] text-xs font-medium tracking-[0.34em]">ELISE</span>
         </Link>
-        {docked ? (
-          <Link
-            href="/"
-            aria-label={t.nav.newConversation}
-            className="grid size-11 place-items-center text-muted"
-          >
-            <ComposeIcon />
-          </Link>
+        {inConversation ? (
+          <NewChatButton variant="icon" />
         ) : (
           <Link
             href="/settings"
@@ -115,6 +115,7 @@ function MobileNavOverlay({
 }) {
   const { t } = useI18n();
   const active = activeSection(pathname);
+  const home = homeHref(useActiveThread());
   const closeRef = useRef<HTMLButtonElement>(null);
   const [modulesOpen, setModulesOpen] = useState(active === "myElise");
 
@@ -172,7 +173,7 @@ function MobileNavOverlay({
         {SECTIONS.map((s, i) => (
           <motion.div key={s.key} {...item(i)}>
             <Link
-              href={s.href}
+              href={s.key === "home" ? home : s.href}
               aria-current={active === s.key ? "page" : undefined}
               className={cn(
                 big,

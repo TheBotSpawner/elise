@@ -184,6 +184,10 @@ export function createDraftStore(transport: AttachmentTransport) {
       // Mid-upload, the upload removes it when it lands (removing now would race the bytes).
       if (a.id && a.status !== "uploading") transport.remove(a.id);
     },
+    /** Discards the whole draft (New Chat): staged uploads are removed like single chips. */
+    clear() {
+      for (const a of [...snapshot.items]) this.remove(a.key);
+    },
     retry(key: string) {
       if (find(key)?.status === "failed") void upload(key);
     },

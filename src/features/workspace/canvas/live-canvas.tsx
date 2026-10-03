@@ -93,6 +93,8 @@ export interface LiveCanvasProps {
   notices: ReactNode;
   /** ELISE's latest words, for the centre of Spatial and the listening hero. */
   heroText: { who: "ELISE" | "YOU"; text: string } | null;
+  /** "+ Nueva conversación" (desktop; phones have it in the header), when there is one to leave. */
+  newChat?: ReactNode;
 }
 
 /**
@@ -253,6 +255,7 @@ export function LiveCanvas(props: LiveCanvasProps) {
               canArrange={datedItems.length >= 3 && !mobile}
               onBack={handlers.onUnfocus}
               onArrange={props.onArrange}
+              extra={mobile ? null : props.newChat}
             />
           )}
           {kind === "idle" && (
@@ -267,6 +270,9 @@ export function LiveCanvas(props: LiveCanvasProps) {
               hearing={props.heroText?.who === "YOU" ? props.heroText.text : null}
               voice={props.voice}
             />
+          )}
+          {kind === "conversation" && props.newChat && !mobile && (
+            <div className="mb-2 flex justify-end">{props.newChat}</div>
           )}
           {kind === "conversation" && (
             <MessageThread
@@ -413,11 +419,13 @@ function Trail({
   canArrange,
   onBack,
   onArrange,
+  extra,
 }: {
   composition: Composition;
   workspace: WorkspaceState;
   surface: Surface | undefined;
   canArrange: boolean;
+  extra?: ReactNode;
   onBack: () => void;
   onArrange: (order: "time" | "relevance") => void;
 }) {
@@ -490,6 +498,7 @@ function Trail({
           {timeOrder ? t.canvas.arrangeRelevance : t.canvas.arrangeTime}
         </button>
       )}
+      {extra}
     </nav>
   );
 }

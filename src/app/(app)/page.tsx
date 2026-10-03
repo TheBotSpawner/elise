@@ -30,6 +30,14 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
         loadWorkspace(auth, { kind: "session", id: sessionId }).catch(() => undefined),
       ])
     : null;
+  // "Nueva conversación" arrives as ?new=…; ?gone=… means the tab's active one is no longer there.
+  const fresh = typeof params.new === "string";
+  const gone =
+    typeof params.gone === "string" && /^[0-9a-f-]{36}$/i.test(params.gone)
+      ? params.gone
+      : sessionId && !voiceSession?.[0]
+        ? sessionId
+        : null;
   const restored = voiceSession?.[0]
     ? { messages: voiceSession[0], workspace: voiceSession[1] }
     : null;
@@ -49,7 +57,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
     // Ambient context never blocks Home: any source failing just hides its line.
     listPendingApprovals(auth).catch(() => []),
     latestBrief(auth).catch(() => null),
-    activeWorkspace(auth).catch(() => null),
+    // Right after "Nueva conversación", offering to continue the one just left would undo it.
+    fresh ? null : activeWorkspace(auth).catch(() => null),
     contextOptions(auth).catch(() => []),
   ]);
   // Right after onboarding: a first prompt built from what was set up (never text from the URL).
@@ -61,7 +70,9 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
 
   return (
     <ChatSurface
-      key={restored ? sessionId : "home"}
+      key={restored ? sessionId : fresh ? `new:${String(params.new)}` : "home"}
+      gone={gone}
+      fresh={fresh}
       {...(restored
         ? {
             thread: { kind: "session" as const, id: sessionId! },

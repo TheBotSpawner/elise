@@ -6,7 +6,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { signOut } from "@/features/auth/actions";
+import { useActiveThread } from "@/features/chat/continuity";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
+import { homeHref } from "@/lib/active-thread";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +35,7 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
   const { t } = useI18n();
   const pathname = usePathname();
   const active = activeSection(pathname);
+  const home = homeHref(useActiveThread());
   const { state: orbState, docked, level, receded } = useOrbPresence();
   // The nav is hidden below md; only fly the Orb into it where it is visible.
   const desktop = useIsDesktop();
@@ -55,7 +58,11 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
 
   return (
     <header className="sticky top-0 z-40 hidden h-20 grid-cols-[1fr_auto_1fr] items-center bg-bg/80 px-10 backdrop-blur-md md:grid">
-      <Link href="/" className="flex h-11 items-center gap-3 justify-self-start" aria-label="ELISE">
+      <Link
+        href={home}
+        className="flex h-11 items-center gap-3 justify-self-start"
+        aria-label="ELISE"
+      >
         {docked && desktop ? (
           <motion.div
             layoutId={ORB_LAYOUT_ID}
@@ -115,7 +122,7 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
               {SECTIONS.map((s) => (
                 <Link
                   key={s.key}
-                  href={s.href}
+                  href={s.key === "home" ? home : s.href}
                   aria-current={active === s.key ? "page" : undefined}
                   className={cn(pill, active === s.key ? "bg-active text-fg" : "text-muted")}
                 >

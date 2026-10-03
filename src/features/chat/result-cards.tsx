@@ -9,6 +9,7 @@ import type { ToolDisplay } from "@/core/agents/tools";
 import type { CalendarEvent } from "@/core/capabilities/calendar";
 import type { Task } from "@/core/capabilities/tasks";
 import { addDays, todayIn } from "@/core/time";
+import { agendaGroups, calendarItem, localRange } from "@/core/workspace/calendar";
 import { BriefView } from "@/features/schedules/brief-view";
 import { ScheduleProposalCard } from "@/features/schedules/proposal-card";
 import { useI18n } from "@/lib/i18n/client";
@@ -141,7 +142,7 @@ export function DisplayCard({
   embedded?: boolean;
 }) {
   const rise = animate ? RISE : { initial: false as const };
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const due = useDueLabel(timezone);
   const fmt = useEventTime(timezone);
 
@@ -276,26 +277,52 @@ export function DisplayCard({
 
     case "event_list": {
       const multiSource = new Set(display.events.map((e) => e.provenance.connectionId)).size > 1;
+      // Each event under its own date (ADR-033): never one heading over several days.
+      const groups = agendaGroups(
+        display.events.map(calendarItem),
+        localRange(display.from, display.to, timezone),
+        timezone,
+      ).slice(0, 7);
+      const dayHead = (d: string) =>
+        new Intl.DateTimeFormat(locale, {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          timeZone: "UTC",
+        })
+          .format(new Date(`${d}T12:00:00Z`))
+          .replace(/\./g, "");
+      const hm = (m: number) =>
+        `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
       return (
         <motion.section {...rise} aria-label={t.chat.resultLabel} className={CARD}>
-          <Header label={`${t.calendar.agenda} · ${fmt.day(display.from)}`} />
-          {display.events.length === 0 ? (
+          <Header label={t.calendar.agenda} />
+          {groups.length === 0 ? (
             <p className="text-[14px] text-muted">{t.calendar.noEvents}</p>
           ) : (
-            <ul className="flex flex-col">
-              {display.events.slice(0, 12).map((e) => (
-                <li
-                  key={e.id}
-                  className="grid grid-cols-[88px_minmax(0,1fr)_auto] items-baseline gap-3 py-1.5 text-[14px]"
-                >
-                  <span className="font-mono text-[12.5px] text-muted">
-                    {e.allDay ? t.calendar.allDay : `${fmt.time(e.start)}–${fmt.time(e.end)}`}
-                  </span>
-                  <span className="min-w-0 truncate">{e.title}</span>
-                  {multiSource ? <Source>{e.provenance.source}</Source> : <span />}
-                </li>
+            <div className="flex flex-col gap-2.5">
+              {groups.map((g) => (
+                <section key={g.day} aria-label={dayHead(g.day)}>
+                  <p className="font-mono text-[10.5px] tracking-[0.1em] text-faint uppercase">
+                    {dayHead(g.day)}
+                  </p>
+                  <ul className="flex flex-col">
+                    {g.items.slice(0, 8).map(({ item: e, span }) => (
+                      <li
+                        key={e.id}
+                        className="grid grid-cols-[88px_minmax(0,1fr)_auto] items-baseline gap-3 py-1 text-[14px]"
+                      >
+                        <span className="font-mono text-[12.5px] text-muted">
+                          {e.allDay ? t.calendar.allDay : `${hm(span.startMin)}–${hm(span.endMin)}`}
+                        </span>
+                        <span className="min-w-0 truncate">{e.title}</span>
+                        {multiSource ? <Source>{e.account}</Source> : <span />}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           )}
         </motion.section>
       );

@@ -1,4 +1,5 @@
 import { clipText } from "../text";
+import { calendarPayload } from "./calendar";
 import {
   isSafeHref,
   surfaceId,
@@ -22,6 +23,7 @@ import type { KnowledgeEvidence, ToolDisplay } from "../agents/tools";
 import type { CalendarEvent } from "../capabilities/calendar";
 import type { EmailMessage } from "../capabilities/email";
 import type { Task } from "../capabilities/tasks";
+import { todayIn } from "../time";
 
 /**
  * Tool results → Surfaces, deterministically (ADR-013 §5). The application presents what ELISE
@@ -49,6 +51,8 @@ export interface PresentOptions {
   title?: string;
   /** The user's language, for the few words derived charts carry (ADR-021). */
   locale?: VizLocale;
+  /** The user's timezone: calendars place events in the user's days (ADR-033). */
+  timezone?: string;
 }
 
 const clip = clipText;
@@ -360,6 +364,21 @@ function resultSurface(display: ToolDisplay, opts: PresentOptions, capability: s
   });
 }
 
+/** A calendar dataset (events or busy/free time) as one Calendar Surface. */
+function calendarSurface(
+  data: Pick<Parameters<typeof calendarPayload>[0], "events" | "from" | "to" | "free" | "busy">,
+  opts: PresentOptions,
+) {
+  const timezone = opts.timezone ?? "UTC";
+  const payload = calendarPayload({ ...data, timezone, today: todayIn(timezone) });
+  return draft("calendar", opts.key, payload, opts, {
+    title: opts.title ?? "",
+    source: { capability: "calendar", label: null },
+    ref: null,
+    size: payload.view === "day" || payload.view === "agenda" ? "medium" : "large",
+  });
+}
+
 /** One overview per context: presenting it again (a brief after creation) updates it. */
 export function contextOverviewSurface(
   overview: SurfacePayloads["context_overview"],
@@ -450,10 +469,17 @@ export function surfacesFromOutcome(
       return d.change === "deleted"
         ? one(resultSurface(d, opts, capability))
         : one(eventSurface(d.event, opts));
-    case "event_list":
-      return d.events.length === 1
+    case "event_list": {
+      // Calendar data looks like a calendar (ADR-033); one match from a long search is a card.
+      const long = Date.parse(d.to) - Date.parse(d.from) > 8 * 86_400_000;
+      return d.events.length === 1 && long
         ? one(eventSurface(d.events[0]!, opts))
-        : one(resultSurface(d, opts, capability));
+        : one(calendarSurface({ events: d.events, from: d.from, to: d.to }, opts));
+    }
+    case "availability":
+      return one(
+        calendarSurface({ events: [], from: d.from, to: d.to, free: d.free, busy: d.busy }, opts),
+      );
     case "email_list":
       return one(emailListSurface(d.messages, opts));
     case "email_thread":
