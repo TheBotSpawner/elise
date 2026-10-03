@@ -21,7 +21,14 @@ export type RuntimeEvent =
   | { type: "status"; state: "thinking" | "using_tools" }
   | { type: "text"; delta: string }
   | { type: "tool_started"; callId: string; name: string }
-  | { type: "tool_finished"; callId: string; name: string; outcome: ToolCallOutcome }
+  | {
+      type: "tool_finished";
+      callId: string;
+      name: string;
+      outcome: ToolCallOutcome;
+      /** The call's arguments (a read is re-run with them to refresh its Surface, ADR-029). */
+      args?: unknown;
+    }
   | { type: "done"; text: string; tools: ToolTrace[]; usage: AIUsage; model: string | null }
   /** Timing and tokens of one model call (performance telemetry; no content). */
   | { type: "model_call"; stats: ModelCallTiming }
@@ -104,7 +111,7 @@ export async function* runElise(run: RunInput): AsyncGenerator<RuntimeEvent> {
         });
         traces.push({ callId, name: call.name, outcome });
         items.push({ type: "tool_result", callId, output: JSON.stringify(forModel(outcome)) });
-        yield { type: "tool_finished", callId, name: call.name, outcome };
+        yield { type: "tool_finished", callId, name: call.name, outcome, args: call.args };
       }
     }
     for (let turn = 0; turn < limits.maxModelTurns; turn++) {
@@ -214,14 +221,26 @@ export async function* runElise(run: RunInput): AsyncGenerator<RuntimeEvent> {
           const { call, outcome } = await Promise.race(pending.values());
           pending.delete(call.callId);
           outcomes.set(call.callId, outcome);
-          yield { type: "tool_finished", callId: call.callId, name: call.name, outcome };
+          yield {
+            type: "tool_finished",
+            callId: call.callId,
+            name: call.name,
+            outcome,
+            args: parseArgs(call.arguments),
+          };
         }
       } else {
         for (const [i, call] of real.entries()) {
           yield { type: "tool_started", callId: call.callId, name: call.name };
           const outcome = await execute(call, i);
           outcomes.set(call.callId, outcome);
-          yield { type: "tool_finished", callId: call.callId, name: call.name, outcome };
+          yield {
+            type: "tool_finished",
+            callId: call.callId,
+            name: call.name,
+            outcome,
+            args: parseArgs(call.arguments),
+          };
         }
       }
       for (const call of real) {
@@ -278,6 +297,14 @@ export async function* runElise(run: RunInput): AsyncGenerator<RuntimeEvent> {
 }
 
 const MORE_TOOLS = "tools.more";
+
+const parseArgs = (raw: string): unknown => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+};
 
 /** The fallback tool listing the groups not loaded yet. */
 function moreToolsSpec(rest: readonly AnyToolDefinition[]) {

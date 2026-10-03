@@ -8,9 +8,16 @@ import { historyRows, type HistoryRow } from "@/application/history-service";
 import { EmptyState, PageContainer, PageHeader } from "@/components/shared/page";
 import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { groupThreads, type HistoryFilter, type KnowledgeNode } from "@/core/history/links";
+import {
+  groupThreads,
+  historyFolders,
+  locationOf,
+  type HistoryFilter,
+  type KnowledgeNode,
+} from "@/core/history/links";
 import { DeleteConversationButton } from "@/features/history/delete-conversation";
 import { HistoryControls, type HistoryParams } from "@/features/history/history-controls";
+import { HistoryFolder } from "@/features/history/history-folder";
 import { TagChips, TagEditor } from "@/features/history/history-tags";
 import type { Dictionary } from "@/lib/i18n";
 import { getT } from "@/lib/i18n/server";
@@ -19,8 +26,10 @@ const UUID = /^[0-9a-f-]{36}$/i;
 
 /**
  * History (ADR-020): typed and voice conversations, organized by the same Spaces and Sections
- * as Knowledge — tags on each row, a Space/Section filter, search that also matches tags, and
- * optional grouping. Chronological by default.
+ * as Knowledge. By default it reads as folders, Space > Section > conversations, plus the
+ * untagged ones; each conversation is filed once under its primary link (other links stay as
+ * chips). Search is global and flat, each result showing where it is filed. A flat list and
+ * Section groups remain a choice.
  */
 export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat">) {
   const [auth, { t, locale }, raw] = await Promise.all([
@@ -33,10 +42,11 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
     q: str(raw.q).trim().slice(0, 200),
     space: str(raw.space) === "untagged" || UUID.test(str(raw.space)) ? str(raw.space) : null,
     section: UUID.test(str(raw.section)) ? str(raw.section) : null,
+    // Folders (Space › Section) are the default; a flat list or Section groups are a choice.
     group:
-      str(raw.group) === "space" || str(raw.group) === "section"
-        ? (str(raw.group) as "space" | "section")
-        : "none",
+      str(raw.group) === "none" || str(raw.group) === "section"
+        ? (str(raw.group) as "none" | "section")
+        : "space",
     sort: str(raw.sort) === "oldest" ? "oldest" : "newest",
   };
   const filter: HistoryFilter =
@@ -68,13 +78,85 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
     </Link>
   );
 
-  const list = (items: HistoryRow[]) => (
+  const list = (items: HistoryRow[], located = false) => (
     <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
       {items.map((r) => (
-        <Row key={r.key} row={r} t={t} nodes={nodes} when={format.format(new Date(r.at))} />
+        <Row
+          key={r.key}
+          row={r}
+          t={t}
+          nodes={nodes}
+          when={format.format(new Date(r.at))}
+          location={located ? (locationOf(r.primary, byId) ?? t.history.untagged) : null}
+        />
       ))}
     </ul>
   );
+  const day = new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "short",
+    timeZone: auth.profile.timezone,
+  });
+  const folders = () => {
+    const tree = historyFolders(rows, byId);
+    const h = t.history;
+    return (
+      <div className="flex min-w-0 flex-col gap-1">
+        {tree.spaces.map((f) => (
+          <HistoryFolder
+            key={f.id}
+            id={`space:${f.id}`}
+            label={f.archived ? `${f.label} · ${h.archived}` : f.label}
+            count={f.count}
+            meta={[
+              f.sections.length ? h.sectionsCount(f.sections.length) : null,
+              day.format(new Date(f.lastAt)),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            {f.sections.length ? (
+              <div className="flex flex-col gap-0.5">
+                {f.sections.map((sec) => (
+                  <HistoryFolder
+                    key={sec.id}
+                    id={`section:${sec.id}`}
+                    label={sec.archived ? `${sec.label} · ${h.archived}` : sec.label}
+                    count={sec.items.length}
+                    nested
+                  >
+                    {list(sec.items)}
+                  </HistoryFolder>
+                ))}
+                {f.general.length > 0 && (
+                  <HistoryFolder
+                    id={`general:${f.id}`}
+                    label={h.generalFolder}
+                    count={f.general.length}
+                    nested
+                  >
+                    {list(f.general)}
+                  </HistoryFolder>
+                )}
+              </div>
+            ) : (
+              list(f.general)
+            )}
+          </HistoryFolder>
+        ))}
+        {tree.untagged.length > 0 && (
+          <HistoryFolder
+            id="untagged"
+            label={h.untagged}
+            count={tree.untagged.length}
+            meta={day.format(new Date(tree.untagged[0]!.at))}
+          >
+            {list(tree.untagged)}
+          </HistoryFolder>
+        )}
+      </div>
+    );
+  };
 
   return (
     <PageContainer>
@@ -86,7 +168,7 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
         />
         {params.space && <input type="hidden" name="space" value={params.space} />}
         {params.section && <input type="hidden" name="section" value={params.section} />}
-        {params.group !== "none" && <input type="hidden" name="group" value={params.group} />}
+        {params.group !== "space" && <input type="hidden" name="group" value={params.group} />}
         <Input
           name="q"
           defaultValue={params.q}
@@ -108,27 +190,28 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
             action={newChat}
           />
         )
+      ) : params.q ? (
+        // Search ignores folders: every match, with where it is filed.
+        list(rows, true)
+      ) : params.group === "space" ? (
+        folders()
       ) : params.group === "none" ? (
         list(rows)
       ) : (
         <div className="flex flex-col gap-4">
-          {groupThreads(rows, params.group, byId, t.history.untagged, t.history.general).map(
-            (g) => (
-              <details key={g.key} open className="group">
-                <summary className="mb-2 flex cursor-pointer list-none items-baseline gap-2 px-1 [&::-webkit-details-marker]:hidden">
-                  {g.parentLabel && params.group === "section" && (
-                    <span className="type-label text-faint">{g.parentLabel} ›</span>
-                  )}
-                  <span className="type-label text-muted">{g.label}</span>
-                  {g.archived && (
-                    <span className="text-[12px] text-faint">· {t.history.archived}</span>
-                  )}
-                  <span className="text-[12px] text-faint">{g.items.length}</span>
-                </summary>
-                {list(g.items)}
-              </details>
-            ),
-          )}
+          {groupThreads(rows, "section", byId, t.history.untagged, t.history.general).map((g) => (
+            <details key={g.key} open className="group">
+              <summary className="mb-2 flex cursor-pointer list-none items-baseline gap-2 px-1 [&::-webkit-details-marker]:hidden">
+                {g.parentLabel && <span className="type-label text-faint">{g.parentLabel} ›</span>}
+                <span className="type-label text-muted">{g.label}</span>
+                {g.archived && (
+                  <span className="text-[12px] text-faint">· {t.history.archived}</span>
+                )}
+                <span className="text-[12px] text-faint">{g.items.length}</span>
+              </summary>
+              {list(g.items)}
+            </details>
+          ))}
         </div>
       )}
     </PageContainer>
@@ -140,11 +223,14 @@ function Row({
   t,
   nodes,
   when,
+  location,
 }: {
   row: HistoryRow;
   t: Dictionary;
   nodes: KnowledgeNode[];
   when: string;
+  /** Search results say where they are filed ("UTN › AMII"). */
+  location: string | null;
 }) {
   const title = r.title || (r.voice ? t.voice.historyItem : t.chat.untitled);
   const href =
@@ -162,10 +248,14 @@ function Row({
             )}
             <span className="truncate">{title}</span>
           </span>
+          {location && <span className="block truncate text-[12px] text-muted">{location}</span>}
           {r.summary && (
             <span className="block truncate text-[12.5px] text-faint">{r.summary}</span>
           )}
-          <TagChips chips={r.chips} />
+          {/* In folders the folder is the primary link; the chips show the others. */}
+          <TagChips
+            chips={location === null ? r.chips.filter((c) => c.id !== r.primary) : r.chips}
+          />
         </span>
         <time className="shrink-0 font-mono text-xs text-muted" dateTime={r.at}>
           {when}

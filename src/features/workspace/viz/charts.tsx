@@ -52,7 +52,7 @@ export function useNumberFormat(format: VisualizationSpec["format"]) {
 }
 
 /** A round step (1, 2, 2.5 or 5 × 10ⁿ) giving about three gridlines. */
-function niceStep(v: number) {
+export function niceStep(v: number) {
   const raw = Math.max(v, 1e-9) / 3;
   const p = 10 ** Math.floor(Math.log10(raw));
   const n = raw / p;
@@ -68,8 +68,53 @@ const ticks = (max: number) => {
   return Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step);
 };
 
+/**
+ * The y range of a line: fitted to the data on round ticks (a price between 7,400 and 8,100
+ * must not be a flat line on a zero baseline), from zero only when zero is near or meaningful
+ * (an area shows magnitude). Bars always start at zero — their length is the value.
+ */
+export function domain(
+  values: number[],
+  fromZero: boolean,
+): { lo: number; hi: number; ticks: number[] } {
+  const lo0 = Math.min(...values);
+  const hi0 = Math.max(...values);
+  const nearZero = lo0 >= 0 && lo0 <= (hi0 - lo0) * 0.5;
+  if (fromZero || nearZero) {
+    const lo = Math.min(0, lo0);
+    const hi = niceMax(Math.max(hi0, 0)) || 1;
+    const step = niceStep(hi - lo);
+    const start = Math.floor(lo / step) * step;
+    return {
+      lo: start,
+      hi,
+      ticks: Array.from(
+        { length: Math.round((hi - start) / step) + 1 },
+        (_, i) => start + i * step,
+      ),
+    };
+  }
+  const pad = (hi0 - lo0 || Math.abs(hi0) || 1) * 0.08;
+  const step = niceStep(hi0 - lo0 + 2 * pad);
+  const lo = Math.floor((lo0 - pad) / step) * step;
+  const hi = Math.ceil((hi0 + pad) / step) * step;
+  return {
+    lo,
+    hi,
+    ticks: Array.from({ length: Math.round((hi - lo) / step) + 1 }, (_, i) => lo + i * step),
+  };
+}
+
+/** Series colours in order: the accent, then quieter steps of it, then neutrals. */
+export const SERIES_FILL = [
+  "var(--accent)",
+  "color-mix(in srgb, var(--accent) 55%, var(--bg))",
+  "var(--chart-neutral)",
+  "var(--chart-neutral-2)",
+];
+
 /** A tooltip that opens on hover or keyboard focus of its mark. */
-function Tip({
+export function Tip({
   x,
   y,
   width,
@@ -93,28 +138,73 @@ function Tip({
   );
 }
 
-function Legend({ items }: { items: { name: string; dashed?: boolean; accent: boolean }[] }) {
+function Legend({
+  items,
+  hidden,
+  onToggle,
+}: {
+  items: { name: string; dashed?: boolean; accent?: boolean; color?: string }[];
+  /** Series hidden by the user (a legend entry toggles its series). */
+  hidden?: ReadonlySet<string>;
+  onToggle?: (name: string) => void;
+}) {
   if (items.length < 2) return null;
   return (
-    <ul className="flex flex-wrap gap-4 text-[12px] text-muted">
-      {items.map((it) => (
-        <li key={it.name} className="flex items-center gap-1.5">
+    <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted">
+      {items.map((it) => {
+        const mark = (
           <svg width="18" height="6" aria-hidden>
             <line
               x1="0"
               y1="3"
               x2="18"
               y2="3"
-              stroke={it.accent ? "var(--accent)" : "var(--fg-muted)"}
-              strokeWidth="2"
+              stroke={it.color ?? (it.accent ? "var(--accent)" : "var(--fg-muted)")}
+              strokeWidth={it.color ? 6 : 2}
               strokeDasharray={it.dashed ? "4 4" : undefined}
             />
           </svg>
-          {it.name}
-        </li>
-      ))}
+        );
+        return (
+          <li key={it.name}>
+            {onToggle ? (
+              <button
+                type="button"
+                aria-pressed={!hidden?.has(it.name)}
+                onClick={() => onToggle(it.name)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded hover:text-fg",
+                  hidden?.has(it.name) && "opacity-45",
+                )}
+              >
+                {mark}
+                {it.name}
+              </button>
+            ) : (
+              <span className="flex items-center gap-1.5">
+                {mark}
+                {it.name}
+              </span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
+}
+
+/** Arrow keys move through a chart's datapoints (the tooltip follows). */
+export function datapointKeys(n: number, current: number | null, set: (i: number | null) => void) {
+  return (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const next =
+        (current ?? (e.key === "ArrowRight" ? -1 : n)) + (e.key === "ArrowRight" ? 1 : -1);
+      set(Math.max(0, Math.min(n - 1, next)));
+    } else if (e.key === "Home") set(0);
+    else if (e.key === "End") set(n - 1);
+    else if (e.key === "Escape") set(null);
+  };
 }
 
 // ── Line / area ──────────────────────────────────────────────────────────────
@@ -128,9 +218,17 @@ export function LineChart({ spec, height }: { spec: Spec<"line" | "area">; heigh
   const gid = useId();
   const f = useNumberFormat(spec.format);
   const [hover, setHover] = useState<number | null>(null);
-  const all = spec.series.flatMap((s) => s.values.filter((v): v is number => v !== null));
-  const max = niceMax(Math.max(...all, spec.target?.value ?? 0));
-  const min = Math.min(0, ...all);
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  const shown = spec.series.filter((s) => !hidden.has(s.name));
+  const all = (shown.length ? shown : spec.series).flatMap((s) =>
+    s.values.filter((v): v is number => v !== null),
+  );
+  const extra = [spec.target?.value, spec.reference?.value].filter(
+    (v): v is number => v !== undefined,
+  );
+  const d = domain([...all, ...extra], spec.type === "area");
+  const min = d.lo;
+  const max = d.hi;
   const n = spec.x.length;
   const w = Math.max(120, width);
   const h = height;
@@ -157,14 +255,27 @@ export function LineChart({ spec, height }: { spec: Spec<"line" | "area">; heigh
     <div ref={ref} className="relative flex flex-col gap-2">
       <Legend
         items={spec.series.map((s, i) => ({ name: s.name, dashed: i > 0, accent: i === 0 }))}
+        hidden={hidden}
+        onToggle={(name) =>
+          setHidden((h0) => {
+            const next = new Set(h0);
+            if (next.has(name)) next.delete(name);
+            else if (next.size < spec.series.length - 1) next.add(name);
+            return next;
+          })
+        }
       />
       {width > 0 && (
         <svg
           width={w}
           height={h}
           role="img"
+          tabIndex={0}
           aria-label={chartSummary(spec, f.full)}
-          className="block overflow-visible"
+          className="block overflow-visible rounded outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          onKeyDown={datapointKeys(n, hover, setHover)}
+          onFocus={() => setHover((h0) => h0 ?? n - 1)}
+          onBlur={() => setHover(null)}
           onPointerLeave={() => setHover(null)}
           onPointerMove={(e) => {
             const r = e.currentTarget.getBoundingClientRect();
@@ -178,7 +289,7 @@ export function LineChart({ spec, height }: { spec: Spec<"line" | "area">; heigh
               <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
             </linearGradient>
           </defs>
-          {ticks(max).map((t) => (
+          {d.ticks.map((t) => (
             <g key={t}>
               <line x1={PAD_L} x2={w} y1={Y(t)} y2={Y(t)} stroke="var(--gridline)" />
               <text x={0} y={Y(t) + 4} className="fill-faint font-mono text-[10.5px]">
@@ -211,6 +322,7 @@ export function LineChart({ spec, height }: { spec: Spec<"line" | "area">; heigh
           {area && <path d={area} fill={`url(#${gid})`} />}
           {[...spec.series].reverse().map((s, ri) => {
             const i = spec.series.length - 1 - ri;
+            if (hidden.has(s.name)) return null;
             return (
               <motion.path
                 key={s.name}
@@ -299,21 +411,33 @@ export function BarChart({ spec, height }: { spec: Spec<"bar">; height: number }
   const reduced = useReducedMotion();
   const f = useNumberFormat(spec.format);
   const [hover, setHover] = useState<number | null>(null);
-  const paired = spec.series.length > 1;
-  const all = spec.series.flatMap((s) => s.values.filter((v): v is number => v !== null));
-  const max = niceMax(Math.max(...all, spec.target?.value ?? 0));
+  const k = spec.series.length;
+  const stacked = Boolean(spec.stacked) && k > 1;
+  const at = (si: number, i: number) => Math.max(0, spec.series[si]!.values[i] ?? 0);
+  const totals = spec.x.map((_, i) => spec.series.reduce((n, _s, si) => n + at(si, i), 0));
+  const peak = stacked
+    ? Math.max(...totals)
+    : Math.max(...spec.series.flatMap((s) => s.values.filter((v): v is number => v !== null)));
+  const max = niceMax(Math.max(peak, spec.target?.value ?? 0));
   const n = spec.x.length;
   const w = Math.max(120, width);
   const h = height;
   const slot = (w - PAD_L) / n;
-  const bw = paired ? Math.min(26, slot * 0.34) : Math.min(40, slot * 0.56);
+  // Grouped bars share ~70% of the slot; one bar (or a stack) is wider.
+  const bw = stacked || k === 1 ? Math.min(40, slot * 0.56) : Math.min(22, (slot * 0.7) / k);
   const Y = (v: number) => 8 + (1 - Math.max(0, v) / max) * (h - 34);
   const base = Y(0);
   const highlight = new Set(spec.highlight ?? []);
   const labelEvery = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(w / 56))));
+  const fillFor = (si: number, i: number) =>
+    k > 1
+      ? SERIES_FILL[si]!
+      : highlight.size && !highlight.has(i)
+        ? "var(--chart-neutral-2)"
+        : "var(--accent)";
   return (
     <div ref={ref} className="relative flex flex-col gap-2">
-      <Legend items={spec.series.map((s, i) => ({ name: s.name, accent: i === 0 }))} />
+      <Legend items={spec.series.map((s, si) => ({ name: s.name, color: SERIES_FILL[si] }))} />
       {width > 0 && (
         <svg
           width={w}
@@ -321,6 +445,7 @@ export function BarChart({ spec, height }: { spec: Spec<"bar">; height: number }
           role="group"
           aria-label={chartSummary(spec, f.full)}
           className="block overflow-visible"
+          onKeyDown={datapointKeys(n, hover, setHover)}
         >
           {ticks(max).map((t) => (
             <g key={t}>
@@ -332,12 +457,13 @@ export function BarChart({ spec, height }: { spec: Spec<"bar">; height: number }
           ))}
           {spec.x.map((label, i) => {
             const cx = PAD_L + slot * i + slot / 2;
+            let acc = 0;
             return (
               <g
                 key={i}
                 tabIndex={0}
                 role="img"
-                aria-label={`${label}: ${spec.series.map((s) => `${s.name} ${s.values[i] === null ? "—" : f.full(s.values[i]!)}`).join(", ")}`}
+                aria-label={`${label}: ${spec.series.map((s) => `${s.name} ${s.values[i] === null ? "—" : f.full(s.values[i]!)}`).join(", ")}${stacked ? ` (${f.full(totals[i]!)})` : ""}`}
                 onPointerEnter={() => setHover(i)}
                 onPointerLeave={() => setHover(null)}
                 onFocus={() => setHover(i)}
@@ -348,39 +474,34 @@ export function BarChart({ spec, height }: { spec: Spec<"bar">; height: number }
                 {spec.series.map((s, si) => {
                   const v = s.values[i];
                   if (v === null || v === undefined) return null;
-                  const x = paired ? (si === 0 ? cx + 1 : cx - 1 - bw) : cx - bw / 2;
-                  const fill =
-                    si > 0
-                      ? "var(--chart-neutral)"
-                      : paired || highlight.has(i) || !highlight.size
-                        ? highlight.size && !highlight.has(i)
-                          ? "var(--chart-neutral-2)"
-                          : "var(--accent)"
-                        : "var(--chart-neutral-2)";
+                  const x = stacked || k === 1 ? cx - bw / 2 : cx - (k * bw) / 2 + si * bw;
+                  const bottom = stacked ? acc : 0;
+                  if (stacked) acc += Math.max(0, v);
+                  const top = stacked ? acc : v;
                   return (
                     <motion.rect
                       key={si}
-                      x={x}
-                      width={bw}
-                      rx={3}
-                      fill={fill}
-                      initial={reduced ? false : { y: base, height: 0 }}
-                      animate={{ y: Y(v), height: Math.max(1, base - Y(v)) }}
+                      x={x + (stacked || k === 1 ? 0 : 1)}
+                      width={stacked || k === 1 ? bw : bw - 2}
+                      rx={stacked ? 1.5 : 3}
+                      fill={fillFor(si, i)}
+                      initial={reduced ? false : { y: Y(bottom), height: 0 }}
+                      animate={{ y: Y(top), height: Math.max(1, Y(bottom) - Y(top)) }}
                       transition={CHART_IN}
                     />
                   );
                 })}
-                {(highlight.has(i) || n <= 6) && spec.series[0]!.values[i] !== null && (
+                {(highlight.has(i) || n <= 6) && (stacked || k === 1) && (
                   <text
-                    x={paired ? cx + 1 + bw / 2 : cx}
-                    y={Y(spec.series[0]!.values[i]!) - 6}
+                    x={cx}
+                    y={Y(stacked ? totals[i]! : (spec.series[0]!.values[i] ?? 0)) - 6}
                     textAnchor="middle"
                     className={cn(
                       "font-mono text-[11px]",
                       highlight.has(i) ? "fill-fg" : "fill-muted",
                     )}
                   >
-                    {f.short(spec.series[0]!.values[i]!)}
+                    {f.short(stacked ? totals[i]! : (spec.series[0]!.values[i] ?? 0))}
                   </text>
                 )}
                 {(i % labelEvery === 0 || highlight.has(i)) && (
@@ -396,6 +517,7 @@ export function BarChart({ spec, height }: { spec: Spec<"bar">; height: number }
               </g>
             );
           })}
+          <line x1={PAD_L} x2={w} y1={base} y2={base} stroke="var(--axis)" />
           {spec.target && (
             <g>
               <line
@@ -423,7 +545,13 @@ export function BarChart({ spec, height }: { spec: Spec<"bar">; height: number }
       {hover !== null && width > 0 && (
         <Tip
           x={PAD_L + slot * hover + slot / 2}
-          y={Y(Math.max(0, ...spec.series.map((s) => s.values[hover] ?? 0))) + 30}
+          y={
+            Y(
+              stacked
+                ? totals[hover]!
+                : Math.max(0, ...spec.series.map((s) => s.values[hover] ?? 0)),
+            ) + 30
+          }
           width={w}
         >
           <p className="font-mono text-[10.5px] tracking-[0.1em] text-muted uppercase">
@@ -446,35 +574,54 @@ export function BarChart({ spec, height }: { spec: Spec<"bar">; height: number }
 // ── Ranked bars, distribution, diverging, progress ───────────────────────────
 
 export function HBars({ spec }: { spec: Spec<"hbar"> }) {
+  const { t } = useI18n();
   const f = useNumberFormat(spec.format);
   const reduced = useReducedMotion();
-  const max = Math.max(...spec.rows.map((r) => r.value)) || 1;
+  const max = niceMax(Math.max(...spec.rows.map((r) => r.value)));
   const hl = new Set(spec.highlight ?? []);
   return (
-    <ul className="flex flex-col gap-2.5">
-      {spec.rows.map((r) => (
-        <li
-          key={r.label}
-          className="grid grid-cols-[minmax(72px,30%)_minmax(0,1fr)_auto] items-center gap-3 text-[13px]"
-        >
-          <span className={cn("truncate", hl.has(r.label) ? "font-medium text-fg" : "text-fg2")}>
-            {r.label}
-          </span>
-          <span className="h-2 overflow-hidden rounded bg-track" aria-hidden>
-            <motion.span
-              className="block h-2 origin-left rounded"
-              style={{
-                width: `${(r.value / max) * 100}%`,
-                background: hl.has(r.label) ? "var(--accent)" : "var(--chart-neutral-2)",
-              }}
-              initial={reduced ? false : { scaleX: 0 }}
-              animate={{ scaleX: 1 }}
-              transition={CHART_IN}
-            />
-          </span>
-          <span className="text-right font-mono text-[12px] text-fg">{f.full(r.value)}</span>
-        </li>
-      ))}
+    <ul className="flex flex-col gap-2">
+      {spec.rows.map((r) => {
+        const source = r.source !== undefined ? spec.sources?.[r.source] : undefined;
+        return (
+          <li
+            key={r.label}
+            tabIndex={0}
+            aria-label={`${r.label}: ${f.full(r.value)}${r.uncertain ? `, ${t.canvas.viz.uncertain}` : ""}${source ? `. ${t.canvas.viz.source}: ${source.title}` : ""}`}
+            className="grid grid-cols-[minmax(72px,32%)_minmax(0,1fr)_auto] items-center gap-3 rounded text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <span className={cn("truncate", hl.has(r.label) ? "font-medium text-fg" : "text-fg2")}>
+              {r.label}
+            </span>
+            <span className="relative h-4" aria-hidden>
+              <motion.span
+                className={cn(
+                  "absolute inset-y-0 left-0 origin-left rounded-[3px]",
+                  r.uncertain && "border-2 border-dashed border-[var(--accent)] bg-transparent",
+                )}
+                style={{
+                  width: `${Math.max(0.5, (r.value / max) * 100)}%`,
+                  ...(r.uncertain
+                    ? {}
+                    : {
+                        background:
+                          hl.size && !hl.has(r.label) ? "var(--chart-neutral-2)" : "var(--accent)",
+                      }),
+                }}
+                initial={reduced ? false : { scaleX: 0 }}
+                animate={{ scaleX: 1 }}
+                transition={CHART_IN}
+              />
+            </span>
+            <span className="text-right font-mono text-[12px] text-fg">
+              {f.full(r.value)}
+              {r.source !== undefined && (
+                <sup className="ml-0.5 text-[9.5px] text-faint">{r.source + 1}</sup>
+              )}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -25,7 +25,7 @@ function href(p: HistoryParams, patch: Partial<HistoryParams>) {
   if (next.q) s.set("q", next.q);
   if (next.space) s.set("space", next.space);
   if (next.section) s.set("section", next.section);
-  if (next.group !== "none") s.set("group", next.group);
+  if (next.group !== "space") s.set("group", next.group);
   if (next.sort !== "newest") s.set("sort", next.sort);
   const qs = s.toString();
   return qs ? `/chat?${qs}` : "/chat";
@@ -150,9 +150,9 @@ export function HistoryControls({
                 router.push(href(params, { group: e.target.value as HistoryParams["group"] }))
               }
             >
-              <option value="none">{h.groups.none}</option>
               <option value="space">{h.groups.space}</option>
               <option value="section">{h.groups.section}</option>
+              <option value="none">{h.groups.none}</option>
             </Select>
           </label>
         )}

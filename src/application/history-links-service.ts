@@ -3,6 +3,7 @@ import "server-only";
 import { AppError } from "@/core/errors";
 import {
   chipsFor,
+  primaryLink,
   emptyEvidence,
   linksToAdd,
   mentionedNodes,
@@ -177,6 +178,8 @@ export interface ThreadTags {
   /** Linked node ids (Spaces or Sections). */
   spaceIds: string[];
   chips: Chip[];
+  /** Where it is filed in the folder view (one place). */
+  primary: string | null;
 }
 
 /** Tags of many threads at once, for History rows. */
@@ -199,8 +202,13 @@ export async function tagsFor(
   }
   const tags = new Map<string, ThreadTags>();
   for (const t of threads) {
-    const ids = (grouped.get(threadKey(t)) ?? []).map((l) => l.spaceId);
-    tags.set(threadKey(t), { spaceIds: ids, chips: chipsFor(ids, byId) });
+    const own = grouped.get(threadKey(t)) ?? [];
+    const ids = own.map((l) => l.spaceId);
+    tags.set(threadKey(t), {
+      spaceIds: ids,
+      chips: chipsFor(ids, byId),
+      primary: primaryLink(own, byId),
+    });
   }
   return { tags, nodes: all };
 }

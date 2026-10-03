@@ -30,6 +30,8 @@ export interface ThreadLink {
   source: LinkSource;
   state: LinkState;
   updatedAt: string;
+  /** ELISE's confidence for an automatic link (0–1); a manual link is the user's choice. */
+  confidence?: number | null;
 }
 
 export const threadKey = (t: ThreadRef) => `${t.kind}:${t.id}`;
@@ -365,6 +367,119 @@ export function groupThreads<T extends { spaceIds: string[] }>(
       items: untagged,
     });
   return list;
+}
+
+// ── Folders (History default view) ───────────────────────────────────────────
+
+/**
+ * Where a thread with several links lives in the folder view (one place, no duplicates):
+ * the user's own choice first, then ELISE's most confident link, then the more specific one
+ * (a Section over its Space), then the oldest link, then the id — deterministic.
+ * The other links stay visible as chips.
+ */
+export function primaryLink(
+  links: Pick<ThreadLink, "spaceId" | "source" | "confidence" | "updatedAt">[],
+  nodes: Map<string, KnowledgeNode>,
+): string | null {
+  const ranked = links
+    .filter((l) => nodes.has(l.spaceId))
+    .sort(
+      (a, b) =>
+        Number(b.source === "manual") - Number(a.source === "manual") ||
+        (b.source === "manual" ? 1 : (b.confidence ?? 0)) -
+          (a.source === "manual" ? 1 : (a.confidence ?? 0)) ||
+        Number(Boolean(nodes.get(b.spaceId)!.parentId)) -
+          Number(Boolean(nodes.get(a.spaceId)!.parentId)) ||
+        a.updatedAt.localeCompare(b.updatedAt) ||
+        a.spaceId.localeCompare(b.spaceId),
+    );
+  return ranked[0]?.spaceId ?? null;
+}
+
+export interface SectionFolder<T> {
+  id: string;
+  label: string;
+  archived: boolean;
+  lastAt: string;
+  items: T[];
+}
+
+export interface SpaceFolder<T> {
+  id: string;
+  label: string;
+  archived: boolean;
+  /** Conversations in the Space, its Sections included. */
+  count: number;
+  lastAt: string;
+  sections: SectionFolder<T>[];
+  /** Linked to the Space itself; shown as "General" only when the Space has Sections. */
+  general: T[];
+}
+
+/**
+ * The folder tree: Space › Section › conversations, plus the conversations with no Space.
+ * Each thread sits once, under its primary link. Spaces and Sections are ordered by their most
+ * recent conversation; conversations keep the order they come in (the chosen sort).
+ */
+export function historyFolders<T extends { primary: string | null; at: string }>(
+  items: T[],
+  nodes: Map<string, KnowledgeNode>,
+): { spaces: SpaceFolder<T>[]; untagged: T[] } {
+  const spaces = new Map<string, SpaceFolder<T>>();
+  const untagged: T[] = [];
+  const later = (a: string, b: string) => (a > b ? a : b);
+  for (const item of items) {
+    const node = item.primary ? nodes.get(item.primary) : undefined;
+    const space = node?.parentId ? nodes.get(node.parentId) : node;
+    if (!node || !space) {
+      untagged.push(item);
+      continue;
+    }
+    const f = spaces.get(space.id) ?? {
+      id: space.id,
+      label: space.name,
+      archived: space.archived,
+      count: 0,
+      lastAt: item.at,
+      sections: [],
+      general: [],
+    };
+    f.count++;
+    f.lastAt = later(f.lastAt, item.at);
+    if (node.parentId) {
+      let sec = f.sections.find((x) => x.id === node.id);
+      if (!sec) {
+        sec = {
+          id: node.id,
+          label: node.name,
+          archived: node.archived,
+          lastAt: item.at,
+          items: [],
+        };
+        f.sections.push(sec);
+      }
+      sec.items.push(item);
+      sec.lastAt = later(sec.lastAt, item.at);
+    } else f.general.push(item);
+    spaces.set(space.id, f);
+  }
+  const recent = <F extends { lastAt: string }>(a: F, b: F) => b.lastAt.localeCompare(a.lastAt);
+  return {
+    spaces: [...spaces.values()]
+      .map((f) => ({ ...f, sections: f.sections.sort(recent) }))
+      .sort(recent),
+    untagged,
+  };
+}
+
+/** Where a thread is filed, for search results: "UTN › AMII". */
+export function locationOf(
+  primary: string | null,
+  nodes: Map<string, KnowledgeNode>,
+): string | null {
+  const n = primary ? nodes.get(primary) : undefined;
+  if (!n) return null;
+  return n.parentId && n.parentName ? `${n.parentName} › ${n.name}` : n.name;
 }
 
 // ── Titles ───────────────────────────────────────────────────────────────────

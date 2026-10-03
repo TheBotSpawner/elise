@@ -75,7 +75,7 @@ describe("data shape decides the chart", () => {
     ).toBe(true);
   });
 
-  it("spread-out categories → ranked bars when asked to sort; many → table", () => {
+  it("a few short categories from one source → vertical bars, sorted on request; many → table", () => {
     const spend: Observation[] = ["Food", "Rent", "Fun", "Taxes", "Gym"].map((label, i) => ({
       label,
       value: [300, 1200, 80, 450, 40][i]!,
@@ -87,9 +87,8 @@ describe("data shape decides the chart", () => {
       horizon: undefined,
       preference: { sort: "desc" },
     });
-    if (!r.ok || r.spec.type !== "hbar")
-      throw new Error(`expected hbar, got ${r.ok && r.spec.type}`);
-    expect(r.spec.rows.map((x) => x.label)).toEqual(["Rent", "Taxes", "Food", "Fun", "Gym"]);
+    if (!r.ok || r.spec.type !== "bar") throw new Error(`expected bar, got ${r.ok && r.spec.type}`);
+    expect(r.spec.x).toEqual(["Rent", "Taxes", "Food", "Fun", "Gym"]);
     const many = plan({
       observations: Array.from({ length: 14 }, (_, i) => ({
         label: `C${i}`,
@@ -141,7 +140,7 @@ describe("data shape decides the chart", () => {
     expect(r.ok && r.notice).toMatch(/torta/);
   });
 
-  it("shares of a whole → distribution; one value → KPI", () => {
+  it("shares of a true whole → donut; one value → KPI", () => {
     const share = plan({
       intent: "distribution",
       horizon: undefined,
@@ -152,7 +151,7 @@ describe("data shape decides the chart", () => {
         { label: "Cash", value: 10, source: "S3" },
       ],
     });
-    expect(share.ok && share.spec.type).toBe("distribution");
+    expect(share.ok && share.spec.type).toBe("donut");
     const one = plan({ observations: [targets[0]!] });
     expect(one.ok && one.spec.type).toBe("kpi");
   });
@@ -162,7 +161,7 @@ describe("data shape decides the chart", () => {
     expect(r.ok && r.spec.type).not.toBe("line");
     expect(r.ok && r.notice).toMatch(/categorías/);
     const bars = plan({ observations: targets, preference: { chart: "bar" } });
-    expect(bars.ok && bars.spec.type).toBe("hbar");
+    expect(bars.ok && bars.spec.type).toBe("bar");
   });
 });
 
@@ -201,7 +200,8 @@ describe("evidence rules", () => {
     const r = plan({
       observations: [...targets.slice(0, 2), { ...targets[2]!, confidence: "inferred" }],
     });
-    if (!r.ok || r.spec.type !== "dot") throw new Error("expected dots");
+    // Research values from several sources: horizontal bars, each with its source.
+    if (!r.ok || r.spec.type !== "hbar") throw new Error("expected hbar");
     expect(r.spec.sources!.map((s) => s.url)).toEqual([A, B, C]);
     expect(r.spec.rows.map((x) => x.source)).toEqual([0, 1, 2]);
     expect(r.spec.rows[2]!.uncertain).toBe(true);
@@ -212,9 +212,9 @@ describe("evidence rules", () => {
       observations: targets,
       reference: { label: "Actual", value: 6.8, unit: "thousand points", source: NOW },
     });
-    if (!r.ok || r.spec.type !== "dot") throw new Error("expected dots");
-    expect(r.spec.reference).toBeUndefined();
-    expect(r.spec.rows[0]!.deltaPct).toBeUndefined();
+    if (!r.ok) throw new Error(r.reason);
+    expect("reference" in r.spec && r.spec.reference).toBeFalsy();
+    expect(r.dropped).toContainEqual({ label: "Actual", reason: "not_comparable" });
   });
 });
 
@@ -279,7 +279,10 @@ describe("ui.visualize", () => {
     const { ports } = makePorts([]);
     const ctx = makeCtx({ workspace: ws });
     const out = await executeToolCall(ports, ctx, { name: "ui.visualize", args: args() });
-    expect(out).toMatchObject({ status: "succeeded", output: { shown: "dot", shape: "category" } });
+    expect(out).toMatchObject({
+      status: "succeeded",
+      output: { shown: "hbar", shape: "category" },
+    });
     const chart = ws.state().surfaces.find((s) => s.type === "visualization")!;
     expect(chart).toMatchObject({ size: "large", priority: 82 });
     // "Sacá Bank B y ordenalos": same metric and horizon → the same Surface.

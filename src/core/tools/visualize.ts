@@ -50,8 +50,29 @@ const observation = z
       .optional()
       .describe('What the value refers to: "2026 year-end", "next 12 months".'),
     kind: z
-      .enum(["actual", "estimate", "target", "low", "base", "high", "scenario", "share"])
-      .optional(),
+      .enum([
+        "actual",
+        "estimate",
+        "target",
+        "low",
+        "base",
+        "high",
+        "scenario",
+        "share",
+        "start",
+        "delta",
+        "end",
+      ])
+      .optional()
+      .describe("start/delta/end for contributions to a change (a waterfall)."),
+    x: z
+      .number()
+      .finite()
+      .optional()
+      .describe("Only for a relationship: the other variable (value is the y)."),
+    open: z.number().finite().optional().describe("Only with real OHLC data: value is the close."),
+    high: z.number().finite().optional(),
+    low: z.number().finite().optional(),
     source: z
       .string()
       .trim()
@@ -64,9 +85,21 @@ const observation = z
 const visualizeInput = z
   .object({
     intent: z
-      .enum(["auto", "compare", "trend", "distribution", "range", "progress"])
+      .enum([
+        "auto",
+        "compare",
+        "trend",
+        "distribution",
+        "range",
+        "progress",
+        "relationship",
+        "frequency",
+        "contribution",
+      ])
       .default("auto")
-      .describe("What the chart should show; ELISE picks the chart type from the data."),
+      .describe(
+        "What the chart should show: distribution = parts of a whole; relationship = two variables; frequency = how raw values are spread; contribution = what added up to a change. ELISE picks the chart from the data.",
+      ),
     title: z.string().trim().min(1).max(120),
     subtitle: z.string().trim().max(120).optional(),
     metric: z
@@ -78,7 +111,15 @@ const visualizeInput = z
       })
       .strict(),
     horizon: z.string().trim().max(40).optional(),
-    observations: z.array(observation).min(1).max(40),
+    xMetric: z
+      .object({
+        name: z.string().trim().min(1).max(60),
+        format: z.enum(["number", "currency", "percent", "count", "hours"]).default("number"),
+      })
+      .strict()
+      .optional()
+      .describe("Only for a relationship: what x is."),
+    observations: z.array(observation).min(1).max(200),
     reference: z
       .object({
         label: z
@@ -94,7 +135,23 @@ const visualizeInput = z
       .strict()
       .optional(),
     chart: z
-      .enum(["auto", "bar", "line", "dot", "range", "table", "pie", "kpi"])
+      .enum([
+        "auto",
+        "bar",
+        "hbar",
+        "line",
+        "area",
+        "dot",
+        "range",
+        "table",
+        "pie",
+        "donut",
+        "kpi",
+        "scatter",
+        "histogram",
+        "waterfall",
+        "candlestick",
+      ])
       .default("auto")
       .describe(
         "Only when the user asked for a chart type; ELISE refuses a misleading one and says why.",
@@ -146,7 +203,7 @@ export const visualizeTool: ToolDefinition = {
   capability: "workspace",
   operation: "visualize",
   description:
-    "Show numbers as a chart on the Live Canvas when it answers better than prose: comparisons across categories (analyst targets, companies, spending categories), a value over time, scenarios/ranges, shares of a whole, progress. Give the evidence (each number with its exact source URL or Surface handle, unit and horizon) and the intent; ELISE chooses the chart, checks the numbers are comparable, and computes deltas against a reference (e.g. the current level). Call it in the same response as your answer. To change an existing chart (sort, remove one, add the current value, another representation), call it again with the same metric and horizon.",
+    "Show numbers as a chart on the Live Canvas when it answers better than prose: comparisons across categories (analyst targets, companies, spending categories), a value over time (a price history: one observation per date), scenarios/ranges, shares of a whole, two variables against each other, how values are spread, what added up to a change. One number (a current price) is a KPI: never make a chart from one value. Give the evidence (each number with its exact source URL or Surface handle, unit and horizon) and the intent; ELISE chooses the chart, checks the numbers are comparable, and computes deltas against a reference (e.g. the current level). Call it in the same response as your answer. To change an existing chart (sort, remove one, add the current value, another representation), call it again with the same metric and horizon.",
   input: visualizeInput,
   async describe() {
     return { summary: "Show a chart" };
@@ -163,6 +220,7 @@ export const visualizeTool: ToolDefinition = {
         ...(q.subtitle ? { subtitle: q.subtitle } : {}),
         metric: q.metric,
         ...(q.horizon ? { horizon: q.horizon } : {}),
+        ...(q.xMetric ? { xMetric: q.xMetric } : {}),
         observations: q.observations,
         ...(q.reference ? { reference: q.reference } : {}),
         preference: { chart: q.chart, sort: q.sort, ...(q.exclude ? { exclude: q.exclude } : {}) },

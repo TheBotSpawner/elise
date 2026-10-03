@@ -993,7 +993,24 @@ function describeSpec(spec: VisualizationSpec): string {
     case "hbar":
     case "distribution":
     case "diverging":
+    case "donut":
       return `${head}: ${spec.rows.map((r) => `${r.label}=${r.value}`).join(", ")}`;
+    case "scatter":
+      return `${head} (${spec.xLabel} vs ${spec.yLabel}): ${spec.points
+        .slice(0, 30)
+        .map((p) => `${p.label ? `${p.label} ` : ""}(${p.x}, ${p.y})`)
+        .join(", ")}`;
+    case "histogram":
+      return `${head}: ${spec.bins.map((b) => `${b.from}–${b.to}: ${b.count}`).join(", ")}`;
+    case "waterfall":
+      return `${head}: ${spec.steps.map((st) => `${st.label} ${st.kind === "delta" && st.value > 0 ? "+" : ""}${st.value}`).join(", ")}`;
+    case "candlestick":
+      return `${head}: ${spec.x
+        .map(
+          (x, i) =>
+            `${x} O${spec.ohlc[i]!.open} H${spec.ohlc[i]!.high} L${spec.ohlc[i]!.low} C${spec.ohlc[i]!.close}`,
+        )
+        .join("; ")}`;
     case "progress":
       return `${head}: ${spec.rows.map((r) => `${r.label}=${Math.round(r.value * 100)}%`).join(", ")}`;
     case "streak":
@@ -1112,6 +1129,12 @@ const envelope = z.object({
   pinned: z.boolean().optional(),
   compared: z.boolean().optional(),
   focusItem: text(1000).optional(),
+  query: z
+    .object({
+      tool: z.string().regex(/^[a-z]+\.[A-Za-z]+$/),
+      args: z.record(z.string(), z.unknown()),
+    })
+    .optional(),
   turn: z.number().int().min(0),
   createdAt: text(40),
   updatedAt: text(40),

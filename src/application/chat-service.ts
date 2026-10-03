@@ -3,10 +3,12 @@ import "server-only";
 import { isEnabled } from "@/config/flags";
 import { serverEnv } from "@/config/server-env";
 import { buildContextPackage } from "@/core/agents/context";
-import type { ToolCallOutcome } from "@/core/agents/executor";
+import { executeToolCall, type ToolCallOutcome } from "@/core/agents/executor";
 import { escalateAfter, MODEL_POLICY, routeTurn } from "@/core/agents/model-policy";
 import { runElise, toolNotes } from "@/core/agents/runtime";
 import { selectTools, toolsInNotes } from "@/core/agents/tool-selection";
+import type { ToolContext } from "@/core/agents/tools";
+import { getOperation } from "@/core/capabilities/registry";
 import {
   activeContextOf,
   contextLabel,
@@ -27,6 +29,7 @@ import { todayIn } from "@/core/time";
 import { bindVoiceApproval } from "@/core/voice/approval";
 import { SpokenSplitter } from "@/core/voice/speech-text";
 import { approvalDecidedOps, intentForTool } from "@/core/workspace/from-results";
+import { changeOf } from "@/core/workspace/lifecycle";
 import { describeWorkspace } from "@/core/workspace/registry";
 import { getAIProvider } from "@/infrastructure/ai";
 import { trackEvent } from "@/infrastructure/observability/analytics";
@@ -59,7 +62,13 @@ import { enabledShortcuts, shortcutStore } from "./shortcuts-service";
 import { structuredSourcesForChat } from "./structured-service";
 import { studyStore } from "./study-service";
 import { webSearchConfigured } from "./web-service";
-import { openWorkspaceSession, toClientOutcome, type WorkspaceSession } from "./workspace-service";
+import {
+  isReadTool,
+  openWorkspaceSession,
+  readRunner,
+  toClientOutcome,
+  type WorkspaceSession,
+} from "./workspace-service";
 
 export interface ChatTurnInput {
   conversationId?: string;
@@ -447,6 +456,21 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
         let usage: { inputTokens: number; outputTokens: number } | null = null;
         const splitter = modality === "voice" ? new SpokenSplitter() : null;
         let model: string | null = null;
+        // The turn's tool context, kept so a Surface's own read can be replayed (ADR-029).
+        let toolCtx: ToolContext | null = null;
+        const readSurface = readRunner(
+          (call) =>
+            executeToolCall(
+              ports,
+              // A replay presents nothing by itself: the session reconciles its result.
+              {
+                ...toolCtx!,
+                workspace: { state: () => workspace.state(), apply: () => 0, activity: () => {} },
+              },
+              call,
+            ),
+          (name) => isReadTool(ports.registry.get(name)),
+        );
 
         try {
           if (approval.kind === "resolve") {
@@ -477,7 +501,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
           for await (const event of runElise({
             ai,
             ports,
-            ctx: {
+            ctx: (toolCtx = {
               ...toolContext(auth, "ai", runId, thread.ref),
               // The conversation's Space, else the Section this message named.
               knowledgeSpaceId: activeSpace?.id ?? mentioned?.id ?? null,
@@ -498,7 +522,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                     }
                   : null;
               },
-            },
+            }),
             // Adaptive: stable instructions, per-turn context last (prompt caching, ADR-025).
             instructions: adaptive ? context.cached.instructions : context.instructions,
             input: adaptive ? context.cached.input : context.input,
@@ -565,10 +589,29 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                   ok: event.outcome.status === "succeeded",
                 });
                 workspace.current = null;
+                // A write reconciles every visible Surface that shows what it changed — before
+                // the model speaks, so voice, text and Canvas agree (ADR-029).
+                const tool = ports.registry.get(event.name);
+                const op = tool ? getOperation(tool.capability, tool.operation) : null;
+                const change =
+                  tool && op && toolCtx
+                    ? changeOf(event.name, { name: tool.operation, kind: op.kind }, event.outcome)
+                    : null;
+                const refreshed = change ? await workspace.reconcile(change, readSurface) : 0;
+                const query =
+                  op?.kind === "read" && event.args && typeof event.args === "object"
+                    ? { tool: event.name, args: event.args as Record<string, unknown> }
+                    : null;
                 // Every result ELISE fetched is presented by the application, never "drawn".
                 const surfaceIds = event.name.startsWith("ui.")
                   ? []
-                  : workspace.present(event.name, event.callId, event.outcome);
+                  : workspace.present(
+                      event.name,
+                      event.callId,
+                      event.outcome,
+                      query,
+                      refreshed > 0,
+                    );
                 if (event.name === "meeting.prepare") logMeetingPrep(event.outcome, durationMs);
                 if (event.outcome.status === "succeeded" && TOOL_EVENTS[event.name])
                   trackEvent(auth, TOOL_EVENTS[event.name]!, { modality });

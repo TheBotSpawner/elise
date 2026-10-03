@@ -1605,6 +1605,8 @@ export const en = {
       range: "Range",
       scenarioNote: "Scenarios, not probabilities.",
       point: "Value",
+      total: "Total",
+      ohlc: { open: "Open", high: "High", low: "Low", close: "Close" },
       temporal: {
         today: "Today",
         showing: "Showing",
@@ -2080,6 +2082,8 @@ export const en = {
     sortBy: "Sort",
     sorts: { newest: "Newest", oldest: "Oldest" },
     general: (space: string) => `${space} · general`,
+    generalFolder: "General",
+    sectionsCount: (n: number) => (n === 1 ? "1 section" : `${n} sections`),
     archived: "archived",
     tagsFor: (title: string) => `Spaces and Sections of “${title}”`,
     tagsTitle: "Spaces and Sections",

@@ -31,6 +31,8 @@ export interface HistoryRow {
   voice: boolean;
   spaceIds: string[];
   chips: Chip[];
+  /** Its folder (primary link), or null for "Sin Espacio". */
+  primary: string | null;
 }
 
 export interface HistoryQuery {
@@ -59,7 +61,7 @@ export async function historyRows(
     conversations.map((c) => c.id),
   ).catch(() => new Map<string, { title: string | null; summary: string | null }>());
 
-  const base: Omit<HistoryRow, "spaceIds" | "chips">[] = [
+  const base: Omit<HistoryRow, "spaceIds" | "chips" | "primary">[] = [
     ...conversations.map((c) => {
       const thread = { kind: "conversation" as const, id: c.id };
       return {
@@ -92,6 +94,7 @@ export async function historyRows(
     ...r,
     spaceIds: tags.get(r.key)?.spaceIds ?? [],
     chips: tags.get(r.key)?.chips ?? [],
+    primary: tags.get(r.key)?.primary ?? null,
   }));
 
   // Recent threads without tags get evaluated after the page is sent (same deterministic

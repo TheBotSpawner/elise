@@ -148,6 +148,8 @@ export interface Surface<P = unknown> {
   compared?: boolean;
   /** The item inside this Surface that is in focus (an email of a list, a timeline entry). */
   focusItem?: string;
+  /** The read that produced it (collections): re-run to stay current after writes (ADR-029). */
+  query?: { tool: string; args: Record<string, unknown> };
   /** Last user turn in which it was presented, updated or focused. */
   turn: number;
   createdAt: string;

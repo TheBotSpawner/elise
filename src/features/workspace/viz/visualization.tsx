@@ -20,6 +20,13 @@ import {
   useNumberFormat,
   type ChartSize,
 } from "./charts";
+import {
+  CandlestickChart,
+  DonutChart,
+  HistogramChart,
+  ScatterChart,
+  WaterfallChart,
+} from "./classic-charts";
 import { DotChart, PointsTable, RangeChart, SourcesFooter } from "./scale-charts";
 import { TemporalChart } from "./temporal-chart";
 
@@ -31,7 +38,8 @@ export function Visualization({ spec, size }: { spec: VisualizationSpec; size: C
   const [view, setView] = useState<"chart" | "table">("chart");
   const series = spec.type === "line" || spec.type === "area" || spec.type === "bar";
   const points = spec.type === "dot" || spec.type === "range";
-  const toggle = series || points;
+  const rows = tableRows(spec);
+  const toggle = series || points || rows !== null;
   return (
     <div className="flex min-h-0 flex-col gap-3">
       {spec.subtitle && <p className="-mb-1 text-[12px] text-muted">{spec.subtitle}</p>}
@@ -75,6 +83,17 @@ export function Visualization({ spec, size }: { spec: VisualizationSpec; size: C
         <SeriesTable spec={spec} />
       ) : view === "table" && points ? (
         <PointsTable spec={spec} />
+      ) : view === "table" && rows ? (
+        <DataTable
+          spec={{
+            type: "table",
+            title: spec.title,
+            format: spec.format,
+            columns: rows.columns.map((label, i) => ({ label, numeric: i > 0 })),
+            rows: rows.rows.slice(0, 12),
+            ...(rows.rows.length > 12 ? { note: `${rows.rows.length - 12}+` } : {}),
+          }}
+        />
       ) : (
         <Chart spec={spec} size={size} />
       )}
@@ -110,6 +129,16 @@ function Chart({ spec, size }: { spec: VisualizationSpec; size: ChartSize }) {
       return <DataTable spec={spec} />;
     case "temporal":
       return <TemporalChart spec={spec} size={size} />;
+    case "donut":
+      return <DonutChart spec={spec} />;
+    case "scatter":
+      return <ScatterChart spec={spec} height={CHART_H[size] + 40} />;
+    case "histogram":
+      return <HistogramChart spec={spec} height={CHART_H[size]} />;
+    case "waterfall":
+      return <WaterfallChart spec={spec} height={CHART_H[size] + 20} />;
+    case "candlestick":
+      return <CandlestickChart spec={spec} height={CHART_H[size] + 20} />;
   }
 }
 
@@ -202,4 +231,43 @@ function Kpi({
       )}
     </div>
   );
+}
+
+/**
+ * The text equivalent of the charts without a series table: every value in a plain table
+ * (the "Tabla" view), numbers formatted as text by the platform.
+ */
+function tableRows(spec: VisualizationSpec): { columns: string[]; rows: string[][] } | null {
+  const n = (v: number) => v.toLocaleString();
+  switch (spec.type) {
+    case "hbar":
+    case "donut":
+    case "distribution":
+      return { columns: ["", "#"], rows: spec.rows.map((r) => [r.label, n(r.value)]) };
+    case "histogram":
+      return {
+        columns: ["", "#"],
+        rows: spec.bins.map((b) => [`${n(b.from)} – ${n(b.to)}`, String(b.count)]),
+      };
+    case "waterfall":
+      return {
+        columns: ["", "±"],
+        rows: spec.steps.map((st) => [
+          st.label,
+          `${st.kind === "delta" && st.value > 0 ? "+" : ""}${n(st.value)}`,
+        ]),
+      };
+    case "scatter":
+      return {
+        columns: ["", spec.xLabel, spec.yLabel],
+        rows: spec.points.map((p) => [p.label ?? "", n(p.x), n(p.y)]),
+      };
+    case "candlestick":
+      return {
+        columns: ["", "O", "H", "L", "C"],
+        rows: spec.ohlc.map((c, i) => [spec.x[i]!, n(c.open), n(c.high), n(c.low), n(c.close)]),
+      };
+    default:
+      return null;
+  }
 }

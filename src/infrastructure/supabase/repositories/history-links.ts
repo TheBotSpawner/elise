@@ -57,7 +57,7 @@ export class SupabaseHistoryLinks implements HistoryLinksPort {
       .join(",");
     const { data } = await this.db
       .from("interaction_knowledge_links")
-      .select("conversation_id, session_id, space_id, source, state, updated_at")
+      .select("conversation_id, session_id, space_id, source, state, confidence, updated_at")
       .eq("workspace_id", this.workspaceId)
       .eq("user_id", this.userId)
       .or(or);
@@ -68,6 +68,7 @@ export class SupabaseHistoryLinks implements HistoryLinksPort {
       spaceId: r.space_id,
       source: r.source,
       state: r.state,
+      confidence: r.confidence,
       updatedAt: r.updated_at,
     }));
   }

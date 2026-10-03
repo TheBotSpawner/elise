@@ -1617,6 +1617,8 @@ export const es: Dictionary = {
       range: "Rango",
       scenarioNote: "Escenarios, no probabilidades.",
       point: "Dato",
+      total: "Total",
+      ohlc: { open: "Apertura", high: "Máximo", low: "Mínimo", close: "Cierre" },
       temporal: {
         today: "Hoy",
         showing: "Mostrando",
@@ -2089,6 +2091,8 @@ export const es: Dictionary = {
     sortBy: "Orden",
     sorts: { newest: "Más recientes", oldest: "Más antiguas" },
     general: (space: string) => `${space} · general`,
+    generalFolder: "General",
+    sectionsCount: (n: number) => (n === 1 ? "1 sección" : `${n} secciones`),
     archived: "archivado",
     tagsFor: (title: string) => `Espacios y Secciones de “${title}”`,
     tagsTitle: "Espacios y Secciones",

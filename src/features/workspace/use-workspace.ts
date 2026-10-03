@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { ToolDisplay } from "@/core/agents/tools";
@@ -13,6 +13,7 @@ import {
   type Surface,
   type WorkspaceState,
 } from "@/core/workspace/model";
+import type { SurfacePayloads } from "@/core/workspace/registry";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { useI18n } from "@/lib/i18n/client";
 import { applyAppearance } from "@/lib/theme";
@@ -20,12 +21,59 @@ import { applyAppearance } from "@/lib/theme";
 import {
   getWorkspaceAction,
   presentFromHistoryAction,
+  refreshWorkspaceAction,
   surfaceActionAction,
   surfaceDetailAction,
   workspaceOpAction,
 } from "./actions";
 
 type UserOp = Parameters<typeof workspaceOpAction>[1];
+
+/** A task shown done before the server confirms (rolled back if it refuses). */
+export function optimisticComplete(
+  state: WorkspaceState,
+  surfaceId: string,
+  taskId: string,
+): WorkspaceState {
+  return {
+    ...state,
+    surfaces: state.surfaces.map((s) => {
+      if (s.id !== surfaceId || s.type !== "task_list") return s;
+      const p = s.payload as SurfacePayloads["task_list"];
+      return {
+        ...s,
+        payload: {
+          ...p,
+          items: p.items.map((i) => (i.id === taskId ? { ...i, status: "completed" as const } : i)),
+        },
+      };
+    }),
+  };
+}
+
+/** Tables whose changes can make a capability's visible collections stale. */
+const DOMAIN_TABLES: Record<
+  string,
+  (
+    | "habits"
+    | "habit_entries"
+    | "goals"
+    | "goal_links"
+    | "tasks"
+    | "task_lists"
+    | "finance_transactions"
+    | "lists"
+    | "list_items"
+    | "notes"
+  )[]
+> = {
+  habits: ["habits", "habit_entries"],
+  goals: ["goals", "goal_links", "habit_entries"],
+  tasks: ["tasks", "task_lists"],
+  finance: ["finance_transactions"],
+  lists: ["lists", "list_items"],
+  notes: ["notes"],
+};
 
 /**
  * Browser side of the Live Workspace: user operations apply instantly and persist through the
@@ -151,10 +199,15 @@ export function useWorkspaceController({
       // Not while a turn streams: its own saves would race this one.
       if (!id || pending || busy) return;
       setPending(`${surface.id}:${itemId ?? action}`);
+      // Completing a task is safe to show at once; the server's answer replaces it either way.
+      if (action === "complete" && itemId)
+        setWorkspace((s) => optimisticComplete(s, surface.id, itemId));
       try {
         const result = await surfaceActionAction(id, surface.id, action, itemId);
         if (!result.ok) {
           toast.error(t.errors.codes[result.error.code]);
+          // Rolled back to what the server holds: an optimistic state never outlives a refusal.
+          await refetch();
           return;
         }
         const { state, outcome } = result.value;
@@ -166,7 +219,7 @@ export function useWorkspaceController({
         setPending(null);
       }
     },
-    [busy, getThread, pending, setWorkspace, t],
+    [busy, getThread, pending, refetch, setWorkspace, t],
   );
 
   const loadDetail = useCallback(
@@ -209,6 +262,25 @@ export function useWorkspaceController({
   // Another tab, the Approval Center or background work changed it.
   useRealtimeRefresh(workspaceId ?? "none", ["live_workspaces"], () => {
     if (!busy && workspaceId) void refetch();
+  });
+
+  // The data a visible collection shows changed elsewhere (another tab, Approval Center, a
+  // background job): its own read runs again on the server (ADR-029). During a turn the turn
+  // reconciles its own writes.
+  const shown = useMemo(
+    () =>
+      [
+        ...new Set(
+          workspace.surfaces.flatMap((s) => (s.query ? [s.query.tool.split(".")[0]!] : [])),
+        ),
+      ].sort(),
+    [workspace.surfaces],
+  );
+  const tables = useMemo(() => [...new Set(shown.flatMap((c) => DOMAIN_TABLES[c] ?? []))], [shown]);
+  useRealtimeRefresh(workspaceId ?? "none", tables, () => {
+    const id = getThread();
+    if (busy || !id || !shown.length) return;
+    void refreshWorkspaceAction(id, shown).then((r) => r.ok && setWorkspace(r.value));
   });
 
   return {

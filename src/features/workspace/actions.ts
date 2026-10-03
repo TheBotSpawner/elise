@@ -9,6 +9,7 @@ import {
   loadSurfaceDetail,
   loadWorkspace,
   presentFromHistory,
+  refreshWorkspace,
   runSurfaceAction,
   type SurfaceDetail,
 } from "@/application/workspace-service";
@@ -108,6 +109,40 @@ export async function surfaceDetailAction(
       threadSchema.parse(thread),
       id.parse(surfaceId),
       z.string().max(1000).nullable().parse(itemId),
+    ),
+  );
+}
+
+/** Domain data changed elsewhere (another tab, a background job): refresh what shows it. */
+const REFRESHABLE = [
+  "habits",
+  "goals",
+  "tasks",
+  "calendar",
+  "finance",
+  "lists",
+  "notes",
+  "structured",
+] as const;
+
+export async function refreshWorkspaceAction(
+  thread: ThreadRef,
+  capabilities: string[],
+): Promise<Result<WorkspaceState>> {
+  return run(async () =>
+    refreshWorkspace(
+      await requireAuthContext(),
+      threadSchema.parse(thread),
+      z
+        .array(z.enum(REFRESHABLE))
+        .max(REFRESHABLE.length)
+        .parse(capabilities)
+        .map((capability) => ({
+          capability,
+          resourceType: capability,
+          resourceId: null,
+          operation: "updated" as const,
+        })),
     ),
   );
 }

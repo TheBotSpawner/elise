@@ -88,6 +88,11 @@ export const VISUALIZATION_TYPES = [
   "dot",
   "range",
   "temporal",
+  "donut",
+  "scatter",
+  "histogram",
+  "waterfall",
+  "candlestick",
 ] as const;
 export type VisualizationType = (typeof VISUALIZATION_TYPES)[number];
 
@@ -156,8 +161,10 @@ export const visualizationSpec = z
         type: z.literal("bar"),
         ...base,
         x: z.array(label).min(1).max(24),
-        /** One series, or two paired periods (current first). */
-        series: z.array(series).min(1).max(2),
+        /** One series, several grouped side by side (current first), or stacked parts. */
+        series: z.array(series).min(1).max(4),
+        /** Parts of each bar's total (only when the series add up to something real). */
+        stacked: z.boolean().optional(),
         highlight: z.array(z.number().int().min(0)).max(24).optional(),
         target: target.optional(),
         reference: reference.optional(),
@@ -169,7 +176,17 @@ export const visualizationSpec = z
         type: z.enum(["hbar", "distribution"]),
         ...base,
         rows: z
-          .array(z.object({ label, value: value.min(0) }).strict())
+          .array(
+            z
+              .object({
+                label,
+                value: value.min(0),
+                /** Where this value comes from (research comparisons keep it per bar). */
+                source: sourceRef.optional(),
+                uncertain: z.boolean().optional(),
+              })
+              .strict(),
+          )
           .min(1)
           .max(12),
         highlight: z.array(label).max(12).optional(),
@@ -275,6 +292,81 @@ export const visualizationSpec = z
       .strict(),
     z
       .object({
+        /** Parts of a true whole, few of them (≤ 6): a ring with its total in the middle. */
+        type: z.literal("donut"),
+        ...base,
+        rows: z
+          .array(z.object({ label, value: value.min(0) }).strict())
+          .min(2)
+          .max(6),
+        highlight: z.array(label).max(6).optional(),
+      })
+      .strict(),
+    z
+      .object({
+        /** Two numeric variables per item: does one move with the other? */
+        type: z.literal("scatter"),
+        ...base,
+        xLabel: label,
+        yLabel: label,
+        xFormat: format.default({ kind: "number" }),
+        points: z
+          .array(
+            z
+              .object({ label: label.optional(), x: value, y: value, source: sourceRef.optional() })
+              .strict(),
+          )
+          .min(3)
+          .max(200),
+      })
+      .strict(),
+    z
+      .object({
+        /** How many values fall in each interval (bins computed by ELISE from raw values). */
+        type: z.literal("histogram"),
+        ...base,
+        bins: z
+          .array(z.object({ from: value, to: value, count: z.number().int().min(0) }).strict())
+          .min(2)
+          .max(30),
+        /** What is counted ("transactions"). */
+        unitLabel: label.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        /** From a start to an end through additive contributions (each step computed by ELISE). */
+        type: z.literal("waterfall"),
+        ...base,
+        steps: z
+          .array(
+            z
+              .object({
+                label,
+                value,
+                kind: z.enum(["start", "delta", "end"]),
+                source: sourceRef.optional(),
+              })
+              .strict(),
+          )
+          .min(3)
+          .max(16),
+      })
+      .strict(),
+    z
+      .object({
+        /** Real open/high/low/close per period. Never synthesized from a close-only series. */
+        type: z.literal("candlestick"),
+        ...base,
+        x: z.array(label).min(2).max(62),
+        ohlc: z
+          .array(z.object({ open: value, high: value, low: value, close: value }).strict())
+          .min(2)
+          .max(62),
+      })
+      .strict(),
+    z
+      .object({
         type: z.literal("diverging"),
         ...base,
         rows: z.array(z.object({ label, value }).strict()).min(1).max(12),
@@ -354,6 +446,25 @@ export const visualizationSpec = z
             code: "custom",
             message: `Series "${s.name}" needs ${spec.x.length} values`,
           });
+    if (spec.type === "candlestick") {
+      if (spec.ohlc.length !== spec.x.length)
+        ctx.addIssue({ code: "custom", message: "One OHLC value per period" });
+      for (const c of spec.ohlc)
+        if (c.high < Math.max(c.open, c.close) || c.low > Math.min(c.open, c.close))
+          ctx.addIssue({ code: "custom", message: "High/low must contain open and close" });
+    }
+    if (spec.type === "waterfall") {
+      const kinds = spec.steps.map((st) => st.kind);
+      if (
+        kinds[0] !== "start" ||
+        kinds.at(-1) !== "end" ||
+        kinds.slice(1, -1).some((k) => k !== "delta")
+      )
+        ctx.addIssue({ code: "custom", message: "A waterfall goes start → deltas → end" });
+    }
+    if (spec.type === "histogram")
+      for (const b of spec.bins)
+        if (b.to <= b.from) ctx.addIssue({ code: "custom", message: "Empty histogram bin" });
     if (spec.type === "table")
       for (const r of spec.rows)
         if (r.length !== spec.columns.length)
@@ -363,6 +474,9 @@ export const visualizationSpec = z
     const refs: (number | undefined)[] = [];
     if (spec.type === "dot") refs.push(...spec.rows.map((r) => r.source));
     if (spec.type === "range") refs.push(...spec.scenarios.map((r) => r.source));
+    if (spec.type === "hbar") refs.push(...spec.rows.map((r) => r.source));
+    if (spec.type === "scatter") refs.push(...spec.points.map((pt) => pt.source));
+    if (spec.type === "waterfall") refs.push(...spec.steps.map((st) => st.source));
     if (spec.type === "temporal") {
       refs.push(...spec.events.map((e) => e.source));
       for (const e of spec.events)
@@ -501,13 +615,13 @@ export function financeSummaryVisuals(
     .filter((g) => g.type === "expense" && g.currency === currency && num(g.total) > 0)
     .sort((a, b) => num(b.total) - num(a.total));
   if (expenses.length >= 2) {
-    // At most 7 slices: the rest is grouped, never dropped.
-    const top = expenses.slice(0, 6);
-    const rest = expenses.slice(6).reduce((n, g) => n + num(g.total), 0);
+    // Spending is a true whole: a donut of at most 6 slices — the rest grouped, never dropped.
+    const top = expenses.slice(0, expenses.length > 6 ? 5 : 6);
+    const rest = expenses.slice(top.length).reduce((n, g) => n + num(g.total), 0);
     out.push({
       role: "categories",
       spec: {
-        type: "distribution",
+        type: "donut",
         title: labels.byCategory,
         format: fmt,
         rows: [

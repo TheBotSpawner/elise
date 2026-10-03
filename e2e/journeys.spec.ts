@@ -150,8 +150,8 @@ test("History offers Space filters and grouping", async ({ page }, info) => {
   await page.getByRole("link", { name: "University E2E" }).click();
   await expect(page).toHaveURL(/space=/);
   await expect(page.getByRole("navigation", { name: "Sección" })).toBeVisible();
-  await page.getByLabel("Agrupar por").selectOption("space");
-  await expect(page).toHaveURL(/group=space/);
+  await page.getByLabel("Agrupar por").selectOption("section");
+  await expect(page).toHaveURL(/group=section/);
   await page.screenshot({ path: info.outputPath("history.png") });
 });
 

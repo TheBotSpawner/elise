@@ -125,6 +125,8 @@ export type ToolCallOutcome =
       display?: ToolDisplay;
       actionId: string | null;
       providerLabel: string;
+      /** The resource a write acted on (the Canvas reconciles what shows it, ADR-029). */
+      target?: { type: string; id: string };
     }
   | {
       status: "approval_required";
@@ -615,6 +617,7 @@ async function runWrite(
       display: result.display,
       actionId,
       providerLabel: binding.providerKey,
+      ...(result.target ? { target: result.target } : {}),
     });
   } catch (error) {
     const publicError = toPublicError(error);

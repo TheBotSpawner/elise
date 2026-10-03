@@ -1,7 +1,8 @@
 import "server-only";
 
 import { executeToolCall, type ToolCallOutcome } from "@/core/agents/executor";
-import type { ToolDisplay } from "@/core/agents/tools";
+import type { AnyToolDefinition, ToolDisplay } from "@/core/agents/tools";
+import { getOperation } from "@/core/capabilities/registry";
 import { AppError, toAppError, toPublicError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import { wellFormed } from "@/core/text";
@@ -12,6 +13,13 @@ import {
   supersededOps,
   surfacesFromOutcome,
 } from "@/core/workspace/from-results";
+import {
+  affectedSurfaces,
+  changeOf,
+  queryKey,
+  type ResourceChange,
+  type SurfaceQuery,
+} from "@/core/workspace/lifecycle";
 import { forStorage } from "@/core/workspace/location";
 import {
   applyOps,
@@ -266,18 +274,30 @@ export class WorkspaceSession implements WorkspacePort {
     this.onActivity?.(step, this.current);
   }
 
-  /** Presents a finished tool call's result; returns the Surface ids it produced. */
-  present(toolName: string, callId: string, outcome: ToolCallOutcome): string[] {
+  /**
+   * Presents a finished tool call's result; returns the Surface ids it produced. A read's
+   * Surfaces remember their query (and take their id from it), so reading the same thing again
+   * — or refreshing it after a write — updates them in place. `skip` presents nothing (a write
+   * whose visible collections were already refreshed).
+   */
+  present(
+    toolName: string,
+    callId: string,
+    outcome: ToolCallOutcome,
+    query: SurfaceQuery | null = null,
+    skip = false,
+  ): string[] {
     const at = new Date().toISOString();
     // A change to something already shown updates it there instead of adding a duplicate.
     const reconciled = reconcileOps(this.value, outcome, at);
-    const drafts = reconciled.length
-      ? []
-      : surfacesFromOutcome(toolName, outcome, {
-          key: callId,
-          intentId: this.value.intent?.id ?? null,
-          locale: this.auth.profile?.locale,
-        });
+    const drafts =
+      reconciled.length || skip
+        ? []
+        : surfacesFromOutcome(toolName, outcome, {
+            key: query ? queryKey(query.tool, query.args) : callId,
+            intentId: this.value.intent?.id ?? null,
+            locale: this.auth.profile?.locale,
+          }).map((d) => (query && d.type !== "approval" ? { ...d, query } : d));
     this.apply([
       ...reconciled,
       ...supersededOps(this.value, drafts, at),
@@ -288,9 +308,83 @@ export class WorkspaceSession implements WorkspacePort {
       : drafts.map((d) => d.id);
   }
 
+  /**
+   * After a successful write (ADR-029): every visible Surface that shows the changed resource is
+   * reconciled — its own read re-run and its payload replaced in place (same id, pins kept,
+   * Focus kept); a deleted resource's card leaves (and Focus with it); a collection that is now
+   * empty has done its job and leaves, unless pinned or focused. Returns how many updated.
+   */
+  async reconcile(change: ResourceChange, read: ReadRunner): Promise<number> {
+    const affected = affectedSurfaces(this.value, change);
+    if (!affected.length) return 0;
+    const at = new Date().toISOString();
+    const results = await Promise.all(
+      affected.map(async ({ surface, decision }): Promise<WorkspaceOp | null> => {
+        if (decision === "dismiss") return { op: "dismiss", id: surface.id, at };
+        const q = surface.query!;
+        const outcome = await read(q).catch(() => null);
+        // A refresh that fails keeps what was shown (never blanks a Surface on an error).
+        if (!outcome || outcome.status !== "succeeded") return null;
+        const drafts = surfacesFromOutcome(q.tool, outcome, {
+          key: queryKey(q.tool, q.args),
+          intentId: surface.intentId,
+          locale: this.auth.profile?.locale,
+        });
+        const same = drafts.filter((d) => d.type === surface.type);
+        const fresh =
+          drafts.find((d) => d.id === surface.id) ?? (same.length === 1 ? same[0] : null);
+        if (fresh)
+          return {
+            op: "update",
+            id: surface.id,
+            patch: { payload: fresh.payload, title: fresh.title, state: "ready" },
+            at,
+          };
+        const keep = surface.pinned || this.value.focusId === surface.id;
+        return keep ? null : { op: "dismiss", id: surface.id, at };
+      }),
+    );
+    const ops = results.filter((o): o is WorkspaceOp => o !== null);
+    this.apply(ops);
+    logger.info("workspace.reconciled", {
+      capability: change.capability,
+      operation: change.operation,
+      updated: ops.filter((o) => o.op === "update").length,
+      dismissed: ops.filter((o) => o.op === "dismiss").length,
+    });
+    return ops.filter((o) => o.op === "update").length;
+  }
+
   flush() {
     return this.saving;
   }
+}
+
+/** A registered read (never a write, never a screen tool): the only kind a refresh may replay. */
+export function isReadTool(tool: AnyToolDefinition | undefined): boolean {
+  return (
+    !!tool &&
+    tool.capability !== "workspace" &&
+    getOperation(tool.capability, tool.operation)?.kind === "read"
+  );
+}
+
+/** Runs a Surface's read again (same tool, same arguments, the user's own permissions). */
+export type ReadRunner = (query: SurfaceQuery) => Promise<ToolCallOutcome>;
+
+/**
+ * A Surface query is replayed only if it is a read of the registered tool; anything else
+ * (a tampered stored workspace, a write) is refused, so a refresh can never change data.
+ */
+export function readRunner(
+  run: (call: { name: string; args: unknown }) => Promise<ToolCallOutcome>,
+  isRead: (toolName: string) => boolean,
+): ReadRunner {
+  return async (q) => {
+    if (!isRead(q.tool))
+      throw new AppError("VALIDATION_ERROR", "Only reads refresh a Surface", { recovery: "none" });
+    return run({ name: q.tool, args: q.args });
+  };
 }
 
 export async function openWorkspaceSession(auth: AuthContext, thread: ThreadRef, isNew: boolean) {
@@ -437,6 +531,36 @@ export async function presentFromHistory(
   return state;
 }
 
+/**
+ * Reconciles a saved workspace with changes made outside a turn (ADR-029): a Surface action,
+ * another tab, the Approval Center, a background job. Each visible collection that depends on
+ * a changed capability re-runs its own read; nothing else moves.
+ */
+export async function refreshWorkspace(
+  auth: AuthContext,
+  thread: ThreadRef,
+  changes: ResourceChange[],
+): Promise<WorkspaceState> {
+  await ownThread(auth, thread);
+  const session = new WorkspaceSession(auth, thread, await loadWorkspace(auth, thread));
+  const ports = createExecutorPorts(auth);
+  const read = readRunner(
+    (call) =>
+      executeToolCall(
+        ports,
+        {
+          ...toolContext(auth, "user_ui", null, thread),
+          workspace: { state: () => session.state(), apply: () => 0, activity: () => {} },
+        },
+        call,
+      ),
+    (name) => isReadTool(ports.registry.get(name)),
+  );
+  for (const change of changes) await session.reconcile(change, read);
+  await session.flush();
+  return session.state();
+}
+
 /** Runs a Surface's direct action: the registry builds the call, the executor decides. */
 export async function runSurfaceAction(
   auth: AuthContext,
@@ -476,6 +600,11 @@ export async function runSurfaceAction(
     { name: call.name, args: call.args },
   );
   logger.info("workspace.surface_action", { type: surface.type, action, status: outcome.status });
+  // The write is reflected in every visible collection that shows it, recomputed (ADR-029).
+  const tool = ports.registry.get(call.name);
+  const op = tool ? getOperation(tool.capability, tool.operation) : undefined;
+  const change =
+    tool && op ? changeOf(call.name, { name: tool.operation, kind: op.kind }, outcome) : null;
   const at = new Date().toISOString();
   const state = await mutate(auth, thread, (s) => {
     const reconciled = reconcileOps(s, outcome, at);
@@ -493,7 +622,10 @@ export async function runSurfaceAction(
           )),
     ];
   });
-  return { state, outcome: toClientOutcome(outcome) };
+  return {
+    state: change ? await refreshWorkspace(auth, thread, [change]) : state,
+    outcome: toClientOutcome(outcome),
+  };
 }
 
 export function toClientOutcome(outcome: ToolCallOutcome): ClientToolOutcome {
