@@ -137,7 +137,9 @@ export function habitProgress(habit: Habit, entries: HabitEntry[], today: string
     const entry = byDate.get(date);
     return {
       date,
-      scheduled: isScheduled(habit, date) && date >= habit.startDate,
+      // Before the habit's start nothing is expected (no misses), but a day the user did record
+      // — backfilled history — counts like any other: history belongs to the user.
+      scheduled: isScheduled(habit, date) && (date >= habit.startDate || entry?.status === "done"),
       value: entry?.status === "done" ? entry.value : 0,
       met: dayMet(habit, entry),
       skipped: entry?.status === "skipped",
@@ -200,6 +202,12 @@ function streak(
   byDate: Map<string, HabitEntry>,
   today: string,
 ): { count: number; unit: "days" | "weeks" } {
+  // Recomputed from the entries every time (edits to any past day are reflected), back to the
+  // habit's start — or to the earliest day the user recorded, if they backfilled before it.
+  const earliest = [...byDate.keys()].reduce(
+    (min, d) => (byDate.get(d)!.status === "done" && d < min ? d : min),
+    habit.startDate,
+  );
   if (habit.frequency === "weekly") {
     const weekDone = (monday: string) => {
       let total = 0;
@@ -215,7 +223,7 @@ function streak(
     if (weekDone(current)) count++;
     for (
       let w = addDays(current, -7);
-      w >= weekStart(habit.startDate) && count < 520;
+      w >= weekStart(earliest) && count < 520;
       w = addDays(w, -7)
     ) {
       if (!weekDone(w)) break;
@@ -224,11 +232,7 @@ function streak(
     return { count, unit: "weeks" };
   }
   let count = 0;
-  for (
-    let d = today, guard = 0;
-    d >= habit.startDate && guard < 3660;
-    d = addDays(d, -1), guard++
-  ) {
+  for (let d = today, guard = 0; d >= earliest && guard < 3660; d = addDays(d, -1), guard++) {
     if (!isScheduled(habit, d)) continue;
     const met = dayMet(habit, byDate.get(d));
     if (met) count++;
@@ -296,6 +300,22 @@ export const checkInInput = z
   .object({
     habit: habitRef,
     date: date.optional().describe("Local date; defaults to today."),
+    daysAgo: z
+      .number()
+      .int()
+      .min(0)
+      .max(366)
+      .optional()
+      .describe('A past day relative to today: "ayer" → 1, "anteayer" → 2. ELISE resolves it.'),
+    weekday: z
+      .number()
+      .int()
+      .min(0)
+      .max(6)
+      .optional()
+      .describe(
+        '"El martes" → 2 (0=Sun…6=Sat): the most recent such day, today included. ELISE resolves it.',
+      ),
     value: z
       .number()
       .min(0)
@@ -325,3 +345,20 @@ export const progressInput = z
   .strict();
 
 export type CreateHabitInput = z.infer<typeof createHabitInput>;
+
+/**
+ * The local day a check-in is for (ADR-031): an explicit date, N days ago, or the most recent
+ * given weekday (today included) — always in the user's timezone, never a future day.
+ */
+export function checkInDate(
+  today: string,
+  q: { date?: string; daysAgo?: number; weekday?: number },
+): string {
+  if (q.date) return q.date;
+  if (q.daysAgo !== undefined) return addDays(today, -q.daysAgo);
+  if (q.weekday !== undefined) {
+    const back = (weekday(today) - q.weekday + 7) % 7;
+    return addDays(today, -back);
+  }
+  return today;
+}

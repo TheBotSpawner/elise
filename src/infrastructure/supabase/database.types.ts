@@ -51,6 +51,21 @@ export type InteractionKnowledgeLinkRow = {
   updated_at: Ts;
 };
 
+export type ChatAttachmentRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  conversation_id: string | null;
+  session_id: string | null;
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+  storage_path: string;
+  status: "uploading" | "ready" | "sent";
+  created_at: Ts;
+  sent_at: Ts | null;
+};
+
 export type UsageEventRow = {
   id: string;
   workspace_id: string;
@@ -1130,6 +1145,10 @@ export type Database = {
         "workspace_id" | "context_profile_id" | "link_type" | "label"
       >;
       entities: Table<EntityRow, "workspace_id" | "entity_type" | "name" | "name_key">;
+      chat_attachments: Table<
+        ChatAttachmentRow,
+        "id" | "workspace_id" | "user_id" | "name" | "mime_type" | "size_bytes" | "storage_path"
+      >;
       interaction_knowledge_links: Table<
         InteractionKnowledgeLinkRow,
         "workspace_id" | "user_id" | "space_id" | "source"

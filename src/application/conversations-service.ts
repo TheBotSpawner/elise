@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SentAttachment } from "@/core/attachments/model";
 import { AppError } from "@/core/errors";
 
 import type { AuthContext } from "./auth-context";
@@ -17,6 +18,8 @@ export interface StoredChatMessage {
   /** Spoken turns keep their modality (the transcript is the content). */
   modality?: "text" | "voice";
   content: string;
+  /** Files sent with this user turn (ADR-031). */
+  attachments?: SentAttachment[];
   tools: ClientToolTrace[];
   error?: AssistantMessageMetadata["error"];
   createdAt: string;
@@ -61,12 +64,16 @@ export async function loadConversation(
   if (error) throw new AppError("INTERNAL_ERROR", "Could not load messages", { cause: error });
 
   const messages = data.map((m) => {
-    const meta = (m.metadata ?? {}) as AssistantMessageMetadata & { modality?: "text" | "voice" };
+    const meta = (m.metadata ?? {}) as AssistantMessageMetadata & {
+      modality?: "text" | "voice";
+      attachments?: SentAttachment[];
+    };
     return {
       id: m.id,
       role: m.role as "user" | "assistant",
       ...(meta.modality === "voice" ? { modality: "voice" as const } : {}),
       content: m.content,
+      ...(meta.attachments?.length ? { attachments: meta.attachments } : {}),
       tools: meta.tools ?? [],
       error: meta.error,
       createdAt: m.created_at,

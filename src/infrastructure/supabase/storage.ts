@@ -141,3 +141,52 @@ export async function removeFinanceImport(workspaceId: string, path: string) {
   assertFinanceOwned(workspaceId, path);
   await createAdminClient().storage.from(FINANCE_IMPORTS_BUCKET).remove([path]);
 }
+
+// ── Chat attachments (bucket `chat-attachments`, ADR-031) ────────────────────
+// Files given to one message: workspace/{workspace_id}/chat/{attachment_id}/{file}.
+
+export const CHAT_ATTACHMENTS_BUCKET = "chat-attachments";
+
+export function chatAttachmentPath(workspaceId: string, attachmentId: string, filename: string) {
+  const safe =
+    filename
+      .normalize("NFKD")
+      .replace(/[^\w.-]+/g, "_")
+      .replace(/_+/g, "_")
+      .slice(-120) || "file";
+  return `workspace/${workspaceId}/chat/${attachmentId}/${safe}`;
+}
+
+function assertChatOwned(workspaceId: string, path: string) {
+  if (!path.startsWith(`workspace/${workspaceId}/chat/`) || path.includes("..")) {
+    throw new AppError("PERMISSION_DENIED", "That file does not belong to this workspace");
+  }
+}
+
+export async function createChatUploadUrl(workspaceId: string, path: string) {
+  assertChatOwned(workspaceId, path);
+  const { data, error } = await createAdminClient()
+    .storage.from(CHAT_ATTACHMENTS_BUCKET)
+    .createSignedUploadUrl(path);
+  if (error || !data)
+    throw new AppError("INTERNAL_ERROR", "Could not prepare the upload", { cause: error });
+  return { path: data.path, token: data.token };
+}
+
+/** The uploaded bytes, or null if the upload never completed. */
+export async function downloadChatAttachment(
+  workspaceId: string,
+  path: string,
+): Promise<Uint8Array | null> {
+  assertChatOwned(workspaceId, path);
+  const { data, error } = await createAdminClient()
+    .storage.from(CHAT_ATTACHMENTS_BUCKET)
+    .download(path);
+  if (error || !data) return null;
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+export async function removeChatAttachments(workspaceId: string, paths: string[]) {
+  paths.forEach((p) => assertChatOwned(workspaceId, p));
+  if (paths.length) await createAdminClient().storage.from(CHAT_ATTACHMENTS_BUCKET).remove(paths);
+}

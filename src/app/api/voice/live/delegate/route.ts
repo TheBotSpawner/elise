@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { getAuthContext } from "@/application/auth-context";
 import { runDelegation } from "@/application/live-voice-service";
+import { ATTACHMENT_LIMITS } from "@/core/attachments/model";
 import { AppError, toAppError, toPublicError } from "@/core/errors";
 
 import { unauthorized, voiceError } from "../../errors";
@@ -15,6 +16,8 @@ const body = z
     conversationId: z.uuid().nullable(),
     sessionId: z.uuid().nullable(),
     text: z.string().trim().min(1).max(4000),
+    /** Draft attachments sent with this turn (ADR-031); verified and owned server-side. */
+    attachments: z.array(z.uuid()).max(ATTACHMENT_LIMITS.perMessage).optional(),
     /** The user's position, only while they share it (ADR-023/028); coarse, never stored. */
     here: z
       .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) })

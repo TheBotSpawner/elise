@@ -100,9 +100,9 @@ describe("resource-bound collections", () => {
     expect(workout(before[0]!).summary).toMatch(/^0 \/ /);
 
     backend.checkIn("h1");
-    const updated = await session.reconcile(checkInChange("h1"), read);
+    expect(await session.reconcile(checkInChange("h1"), read)).toBe(1);
     // The write's own one-habit display is not added on top.
-    session.present("habits.checkIn", "call-2", await backend.read(), null, updated > 0);
+    session.present("habits.checkIn", "call-2", await backend.read(), null, checkInChange("h1"));
 
     const after = session.state().surfaces;
     expect(after).toHaveLength(1);

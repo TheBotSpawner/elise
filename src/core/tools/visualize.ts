@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { AppError } from "../errors";
 import { toLocalDateTime } from "../time";
+import { inheritedFrom } from "../workspace/lifecycle";
 import { surfaceId, type Surface, type WorkspaceState } from "../workspace/model";
 import { draftDefaults, PAYLOADS, type SurfacePayloads } from "../workspace/registry";
 import {
@@ -230,6 +231,10 @@ export const visualizeTool: ToolDefinition = {
     );
     if (!plan.ok) throw new AppError("VALIDATION_ERROR", plan.reason, { recovery: "review" });
     const payload = PAYLOADS.visualization.parse({ spec: plan.spec });
+    const origin = inheritedFrom(
+      state,
+      q.observations.map((o) => o.source),
+    );
     // One chart per metric and horizon in this intent: follow-ups update it in place.
     const key = `${state.intent?.id ?? "none"}:viz:${q.metric.name.toLowerCase()}:${(q.horizon ?? "").toLowerCase()}`;
     const defaults = draftDefaults("visualization", payload);
@@ -257,6 +262,7 @@ export const visualizeTool: ToolDefinition = {
           // It answers the question: a primary, large chart, not a peripheral one.
           size: "large",
           priority: 82,
+          ...(origin ?? {}),
         },
       },
     ]);
@@ -455,6 +461,12 @@ export const timelineTool: ToolDefinition = {
     });
     if (!plan.ok) throw new AppError("VALIDATION_ERROR", plan.reason, { recovery: "review" });
     const payload = PAYLOADS.visualization.parse({ spec: plan.spec });
+    const origin = q.events
+      ? inheritedFrom(
+          state,
+          q.events.map((e) => e.source),
+        )
+      : null;
     const id = existing?.id ?? surfaceId("visualization", `${state.intent?.id ?? "none"}:temporal`);
     w.apply([
       {
@@ -479,6 +491,8 @@ export const timelineTool: ToolDefinition = {
           // The schedule answers the question: it leads, its documents stay beside it.
           size: "large",
           priority: 86,
+          // Drawn from one collection on screen: the same data in another form replaces it.
+          ...(origin ? { ...origin, presentation: "timeline" as const } : {}),
         },
       },
     ]);

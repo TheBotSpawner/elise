@@ -1,6 +1,7 @@
 import "server-only";
 
 import { MAX_HISTORY_MESSAGES, type HistoryMessage } from "@/core/agents/context";
+import type { SentAttachment } from "@/core/attachments/model";
 import { AppError } from "@/core/errors";
 import { conciseTitle } from "@/core/history/links";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
@@ -24,7 +25,12 @@ export interface Thread {
   ref: ThreadRef;
   isNew: boolean;
   history(): Promise<HistoryMessage[]>;
-  addUserTurn(text: string, modality: TurnModality, voice?: VoiceTurnMeta): Promise<void>;
+  addUserTurn(
+    text: string,
+    modality: TurnModality,
+    voice?: VoiceTurnMeta,
+    attachments?: SentAttachment[],
+  ): Promise<void>;
   /** Returns the stored turn's id. */
   addAssistantTurn(
     text: string,
@@ -35,10 +41,21 @@ export interface Thread {
   activeSpace(): Promise<{ id: string; path: string } | null>;
 }
 
-type Meta = AssistantMessageMetadata & { modality?: TurnModality; voice?: VoiceTurnMeta };
+type Meta = AssistantMessageMetadata & {
+  modality?: TurnModality;
+  voice?: VoiceTurnMeta;
+  attachments?: SentAttachment[];
+};
 // Well-formed before storage: a split character must never cost the user an answer.
 const json = (v: unknown) => wellFormed(JSON.parse(JSON.stringify(v))) as Json;
 const notes = (m: Json | null) => ((m as Meta | null)?.toolNotes ?? []).slice(0, 10);
+/** A user turn's files, as later turns see them (the content went to that turn only). */
+const withAttached = (content: string, m: Json | null) => {
+  const files = (m as Meta | null)?.attachments ?? [];
+  return files.length
+    ? `${content}\n\n[attached to this message:${files.map((f) => `"${f.name}" (attachment ${f.id})`).join(", ")}]`
+    : content;
+};
 
 export async function openThread(
   auth: AuthContext,
@@ -99,17 +116,21 @@ function conversationThread(auth: AuthContext, id: string, isNew: boolean): Thre
       if (error) throw new AppError("NOT_FOUND", "Conversation not found", { cause: error });
       return data.reverse().map((m) => ({
         role: m.role as "user" | "assistant",
-        content: m.content,
+        content: withAttached(m.content, m.metadata),
         toolNotes: notes(m.metadata),
       }));
     },
-    async addUserTurn(text, modality, voice) {
+    async addUserTurn(text, modality, voice, attachments) {
+      const meta = {
+        ...(modality === "voice" ? { modality, voice } : {}),
+        ...(attachments?.length ? { attachments } : {}),
+      };
       const { error } = await auth.db.from("messages").insert({
         conversation_id: id,
         workspace_id: auth.workspaceId,
         role: "user",
         content: text,
-        ...(modality === "voice" ? { metadata: json({ modality, voice }) } : {}),
+        ...(Object.keys(meta).length ? { metadata: json(meta) } : {}),
       });
       if (error) throw new AppError("NOT_FOUND", "Conversation not found", { cause: error });
     },
@@ -202,18 +223,21 @@ function sessionThread(auth: AuthContext, id: string, isNew: boolean): Thread {
         .limit(MAX_HISTORY_MESSAGES);
       return (data ?? []).reverse().map((t) => ({
         role: t.role as "user" | "assistant",
-        content: t.content,
+        content: withAttached(t.content, t.metadata),
         toolNotes: notes(t.metadata),
       }));
     },
-    async addUserTurn(text, modality, voice) {
+    async addUserTurn(text, modality, voice, attachments) {
       const { error } = await admin.from("interaction_turns").insert({
         workspace_id: auth.workspaceId,
         session_id: id,
         role: "user",
         modality,
         content: text,
-        metadata: json(voice ? { voice } : {}),
+        metadata: json({
+          ...(voice ? { voice } : {}),
+          ...(attachments?.length ? { attachments } : {}),
+        }),
       });
       if (error) throw new AppError("INTERNAL_ERROR", "Could not save the turn", { cause: error });
     },
@@ -269,6 +293,7 @@ export async function loadVoiceSession(
       role: t.role as "user" | "assistant",
       ...(t.modality === "voice" ? { modality: "voice" as const } : {}),
       content: t.content.trim(),
+      ...(meta.attachments?.length ? { attachments: meta.attachments } : {}),
       tools: meta.tools ?? [],
       error: meta.error,
       createdAt: t.occurred_at,

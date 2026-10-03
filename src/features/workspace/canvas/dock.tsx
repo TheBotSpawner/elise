@@ -9,6 +9,7 @@ import { Orb } from "@/components/elise/orb/orb";
 import { ORB_LAYOUT_ID } from "@/components/elise/orb/orb-presence";
 import type { OrbState } from "@/components/elise/orb/orb-states";
 import { isHearing, type VoiceState } from "@/core/voice/session";
+import { DraftAttachmentChips } from "@/features/chat/attachments-ui";
 import { AttachToKnowledge } from "@/features/knowledge/attach-dialog";
 import { MicButton, type VoiceHandlers } from "@/features/voice/voice-controls";
 import { useI18n } from "@/lib/i18n/client";
@@ -113,6 +114,7 @@ export function Dock({
           {above}
         </div>
       )}
+      <DraftAttachmentChips />
       <motion.form
         layout
         transition={ORB_MOVE}
@@ -203,7 +205,7 @@ export function Dock({
           </button>
         )}
         <span className="flex shrink-0 items-center gap-1">
-          {!mobile && <AttachToKnowledge />}
+          <AttachToKnowledge />
           {voice && (
             <button
               type="button"

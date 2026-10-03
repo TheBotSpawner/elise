@@ -6,13 +6,14 @@ import { goalProgress, type Goal, type GoalProgress } from "@/core/capabilities/
 import {
   habitProgress,
   progressWindow,
+  weekStart,
   type Habit,
   type HabitProgress,
 } from "@/core/capabilities/habits";
 import type { NativeList } from "@/core/capabilities/lists";
 import type { Note } from "@/core/capabilities/notes";
 import { AppError } from "@/core/errors";
-import { todayIn } from "@/core/time";
+import { addDays, todayIn } from "@/core/time";
 import { EliseGoalsProvider } from "@/infrastructure/providers/elise-native/goals";
 import { EliseHabitsProvider } from "@/infrastructure/providers/elise-native/habits";
 import { EliseListsProvider } from "@/infrastructure/providers/elise-native/lists";
@@ -43,19 +44,37 @@ export async function nativeAction(
   return (await runUserTool(auth, tool, args, key)).display;
 }
 
+/**
+ * Habits with their week, in the user's timezone. `week` (any date in it) shows a past week:
+ * every day up to today is editable history; the streak is always as of today.
+ */
 export async function habitsOverview(
   auth: AuthContext,
-): Promise<{ habits: Habit[]; progress: HabitProgress[] }> {
+  week?: string | null,
+): Promise<{
+  habits: Habit[];
+  progress: HabitProgress[];
+  week: { start: string; current: boolean };
+}> {
   const provider = new EliseHabitsProvider(auth.db, auth.workspaceId, auth.userId);
   const habits = await provider.list({ includeInactive: true });
   const day = today(auth);
-  const window = progressWindow(day);
+  // A past week is shown as of its last day (nothing in it is "future"); never past today.
+  const start = week && week <= day ? weekStart(week) : weekStart(day);
+  const ref = addDays(start, 6) < day ? addDays(start, 6) : day;
   const entries = await provider.entries(
     habits.map((h) => h.id),
-    window.from,
-    window.to,
+    progressWindow(ref).from,
+    progressWindow(day).to,
   );
-  return { habits, progress: habits.map((h) => habitProgress(h, entries, day)) };
+  return {
+    habits,
+    progress: habits.map((h) => ({
+      ...habitProgress(h, entries, ref),
+      streak: habitProgress(h, entries, day).streak,
+    })),
+    week: { start, current: start === weekStart(day) },
+  };
 }
 
 export interface GoalView {

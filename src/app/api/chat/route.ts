@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { getAuthContext } from "@/application/auth-context";
 import { startChatTurn } from "@/application/chat-service";
+import { ATTACHMENT_LIMITS } from "@/core/attachments/model";
 import { AppError, toAppError, toPublicError } from "@/core/errors";
 import { logger } from "@/infrastructure/observability/logger";
 
@@ -14,6 +15,8 @@ const bodySchema = z
     /** A voice session in progress (ADR-014). */
     sessionId: z.uuid().optional(),
     message: z.string().trim().min(1).max(8000),
+    /** Draft attachments sent with this turn (ADR-031); verified and owned server-side. */
+    attachments: z.array(z.uuid()).max(ATTACHMENT_LIMITS.perMessage).optional(),
     /** Knowledge Space a new conversation starts in ("Ask ELISE" from a Space). */
     spaceId: z.uuid().optional(),
     /** A spoken turn: its transcript is ordinary user input, with no extra authority. */

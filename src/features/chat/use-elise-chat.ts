@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from "react";
 import type { ChatStreamEvent } from "@/application/chat-protocol";
 import { resolveOrbState, type OrbState } from "@/components/elise/orb/orb-states";
 import type { ToolDisplay } from "@/core/agents/tools";
+import type { SentAttachment } from "@/core/attachments/model";
 import type { PublicError } from "@/core/errors";
 import {
   threadUrl,
@@ -18,6 +19,7 @@ import { locationForTurn } from "@/features/location/shared-location";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { applyAppearance } from "@/lib/theme";
 
+import { draftAttachments, type DraftStore } from "./draft-attachments";
 import type { ChatMessage } from "./types";
 
 type RunState = "idle" | "thinking" | "using_tools" | "approving";
@@ -45,6 +47,8 @@ export type StreamListener = (
  * turns go through here alike (ADR-014); voice listens to the same stream to speak the reply.
  */
 export function useEliseChat(initial: {
+  /** The draft attachments a sent turn takes (tests pass their own). */
+  attachments?: DraftStore;
   /** A History conversation or a voice session; none for a new interaction. */
   thread?: ThreadRef;
   messages?: ChatMessage[];
@@ -53,6 +57,7 @@ export function useEliseChat(initial: {
   /** The conversation's Live Workspace, restored by the server (ADR-013). */
   workspace?: WorkspaceState;
 }) {
+  const attachments = initial.attachments ?? draftAttachments;
   const [messages, setMessages] = useState<ChatMessage[]>(initial.messages ?? []);
   const [workspace, setWorkspace] = useState<WorkspaceState>(initial.workspace ?? emptyWorkspace());
   /** Set when streamed ops didn't land on the server's version: re-read after the turn. */
@@ -73,6 +78,8 @@ export function useEliseChat(initial: {
   /** The text of the turn in flight: the same text again (double Enter, a repeated voice
    * finalization, a reconnect) is a duplicate, not a new turn. */
   const inFlight = useRef<string | null>(null);
+  /** A turn waiting for its attachments' uploads. */
+  const claiming = useRef<string | null>(null);
   /** A typed turn that failed: the composer offers its text back instead of losing it. */
   const [failedDraft, setFailedDraft] = useState<{ text: string; at: number } | null>(null);
 
@@ -89,9 +96,30 @@ export function useEliseChat(initial: {
         queued.current = { text: message, options };
         return;
       }
+      if (claiming.current) {
+        if (claiming.current !== message) queued.current = { text: message, options };
+        return;
+      }
+      // The draft's attachments belong to this turn, typed or spoken (ADR-031): wait for their
+      // uploads; a failed one keeps the turn from going without it.
+      claiming.current = message;
+      const files = await attachments.take();
+      claiming.current = null;
+      if (!files) {
+        setFailedDraft({ text: message, at: Date.now() });
+        return;
+      }
       inFlight.current = message;
       const emit = (e: Parameters<StreamListener>[0]) => listeners.current.forEach((fn) => fn(e));
       emit({ type: "turn_started", text: message, live: Boolean(options.live) });
+      const sent: SentAttachment[] = files.map((a) => ({
+        id: a.id!,
+        name: a.name,
+        mimeType: a.mimeType,
+        size: a.size,
+      }));
+      /** The server accepted the turn (its attachments are now part of it). */
+      let accepted = false;
 
       const assistantId = crypto.randomUUID();
       setMessages((all) => [
@@ -101,6 +129,7 @@ export function useEliseChat(initial: {
           role: "user",
           content: message,
           ...(options.modality === "voice" ? { modality: "voice" as const } : {}),
+          ...(sent.length ? { attachments: sent } : {}),
           tools: [],
           fresh: true,
           createdAt: new Date().toISOString(),
@@ -159,6 +188,7 @@ export function useEliseChat(initial: {
                   sessionId:
                     current?.kind === "session" ? current.id : (options.live.sessionId ?? null),
                   text: message,
+                  ...(sent.length ? { attachments: sent.map((a) => a.id) } : {}),
                   ...(here ? { here } : {}),
                 }
               : {
@@ -167,6 +197,7 @@ export function useEliseChat(initial: {
                     : {}),
                   ...(thread.current?.kind === "session" ? { sessionId: thread.current.id } : {}),
                   message,
+                  ...(sent.length ? { attachments: sent.map((a) => a.id) } : {}),
                   ...(!thread.current && initial.spaceId ? { spaceId: initial.spaceId } : {}),
                   ...(options.modality === "voice"
                     ? { modality: "voice", voice: options.voice }
@@ -204,6 +235,7 @@ export function useEliseChat(initial: {
             emit(event);
             switch (event.type) {
               case "conversation":
+                accepted = true;
                 if (!thread.current) {
                   thread.current = event.thread;
                   // Keep the URL reloadable without remounting (a voice session reopens on Home).
@@ -294,6 +326,9 @@ export function useEliseChat(initial: {
         inFlight.current = null;
         if (failed && options.modality !== "voice")
           setFailedDraft({ text: message, at: Date.now() });
+        // Refused before it started: the files go back to the draft with the text.
+        if (accepted) attachments.release(files);
+        else attachments.restore(files);
         flushText();
         patchAssistant(assistantId, (m) => ({ ...m, streaming: false, error: failed }));
         setRunState("idle");
@@ -305,7 +340,7 @@ export function useEliseChat(initial: {
         if (next) void run(next.text, next.options);
       }
     },
-    [patchAssistant, initial.spaceId],
+    [patchAssistant, initial.spaceId, attachments],
   );
 
   const stop = useCallback(() => abort.current?.abort(), []);

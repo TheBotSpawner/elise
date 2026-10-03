@@ -4,6 +4,7 @@ import type { ThreadRef } from "@/core/interaction";
 import { isCancellation, progressContent, TranscriptTimeline } from "@/core/voice/live";
 import type { VoicePhase, VoiceProblem, VoiceState } from "@/core/voice/session";
 import { initialVoice } from "@/core/voice/session";
+import { draftAttachments } from "@/features/chat/draft-attachments";
 import type { SendOptions, StreamListener } from "@/features/chat/use-elise-chat";
 
 /**
@@ -84,6 +85,26 @@ export class LiveVoiceSession {
   ) {
     this.state = { ...initialVoice, speak };
     this.unsubscribe = subscribe((e) => this.onStream(e));
+    this.offDraft = draftAttachments.subscribe(() => this.onDraft());
+  }
+
+  private offDraft: (() => void) | null = null;
+  private draftKeys = new Set<string>();
+
+  /** Files dropped into the draft: the voice model can't see them, so it delegates (ADR-031). */
+  private onDraft() {
+    const items = draftAttachments.get().items;
+    const added = items.filter((a) => !this.draftKeys.has(a.key));
+    this.draftKeys = new Set(items.map((a) => a.key));
+    if (!added.length) return;
+    const names = added.map((a) => `"${a.name}"`).join(", ");
+    this.append(
+      "session.thinking.append",
+      null,
+      this.deps.locale === "es"
+        ? `La persona adjuntó ${names} a su próximo pedido. No podés verlos: cualquier pedido sobre esos archivos se lo pasás a ELISE.`
+        : `The user attached ${names} to their next request. You can't see them: hand any request about those files to ELISE.`,
+    );
   }
 
   level(): number {
@@ -529,6 +550,7 @@ export class LiveVoiceSession {
 
   dispose() {
     this.unsubscribe?.();
+    this.offDraft?.();
     void this.end();
   }
 

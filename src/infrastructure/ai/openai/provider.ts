@@ -201,6 +201,18 @@ export class OpenAIProvider implements AIProvider {
 function toOpenAIItem(item: AIInputItem): OpenAI.Responses.ResponseInputItem {
   switch (item.type) {
     case "message":
+      if (item.role === "user" && item.images?.length)
+        return {
+          role: "user",
+          content: [
+            { type: "input_text", text: item.content },
+            ...item.images.map((url) => ({
+              type: "input_image" as const,
+              image_url: url,
+              detail: "auto" as const,
+            })),
+          ],
+        };
       return { role: item.role, content: item.content };
     case "tool_call":
       return {

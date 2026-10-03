@@ -6,6 +6,7 @@ import { getOperation } from "@/core/capabilities/registry";
 import { AppError, toAppError, toPublicError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import { wellFormed } from "@/core/text";
+import { todayIn } from "@/core/time";
 import {
   approvalDecidedOps,
   presentOps,
@@ -16,7 +17,10 @@ import {
 import {
   affectedSurfaces,
   changeOf,
+  datasetKey,
+  memberIds,
   queryKey,
+  representTasks,
   type ResourceChange,
   type SurfaceQuery,
 } from "@/core/workspace/lifecycle";
@@ -199,10 +203,23 @@ function observe(before: WorkspaceState, after: WorkspaceState, thread: ThreadRe
   const at = { thread: thread.kind };
   const had = new Set(before.surfaces.map((s) => s.id));
   const has = new Set(after.surfaces.map((s) => s.id));
-  for (const s of after.surfaces)
-    if (!had.has(s.id)) logger.info("workspace.surface_presented", { ...at, type: s.type });
-  for (const s of before.surfaces)
-    if (!has.has(s.id)) logger.info("workspace.surface_removed", { ...at, type: s.type });
+  const added = after.surfaces.filter((s) => !had.has(s.id));
+  for (const s of added)
+    logger.info("workspace.surface_presented", {
+      ...at,
+      type: s.type,
+      ...(s.presentation ? { presentation: s.presentation } : {}),
+    });
+  for (const s of before.surfaces) {
+    if (has.has(s.id)) continue;
+    // Same data in another form (ADR-031): superseded, not merely removed. No content logged.
+    const heir = s.dataset ? added.find((a) => a.dataset === s.dataset) : undefined;
+    logger.info(heir ? "workspace.surface_replaced" : "workspace.surface_removed", {
+      ...at,
+      type: s.type,
+      ...(heir ? { by: heir.type, presentation: heir.presentation ?? null } : {}),
+    });
+  }
   if (after.focusId && after.focusId !== before.focusId)
     logger.info("workspace.surface_focused", {
       ...at,
@@ -285,27 +302,66 @@ export class WorkspaceSession implements WorkspacePort {
     callId: string,
     outcome: ToolCallOutcome,
     query: SurfaceQuery | null = null,
-    skip = false,
+    change: ResourceChange | null = null,
   ): string[] {
     const at = new Date().toISOString();
     // A change to something already shown updates it there instead of adding a duplicate.
     const reconciled = reconcileOps(this.value, outcome, at);
-    const drafts =
-      reconciled.length || skip
+    // The written resource already appears in a (just refreshed) collection: that collection
+    // is what "mostramelo" means now — no extra card. A deleted resource gets no card at all.
+    const holder =
+      change?.resourceId && change.operation !== "deleted"
+        ? this.value.surfaces.find(
+            (s) =>
+              s.type !== "approval" &&
+              s.query &&
+              (s.members?.includes(change.resourceId!) ||
+                JSON.stringify(s.payload).includes(change.resourceId!)),
+          )
+        : undefined;
+    const raw =
+      reconciled.length || holder || change?.operation === "deleted"
         ? []
         : surfacesFromOutcome(toolName, outcome, {
             key: query ? queryKey(query.tool, query.args) : callId,
             intentId: this.value.intent?.id ?? null,
             locale: this.auth.profile?.locale,
-          }).map((d) => (query && d.type !== "approval" ? { ...d, query } : d));
+          });
+    // A read's single Surface is that query's dataset; a resource card is that resource's.
+    const drafts = raw.map((d) => ({
+      ...d,
+      ...(query && d.type !== "approval" ? { query } : {}),
+      ...(query && raw.length === 1 && d.type !== "approval"
+        ? {
+            dataset: datasetKey(query.tool, query.args),
+            ...(d.type === "task_list" ? { presentation: "list" as const } : {}),
+          }
+        : {}),
+      ...(!query && d.ref && d.type !== "approval"
+        ? { dataset: `${d.ref.resource}:${d.ref.id}` }
+        : {}),
+      ...(change ? { changedAt: at } : {}),
+    }));
     this.apply([
       ...reconciled,
+      ...(holder
+        ? [
+            {
+              op: "update" as const,
+              id: holder.id,
+              patch: { changedAt: at, focusItem: change!.resourceId! },
+              at,
+            },
+          ]
+        : []),
       ...supersededOps(this.value, drafts, at),
       ...presentOps(drafts, at),
     ]);
-    return reconciled.length
-      ? reconciled.map((o) => (o.op === "update" ? o.id : "")).filter(Boolean)
-      : drafts.map((d) => d.id);
+    return holder
+      ? [holder.id]
+      : reconciled.length
+        ? reconciled.map((o) => (o.op === "update" ? o.id : "")).filter(Boolean)
+        : drafts.map((d) => d.id);
   }
 
   /**
@@ -330,6 +386,27 @@ export class WorkspaceSession implements WorkspacePort {
           intentId: surface.intentId,
           locale: this.auth.profile?.locale,
         });
+        // A collection shown as a timeline or table keeps that form when it refreshes.
+        const list = drafts.find((d) => d.type === "task_list");
+        if (surface.presentation && surface.presentation !== "list" && list) {
+          const spec = representTasks(
+            list.payload as SurfacePayloads["task_list"],
+            surface.presentation,
+            {
+              title: surface.title || (this.auth.profile?.locale === "en" ? "Tasks" : "Tareas"),
+              locale: this.auth.profile?.locale ?? "es",
+              today: todayIn(this.auth.profile?.timezone ?? "UTC"),
+            },
+          );
+          return spec
+            ? {
+                op: "update",
+                id: surface.id,
+                patch: { payload: { spec }, state: "ready", members: memberIds(list.payload) },
+                at,
+              }
+            : null;
+        }
         const same = drafts.filter((d) => d.type === surface.type);
         const fresh =
           drafts.find((d) => d.id === surface.id) ?? (same.length === 1 ? same[0] : null);

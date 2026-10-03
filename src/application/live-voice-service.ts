@@ -74,6 +74,8 @@ export interface DelegationRequest {
   conversationId: string | null;
   sessionId: string | null;
   text: string;
+  /** Draft attachments that belong to this spoken turn (ADR-031). */
+  attachments?: string[];
   /** The user's position, when they share it (ADR-023/028); coarse, never stored. */
   here?: { lat: number; lng: number };
   requestId: string;
@@ -122,6 +124,7 @@ export async function runDelegation(
   const turn = await prepareTurn(auth, {
     message: req.text,
     modality: "voice",
+    ...(req.attachments?.length ? { attachments: req.attachments } : {}),
     ...(req.here ? { here: req.here } : {}),
     ...(req.conversationId ? { conversationId: req.conversationId } : {}),
     ...(req.sessionId && !req.conversationId ? { sessionId: req.sessionId } : {}),

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pickOne, sourceOf } from "./native-common";
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import {
+  checkInDate,
   checkInInput,
   createHabitInput,
   habitProgress,
@@ -13,6 +14,7 @@ import {
   type Habit,
   type HabitProgress,
 } from "../capabilities/habits";
+import { AppError } from "../errors";
 import { todayIn } from "../time";
 
 function provider(env: ToolRunEnv) {
@@ -190,7 +192,11 @@ export const checkInTool: ToolDefinition = {
   async run(raw, env) {
     const c = checkInInput.parse(raw);
     const habit = await resolve(env, c.habit);
-    const date = c.date ?? today(env);
+    const date = checkInDate(today(env), c);
+    if (date > today(env))
+      throw new AppError("VALIDATION_ERROR", "A check-in can't be for a future day", {
+        recovery: "review",
+      });
     if (c.status === "undo") await provider(env).removeEntry(habit.id, date);
     else
       await provider(env).checkIn(

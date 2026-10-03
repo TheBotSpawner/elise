@@ -18,6 +18,7 @@ import { ORB_LAYOUT_ID } from "@/components/elise/orb/orb-presence";
 import type { OrbState } from "@/components/elise/orb/orb-states";
 import type { VoiceState } from "@/core/voice/session";
 import type { Surface, WorkspaceState } from "@/core/workspace/model";
+import { FileDropZone } from "@/features/chat/attachments-ui";
 import { MessageThread, type ThreadHandlers } from "@/features/chat/message-thread";
 import type { ChatMessage } from "@/features/chat/types";
 import type { VoiceHandlers } from "@/features/voice/voice-controls";
@@ -306,6 +307,9 @@ export function LiveCanvas(props: LiveCanvasProps) {
           />
         )}
       </AnimatePresence>
+
+      {/* Desktop and tablets: files dropped anywhere join the draft (ADR-031). */}
+      <FileDropZone />
 
       <TranscriptPanel
         open={showTranscript}

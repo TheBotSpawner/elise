@@ -150,6 +150,17 @@ export interface Surface<P = unknown> {
   focusItem?: string;
   /** The read that produced it (collections): re-run to stay current after writes (ADR-029). */
   query?: { tool: string; args: Record<string, unknown> };
+  /**
+   * What data it shows (ADR-031): a read's query, a resource ("task:<id>"). Another Surface of
+   * the same dataset replaces it (a list shown as a timeline), unless pinned or kept.
+   */
+  dataset?: string;
+  /** How a collection is shown; kept when it refreshes (ADR-031). */
+  presentation?: "list" | "timeline" | "table";
+  /** Resource ids a collection shown in another form contains (its payload has no ids). */
+  members?: string[];
+  /** When a write produced or changed it: the latest is what "mostramelo" means. */
+  changedAt?: string;
   /** Last user turn in which it was presented, updated or focused. */
   turn: number;
   createdAt: string;
@@ -192,11 +203,27 @@ export interface WorkspaceState {
 }
 
 export type WorkspaceOp =
-  | { op: "present"; surface: SurfaceDraft; at: string }
+  /**
+   * Present (or update by id). A new Surface replaces visible unpinned ones of the same dataset
+   * — taking their handle and Focus — unless `keep` asks to show both (ADR-031).
+   */
+  | { op: "present"; surface: SurfaceDraft; at: string; keep?: boolean }
   | {
       op: "update";
       id: string;
-      patch: Partial<Pick<Surface, "title" | "state" | "size" | "priority" | "payload">>;
+      patch: Partial<
+        Pick<
+          Surface,
+          | "title"
+          | "state"
+          | "size"
+          | "priority"
+          | "payload"
+          | "changedAt"
+          | "focusItem"
+          | "members"
+        >
+      >;
       at: string;
     }
   /**
@@ -291,18 +318,33 @@ function reduce(state: WorkspaceState, op: WorkspaceOp): WorkspaceState {
           surfaces: state.surfaces.map((s) => (s.id === existing.id ? updated : s)),
         };
       }
+      // Same data, another representation: the old one is superseded — replaced in place.
+      const replaced =
+        op.surface.dataset && !op.keep
+          ? state.surfaces.filter(
+              (s) => s.dataset === op.surface.dataset && !s.pinned && s.type !== "approval",
+            )
+          : [];
+      const heir = replaced[0];
       const surface: Surface = {
         ...op.surface,
-        handle: `S${state.nextHandle}`,
+        handle: heir?.handle ?? `S${state.nextHandle}`,
         intentId: op.surface.intentId ?? state.intent?.id ?? null,
         turn: state.turn,
         createdAt: op.at,
         updatedAt: op.at,
       };
+      const gone = new Set(replaced.map((s) => s.id));
+      // It takes the old one's place in order, so the Canvas reflows instead of reshuffling.
+      const at = heir ? state.surfaces.findIndex((s) => s.id === heir.id) : -1;
+      const kept = state.surfaces.filter((s) => !gone.has(s.id));
+      const surfaces =
+        at >= 0 ? [...kept.slice(0, at), surface, ...kept.slice(at)] : [...kept, surface];
       return evict({
         ...state,
-        surfaces: [...state.surfaces, surface],
-        nextHandle: state.nextHandle + 1,
+        surfaces,
+        nextHandle: heir ? state.nextHandle : state.nextHandle + 1,
+        focusId: state.focusId && gone.has(state.focusId) ? surface.id : state.focusId,
       });
     }
     case "update": {

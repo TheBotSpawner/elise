@@ -11,6 +11,7 @@ import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 import { ApprovalCard, type ApprovalPhase } from "./approval-card";
+import { SentAttachments } from "./attachments-ui";
 import { DisplayCard } from "./result-cards";
 import { ToolTrace } from "./trace";
 import type { ChatMessage } from "./types";
@@ -81,6 +82,7 @@ export function MessageThread({
             {m.role === "user" ? (
               <UserMessage
                 content={m.content}
+                attachments={m.attachments}
                 animate={Boolean(m.fresh)}
                 spoken={m.modality === "voice"}
               />
@@ -102,10 +104,12 @@ export function MessageThread({
 
 function UserMessage({
   content,
+  attachments,
   animate,
   spoken,
 }: {
   content: string;
+  attachments?: ChatMessage["attachments"];
   animate: boolean;
   spoken: boolean;
 }) {
@@ -126,6 +130,7 @@ function UserMessage({
       <p className="max-w-[75%] rounded-[18px_18px_6px_18px] bg-surface-2 px-4 py-[11px] text-[15px] leading-[1.5] whitespace-pre-wrap md:max-w-[520px] md:px-[18px] md:py-3 md:leading-[1.55]">
         {content}
       </p>
+      {attachments?.length ? <SentAttachments files={attachments} /> : null}
     </motion.div>
   );
 }

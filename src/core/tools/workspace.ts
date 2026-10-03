@@ -2,7 +2,17 @@ import { z } from "zod";
 
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { AppError } from "../errors";
+import { toLocalDateTime } from "../time";
 import { timelineTool, visualizeTool } from "./visualize";
+import { surfacesFromOutcome } from "../workspace/from-results";
+import {
+  activeCollection,
+  datasetKey,
+  lastAffected,
+  memberIds,
+  queryKey,
+  representTasks,
+} from "../workspace/lifecycle";
 import { isImageUrl, MEDIA_KINDS, mediaPayload, videoEmbed } from "../workspace/media";
 import { SURFACE_SIZES, surfaceId, type Surface, type WorkspaceState } from "../workspace/model";
 import type { WorkspacePort } from "../workspace/port";
@@ -470,11 +480,167 @@ export const clearTool: ToolDefinition = {
   },
 };
 
+// ── ui.show: the working set, in the form asked (ADR-031) ────────────────────
+
+const showInput = z
+  .object({
+    what: z
+      .enum(["last_changed", "collection"])
+      .describe(
+        '"Mostramelo" after creating/changing something → last_changed. "Mostralas", "esas tareas", "ponelas en una timeline" → collection (the one being discussed).',
+      ),
+    surface: surfaceRef
+      .optional()
+      .describe("Only when the user points at a specific one (S2, “the second list”)."),
+    as: z
+      .enum(["list", "timeline", "table"])
+      .optional()
+      .describe("Another form for the SAME data. It replaces the current view."),
+    keep: z
+      .boolean()
+      .default(false)
+      .describe('Only if the user asks to keep both ("dejá la lista y mostrame también…").'),
+  })
+  .strict();
+
+export const showTool: ToolDefinition = {
+  name: "ui.show",
+  capability: "workspace",
+  operation: "show",
+  description:
+    '"Mostramelo", "mostralas", "esas tareas como línea de tiempo / tabla": shows what the user is working with — the thing just created or changed, or the collection being discussed — focused, or in another form of the SAME data (the old view is replaced, never duplicated). ELISE resolves which one; no ids needed.',
+  input: showInput,
+  async describe() {
+    return { summary: "Show" };
+  },
+  async run(raw, env) {
+    const q = showInput.parse(raw);
+    const w = port(env);
+    const state = w.state();
+    const target = q.surface
+      ? find(state, q.surface)
+      : q.what === "last_changed"
+        ? (lastAffected(state) ?? activeCollection(state))
+        : activeCollection(state);
+    if (!target)
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "Nothing on screen matches: fetch it first (e.g. tasks.list), then show it.",
+        { recovery: "review" },
+      );
+    const at = now(env);
+    const current = target.presentation ?? (target.type === "task_list" ? "list" : null);
+    if (!q.as || q.as === current) {
+      w.apply([
+        {
+          op: "focus",
+          id: target.id,
+          item: q.what === "last_changed" ? (target.focusItem ?? null) : null,
+          at,
+        },
+      ]);
+      return { output: { shown: target.handle, title: target.title } };
+    }
+    // Another form of the same data: from the collection's own items (refreshed if needed).
+    if (!target.query?.tool.startsWith("tasks."))
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "This collection has no other built-in form: use ui.timeline / ui.visualize with its handle as the source (the new view replaces it).",
+        { recovery: "review" },
+      );
+    let list =
+      target.type === "task_list" ? (target.payload as SurfacePayloads["task_list"]) : null;
+    if (!list && env.invoke) {
+      const fresh = await env.invoke(target.query.tool, target.query.args);
+      if (fresh.status === "succeeded" && fresh.display?.kind === "task_list")
+        list = {
+          items: surfacesFromOutcome(target.query.tool, fresh, { key: "x" })
+            .filter((d) => d.type === "task_list")
+            .flatMap((d) => (d.payload as SurfacePayloads["task_list"]).items),
+          total: fresh.display.tasks.length,
+        };
+    }
+    if (!list) throw new AppError("PROVIDER_UNAVAILABLE", "Couldn't read that collection again");
+    const dataset = target.dataset ?? datasetKey(target.query.tool, target.query.args);
+    const title = target.title || (env.ctx.locale === "es" ? "Tareas" : "Tasks");
+    const common = {
+      title,
+      state: "ready" as const,
+      source: target.source,
+      ref: null,
+      intentId: target.intentId,
+      query: target.query,
+      dataset,
+    };
+    if (q.as === "list") {
+      const payload = PAYLOADS.task_list.parse(list);
+      w.apply([
+        {
+          op: "present",
+          keep: q.keep,
+          at,
+          surface: {
+            id: surfaceId("task_list", queryKey(target.query.tool, target.query.args)),
+            type: "task_list",
+            ...common,
+            payload,
+            presentation: "list",
+            ...draftDefaults("task_list", payload),
+          },
+        },
+      ]);
+      return { output: { shown: "list", items: list.items.length } };
+    }
+    const spec = representTasks(list, q.as, {
+      title,
+      locale: env.ctx.locale,
+      today: toLocalDateTime(env.ctx.now, env.ctx.timezone).slice(0, 10),
+    });
+    if (!spec)
+      throw new AppError(
+        "VALIDATION_ERROR",
+        env.ctx.locale === "es"
+          ? "Estas tareas no tienen fechas para ubicarlas en el tiempo."
+          : "These tasks have no dates to place in time.",
+        { recovery: "review" },
+      );
+    const payload = PAYLOADS.visualization.parse({ spec });
+    w.apply([
+      {
+        op: "present",
+        keep: q.keep,
+        at,
+        surface: {
+          id: surfaceId("visualization", `${dataset}:${q.as}`),
+          type: "visualization",
+          ...common,
+          payload,
+          presentation: q.as,
+          members: memberIds(list),
+          ...draftDefaults("visualization", payload),
+          size: "large",
+          priority: Math.max(target.priority, 80),
+        },
+      },
+    ]);
+    return {
+      output: {
+        shown: q.as,
+        items: list.items.length,
+        ...(q.keep ? {} : { replaced: target.handle }),
+        instructions:
+          "The same tasks are on screen in the new form (the previous view was replaced). Say it in one short sentence.",
+      },
+    };
+  },
+};
+
 export const WORKSPACE_TOOLS = [
   listSurfacesTool,
   presentTool,
   visualizeTool,
   timelineTool,
+  showTool,
   focusTool,
   pinTool,
   arrangeTool,

@@ -7,7 +7,13 @@
 /** Conversation items in provider-neutral form. */
 export type AIInputItem =
   /** "developer": ELISE's own per-turn context (time, visible Surfaces…), never user words. */
-  | { type: "message"; role: "user" | "assistant" | "developer"; content: string }
+  | {
+      type: "message";
+      role: "user" | "assistant" | "developer";
+      content: string;
+      /** Images the user attached to this message (data URLs; user role only, ADR-031). */
+      images?: readonly string[];
+    }
   | { type: "tool_call"; callId: string; name: string; arguments: string }
   | { type: "tool_result"; callId: string; output: string };
 

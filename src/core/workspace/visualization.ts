@@ -407,6 +407,8 @@ export const visualizationSpec = z
           .array(
             z
               .object({
+                /** The resource this row shows (a habit id): lets the Canvas reconcile it. */
+                id: z.string().max(100).optional(),
                 label,
                 meta: z.string().trim().max(80).optional(),
                 days: z.array(z.enum(DAY_STATES)).length(7),
@@ -737,6 +739,7 @@ export function habitsVisual(
     .filter((h) => h.week.days.length === 7)
     .slice(0, 8)
     .map((h) => ({
+      id: h.habitId,
       label: h.name.slice(0, 60) || "—",
       days: h.week.days.map((d) =>
         d.date === h.today.date

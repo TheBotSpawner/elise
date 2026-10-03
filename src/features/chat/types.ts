@@ -1,4 +1,5 @@
 import type { ClientToolTrace } from "@/application/chat-protocol";
+import type { SentAttachment } from "@/core/attachments/model";
 import type { PublicError } from "@/core/errors";
 
 export interface ChatMessage {
@@ -7,6 +8,8 @@ export interface ChatMessage {
   /** A spoken turn (its transcript is the content). */
   modality?: "text" | "voice";
   content: string;
+  /** Files sent with this user turn (ADR-031). */
+  attachments?: SentAttachment[];
   tools: ClientToolTrace[];
   error?: PublicError;
   createdAt: string;

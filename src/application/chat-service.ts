@@ -38,6 +38,7 @@ import { withUsageScope } from "@/infrastructure/observability/usage";
 import type { Json } from "@/infrastructure/supabase/database.types";
 
 import { pendingForInteraction, resolveApproval } from "./approvals-service";
+import { loadTurnAttachments, markSent } from "./attachments-service";
 import type { AuthContext } from "./auth-context";
 import type {
   AssistantMessageMetadata,
@@ -75,6 +76,8 @@ export interface ChatTurnInput {
   /** A voice session in progress (ADR-014). */
   sessionId?: string;
   message: string;
+  /** Draft attachment ids sent with this message (ADR-031). */
+  attachments?: string[];
   requestId: string;
   spaceId?: string;
   /** Spoken turns run the same ELISE; only how the reply is shaped differs. */
@@ -165,6 +168,11 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     ]),
   );
   const capabilities = availableCapabilities(bindings);
+  // Attachments are verified before anything is written: a turn never goes out without a file
+  // the user saw in the draft (ADR-031).
+  const attached = input.attachments?.length
+    ? await perf.time("attachments", loadTurnAttachments(auth, input.attachments))
+    : null;
   const thread = await perf.time(
     "thread",
     openThread(auth, {
@@ -217,7 +225,12 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
   );
 
   const [, { data: run, error: runError }] = await Promise.all([
-    perf.time("user_turn", thread.addUserTurn(input.message, modality, input.voice)),
+    perf.time(
+      "user_turn",
+      thread
+        .addUserTurn(input.message, modality, input.voice, attached?.sent)
+        .then(() => (attached ? markSent(auth, input.attachments!, thread.ref) : undefined)),
+    ),
     perf.time("run_insert", () =>
       auth.db
         .from("ai_runs")
@@ -329,6 +342,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     accounts: accountSummaries(bindings),
     history,
     userMessage: input.message,
+    attachments: attached,
     activeSpace: activeSpace?.path ?? null,
     knowledgeMap: knowledgeMap(nodes),
     resolvedSpace: resolvedPath,
@@ -597,7 +611,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                   tool && op && toolCtx
                     ? changeOf(event.name, { name: tool.operation, kind: op.kind }, event.outcome)
                     : null;
-                const refreshed = change ? await workspace.reconcile(change, readSurface) : 0;
+                if (change) await workspace.reconcile(change, readSurface);
                 const query =
                   op?.kind === "read" && event.args && typeof event.args === "object"
                     ? { tool: event.name, args: event.args as Record<string, unknown> }
@@ -605,13 +619,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                 // Every result ELISE fetched is presented by the application, never "drawn".
                 const surfaceIds = event.name.startsWith("ui.")
                   ? []
-                  : workspace.present(
-                      event.name,
-                      event.callId,
-                      event.outcome,
-                      query,
-                      refreshed > 0,
-                    );
+                  : workspace.present(event.name, event.callId, event.outcome, query, change);
                 if (event.name === "meeting.prepare") logMeetingPrep(event.outcome, durationMs);
                 if (event.outcome.status === "succeeded" && TOOL_EVENTS[event.name])
                   trackEvent(auth, TOOL_EVENTS[event.name]!, { modality });

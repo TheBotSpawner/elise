@@ -1135,6 +1135,10 @@ const envelope = z.object({
       args: z.record(z.string(), z.unknown()),
     })
     .optional(),
+  dataset: text(600).optional(),
+  presentation: z.enum(["list", "timeline", "table"]).optional(),
+  members: z.array(text(100)).max(200).optional(),
+  changedAt: text(40).optional(),
   turn: z.number().int().min(0),
   createdAt: text(40),
   updatedAt: text(40),
@@ -1207,6 +1211,24 @@ export function parseWorkspace(raw: {
  * What the user sees, compactly: handles, titles and the ids needed to act on items, never
  * full payloads. "The second email" resolves to item 2 of the visible email Surface.
  */
+/** What "mostramelo" and "mostralas" refer to right now (ADR-031), for the model to see. */
+function workingSet(state: WorkspaceState): string | null {
+  const changed = state.surfaces
+    .filter((s) => s.changedAt)
+    .sort((a, b) => b.changedAt!.localeCompare(a.changedAt!))[0];
+  const focused = state.surfaces.find((s) => s.id === state.focusId && s.query);
+  const collection =
+    focused ??
+    state.surfaces
+      .filter((s) => s.query && s.dataset)
+      .sort((a, b) => b.turn - a.turn || b.updatedAt.localeCompare(a.updatedAt))[0];
+  const parts = [
+    changed ? `last changed: ${changed.handle}` : null,
+    collection ? `active collection: ${collection.handle}` : null,
+  ].filter(Boolean);
+  return parts.length ? `Working set: ${parts.join("; ")}` : null;
+}
+
 export function describeWorkspace(state: WorkspaceState, timezone: string): string | null {
   if (!state.surfaces.length) return null;
   const lines = state.surfaces.map((s) => {
@@ -1216,6 +1238,7 @@ export function describeWorkspace(state: WorkspaceState, timezone: string): stri
       s.compared && "compared",
       s.pinned && "pinned",
       s.state !== "ready" && s.state,
+      s.presentation && s.presentation !== "list" && `as ${s.presentation}`,
     ].filter(Boolean);
     return `- ${s.handle} ${s.type}${flags.length ? ` [${flags.join(", ")}]` : ""} ${q(s.title)}: ${def.describe(s.payload as never, timezone)}`;
   });
@@ -1224,6 +1247,7 @@ export function describeWorkspace(state: WorkspaceState, timezone: string): stri
       ? `Active intent: ${state.intent.kind} — ${q(state.intent.description)}${state.intent.arrangement === "time" ? " (shown in time order)" : ""}`
       : null,
     state.context ? `Active context: ${q(state.context.name)} (${state.context.kind})` : null,
+    workingSet(state),
     ...lines,
   ]
     .filter(Boolean)

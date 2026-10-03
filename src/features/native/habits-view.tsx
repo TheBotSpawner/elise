@@ -1,6 +1,7 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -136,6 +137,12 @@ function HabitRow({ habit, progress }: { habit: Habit; progress: HabitProgress }
   const { t, locale } = useI18n();
   const { act, pending } = useNative();
   const dayName = new Intl.DateTimeFormat(locale, { weekday: "narrow", timeZone: "UTC" });
+  const longDay = new Intl.DateTimeFormat(locale, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  });
   const measured = Boolean(habit.unit);
 
   function toggle(date: string, value: number, met: boolean) {
@@ -199,21 +206,30 @@ function HabitRow({ habit, progress }: { habit: Habit; progress: HabitProgress }
       <ol className="grid grid-cols-7 gap-1.5">
         {progress.week.days.map((d) => (
           <li key={d.date}>
+            {/* Today and every past day are editable history; only the future isn't. */}
             <button
               type="button"
               disabled={pending || d.future || !habit.active}
               onClick={() => toggle(d.date, d.value, d.met)}
               aria-pressed={d.met}
-              aria-label={`${d.date}${d.met ? " ✓" : ""}`}
+              aria-label={`${habit.name} — ${longDay.format(new Date(`${d.date}T00:00:00Z`))} — ${
+                d.future
+                  ? t.native.habits.dayFuture
+                  : d.met
+                    ? t.native.habits.dayDone
+                    : d.value > 0
+                      ? `${d.value}${unit}`
+                      : t.native.habits.dayNotDone
+              }`}
               className={cn(
-                "flex h-11 w-full flex-col items-center justify-center rounded-xl border text-[12px] transition-colors",
+                "flex h-11 w-full flex-col items-center justify-center rounded-xl border text-[12px] transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",
                 d.met
                   ? "border-accent bg-accent-soft text-accent-text"
                   : d.value > 0
                     ? "border-accent-line text-accent-text"
                     : d.scheduled
                       ? "border-border-strong text-muted hover:border-accent-line"
-                      : "border-dashed border-border text-faint",
+                      : "border-dashed border-border-strong text-muted hover:border-accent-line",
                 d.date === progress.today.date && "ring-1 ring-accent-line",
                 d.future && "opacity-40",
               )}
@@ -253,16 +269,62 @@ function HabitRow({ habit, progress }: { habit: Habit; progress: HabitProgress }
 }
 
 /** The week at a glance: Mon–Sun per habit, done / target, streak — counted by ELISE. */
+/** Previous / next week (past weeks are editable; the future isn't shown). */
+function WeekNav({ week, locale }: { week: { start: string; current: boolean }; locale: string }) {
+  const { t } = useI18n();
+  const shift = (days: number) => {
+    const d = new Date(`${week.start}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const range = new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+  return (
+    <nav aria-label={t.native.habits.weekNav} className="flex items-center gap-2 text-[13px]">
+      <Link
+        href={`/my-elise/habits?week=${shift(-7)}`}
+        aria-label={t.native.habits.previousWeek}
+        className="grid size-9 place-items-center rounded-full border border-border text-muted hover:text-fg"
+      >
+        <ChevronLeft className="size-4" />
+      </Link>
+      <span className="min-w-0 font-mono text-muted">
+        {range.formatRange(new Date(`${week.start}T00:00:00Z`), new Date(`${shift(6)}T00:00:00Z`))}
+      </span>
+      {!week.current && (
+        <Link
+          href={`/my-elise/habits?week=${shift(7)}`}
+          aria-label={t.native.habits.nextWeek}
+          className="grid size-9 place-items-center rounded-full border border-border text-muted hover:text-fg"
+        >
+          <ChevronRight className="size-4" />
+        </Link>
+      )}
+      {!week.current && (
+        <Link href="/my-elise/habits" className="text-accent-text hover:underline">
+          {t.native.habits.thisWeek}
+        </Link>
+      )}
+    </nav>
+  );
+}
+
 export function HabitsView({
   habits,
   progress,
   workspaceId,
+  week,
 }: {
   habits: Habit[];
   progress: HabitProgress[];
   workspaceId: string;
+  /** The week shown (Monday) — past weeks are editable history. */
+  week?: { start: string; current: boolean };
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [panel, setPanel] = useState<"new" | "import" | null>(null);
   useRealtimeRefresh(workspaceId, ["habits", "habit_entries"]);
   return (
@@ -276,6 +338,7 @@ export function HabitsView({
           {t.native.habits.new}
         </Button>
       </div>
+      {week && habits.length > 0 && <WeekNav week={week} locale={locale} />}
       {panel === "new" && <NewHabit onDone={() => setPanel(null)} />}
       {panel === "import" && <ImportPanel kind="habits" onDone={() => setPanel(null)} />}
       {habits.length === 0 ? (
