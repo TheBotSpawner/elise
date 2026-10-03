@@ -1,5 +1,3 @@
-import { VOICE_LIMITS } from "./providers";
-
 /**
  * What ELISE says aloud (ADR-014 §spoken vs screen): the same answer as on screen, without
  * the parts that only make sense to read — markdown, links, lists of ids, code. The Live
@@ -25,51 +23,82 @@ export function toSpeakable(markdown: string): string {
 }
 
 /**
- * Splits a streaming answer into sentences as they complete, so speech can start after the
- * first sentence instead of the whole answer. Short fragments are merged to keep a natural
- * cadence; over-long sentences are cut at a comma or space.
+ * Speech segmenter (ADR-030): turns a streaming answer into units a voice can say naturally.
+ * - The first unit goes out at the first sentence end (≥ 24 chars), so audio starts fast.
+ * - Later units gather whole sentences until ~90 chars, so short sentences are said together
+ *   with continuous intonation instead of one by one.
+ * - A sentence longer than ~200 chars is cut at its last clause (a comma) — never inside a word,
+ *   a number ("12.5", "23.500"), a time ("14:30") or after an abbreviation ("Dr.", "p. ej.").
+ * ":" and ";" don't end a unit. What remains is said when the answer completes.
  */
 export class SentenceChunker {
   private buffer = "";
+  private units = 0;
 
   push(delta: string): string[] {
     this.buffer += delta;
     const out: string[] = [];
     for (;;) {
-      // A sentence ends only when whitespace follows, so "12.5" split across deltas is never cut.
-      const match = /[.!?…:;](?=\s)|\n{2,}/.exec(this.buffer.slice(MIN_SENTENCE));
-      if (!match) break;
-      const end = MIN_SENTENCE + match.index + match[0].length;
-      out.push(...this.emit(this.buffer.slice(0, end)));
-      this.buffer = this.buffer.slice(end);
+      const end = sentenceEnd(this.buffer, this.units === 0 ? SEGMENT.first : SEGMENT.target);
+      if (end < 0) break;
+      out.push(...this.take(end));
     }
-    if (this.buffer.length > VOICE_LIMITS.maxSpokenChars) {
-      const cut = Math.max(
-        this.buffer.lastIndexOf(",", VOICE_LIMITS.maxSpokenChars),
-        this.buffer.lastIndexOf(" ", VOICE_LIMITS.maxSpokenChars),
-      );
-      const end = cut > 40 ? cut + 1 : VOICE_LIMITS.maxSpokenChars;
-      out.push(...this.emit(this.buffer.slice(0, end)));
-      this.buffer = this.buffer.slice(end);
-    }
+    while (this.buffer.length > SEGMENT.max) out.push(...this.take(clauseEnd(this.buffer)));
     return out;
   }
 
   /** The rest, once the answer is complete. */
   flush(): string[] {
-    const rest = this.buffer;
-    this.buffer = "";
-    return this.emit(rest);
+    return this.take(this.buffer.length);
   }
 
-  private emit(raw: string): string[] {
+  private take(end: number): string[] {
+    const raw = this.buffer.slice(0, end);
+    this.buffer = this.buffer.slice(end);
     const text = toSpeakable(raw);
-    return /[\p{L}\p{N}]/u.test(text) ? [text] : [];
+    if (!/[\p{L}\p{N}]/u.test(text)) return [];
+    this.units++;
+    return [text];
   }
 }
 
-/** Sentences shorter than this wait for the next one ("Sí." + "Tenés una reunión…"). */
-const MIN_SENTENCE = 12;
+export const SEGMENT = {
+  /** The first unit: as soon as one short sentence is complete. */
+  first: 24,
+  /** Later units: whole sentences up to about this size. */
+  target: 90,
+  /** A single sentence longer than this is cut at a clause. */
+  max: 200,
+} as const;
+
+/** Words whose period is not a sentence end. */
+const ABBREVIATION =
+  /(?:^|\s)(?:sr|sra|srta|dr|dra|lic|ing|prof|av|etc|ej|p|vs|aprox|tel|nro|núm|mr|mrs|ms|st|no|approx|e\.g|i\.e)\.$/i;
+
+/** End of the first sentence that brings the text to at least `min` chars, or -1. */
+function sentenceEnd(text: string, min: number): number {
+  // An end needs whitespace after it, so "12.5" or "23.500" split across deltas is never cut.
+  const re = /[.!?…]+(?=\s)|\n{2,}/g;
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    const end = m.index + m[0].length;
+    if (end < min) continue;
+    if (m[0] === "." && ABBREVIATION.test(text.slice(Math.max(0, end - 8), end))) continue;
+    return end;
+  }
+  return -1;
+}
+
+/** Where to cut an over-long run: its last clause boundary, else its last space — never a word. */
+function clauseEnd(text: string): number {
+  const window = text.slice(0, SEGMENT.max);
+  const comma = window.lastIndexOf(", ");
+  if (comma >= 40) return comma + 1;
+  const space = window.lastIndexOf(" ");
+  if (space > 0) return space + 1;
+  // One enormous token (a URL): the next space, so it is never split.
+  const next = text.indexOf(" ", SEGMENT.max);
+  return next > 0 ? next + 1 : text.length;
+}
 
 const OPEN = "<spoken>";
 const CLOSE = "</spoken>";

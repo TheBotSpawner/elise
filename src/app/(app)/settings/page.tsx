@@ -1,4 +1,5 @@
 import { requireAuthContext } from "@/application/auth-context";
+import { speechStatus } from "@/application/voice-service";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { isEnabled } from "@/config/flags";
 import { LocationSettings } from "@/features/settings/location-settings";
@@ -23,7 +24,11 @@ export default async function SettingsPage() {
         }}
       />
       <div className="mt-6">
-        <VoiceSettings initial={auth.profile.voice} wakeAllowed={isEnabled("wakePhrase", auth)} />
+        <VoiceSettings
+          initial={auth.profile.voice}
+          wakeAllowed={isEnabled("wakePhrase", auth)}
+          speech={speechStatus()}
+        />
       </div>
       <div className="mt-6">
         <LocationSettings />

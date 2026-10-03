@@ -2017,6 +2017,14 @@ export const es: Dictionary = {
         "Lista. Cuando una sesión de voz entra en reposo, ELISE escucha la frase en este dispositivo.",
       wakePrivacy:
         "La detección de la frase corre en tu navegador, en este dispositivo: no se envía ni guarda nada hasta que decís la frase.",
+      preview: "Escuchar",
+      previewing: "Reproduciendo…",
+      previewFailed: "No se pudo reproducir la muestra.",
+      provider: {
+        elevenlabs:
+          "Voz natural de ELISE (ElevenLabs). Si no responde, ELISE usa su voz de respaldo.",
+        openai: "Voz estándar de ELISE.",
+      },
       privacy:
         "El audio no se guarda: se transcribe y se descarta. Las transcripciones se guardan como cualquier conversación y podés borrarlas desde el Historial.",
     },

@@ -28,7 +28,7 @@ import {
 } from "@/core/voice/turn";
 import type { WakePhrase } from "@/core/voice/wake";
 
-import type { SpeakOptions } from "./speech-player";
+import type { SegmentStats, SpeakOptions } from "./speech-player";
 
 /**
  * One continuous voice session (ADR-014, ADR-017), framework-free so it is tested with fake
@@ -62,6 +62,8 @@ export interface PlayerPort {
   onStart: (() => void) | null;
   onIdle: (() => void) | null;
   onError: (() => void) | null;
+  /** Per spoken segment: size, silence before it, time to first audio (diagnostics). */
+  onSegment?: ((s: SegmentStats) => void) | null;
 }
 
 export type Transcriber = (
@@ -98,6 +100,10 @@ export type VoiceMarks = Partial<
     | "toolsDone"
     | "resultSpeech"
     | "audioStart"
+    | "segments"
+    | "avgSegmentChars"
+    | "maxGapMs"
+    | "firstAudioMs"
     | "bargeIn"
     | "audioStopped"
     | "turnComplete",
@@ -286,6 +292,17 @@ export class VoiceController {
       if (this.turn?.textDone) this.complete();
     };
     p.onError = () => this.act({ type: "speech_failed" });
+    p.onSegment = (seg) => {
+      const turn = this.turn;
+      this.trace("segment", { chars: seg.chars, gapMs: seg.gapMs, firstAudioMs: seg.firstAudioMs });
+      if (!turn) return;
+      const m = turn.marks;
+      const n = (m.segments ?? 0) + 1;
+      m.avgSegmentChars = Math.round(((m.avgSegmentChars ?? 0) * (n - 1) + seg.chars) / n);
+      m.segments = n;
+      m.maxGapMs = Math.max(m.maxGapMs ?? 0, seg.gapMs);
+      m.firstAudioMs ??= seg.firstAudioMs;
+    };
     this.player = p;
   }
 

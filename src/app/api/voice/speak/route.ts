@@ -10,7 +10,12 @@ import { unauthorized, voiceError } from "../errors";
 export const maxDuration = 30;
 
 const body = z
-  .object({ text: z.string().trim().min(1).max(1200), language: z.enum(["es", "en"]).nullable() })
+  .object({
+    text: z.string().trim().min(1).max(1200),
+    language: z.enum(["es", "en"]).nullable(),
+    /** The segment said just before, so the voice continues its intonation (ADR-030). */
+    previous: z.string().trim().max(1200).optional(),
+  })
   .strict();
 
 /** One sentence of ELISE's reply → streamed 16-bit PCM (played as it arrives). */
@@ -24,6 +29,7 @@ export async function POST(request: NextRequest) {
       auth,
       parsed.data.text,
       parsed.data.language,
+      parsed.data.previous,
     );
     return new Response(stream, {
       headers: {

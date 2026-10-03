@@ -27,7 +27,7 @@ export type UserProfileRow = {
   voice_enabled: boolean;
   voice_output: boolean;
   voice_language: "auto" | "es" | "en";
-  voice_name: "marin" | "cedar" | "coral" | "sage" | "ash" | "verse";
+  voice_name: "marin" | "cedar" | "coral" | "sage" | "ash" | "verse" | "elise" | "elise-alt";
   voice_continuous: boolean;
   voice_barge_in: boolean;
   voice_wake_enabled: boolean;

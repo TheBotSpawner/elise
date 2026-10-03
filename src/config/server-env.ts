@@ -24,6 +24,15 @@ const serverEnvSchema = z.object({
   /** Voice (ADR-014): speech-to-text for completed utterances, and streamed text-to-speech. */
   OPENAI_TRANSCRIBE_MODEL: z.string().min(1).default("gpt-transcribe"),
   OPENAI_TTS_MODEL: z.string().min(1).default("gpt-4o-mini-tts"),
+  /** Spoken replies (ADR-030): "openai" (current) or "elevenlabs" (falls back to openai). */
+  SPEECH_PROVIDER: z.enum(["openai", "elevenlabs"]).default("openai"),
+  /** Server-only: never NEXT_PUBLIC_, never sent to the browser. */
+  ELEVENLABS_API_KEY: z.string().min(1).optional(),
+  /** The "ELISE" voice profile (and an optional alternative). */
+  ELEVENLABS_VOICE_ID: z.string().min(1).optional(),
+  ELEVENLABS_VOICE_ID_ALT: z.string().min(1).optional(),
+  /** eleven_v4_turbo (Text to Dialogue WebSocket) or an HTTP model such as eleven_flash_v2_5. */
+  ELEVENLABS_MODEL_ID: z.string().min(1).default("eleven_v4_turbo"),
   /** Web (ADR-015): "openai" (hosted web search) or "tavily"; default: tavily if its key is set. */
   WEB_SEARCH_PROVIDER: z.enum(["openai", "tavily"]).optional(),
   OPENAI_WEB_SEARCH_MODEL: z.string().min(1).default("gpt-4.1-mini"),

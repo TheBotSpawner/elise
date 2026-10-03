@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { isSupabaseConfigured } from "@/config/env";
 import { AppError } from "@/core/errors";
+import type { VoiceChoice } from "@/core/voice/providers";
 import { createClient, type ServerSupabase } from "@/infrastructure/supabase/server";
 
 /** Voice preferences (ADR-014); allowlisted in the database. */
@@ -12,7 +13,7 @@ export interface VoicePreferences {
   /** Speak replies aloud (voice input still works with it off). */
   speak: boolean;
   language: "auto" | "es" | "en";
-  voice: "marin" | "cedar" | "coral" | "sage" | "ash" | "verse";
+  voice: VoiceChoice;
   /** After a reply, keep listening (ADR-017). */
   continuous: boolean;
   /** Speaking over ELISE interrupts her. */

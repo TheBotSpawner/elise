@@ -2008,6 +2008,14 @@ export const en = {
       wakeReady: "Ready. When a voice session sleeps, ELISE listens for the phrase on this device.",
       wakePrivacy:
         "Wake phrase detection runs in your browser on this device: nothing is sent or stored until you say the phrase.",
+      preview: "Preview",
+      previewing: "Playing…",
+      previewFailed: "Couldn't play the sample.",
+      provider: {
+        elevenlabs:
+          "ELISE's natural voice (ElevenLabs). If it's unavailable, ELISE uses its backup voice.",
+        openai: "ELISE's standard voice.",
+      },
       privacy:
         "Audio isn't stored: it's transcribed and discarded. Transcripts are kept like any conversation, and you can delete them from History.",
     },

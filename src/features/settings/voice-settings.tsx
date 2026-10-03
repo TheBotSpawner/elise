@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Label, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { WakeAvailability } from "@/core/voice/device";
-import { VOICES } from "@/core/voice/providers";
+import { VOICES, type VoiceChoice } from "@/core/voice/providers";
 import { WAKE_LABELS, WAKE_PHRASES, type WakePhrase } from "@/core/voice/wake";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { WebSpeechWakeEngine } from "@/features/voice/wake-engine";
@@ -24,10 +24,16 @@ import { setVoicePreferences } from "./actions";
 export function VoiceSettings({
   initial,
   wakeAllowed = true,
+  speech = { provider: "openai", profiles: VOICES.map((v) => ({ id: v, displayName: v })) },
 }: {
   initial: VoicePreferences;
   /** The wake-phrase feature flag (ADR-019). */
   wakeAllowed?: boolean;
+  /** Which provider speaks and the curated voices it offers (ADR-030). */
+  speech?: {
+    provider: "elevenlabs" | "openai";
+    profiles: { id: VoiceChoice; displayName: string }[];
+  };
 }) {
   const { t, locale } = useI18n();
   const s = t.voice.settings;
@@ -50,6 +56,35 @@ export function VoiceSettings({
     setWake("installing");
     const ok = await new WebSpeechWakeEngine().install(lang);
     setWake(ok ? "available" : await new WebSpeechWakeEngine().availability(lang));
+  }
+
+  const [previewing, setPreviewing] = useState(false);
+  /** A fixed ELISE sample in the selected voice (never the user's own content). */
+  async function preview() {
+    setPreviewing(true);
+    try {
+      const voice = speech.profiles.some((p) => p.id === prefs.voice)
+        ? prefs.voice
+        : (speech.profiles[0]?.id ?? prefs.voice);
+      const res = await fetch(`/api/voice/preview?voice=${voice}&language=${lang}`);
+      if (!res.ok) throw new Error("preview failed");
+      const rate = Number(/rate=(\d+)/.exec(res.headers.get("x-audio-format") ?? "")?.[1] ?? 24000);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      const pcm = new Int16Array(bytes.buffer, 0, Math.floor(bytes.byteLength / 2));
+      const ctx = new AudioContext();
+      const buffer = ctx.createBuffer(1, pcm.length, rate);
+      const channel = buffer.getChannelData(0);
+      for (let i = 0; i < pcm.length; i++) channel[i] = pcm[i]! / 32768;
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.onended = () => void ctx.close();
+      source.start();
+    } catch {
+      toast.error(s.previewFailed);
+    } finally {
+      setPreviewing(false);
+    }
   }
 
   function change(patch: Partial<VoicePreferences>) {
@@ -174,20 +209,37 @@ export function VoiceSettings({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="voice-name">{s.voice}</Label>
-            <Select
-              id="voice-name"
-              value={prefs.voice}
-              disabled={!prefs.enabled || !prefs.speak}
-              onChange={(e) => change({ voice: e.target.value as VoicePreferences["voice"] })}
-            >
-              {VOICES.map((v) => (
-                <option key={v} value={v}>
-                  {v.charAt(0).toUpperCase() + v.slice(1)}
-                </option>
-              ))}
-            </Select>
+            <div className="flex gap-2">
+              <Select
+                id="voice-name"
+                value={
+                  speech.profiles.some((p) => p.id === prefs.voice)
+                    ? prefs.voice
+                    : (speech.profiles[0]?.id ?? prefs.voice)
+                }
+                disabled={!prefs.enabled || !prefs.speak}
+                onChange={(e) => change({ voice: e.target.value as VoicePreferences["voice"] })}
+              >
+                {speech.profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.displayName.charAt(0).toUpperCase() + p.displayName.slice(1)}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-10 shrink-0"
+                disabled={!prefs.enabled || !prefs.speak || previewing}
+                onClick={() => void preview()}
+              >
+                {previewing ? s.previewing : s.preview}
+              </Button>
+            </div>
           </div>
         </div>
+        <p className="text-[12.5px] text-muted">{s.provider[speech.provider]}</p>
         <p className="text-[12.5px] text-faint">{s.privacy}</p>
       </div>
     </Card>

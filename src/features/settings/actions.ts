@@ -8,7 +8,7 @@ import { requireAuthContext } from "@/application/auth-context";
 import { updatePreferences } from "@/application/settings-service";
 import { toPublicError, type PublicError } from "@/core/errors";
 import { isValidTimezone } from "@/core/time";
-import { VOICES } from "@/core/voice/providers";
+import { VOICE_CHOICES } from "@/core/voice/providers";
 import { WAKE_PHRASES } from "@/core/voice/wake";
 import { LOCALE_COOKIE, LOCALES } from "@/lib/i18n";
 import { ACCENTS, THEME_COOKIE, THEMES } from "@/lib/theme";
@@ -63,7 +63,7 @@ const voiceSchema = z
     enabled: z.boolean(),
     speak: z.boolean(),
     language: z.enum(["auto", "es", "en"]),
-    voice: z.enum(VOICES),
+    voice: z.enum(VOICE_CHOICES),
     continuous: z.boolean(),
     bargeIn: z.boolean(),
     wakeEnabled: z.boolean(),

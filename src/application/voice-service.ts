@@ -1,10 +1,13 @@
 import "server-only";
 
+import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
-import { VOICE_LIMITS, type VoiceLanguage } from "@/core/voice/providers";
+import { ELEVEN_PROFILES, OPENAI_PROFILES, PREVIEW_TEXT } from "@/core/voice/profiles";
+import { VOICE_LIMITS, type VoiceChoice, type VoiceLanguage } from "@/core/voice/providers";
+import { formatForSpeech } from "@/core/voice/speech-format";
 import { acknowledgements } from "@/core/voice/speech-plan";
 import { toSpeakable } from "@/core/voice/speech-text";
-import { getSpeechInputProvider, getSpeechOutputProvider } from "@/infrastructure/ai";
+import { elevenVoices, getSpeechInputProvider, getSpeechOutputProvider } from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
 import { withUsageScope } from "@/infrastructure/observability/usage";
 import { rateLimit } from "@/infrastructure/rate-limit";
@@ -113,19 +116,22 @@ export async function synthesizeSentence(
   auth: AuthContext,
   text: string,
   language: VoiceLanguage | null,
+  previous?: string,
 ): Promise<{ stream: ReadableStream<Uint8Array>; sampleRate: number }> {
   if (!auth.profile.voice.enabled || !auth.profile.voice.speak)
     throw new AppError("PERMISSION_DENIED", "Spoken replies are turned off in Settings", {
       recovery: "review",
     });
   limit(auth, "speak");
-  const spoken = toSpeakable(text).slice(0, VOICE_LIMITS.maxSpokenChars);
+  const lang = language ?? auth.profile.locale;
+  // Said as a person would say it: same facts, spoken form (ADR-030).
+  const spoken = formatForSpeech(text, lang).slice(0, VOICE_LIMITS.maxSpokenChars);
   if (!spoken) throw new AppError("VALIDATION_ERROR", "Nothing to say");
   const provider = getSpeechOutputProvider();
   // The acknowledgements (ADR-028) are a few fixed lines: synthesized once per instance and
   // voice, then served from memory, so "Lo busco." plays while the work starts, not ~2 s later.
   const fixed = ACKNOWLEDGEMENT_LINES.has(spoken);
-  const key = `${auth.profile.voice.voice}|${spoken}`;
+  const key = `${provider.id}|${auth.profile.voice.voice}|${spoken}`;
   const cached = fixed ? ackAudio.get(key) : undefined;
   if (cached)
     return {
@@ -140,7 +146,12 @@ export async function synthesizeSentence(
   const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
   const stream = await withUsageScope(scope, () =>
     provider.synthesize(
-      { text: spoken, language: language ?? auth.profile.locale, voice: auth.profile.voice.voice },
+      {
+        text: spoken,
+        language: lang,
+        voice: auth.profile.voice.voice,
+        ...(previous ? { previousText: formatForSpeech(previous, lang) } : {}),
+      },
       AbortSignal.timeout(SPEAK_TIMEOUT_MS),
     ),
   );
@@ -160,6 +171,49 @@ const ACKNOWLEDGEMENT_LINES = new Set([
 // Bounded by construction: ~30 fixed lines × the few voices (~40 KB each). Not user content.
 const ackAudio = new Map<string, Uint8Array>();
 
+/**
+ * What Settings shows about spoken replies (ADR-030): which provider speaks and the curated
+ * voices to choose from — display names only, never provider ids, keys or model names.
+ */
+export function speechStatus(): {
+  provider: "elevenlabs" | "openai";
+  profiles: { id: VoiceChoice; displayName: string }[];
+} {
+  const env = serverEnv();
+  const eleven = elevenVoices();
+  const active =
+    env.SPEECH_PROVIDER === "elevenlabs" && env.ELEVENLABS_API_KEY && Object.keys(eleven).length;
+  return active
+    ? {
+        provider: "elevenlabs",
+        profiles: ELEVEN_PROFILES.filter((p) => eleven[p.id]).map((p) => ({
+          id: p.id as VoiceChoice,
+          displayName: p.displayName,
+        })),
+      }
+    : {
+        provider: "openai",
+        profiles: OPENAI_PROFILES.map((p) => ({
+          id: p.id as VoiceChoice,
+          displayName: p.displayName,
+        })),
+      };
+}
+
+/** A short fixed sample in one of the selectable voices (never the user's own content). */
+export async function previewVoice(
+  auth: AuthContext,
+  voice: VoiceChoice,
+  language: VoiceLanguage,
+): Promise<{ stream: ReadableStream<Uint8Array>; sampleRate: number }> {
+  if (!speechStatus().profiles.some((p) => p.id === voice))
+    throw new AppError("VALIDATION_ERROR", "That voice isn't available", { recovery: "review" });
+  limit(auth, "speak");
+  const provider = getSpeechOutputProvider();
+  const stream = await provider.synthesize({ text: PREVIEW_TEXT[language], language, voice });
+  return { stream, sampleRate: provider.format.sampleRate };
+}
+
 /** Latency of one voice turn, in milliseconds from the moment the microphone opened. */
 export const VOICE_TIMINGS = [
   "speechEnd",
@@ -174,6 +228,11 @@ export const VOICE_TIMINGS = [
   "resultSpeech",
   "audioStart",
   "turnComplete",
+  /** Spoken segments of the reply, their average size, the longest silence between them. */
+  "segments",
+  "avgSegmentChars",
+  "maxGapMs",
+  "firstAudioMs",
 ] as const;
 
 export function recordVoiceTimings(
