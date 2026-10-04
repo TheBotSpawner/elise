@@ -14,7 +14,6 @@ import {
 import {
   isNeedsAttention,
   parseMarkdown,
-  parseDocument,
   PARSER_VERSION,
 } from "@/infrastructure/knowledge/parsers";
 import { logger } from "@/infrastructure/observability/logger";
@@ -27,6 +26,7 @@ import { downloadOriginal } from "@/infrastructure/supabase/storage";
 import type { AuthContext } from "./auth-context";
 import { workspaceContext } from "./background";
 import { googleHttpFor, notionClientFor } from "./elise";
+import { readDocument } from "./extraction-service";
 
 /**
  * Knowledge in the background (docs/architecture/09 §14-17, 14 §27-28): ingestion of one
@@ -64,7 +64,14 @@ function ingestionPorts(auth: AuthContext): IngestionPorts {
             if (!v.storagePath || !v.mimeType)
               throw new AppError("NOT_FOUND", "The original file is missing");
             const data = await downloadOriginal(v.workspaceId, v.storagePath);
-            return { doc: await parseDocument({ title: v.title, mimeType: v.mimeType, data }) };
+            // Native text first; scanned pages are recognized (OCR) right here, in the job.
+            return {
+              doc: await readDocument(
+                v.workspaceId,
+                { title: v.title, mimeType: v.mimeType, data },
+                () => store.markProcessing(v, "ocr"),
+              ),
+            };
           }
           case "google_drive": {
             if (!v.connectionId || !v.mimeType)
@@ -73,7 +80,11 @@ function ingestionPorts(auth: AuthContext): IngestionPorts {
               });
             const drive = new GoogleDriveClient(googleHttpFor(auth, v.connectionId));
             const content = await drive.content(v.externalId, v.mimeType);
-            return { doc: await parseDocument({ title: v.title, ...content }) };
+            return {
+              doc: await readDocument(v.workspaceId, { title: v.title, ...content }, () =>
+                store.markProcessing(v, "ocr"),
+              ),
+            };
           }
           case "notion": {
             if (!v.connectionId)

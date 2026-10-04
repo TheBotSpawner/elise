@@ -6,10 +6,13 @@ import { getOperation } from "@/core/capabilities/registry";
 import { AppError, toAppError, toPublicError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import { wellFormed } from "@/core/text";
-import { addDays, todayIn } from "@/core/time";
+import { todayIn } from "@/core/time";
 import {
+  changeCalendar,
   keepPresentation,
-  navigate,
+  nextSeq,
+  rangeArgs,
+  refreshRange,
   type CalendarChange,
   type CalendarPayload,
 } from "@/core/workspace/calendar";
@@ -381,6 +384,9 @@ export class WorkspaceSession implements WorkspacePort {
         ? { dataset: `${d.ref.resource}:${d.ref.id}` }
         : {}),
       ...(change ? { changedAt: at } : {}),
+      ...(d.type === "calendar" && query?.tool === "calendar.listEvents"
+        ? calendarIdentity(d.payload as CalendarPayload, query)
+        : {}),
     }));
     this.apply([
       ...reconciled,
@@ -955,59 +961,68 @@ export async function calendarViewOp(
   op: { id: string } & CalendarChange,
 ): Promise<WorkspaceState> {
   await ownThread(auth, thread);
+  const ports = createExecutorPorts(auth);
+  const current = async () =>
+    ((await loadWorkspace(auth, thread)).surfaces.find(
+      (s) => s.id === op.id && s.type === "calendar",
+    )?.payload as CalendarPayload | undefined) ?? null;
+  const start = await current();
+  if (!start) throw new AppError("NOT_FOUND", "That calendar is no longer shown");
+  // The same path as "Ponelo en vista anual" (ui.show): one application state, not two.
+  const done = await changeCalendar({
+    current,
+    change: op,
+    today: todayIn(auth.profile.timezone),
+    // Numbered on arrival: a later click always wins over an earlier one still reading.
+    seq: nextSeq(start),
+    read: (args) =>
+      executeToolCall(
+        ports,
+        {
+          ...toolContext(auth, "user_ui", null, thread),
+          workspace: { state: () => emptyWorkspace(), apply: () => 0, activity: () => {} },
+        },
+        { name: "calendar.listEvents", args },
+      ),
+  });
+  if (!done) throw new AppError("NOT_FOUND", "That calendar is no longer shown");
+  // Settled against the state right before writing: a click answered late never undoes a newer
+  // one already saved (ponytail: load→save is not atomic; a versioned write if it ever matters).
   const before = await loadWorkspace(auth, thread);
-  const surface = before.surfaces.find((s) => s.id === op.id && s.type === "calendar");
-  if (!surface) throw new AppError("NOT_FOUND", "That calendar is no longer shown");
-  const timezone = auth.profile.timezone;
-  const { payload, fetch } = navigate(surface.payload as CalendarPayload, op, todayIn(timezone));
-  let next = payload;
-  let query = surface.query;
-  if (fetch) {
-    const tool = query?.tool === "calendar.findAvailability" ? query.tool : "calendar.listEvents";
-    const args = {
-      ...(query?.tool === tool ? query.args : {}),
-      from: fetch.from,
-      // Dates are inclusive for the calendar tools.
-      to: addDays(fetch.to, -1),
-    };
-    const ports = createExecutorPorts(auth);
-    const outcome = await executeToolCall(
-      ports,
-      {
-        ...toolContext(auth, "user_ui", null, thread),
-        workspace: { state: () => before, apply: () => 0, activity: () => {} },
-      },
-      { name: tool, args },
-    );
-    const fresh =
-      outcome.status === "succeeded"
-        ? surfacesFromOutcome(tool, outcome, {
-            key: "calendar",
-            locale: auth.profile.locale,
-            timezone,
-          }).find((d) => d.type === "calendar")
-        : undefined;
-    if (!fresh)
-      throw new AppError("PROVIDER_UNAVAILABLE", "Couldn't read those days of the calendar", {
-        recovery: "retry",
-      });
-    next = {
-      ...(fresh.payload as CalendarPayload),
-      view: payload.view,
-      anchor: payload.anchor,
-      hidden: payload.hidden,
-    };
-    query = { tool, args };
-  }
-  const at = new Date().toISOString();
+  const latest = before.surfaces.find((s) => s.id === op.id)?.payload as
+    CalendarPayload | undefined;
+  if (!latest) throw new AppError("NOT_FOUND", "That calendar is no longer shown");
+  const { payload, query } = done.settle(latest);
+  if (done.read !== "none")
+    logger.info("calendar.range_read", {
+      status: done.read,
+      applied: payload.seq === latest.seq ? "data_only" : "presentation",
+    });
   const after = applyOps(before, [
     {
       op: "update",
-      id: surface.id,
-      patch: { payload: next, ...(query ? { query } : {}), state: "ready" },
-      at,
+      id: op.id,
+      patch: { payload, query, state: "ready" },
+      at: new Date().toISOString(),
     },
   ]);
   await saveWorkspace(auth, thread, after);
+  if (done.read === "failed")
+    throw new AppError("PROVIDER_UNAVAILABLE", "Couldn't read those days of the calendar", {
+      recovery: "retry",
+    });
   return after;
+}
+
+/**
+ * A calendar read on the Canvas (ADR-033): its data scope (one calendar or all) and the query
+ * that refreshes everything it has loaded — at the read limit, never the tool's default.
+ */
+function calendarIdentity(p: CalendarPayload, query: SurfaceQuery) {
+  const scope = typeof query.args.calendar === "string" ? query.args.calendar : "all";
+  const payload = { ...p, scope };
+  return {
+    payload,
+    query: { tool: query.tool, args: rangeArgs(refreshRange(payload), scope) },
+  };
 }

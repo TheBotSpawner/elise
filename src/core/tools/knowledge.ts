@@ -122,6 +122,40 @@ async function contextScope(env: ToolRunEnv, spaces: SpaceInfo[]) {
   }
 }
 
+/**
+ * What the resolved Spaces/Sections ARE, in the user's own words (ADR-035): read directly —
+ * never dependent on embeddings or on matching chunks. A Section brings its parent Space's too.
+ * Bounded: only the scope this search is about.
+ */
+export function scopeMetadata(spaces: readonly SpaceInfo[], ids: readonly string[] | null) {
+  if (!ids) return [];
+  const byId = new Map(spaces.map((s) => [s.id, s]));
+  const roots = spaces.filter(
+    (s) => ids.includes(s.id) && !(s.parentId && ids.includes(s.parentId)),
+  );
+  return roots
+    .slice(0, 3)
+    .map((s) => {
+      const parent = s.parentId ? byId.get(s.parentId) : undefined;
+      return {
+        sourceKind: s.parentId ? "knowledge_section_metadata" : "knowledge_space_metadata",
+        path: s.path,
+        ...(s.description ? { description: clip(s.description, 1000) } : {}),
+        ...(s.context ? { context: clip(s.context, 2000) } : {}),
+        ...(parent && (parent.description || parent.context)
+          ? {
+              parentSpace: {
+                name: parent.name,
+                ...(parent.description ? { description: clip(parent.description, 600) } : {}),
+                ...(parent.context ? { context: clip(parent.context, 1000) } : {}),
+              },
+            }
+          : {}),
+      };
+    })
+    .filter((m) => m.description || m.context || m.parentSpace);
+}
+
 function toEvidence(hits: KnowledgeHit[]): KnowledgeEvidence[] {
   return hits.map((h, i) => ({
     ref: i + 1,
@@ -208,10 +242,16 @@ export const searchKnowledgeTool: ToolDefinition = {
     const selected = selectEvidence(hits);
     const evidence = toEvidence(selected);
     const enough = evidence.length > 0;
+    // The scope's own description/context is evidence too (user-provided, not documentary).
+    const metadata = scopeMetadata(
+      scope.spaces,
+      byContext && !fallback ? byContext.primary : scope.spaceIds,
+    );
     return {
       output: {
         scope: scope.names,
         enoughEvidence: enough,
+        ...(metadata.length ? { scopeMetadata: metadata } : {}),
         ...(semantic ? {} : { note: "Only keyword matching was available for this search." }),
         ...(fallback
           ? {
@@ -219,12 +259,14 @@ export const searchKnowledgeTool: ToolDefinition = {
             }
           : {}),
         instructions: enough
-          ? `Answer from these passages only and cite them inline as [n] with the document name. If they only partly answer, say what is missing. Say when something comes from general knowledge instead.${
+          ? `Answer from these passages (and scopeMetadata, the user's own description of the Space, when relevant — say which is which) and cite passages inline as [n] with the document name. If they only partly answer, say what is missing. Say when something comes from general knowledge instead.${
               representationHint(selected.map((h) => h.content)) === "temporal"
                 ? ` ${TEMPORAL_HINT}`
                 : ""
             }`
-          : `The ${scope.spaceIds ? "selected Space" : "user's Knowledge"} does not contain enough evidence. Say so plainly; do not answer from general knowledge as if it came from their files.${scope.spaceIds ? " Offer to search all Knowledge." : ""}`,
+          : metadata.length
+            ? "No document passage matched. scopeMetadata is what the user wrote about this Space/Section (its description and context): if it answers the question (what it is, what it's about), answer from it and say it comes from the Space's description. It is not evidence of what documents say; for document contents, say none were found."
+            : `The ${scope.spaceIds ? "selected Space" : "user's Knowledge"} does not contain enough evidence. Say so plainly; do not answer from general knowledge as if it came from their files.${scope.spaceIds ? " Offer to search all Knowledge." : ""}`,
         evidence: selected.map((h, i) => ({
           ref: i + 1,
           itemId: h.itemId,

@@ -858,7 +858,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
 async function spaceNotes(auth: AuthContext, activeIds: (string | null)[]) {
   const { data } = await auth.db
     .from("knowledge_spaces")
-    .select("id, name, parent_space_id, context")
+    .select("id, name, parent_space_id, description, context")
     .eq("workspace_id", auth.workspaceId)
     .eq("status", "active");
   const rows = data ?? [];
@@ -867,13 +867,19 @@ async function spaceNotes(auth: AuthContext, activeIds: (string | null)[]) {
   const path = (r: (typeof rows)[number]) =>
     r.parent_space_id ? `${names.get(r.parent_space_id) ?? ""} › ${r.name}` : r.name;
   const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-  const withContext = rows.filter((r) => r.context?.trim());
+  // The Space/Section this turn is about (and a Section's parent): what it IS (its description,
+  // as shown in Knowledge) and its context — in full (ADR-035). Others only briefly, by context,
+  // to tell which area a request is about; never every description.
+  const about = (r: (typeof rows)[number]) =>
+    [r.description?.trim() && `Description: ${r.description.trim()}`, r.context?.trim()]
+      .filter(Boolean)
+      .join("\n");
   return [
-    ...withContext
-      .filter((r) => active.has(r.id))
-      .map((r) => ({ path: path(r), context: clip(r.context!.trim(), 2000), active: true })),
-    ...withContext
-      .filter((r) => !active.has(r.id))
+    ...rows
+      .filter((r) => active.has(r.id) && about(r))
+      .map((r) => ({ path: path(r), context: clip(about(r), 2400), active: true })),
+    ...rows
+      .filter((r) => !active.has(r.id) && r.context?.trim())
       .slice(0, 8)
       .map((r) => ({ path: path(r), context: clip(r.context!.trim(), 280), active: false })),
   ];

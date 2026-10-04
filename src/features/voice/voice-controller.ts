@@ -12,8 +12,13 @@ import {
   type WakeStatus,
 } from "@/core/voice/session";
 import {
-  acknowledgement,
+  ackIntent,
+  pickAcknowledgement,
+  predictIntent,
+  progressLine,
+  PROGRESS_AFTER_MS,
   stillSayable,
+  type AckIntent,
   type SpeechCategory,
   type SpeechState,
 } from "@/core/voice/speech-plan";
@@ -80,6 +85,8 @@ export type StreamEvent =
   | { type: "text"; delta: string }
   | { type: "spoken"; delta: string }
   | { type: "finished"; failed: boolean }
+  /** The chat started a request: only after its own start does a turn take stream events. */
+  | { type: "turn_started"; text: string }
   | { type: string };
 
 export type VoiceMarks = Partial<
@@ -97,6 +104,7 @@ export type VoiceMarks = Partial<
     | "firstText"
     | "ackReady"
     | "ackTts"
+    | "progressTts"
     | "toolsDone"
     | "resultSpeech"
     | "audioStart"
@@ -131,6 +139,10 @@ export interface VoiceDeps {
   now?: () => number;
   /** Repeats `fn` every `ms` until cancelled (a manual clock in tests). */
   every?: (ms: number, fn: () => void) => () => void;
+  /** Runs `fn` once after `ms` (a manual clock in tests). */
+  later?: (ms: number, fn: () => void) => void;
+  /** Synthesizes the acknowledgement lines ahead for this voice (fire and forget). */
+  warmAcknowledgements?: (language: "es" | "en") => void;
   micProblem?: (error: unknown) => "permission_denied" | "no_microphone" | "not_supported";
   wake?: WakeEngine | null;
   online?: () => boolean;
@@ -154,6 +166,18 @@ interface SpokenTurn {
   /** The turn's activity, shared with what is said (ADR-028). */
   speech: SpeechState;
   acked: boolean;
+  /** What the user said (the request this turn waits for). */
+  text: string;
+  /**
+   * Taking stream events. False after a barge-in or interruption until this turn's own request
+   * starts: the abandoned request's late words must never be spoken as this turn's (ADR-034).
+   */
+  open: boolean;
+  /** What kind of work the acknowledgement announced (ADR-034); null: none was said. */
+  intent: AckIntent | null;
+  /** A tool of this turn failed: no more progress talk. */
+  failed: boolean;
+  progressed: boolean;
 }
 
 interface Snapshot {
@@ -201,6 +225,11 @@ export class VoiceController {
   private marks: VoiceMarks = {};
   private lastActivity = 0;
   private bargeTurn = false;
+  /** Acknowledgements said recently in this session, so the next one varies (ADR-034). */
+  private ackHistory: string[] = [];
+  /** The previous turn was talked over or interrupted while its request may still stream. */
+  private superseded = false;
+  private warmed = false;
   private lastSpoken = "";
   private hidden = false;
   private finishing = false;
@@ -275,6 +304,11 @@ export class VoiceController {
     if (phase !== "idle" && phase !== "error" && phase !== "sleeping") return;
     this.deps.wake?.stop();
     this.ensurePlayer();
+    // The acknowledgements in this voice are synthesized ahead, once: they play at once later.
+    if (this.prefs.speak && !this.warmed) {
+      this.warmed = true;
+      this.deps.warmAcknowledgements?.(this.prefs.language);
+    }
     this.act({
       type: "start",
       speak: this.prefs.speak,
@@ -530,7 +564,21 @@ export class VoiceController {
       awaitingApproval: false,
       speech: { running: 0, started: false, resultQueued: false },
       acked: false,
+      intent: null,
+      failed: false,
+      progressed: false,
+      text,
+      open: !this.superseded,
     };
+    this.superseded = false;
+    // A plain lookup is clear from the words alone: acknowledge now, while the request goes out,
+    // instead of after the model picks its tool (ADR-034). Never for actions.
+    const predicted = predictIntent(text);
+    if (predicted) {
+      this.turn.acked = true;
+      this.trace("ack_predicted", { intent: predicted });
+      this.acknowledge(this.turn, predicted, language ?? this.prefs.language);
+    }
     this.deps.send(text, {
       modality: "voice",
       voice: { durationMs, language, wake: this.state.wake },
@@ -543,12 +591,24 @@ export class VoiceController {
   onStream(event: StreamEvent) {
     const turn = this.turn;
     if (!turn) return;
+    if (event.type === "turn_started") {
+      if (!turn.open && (event as { text?: string }).text?.trim() === turn.text.trim()) {
+        turn.open = true;
+        this.trace("stream_opened");
+      }
+      return;
+    }
+    // Events of the abandoned request (still streaming ahead of this one): never this turn's.
+    if (!turn.open) return;
     const since = () => Math.round(this.now - turn.t0);
     switch (event.type) {
       case "conversation":
         turn.marks.runtimeStart ??= since();
         break;
       case "tool_started": {
+        // One progress line, only if the work itself is still running after a real wait
+        // (counted from when it started, not from an early acknowledgement).
+        if (!turn.speech.started) this.later(PROGRESS_AFTER_MS, () => this.progress(turn));
         turn.marks.firstTool ??= since();
         turn.speech.started = true;
         turn.speech.running++;
@@ -560,17 +620,11 @@ export class VoiceController {
           const held = (turn.spokenChunker ?? turn.chunker).flush();
           for (const sentence of held) this.say(turn, sentence, "progress");
           // The model already said what it's checking: no second acknowledgement.
-          const ack =
-            turn.spokenChars || held.length
-              ? null
-              : acknowledgement(
-                  (event as { name?: string }).name ?? "",
-                  turn.language ?? this.prefs.language,
-                );
-          if (ack) {
-            turn.marks.ackReady ??= since();
-            this.say(turn, ack, "progress");
-          }
+          const intent = ackIntent((event as { name?: string }).name ?? "");
+          const lang = turn.language ?? this.prefs.language;
+          if (turn.spokenChars || held.length || !intent) {
+            this.trace("ack_skipped", { reason: intent ? "model_said_it" : "instant" });
+          } else this.acknowledge(turn, intent, lang);
         }
         this.act({ type: "tool_started" });
         break;
@@ -578,6 +632,8 @@ export class VoiceController {
       case "tool_finished":
         if ((event as { outcome?: { status: string } }).outcome?.status === "approval_required")
           turn.awaitingApproval = true;
+        if ((event as { outcome?: { status: string } }).outcome?.status === "failed")
+          turn.failed = true;
         turn.speech.running = Math.max(0, turn.speech.running - 1);
         if (!turn.speech.running) turn.marks.toolsDone = since();
         this.act({ type: "tool_finished" });
@@ -610,7 +666,43 @@ export class VoiceController {
     }
   }
 
-  private say(turn: SpokenTurn, sentence: string, category: SpeechCategory) {
+  /** A short, varied line for the work that's starting, and one later progress check. */
+  private acknowledge(turn: SpokenTurn, intent: AckIntent, lang: "es" | "en") {
+    // Varied, deterministic: not the line said a moment ago (ADR-034).
+    const ack = pickAcknowledgement(intent, lang, this.ackHistory);
+    this.ackHistory = [...this.ackHistory, ack].slice(-6);
+    turn.intent = intent;
+    turn.marks.ackReady ??= Math.round(this.now - turn.t0);
+    this.say(turn, ack, "progress");
+  }
+
+  /** The single progress update of a long turn — never after a result, a failure or the end. */
+  private progress(turn: SpokenTurn) {
+    const line = turn.intent
+      ? progressLine(turn.intent, turn.language ?? this.prefs.language)
+      : null;
+    if (
+      this.turn !== turn ||
+      !line ||
+      turn.progressed ||
+      turn.failed ||
+      turn.speech.resultQueued ||
+      turn.speech.running === 0
+    ) {
+      this.trace("progress_skipped", { ms: Math.round(this.now - turn.t0) });
+      return;
+    }
+    turn.progressed = true;
+    this.trace("progress_emitted", { ms: Math.round(this.now - turn.t0) });
+    this.say(turn, line, "progress", true);
+  }
+
+  private later(ms: number, fn: () => void) {
+    if (this.deps.later) this.deps.later(ms, fn);
+    else setTimeout(fn, ms);
+  }
+
+  private say(turn: SpokenTurn, sentence: string, category: SpeechCategory, isProgress = false) {
     if (turn.capped || !this.player) return;
     if (category === "progress") {
       // Ephemeral: dropped if, by its turn to play, the work finished or the result is coming.
@@ -622,18 +714,22 @@ export class VoiceController {
           const ok = this.turn === turn && stillSayable(line, turn.speech, this.now);
           if (!ok && !dropped) {
             dropped = true;
-            this.trace("progress_dropped", { ms: Math.round(this.now - turn.t0) });
+            // Stale: the work finished, the result is coming, or a new turn began.
+            this.trace(isProgress ? "progress_dropped" : "ack_dropped_stale", {
+              ms: Math.round(this.now - turn.t0),
+            });
           }
           return ok;
         },
         onBegin: () => {
-          turn.marks.ackTts ??= Math.round(this.now - turn.t0);
-          this.trace("ack_tts_started");
+          if (isProgress) turn.marks.progressTts ??= Math.round(this.now - turn.t0);
+          else turn.marks.ackTts ??= Math.round(this.now - turn.t0);
+          this.trace(isProgress ? "progress_tts_started" : "ack_tts_started");
         },
       });
       return;
     }
-    if (category === "result" && !turn.speech.resultQueued) {
+    if ((category === "result" || category === "conversational") && !turn.speech.resultQueued) {
       // RESULT: from here on, nothing announces work that's already done.
       turn.speech.resultQueued = true;
       turn.marks.resultSpeech ??= Math.round(this.now - turn.t0);
@@ -687,6 +783,7 @@ export class VoiceController {
       this.deps.onTimings?.(turn.marks);
     }
     this.lastSpoken = turn?.spoken ?? "";
+    this.superseded = Boolean(turn && !turn.textDone);
     this.turn = null;
     this.barge = null;
     this.act({ type: "barge_in" });
@@ -714,6 +811,7 @@ export class VoiceController {
         audioStopped: Math.round(this.now - this.turn.t0),
         turnComplete: Math.round(this.now - this.turn.t0),
       });
+    this.superseded = Boolean(this.turn && !this.turn.textDone);
     this.turn = null;
     this.barge = null;
     this.act({ type: "interrupt" });

@@ -164,6 +164,33 @@ export async function synthesizeSentence(
   return { stream: live, sampleRate: provider.format.sampleRate };
 }
 
+/**
+ * Synthesizes, in the user's current provider and voice, the acknowledgement lines this
+ * instance doesn't hold yet (ADR-034): the first "Reviso tu agenda." then plays from memory.
+ * Fixed, non-personal text; sequential and bounded. Returns how many were synthesized.
+ */
+export async function warmAcknowledgements(auth: AuthContext, language: VoiceLanguage) {
+  if (!auth.profile.voice.enabled || !auth.profile.voice.speak) return 0;
+  const provider = getSpeechOutputProvider();
+  let made = 0;
+  for (const line of acknowledgements(language).map((l) => formatForSpeech(l, language))) {
+    const key = `${provider.id}|${auth.profile.voice.voice}|${line}`;
+    if (ackAudio.has(key)) continue;
+    const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
+    const stream = await withUsageScope(scope, () =>
+      provider.synthesize(
+        { text: line, language, voice: auth.profile.voice.voice },
+        AbortSignal.timeout(SPEAK_TIMEOUT_MS),
+      ),
+    ).catch(() => null);
+    if (!stream) break; // the provider is struggling: stop, the lines synthesize on demand
+    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    if (bytes.byteLength) ackAudio.set(key, bytes);
+    made++;
+  }
+  return made;
+}
+
 const ACKNOWLEDGEMENT_LINES = new Set([
   ...acknowledgements("es").map(toSpeakable),
   ...acknowledgements("en").map(toSpeakable),
@@ -221,6 +248,7 @@ export const VOICE_TIMINGS = [
   "runtimeStart",
   "ackReady",
   "ackTts",
+  "progressTts",
   "firstTool",
   "firstSurface",
   "toolsDone",

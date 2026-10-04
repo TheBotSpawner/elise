@@ -20,7 +20,8 @@ export interface UsageScope {
 }
 
 export interface UsageRecord {
-  operation: "llm" | "embedding" | "transcription" | "speech" | "web_search" | "web_fetch" | "maps";
+  operation:
+    "llm" | "embedding" | "transcription" | "speech" | "web_search" | "web_fetch" | "maps" | "ocr";
   provider: string;
   model?: string | null;
   inputTokens?: number | null;

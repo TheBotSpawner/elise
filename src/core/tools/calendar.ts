@@ -198,6 +198,8 @@ function eventsResult(
       events: sorted,
       from: range.timeMin.toISOString(),
       to: range.timeMax.toISOString(),
+      // A read that hit its limit may have left events out: never a complete range.
+      complete: events.length < limit,
     },
   };
 }

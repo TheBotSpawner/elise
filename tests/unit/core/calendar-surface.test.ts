@@ -13,6 +13,7 @@ import {
   dayBlocks,
   eventLabel,
   eventsOn,
+  isCovered,
   keepPresentation,
   localSpan,
   monthWeeks,
@@ -471,10 +472,8 @@ describe("the Calendar Surface on the Live Canvas", () => {
       status: "succeeded",
     });
     expect(reads).toHaveLength(1); // one range read for the month, never one per event
-    expect(shown(s)).toMatchObject({
-      view: "month",
-      range: { from: "2026-10-01", to: "2026-11-01" },
-    });
+    expect(shown(s).view).toBe("month");
+    expect(isCovered(shown(s), { from: "2026-10-01", to: "2026-11-01" })).toBe(true);
     expect(shown(s).events.map((e) => e.id)).toContain("o");
     expect(calendars(s)).toHaveLength(1);
 

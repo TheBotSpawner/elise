@@ -184,30 +184,52 @@ export function useWorkspaceController({
    * The Calendar Surface's controls (ADR-033): shown at once from what is loaded; the server
    * persists it and reads more days only when the new view needs them.
    */
+  /** Latest calendar request per Surface: an older answer may add data, never change the view. */
+  const calendarGen = useRef(new Map<string, number>());
   const calendar = useCallback(
     async (surface: Surface, change: CalendarChange) => {
-      const p = surface.payload as CalendarPayload;
-      const { payload, fetch } = navigate(p, change, todayIn(p.timezone));
-      const at = new Date().toISOString();
-      setWorkspace((s) =>
-        applyOp(s, {
+      const id = surface.id;
+      const gen = (calendarGen.current.get(id) ?? 0) + 1;
+      calendarGen.current.set(id, gen);
+      // Shown at once from what is known; days not loaded yet read as loading, never as empty.
+      setWorkspace((s) => {
+        const p = s.surfaces.find((x) => x.id === id)?.payload as CalendarPayload | undefined;
+        if (!p) return s;
+        const { payload, fetch } = navigate(p, change, todayIn(p.timezone));
+        const at = new Date().toISOString();
+        return applyOp(s, {
           op: "update",
-          id: surface.id,
-          patch: { payload, ...(fetch ? { state: "loading" as const } : {}) },
+          id,
+          patch: { payload, state: fetch ? "loading" : "ready" },
           at,
-        }),
-      );
+        });
+      });
       const thread = getThread();
       if (!thread) return;
-      const result = await calendarViewAction(thread, surface.id, change);
-      const fresh = result.ok ? result.value.surfaces.find((x) => x.id === surface.id) : undefined;
-      if (!result.ok) toast.error(errorText(t, result.error));
+      const result = await calendarViewAction(thread, id, change);
+      const fresh = result.ok ? result.value.surfaces.find((x) => x.id === id) : undefined;
+      const latest = calendarGen.current.get(id) === gen;
+      if (!result.ok && latest) toast.error(errorText(t, result.error));
       // Only this Surface converges: a turn may be streaming other changes meanwhile.
       setWorkspace((s) => ({
         ...s,
-        surfaces: s.surfaces.map((x) =>
-          x.id !== surface.id ? x : (fresh ?? { ...x, state: "ready" as const }),
-        ),
+        surfaces: s.surfaces.map((x) => {
+          if (x.id !== id) return x;
+          if (!fresh) return latest ? { ...x, state: "ready" as const } : x;
+          if (latest) return fresh;
+          const mine = x.payload as CalendarPayload;
+          return {
+            ...x,
+            payload: {
+              ...(fresh.payload as CalendarPayload),
+              view: mine.view,
+              anchor: mine.anchor,
+              range: mine.range,
+              hidden: mine.hidden,
+              seq: mine.seq,
+            },
+          };
+        }),
       }));
     },
     [getThread, setWorkspace, t],

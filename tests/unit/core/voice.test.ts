@@ -13,7 +13,17 @@ import {
   type VoiceEvent,
   type VoiceState,
 } from "@/core/voice/session";
-import { acknowledgement, PROGRESS_TTL_MS, stillSayable } from "@/core/voice/speech-plan";
+import {
+  acknowledgement,
+  acknowledgements,
+  ackIntent,
+  pickAcknowledgement,
+  predictIntent,
+  progressLine,
+  PROGRESS_AFTER_MS,
+  PROGRESS_TTL_MS,
+  stillSayable,
+} from "@/core/voice/speech-plan";
 import { SentenceChunker, SpokenSplitter, toSpeakable } from "@/core/voice/speech-text";
 import { calibrateFloor, TurnDetector, VOICE_TURN } from "@/core/voice/turn";
 import { emptyWorkspace } from "@/core/workspace/model";
@@ -301,7 +311,7 @@ function setup(
   const wake = opts.wake ? new FakeWake() : null;
   const sent: { text: string; options: unknown }[] = [];
   const timings: Record<string, number>[] = [];
-  const queue = [...(opts.transcripts ?? ["¿Qué tengo hoy?"])];
+  const queue = [...(opts.transcripts ?? ["¿Cómo viene mi día?"])];
   const uploads: string[] = [];
   const transcribe: Transcriber = async (blob) => {
     uploads.push(await blob.text());
@@ -310,6 +320,8 @@ function setup(
   };
   let now = 0;
   let tick: (() => void) | null = null;
+  const timers: { at: number; fn: () => void }[] = [];
+  const warmed: string[] = [];
   const controller = new VoiceController(
     {
       createMic: () => mic,
@@ -328,9 +340,17 @@ function setup(
       },
       wake,
       online: () => true,
+      later: (ms, fn) => void timers.push({ at: now + ms, fn }),
+      warmAcknowledgements: (language) => void warmed.push(language),
     },
     { ...PREFS, ...opts.prefs },
   );
+  /** Moves the clock without audio; fires one-shot timers that came due. */
+  const wait = (ms: number) => {
+    now += ms;
+    for (const t of timers.splice(0).filter((x) => (x.at <= now ? (x.fn(), false) : true)))
+      timers.push(t);
+  };
   /** Advances the clock by `ms`, hearing `rms` the whole time. */
   const hear = async (ms: number, rms: number) => {
     mic.input = rms;
@@ -347,7 +367,7 @@ function setup(
     await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
     await settle();
   };
-  return { controller, mic, player, wake, sent, timings, uploads, hear, say };
+  return { controller, mic, player, wake, sent, timings, uploads, hear, say, wait, warmed };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -373,7 +393,7 @@ describe("continuous voice controller", () => {
     await say();
     expect(sent).toEqual([
       {
-        text: "¿Qué tengo hoy?",
+        text: "¿Cómo viene mi día?",
         options: {
           modality: "voice",
           voice: { durationMs: 1800, language: "es", wake: "off" },
@@ -405,7 +425,7 @@ describe("continuous voice controller", () => {
 
   it("speaks the reply by sentence and listens again in the same session (multi-turn)", async () => {
     const { controller, mic, player, sent, timings, say } = setup({
-      transcripts: ["¿Qué tengo hoy?", "Contame más de la segunda"],
+      transcripts: ["¿Cómo viene mi día?", "Contame más de la segunda"],
     });
     await controller.start();
     await say();
@@ -423,13 +443,13 @@ describe("continuous voice controller", () => {
       audioStart: expect.any(Number),
     });
     await say();
-    expect(sent.map((s) => s.text)).toEqual(["¿Qué tengo hoy?", "Contame más de la segunda"]);
+    expect(sent.map((s) => s.text)).toEqual(["¿Cómo viene mi día?", "Contame más de la segunda"]);
     expect(mic.opened).toBe(1); // one permission, one session
   });
 
   it("the user talking over ELISE stops her at once and becomes the next turn", async () => {
     const { controller, player, sent, hear, say } = setup({
-      transcripts: ["¿Qué tengo hoy?", "No, pará, la de las tres"],
+      transcripts: ["¿Cómo viene mi día?", "No, pará, la de las tres"],
     });
     await controller.start();
     await say();
@@ -446,11 +466,20 @@ describe("continuous voice controller", () => {
     await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
     await settle();
     expect(sent.at(-1)?.text).toBe("No, pará, la de las tres");
+    // The abandoned request keeps streaming ahead of the new one: none of it is spoken now…
+    controller.onStream({ type: "spoken", delta: "Encontré tres noticias de ayer. " });
+    controller.onStream({ type: "finished", failed: false });
+    expect(player.spoken).toEqual(["Esta es una respuesta larga."]);
+    // …the new turn speaks once its own request starts.
+    controller.onStream({ type: "turn_started", text: "No, pará, la de las tres" });
+    controller.onStream({ type: "spoken", delta: "Dale, te muestro la de las tres. " });
+    controller.onStream({ type: "finished", failed: false });
+    expect(player.spoken.at(-1)).toBe("Dale, te muestro la de las tres.");
   });
 
   it("her own words coming back after a barge-in are dropped, not answered", async () => {
     const { controller, sent, hear, say } = setup({
-      transcripts: ["¿Qué tengo hoy?", "Tenés dos reuniones hoy"],
+      transcripts: ["¿Cómo viene mi día?", "Tenés dos reuniones hoy"],
     });
     await controller.start();
     await say();
@@ -1032,5 +1061,196 @@ describe("speech follows the real state of the work", () => {
     controller.interrupt();
     expect(player.stopped).toBeGreaterThan(0);
     expect(audible(player)).toEqual([]);
+  });
+});
+
+// ── Acknowledgements (ADR-034) ───────────────────────────────────────────────
+
+describe("acknowledgements: short, varied, honest", () => {
+  const audible = (p: FakePlayer) =>
+    p.lines.filter((l) => !l.options.valid || l.options.valid()).map((l) => l.text);
+
+  it("classifies the work from the tool, without a model call", () => {
+    expect(ackIntent("calendar.listEvents")).toBe("check_calendar");
+    expect(ackIntent("knowledge.search")).toBe("search_knowledge");
+    expect(ackIntent("web.searchNews")).toBe("search_web");
+    expect(ackIntent("history.search")).toBe("search_recall");
+    expect(ackIntent("location.getRoute")).toBe("map_route");
+    expect(ackIntent("tasks.create")).toBe("create");
+    expect(ackIntent("calendar.updateEvent")).toBe("update");
+    expect(ackIntent("email.send")).toBe("risky");
+    expect(ackIntent("calendar.deleteEvent")).toBe("risky");
+    expect(ackIntent("ui.show")).toBeNull();
+    expect(ackIntent("settings.update")).toBeNull();
+  });
+
+  it("before a mutation succeeds, never 'listo'; a risky action is only prepared", () => {
+    for (const locale of ["es", "en"] as const)
+      for (const intent of ["create", "update", "risky"] as const)
+        for (let i = 0; i < 4; i++) {
+          const line = pickAcknowledgement(intent, locale, Array(i).fill(""));
+          expect(line).not.toMatch(/listo|hecho|done|added|sent|enviad|borrad|deleted/i);
+        }
+    expect(acknowledgement("tasks.create", "es")).toBe("Lo hago.");
+    expect(acknowledgement("email.send", "es")).toBe("Sí, lo preparo.");
+  });
+
+  it("rotates deterministically and avoids repeating a recent line", () => {
+    const a = pickAcknowledgement("check_calendar", "es", []);
+    const b = pickAcknowledgement("check_calendar", "es", [a]);
+    const c = pickAcknowledgement("check_calendar", "es", [a, b]);
+    expect(new Set([a, b, c]).size).toBe(3);
+    // All used: the least recently said comes back.
+    expect(pickAcknowledgement("check_calendar", "es", [b, c, a])).toBe(b);
+    expect(pickAcknowledgement("check_calendar", "es", [a])).toBe(b); // same input, same line
+  });
+
+  it("speaks the user's language, and every line is short", () => {
+    expect(pickAcknowledgement("search_web", "en")).toBe("Let me look it up.");
+    for (const locale of ["es", "en"] as const)
+      for (const line of acknowledgements(locale)) {
+        expect(line.split(/\s+/).length).toBeLessThanOrEqual(8);
+        expect(line).not.toMatch(/\b(eh|mmm|uh)\b/i);
+      }
+    const segundo = acknowledgements("es").filter((l) => /un segundo/i.test(l));
+    expect(segundo.length).toBeLessThanOrEqual(1);
+  });
+
+  it("consecutive turns vary their acknowledgement", async () => {
+    const { controller, player, say } = setup();
+    await controller.start();
+    const heard: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      await say();
+      controller.onStream({ type: "tool_started", name: "calendar.listEvents" });
+      heard.push(player.spoken.at(-1)!);
+      controller.onStream({ type: "tool_finished", outcome: { status: "succeeded" } });
+      controller.onStream({ type: "spoken", delta: "Tenés dos reuniones. " });
+      controller.onStream({ type: "finished", failed: false });
+      player.finishPlaying();
+    }
+    expect(new Set(heard).size).toBe(3);
+  });
+
+  it("the acknowledgement is queued as the tool starts; nothing waits for it", async () => {
+    const { controller, player, say, sent } = setup();
+    await controller.start();
+    await say();
+    // The request went out before any speech (the work never waits for the acknowledgement)…
+    expect(sent).toHaveLength(1);
+    expect(player.spoken).toEqual([]);
+    controller.onStream({ type: "tool_started", name: "knowledge.search" });
+    // …and the acknowledgement is queued the moment the work starts.
+    expect(player.spoken).toEqual(["Reviso el material."]);
+  });
+
+  it("no acknowledgement for a direct answer or a clarification (no tool ran)", async () => {
+    const { controller, player, say } = setup();
+    await controller.start();
+    await say();
+    controller.onStream({ type: "spoken", delta: "¿Te referís a la de las 10 o a la de las 11? " });
+    controller.onStream({ type: "finished", failed: false });
+    expect(player.spoken).toEqual(["¿Te referís a la de las 10 o a la de las 11?"]);
+  });
+
+  it("a very fast tool: the acknowledgement not yet playing is dropped, the result is said", async () => {
+    const { controller, player, say } = setup();
+    await controller.start();
+    await say();
+    controller.onStream({ type: "tool_started", name: "tasks.list" });
+    controller.onStream({ type: "tool_finished", outcome: { status: "succeeded" } });
+    controller.onStream({ type: "spoken", delta: "Tenés tres tareas. " });
+    controller.onStream({ type: "finished", failed: false });
+    expect(audible(player)).toEqual(["Tenés tres tareas."]);
+  });
+
+  it("one progress line after a real wait while work runs — never two, never after the result", async () => {
+    const { controller, player, say, wait } = setup();
+    await controller.start();
+    await say();
+    controller.onStream({ type: "tool_started", name: "meeting.prepare" });
+    wait(PROGRESS_AFTER_MS - 100);
+    expect(player.spoken).toEqual(["Preparo la reunión."]);
+    wait(200);
+    expect(player.spoken).toEqual(["Preparo la reunión.", progressLine("prepare_meeting", "es")!]);
+    wait(PROGRESS_AFTER_MS * 3);
+    expect(player.spoken).toHaveLength(2);
+  });
+
+  it("no progress once the result is coming, or after a failure", async () => {
+    const quick = setup();
+    await quick.controller.start();
+    await quick.say();
+    quick.controller.onStream({ type: "tool_started", name: "web.searchNews" });
+    quick.controller.onStream({ type: "tool_finished", outcome: { status: "succeeded" } });
+    quick.controller.onStream({ type: "spoken", delta: "Hay tres noticias. " });
+    quick.wait(PROGRESS_AFTER_MS + 10);
+    expect(quick.player.spoken).not.toContain(progressLine("search_web", "es"));
+
+    const failing = setup();
+    await failing.controller.start();
+    await failing.say();
+    failing.controller.onStream({ type: "tool_started", name: "calendar.listEvents" });
+    failing.controller.onStream({ type: "tool_started", name: "email.search" });
+    failing.controller.onStream({ type: "tool_finished", outcome: { status: "failed" } });
+    failing.wait(PROGRESS_AFTER_MS + 10);
+    expect(failing.player.spoken).not.toContain(progressLine("check_calendar", "es"));
+  });
+
+  it("a new turn (barge-in or interruption) invalidates the old acknowledgement and progress", async () => {
+    const { controller, player, say, wait } = setup();
+    await controller.start();
+    await say();
+    controller.onStream({ type: "tool_started", name: "web.searchNews" });
+    controller.interrupt();
+    expect(audible(player)).toEqual([]);
+    wait(PROGRESS_AFTER_MS + 10);
+    expect(player.spoken).toEqual(["Lo busco."]); // no progress for a turn that's gone
+  });
+
+  it("warms the acknowledgement audio once per session, in the user's language", async () => {
+    const { controller, warmed } = setup();
+    await controller.start();
+    expect(warmed).toEqual(["es"]);
+  });
+});
+
+describe("acknowledging from the words, before the model picks a tool (ADR-034)", () => {
+  it("predicts only plain lookups, never actions or chit-chat", () => {
+    expect(predictIntent("Buscame las últimas noticias sobre inteligencia artificial.")).toBe(
+      "search_web",
+    );
+    expect(predictIntent("¿Cuánto tardo en auto hasta el Obelisco?")).toBe("map_route");
+    expect(predictIntent("Buscá en mis apuntes cuándo es el parcial.")).toBe("search_knowledge");
+    expect(predictIntent("¿Qué tareas tengo pendientes?")).toBe("check_tasks");
+    expect(predictIntent("Mostrame mi calendario de la semana que viene.")).toBe("check_calendar");
+    // Actions wait for the real tool; ambiguity gets a question, not "lo busco".
+    expect(predictIntent("Mové la reunión.")).toBeNull();
+    expect(predictIntent("Agregá una tarea: comprar pilas.")).toBeNull();
+    expect(predictIntent("Mandale un mail a Ana.")).toBeNull();
+    expect(predictIntent("¿Cuánto es dos más dos?")).toBeNull();
+    expect(predictIntent("Hola")).toBeNull();
+  });
+
+  it("acknowledges at the transcript, once; the tool start adds nothing", async () => {
+    const { controller, player, say, sent } = setup({
+      transcripts: ["Buscame las últimas noticias sobre el clima."],
+    });
+    await controller.start();
+    await say();
+    expect(sent).toHaveLength(1); // the request went out with it, not after it
+    expect(player.spoken).toEqual(["Lo busco."]);
+    controller.onStream({ type: "tool_started", name: "web.searchNews" });
+    expect(player.spoken).toEqual(["Lo busco."]);
+  });
+
+  it("if the answer comes first, the early acknowledgement not yet playing is dropped", async () => {
+    const { controller, player, say } = setup({ transcripts: ["¿Qué tareas tengo pendientes?"] });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "spoken", delta: "Tenés una tarea pendiente para mañana. " });
+    controller.onStream({ type: "finished", failed: false });
+    const audible = player.lines.filter((l) => !l.options.valid || l.options.valid());
+    expect(audible.map((l) => l.text)).toEqual(["Tenés una tarea pendiente para mañana."]);
   });
 });

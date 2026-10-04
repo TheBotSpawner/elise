@@ -58,6 +58,10 @@ export interface SpaceInfo {
   path: string;
   /** What else the user calls it (its description), for resolving "Análisis Matemático II". */
   aliases?: string[];
+  /** What it is, in the user's words — Knowledge itself, read directly once resolved (ADR-035). */
+  description?: string | null;
+  /** Background the user wrote for it (dates, preferences…). */
+  context?: string | null;
 }
 
 export interface KnowledgeHit {

@@ -34,12 +34,20 @@ export interface CalendarItem {
   busy?: boolean;
 }
 
+export type DayRange = { from: string; to: string };
+
+/**
+ * One Surface, two kinds of state (ADR-033 §range state). DATA: `events` (detailed, deduplicated
+ * by provider event id), the ranges fully `loaded` for a calendar `scope`, and the year
+ * `summary` (density, kept apart: it never replaces events). PRESENTATION: `view`, `anchor`,
+ * `hidden`, and `seq`, which orders presentation changes so a late answer can't undo a newer one.
+ */
 export interface CalendarPayload {
   view: CalendarView;
-  /** The date the view shows (its day, week, month or year). */
+  /** The date the view shows (its day, week, month or year); the same for every view. */
   anchor: string;
-  /** Loaded range, local dates [from, to). */
-  range: { from: string; to: string };
+  /** The requested window, local dates [from, to): what Agenda lists. */
+  range: DayRange;
   timezone: string;
   events: CalendarItem[];
   /** Calendar ids the user hid (filtering is presentation; provider data is untouched). */
@@ -47,6 +55,14 @@ export interface CalendarPayload {
   /** Free windows to emphasize (availability), instants. */
   free: { start: string; end: string }[];
   truncated: boolean;
+  /** Ranges read completely (never a truncated read). Absent in older snapshots: `range`. */
+  loaded?: DayRange[];
+  /** Which calendars the data was read for: "all", or one calendar id. */
+  scope?: string;
+  /** Events per day of one year (Year view), kept apart from the detailed events. */
+  summary?: { year: string; counts: Record<string, number>; complete: boolean };
+  /** Order of presentation changes (the newest wins). */
+  seq?: number;
 }
 
 export const MAX_CALENDAR_EVENTS = 200;
@@ -189,6 +205,9 @@ export function calendarPayload(input: {
   view?: CalendarView | null;
   free?: { start: string; end: string }[];
   busy?: { start: string; end: string; source: string }[];
+  /** The read returned everything in the range (not cut at its limit). */
+  complete?: boolean;
+  scope?: string;
 }): CalendarPayload {
   const range = localRange(input.from, input.to, input.timezone);
   const items = input.events
@@ -220,6 +239,8 @@ export function calendarPayload(input: {
   });
   // The view opens on today when today is in the range, else on the range's start.
   const anchor = input.today >= range.from && input.today < range.to ? input.today : range.from;
+  const complete = (input.complete ?? true) && input.events.length <= MAX_CALENDAR_EVENTS;
+  const year = range.from.slice(0, 4);
   return {
     view,
     anchor,
@@ -228,13 +249,130 @@ export function calendarPayload(input: {
     events: [...items, ...busy],
     hidden: [],
     free: (input.free ?? []).slice(0, 100),
-    truncated: input.events.length > MAX_CALENDAR_EVENTS,
+    truncated: !complete,
+    loaded: complete ? [range] : [],
+    scope: input.scope ?? "all",
+    ...(range.from === `${year}-01-01` && range.to === `${Number(year) + 1}-01-01`
+      ? { summary: summaryOf(items, year, input.timezone, complete) }
+      : {}),
+    seq: 0,
   };
 }
 
-/** A refreshed dataset keeps how the user is looking at it. */
+// ── Data state: the range cache (ADR-033 §range state) ────────────────────────
+
+/** Ranges fully loaded (older snapshots: their range, unless truncated). */
+export const loadedOf = (p: CalendarPayload): DayRange[] =>
+  p.loaded ?? (p.truncated ? [] : [p.range]);
+
+/** Sorted, merged union of day ranges. */
+function union(ranges: readonly DayRange[]): DayRange[] {
+  const out: DayRange[] = [];
+  const sorted = ranges.filter((r) => r.to > r.from).sort((a, b) => a.from.localeCompare(b.from));
+  for (const r of sorted) {
+    const last = out.at(-1);
+    if (last && r.from <= last.to) last.to = r.to > last.to ? r.to : last.to;
+    else out.push({ ...r });
+  }
+  return out;
+}
+
+/** Is every day of `range` loaded for this calendar scope? */
+export function isCovered(p: CalendarPayload, range: DayRange, scope = p.scope ?? "all") {
+  if ((p.scope ?? "all") !== scope) return false;
+  return union(loadedOf(p)).some((r) => r.from <= range.from && r.to >= range.to);
+}
+
+/** Events per local day of one year. */
+function summaryOf(events: readonly CalendarItem[], year: string, tz: string, complete: boolean) {
+  const counts: Record<string, number> = {};
+  for (const [day, n] of yearDensity(
+    events.filter((e) => !e.busy),
+    year,
+    tz,
+  ))
+    counts[day] = n;
+  return { year, counts, complete };
+}
+
+/**
+ * Merges a read into the data state. Inside a COMPLETE read's range the read is authoritative
+ * (gone there = deleted there); outside it everything known is kept; a truncated read only adds
+ * and never counts as loaded. Never clears what was known, never doubles an event (provider ids
+ * name account, calendar and event). Then bounded: the events nearest the anchor are kept and
+ * coverage shrinks to match, so a trimmed range is read again instead of looking empty.
+ */
+export function mergeFetched(
+  p: CalendarPayload,
+  read: { events: readonly (CalendarEvent | CalendarItem)[]; range: DayRange; complete: boolean },
+): CalendarPayload {
+  const tz = p.timezone;
+  const fresh = read.events
+    .map((e) => ("provenance" in e ? calendarItem(e) : e))
+    .filter((e) => e.status !== "cancelled" && !e.busy);
+  const ids = new Set(fresh.map((e) => e.id));
+  const inRange = (e: CalendarItem) => {
+    const span = localSpan(e, tz);
+    return span.last >= read.range.from && span.first < read.range.to;
+  };
+  let events = [
+    ...p.events.filter((e) => !e.busy && !ids.has(e.id) && !(read.complete && inRange(e))),
+    ...fresh,
+  ];
+  let loaded = union([...loadedOf(p), ...(read.complete ? [read.range] : [])]);
+  // The year's density, from the read that covered it, kept apart from the detailed events.
+  const year = read.range.from.slice(0, 4);
+  const wholeYear =
+    read.range.from <= `${year}-01-01` && read.range.to >= `${Number(year) + 1}-01-01`;
+  let summary = p.summary;
+  if (wholeYear) summary = summaryOf(fresh, year, tz, read.complete);
+  else if (summary && read.complete) {
+    const counts = { ...summary.counts };
+    const fill = summaryOf(fresh, summary.year, tz, true).counts;
+    for (const d of daysBetween(read.range.from, read.range.to)) {
+      delete counts[d];
+      if (fill[d]) counts[d] = fill[d];
+    }
+    summary = { ...summary, counts };
+  }
+  if (events.length > MAX_CALENDAR_EVENTS) {
+    // ponytail: nearest-to-anchor trimming; per-range eviction if the cap ever bites in practice.
+    const anchorAt = Date.parse(`${p.anchor}T12:00:00Z`);
+    const dist = (e: CalendarItem) =>
+      Math.abs(Date.parse(`${localSpan(e, tz).first}T12:00:00Z`) - anchorAt);
+    events = [...events].sort((a, b) => dist(a) - dist(b)).slice(0, MAX_CALENDAR_EVENTS);
+    const days = events.map((e) => localSpan(e, tz).first).sort();
+    // Days at the cut edges may have lost events: only days strictly inside stay "loaded".
+    const window = { from: addDays(days[0]!, 1), to: days.at(-1)! };
+    loaded = loaded
+      .map((r) => ({
+        from: r.from > window.from ? r.from : window.from,
+        to: r.to < window.to ? r.to : window.to,
+      }))
+      .filter((r) => r.to > r.from);
+  }
+  return {
+    ...p,
+    events: [...events, ...p.events.filter((e) => e.busy)],
+    loaded,
+    truncated: !read.complete,
+    ...(summary ? { summary } : {}),
+  };
+}
+
+/** The one read that refreshes everything loaded (after a write): a range, never per event. */
+export function refreshRange(p: CalendarPayload): DayRange {
+  const all = union([...loadedOf(p), p.range, viewRange(p.view, p.anchor, p.range)]);
+  return { from: all[0]!.from, to: all.at(-1)!.to };
+}
+
+/** A refreshed dataset keeps how the user is looking at it; its data merges into what's known. */
 export function keepPresentation(fresh: CalendarPayload, old: CalendarPayload): CalendarPayload {
-  return { ...fresh, view: old.view, anchor: old.anchor, hidden: old.hidden, free: old.free };
+  return mergeFetched(old, {
+    events: fresh.events,
+    range: fresh.range,
+    complete: !fresh.truncated,
+  });
 }
 
 export interface CalendarChange {
@@ -245,12 +383,20 @@ export interface CalendarChange {
   hidden?: string[];
 }
 
-/** The next presentation, and the range to read when it isn't loaded yet. */
+/** Is a presentation change numbered `seq` newer than what is shown? */
+export const presentationNewer = (p: CalendarPayload, seq: number) => seq > (p.seq ?? 0);
+
+/**
+ * The next presentation (one anchor for every view: Year → Week returns to the same week), and
+ * the range to read when the view needs days that aren't loaded. Known events stay meanwhile:
+ * loading is never shown as empty.
+ */
 export function navigate(
   p: CalendarPayload,
   change: CalendarChange,
   today: string,
-): { payload: CalendarPayload; fetch: { from: string; to: string } | null } {
+  seq = (p.seq ?? 0) + 1,
+): { payload: CalendarPayload; fetch: DayRange | null } {
   const view = change.view ?? p.view;
   const anchor =
     change.anchor && isIsoDate(change.anchor)
@@ -260,19 +406,89 @@ export function navigate(
         : change.shift
           ? shiftAnchor(view, p.anchor, change.shift, p.range)
           : p.anchor;
-  const needed =
+  // Agenda moved in time lists a window of the same length from the new date.
+  const range =
     view === "agenda" && change.shift
-      ? {
-          from: anchor,
-          to: addDays(anchor, Math.max(1, dayDiff(p.range.from, p.range.to))),
-        }
-      : viewRange(view, anchor, p.range);
-  const covered = needed.from >= p.range.from && needed.to <= p.range.to;
+      ? { from: anchor, to: addDays(anchor, Math.max(1, dayDiff(p.range.from, p.range.to))) }
+      : p.range;
+  const needed = viewRange(view, anchor, range);
   return {
-    payload: { ...p, view, anchor, hidden: change.hidden ?? p.hidden },
-    fetch: covered ? null : needed,
+    payload: { ...p, view, anchor, range, hidden: change.hidden ?? p.hidden, seq },
+    fetch: isCovered(p, needed) ? null : needed,
   };
 }
+
+/** A view never asks for less than it shows: the tool's default limit (50) cut years short. */
+export const CALENDAR_READ_LIMIT = 250;
+
+/** The calendar read for a range of days (the tool's `to` date is inclusive). */
+export const rangeArgs = (range: DayRange, scope = "all") => ({
+  from: range.from,
+  to: addDays(range.to, -1),
+  limit: CALENDAR_READ_LIMIT,
+  ...(scope !== "all" ? { calendar: scope } : {}),
+});
+
+/**
+ * The ONE path every calendar change takes — a click on "Año", "Ponelo en vista anual", a date
+ * or a filter (ADR-033). The presentation is decided first; only missing days are read (one
+ * range read); then it settles against the state AT THAT MOMENT: data always merges (a late
+ * answer still enriches the cache), the presentation applies only if it's still the newest, and
+ * a failed read keeps everything known.
+ */
+export async function changeCalendar(input: {
+  current: () => CalendarPayload | null | Promise<CalendarPayload | null>;
+  change: CalendarChange;
+  today: string;
+  seq: number;
+  read: (args: ReturnType<typeof rangeArgs>) => Promise<{ status: string; display?: unknown }>;
+}): Promise<{
+  /** Applies this change to the state AS IT IS when writing (call it right before saving). */
+  settle: (current: CalendarPayload) => {
+    payload: CalendarPayload;
+    query: { tool: string; args: Record<string, unknown> };
+  };
+  read: "none" | "done" | "failed";
+} | null> {
+  const start = await input.current();
+  if (!start) return null;
+  const { payload: wanted, fetch } = navigate(start, input.change, input.today, input.seq);
+  const scope = start.scope ?? "all";
+  let got: Parameters<typeof mergeFetched>[1] | null = null;
+  let read: "none" | "done" | "failed" = "none";
+  if (fetch) {
+    const outcome = await input.read(rangeArgs(fetch, scope)).catch(() => null);
+    const display = outcome?.status === "succeeded" ? outcome.display : null;
+    const list = display as { kind?: string; events?: CalendarEvent[]; complete?: boolean } | null;
+    if (list?.kind === "event_list" && list.events) {
+      got = { events: list.events, range: fetch, complete: list.complete !== false };
+      read = "done";
+    } else read = "failed";
+  }
+  const settle = (latest: CalendarPayload) => {
+    // Data always merges (a late answer still enriches what's known); the presentation applies
+    // only if no newer choice was made meanwhile.
+    const data = got && (latest.scope ?? "all") === scope ? mergeFetched(latest, got) : latest;
+    const payload = presentationNewer(latest, input.seq)
+      ? {
+          ...data,
+          view: wanted.view,
+          anchor: wanted.anchor,
+          range: wanted.range,
+          hidden: wanted.hidden,
+          seq: input.seq,
+        }
+      : data;
+    return {
+      payload,
+      query: { tool: "calendar.listEvents", args: rangeArgs(refreshRange(payload), scope) },
+    };
+  };
+  return { settle, read };
+}
+
+/** Presentation changes are numbered by when they were asked; later asks always win. */
+export const nextSeq = (p: CalendarPayload, now = Date.now()) => Math.max((p.seq ?? 0) + 1, now);
 
 // ── Placing events ─────────────────────────────────────────────────────────────
 

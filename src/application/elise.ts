@@ -13,6 +13,7 @@ import {
 import type { CapabilityKey } from "@/core/capabilities/types";
 import { AppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
+import type { KnowledgeManager } from "@/core/knowledge/admin";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { CONTEXT_TOOLS } from "@/core/tools/contexts";
@@ -22,6 +23,7 @@ import { GOAL_TOOLS } from "@/core/tools/goals";
 import { HABIT_TOOLS } from "@/core/tools/habits";
 import { HISTORY_TOOLS } from "@/core/tools/history";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
+import { KNOWLEDGE_ADMIN_TOOLS } from "@/core/tools/knowledge-admin";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { LOCATION_TOOLS } from "@/core/tools/location";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
@@ -69,6 +71,7 @@ import { SupabaseRecallReader } from "@/infrastructure/supabase/repositories/rec
 
 import type { AuthContext } from "./auth-context";
 import { contextStore } from "./contexts-service";
+import { knowledgeManager } from "./knowledge-admin";
 import { locationCapability } from "./location-service";
 import { syncNoteToKnowledge } from "./notes-knowledge";
 import { catchUpRecall } from "./recall-service";
@@ -85,6 +88,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...EMAIL_TOOLS,
   ...SCHEDULE_TOOLS,
   ...KNOWLEDGE_TOOLS,
+  ...KNOWLEDGE_ADMIN_TOOLS,
   ...HABIT_TOOLS,
   ...GOAL_TOOLS,
   ...LIST_TOOLS,
@@ -210,7 +214,7 @@ function providerFactory(
     }
     return http;
   };
-  let knowledge: SupabaseKnowledgeReader | undefined;
+  let knowledge: (SupabaseKnowledgeReader & KnowledgeManager) | undefined;
 
   const make: {
     [K in ImplementedCapability]: (binding: CapabilityBinding) => CapabilityProviders[K];
@@ -300,7 +304,10 @@ function providerFactory(
     },
     // ELISE's own index, whatever the source; always this workspace's.
     knowledge() {
-      knowledge ??= new SupabaseKnowledgeReader(auth.db, auth.workspaceId, getEmbeddingProvider);
+      knowledge ??= Object.assign(
+        new SupabaseKnowledgeReader(auth.db, auth.workspaceId, getEmbeddingProvider),
+        knowledgeManager(auth),
+      );
       return knowledge;
     },
     // Recall is always the user's own interactions (RLS: author-only).

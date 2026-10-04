@@ -67,6 +67,12 @@ export function useVoice({
           wake,
           online: () => navigator.onLine,
           trace: voiceTrace(),
+          warmAcknowledgements: (language) =>
+            void fetch("/api/voice/speak/warm", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ language }),
+            }).catch(() => undefined),
         },
         toPrefs(prefs),
       ),
@@ -76,13 +82,7 @@ export function useVoice({
     () => controller.update({ send: (text, options) => void send(text, options) }),
     [controller, send],
   );
-  useEffect(
-    () =>
-      subscribe((event) => {
-        if (event.type !== "turn_started") controller.onStream(event);
-      }),
-    [controller, subscribe],
-  );
+  useEffect(() => subscribe((event) => controller.onStream(event)), [controller, subscribe]);
 
   // Server props changed (navigation) or a live change was announced.
   const prefsKey = JSON.stringify(toPrefs(prefs));

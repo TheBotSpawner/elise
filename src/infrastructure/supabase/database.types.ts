@@ -51,6 +51,22 @@ export type InteractionKnowledgeLinkRow = {
   updated_at: Ts;
 };
 
+export type DocumentExtractionRow = {
+  id: string;
+  workspace_id: string;
+  content_hash: string;
+  mime_type: string;
+  method: "native" | "ocr" | "hybrid";
+  page_count: number;
+  pages: Json;
+  ocr_provider: string | null;
+  ocr_pages: number;
+  complete: boolean;
+  warnings: Json;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
 export type ChatAttachmentRow = {
   id: string;
   workspace_id: string;
@@ -71,7 +87,8 @@ export type UsageEventRow = {
   workspace_id: string;
   user_id: string | null;
   feature: string;
-  operation: "llm" | "embedding" | "transcription" | "speech" | "web_search" | "web_fetch" | "maps";
+  operation:
+    "llm" | "embedding" | "transcription" | "speech" | "web_search" | "web_fetch" | "maps" | "ocr";
   provider: string;
   model: string | null;
   input_tokens: number | null;
@@ -1145,6 +1162,10 @@ export type Database = {
         "workspace_id" | "context_profile_id" | "link_type" | "label"
       >;
       entities: Table<EntityRow, "workspace_id" | "entity_type" | "name" | "name_key">;
+      document_extractions: Table<
+        DocumentExtractionRow,
+        "workspace_id" | "content_hash" | "mime_type" | "method"
+      >;
       chat_attachments: Table<
         ChatAttachmentRow,
         "id" | "workspace_id" | "user_id" | "name" | "mime_type" | "size_bytes" | "storage_path"

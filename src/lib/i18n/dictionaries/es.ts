@@ -846,6 +846,7 @@ export const es: Dictionary = {
     detail: {
       uploading: "Subiendo…",
       reading: "Leyendo el documento",
+      ocr: "Reconociendo texto",
       indexing: "Entendiéndolo",
     },
     sourceStatus: {

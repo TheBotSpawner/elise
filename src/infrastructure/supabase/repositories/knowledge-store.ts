@@ -101,7 +101,7 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
     return (await this.currentVersion(itemId)) !== null;
   }
 
-  async markProcessing(v: VersionToIngest, detail: "reading" | "indexing") {
+  async markProcessing(v: VersionToIngest, detail: "reading" | "ocr" | "indexing") {
     await this.db
       .from("knowledge_versions")
       .update({ status: "processing" })

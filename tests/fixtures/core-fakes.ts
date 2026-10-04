@@ -21,6 +21,7 @@ import { GOAL_TOOLS } from "@/core/tools/goals";
 import { HABIT_TOOLS } from "@/core/tools/habits";
 import { HISTORY_TOOLS } from "@/core/tools/history";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
+import { KNOWLEDGE_ADMIN_TOOLS } from "@/core/tools/knowledge-admin";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { LOCATION_TOOLS } from "@/core/tools/location";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
@@ -234,6 +235,7 @@ export function makePorts(
       ...EMAIL_TOOLS,
       ...SCHEDULE_TOOLS,
       ...KNOWLEDGE_TOOLS,
+      ...KNOWLEDGE_ADMIN_TOOLS,
       ...HABIT_TOOLS,
       ...GOAL_TOOLS,
       ...LIST_TOOLS,

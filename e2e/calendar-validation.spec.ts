@@ -253,6 +253,122 @@ test("A · desktop: Week places every event in its own day; views switch in the 
   await expect(page.getByRole("button", { name: /^Dentista/ })).toBeVisible();
 });
 
+test("A · regression: Week → Year → Week keeps the week; rapid switches end on Week", async ({
+  page,
+}, info) => {
+  // Only this week is loaded: Year and Month must read more (no Google here, so those reads
+  // fail) — what is known must survive, and returning to the week must need nothing.
+  const { data: conv } = await admin!
+    .from("conversations")
+    .insert({ workspace_id: workspaceId, user_id: userId, title: "Semana (regresión)" })
+    .select("id")
+    .single();
+  const id = conv!.id as string;
+  await admin!.from("messages").insert([
+    { conversation_id: id, workspace_id: workspaceId, role: "user", content: "Mi semana." },
+    { conversation_id: id, workspace_id: workspaceId, role: "assistant", content: "Tu semana." },
+  ]);
+  const now = new Date().toISOString();
+  const week = { from: monday, to: add(monday, 7) };
+  await admin!.from("live_workspaces").insert({
+    workspace_id: workspaceId,
+    user_id: userId,
+    conversation_id: id,
+    surfaces: [
+      {
+        id: "calendar:week",
+        handle: "S1",
+        type: "calendar",
+        title: "",
+        state: "ready",
+        priority: 82,
+        size: "large",
+        source: { capability: "calendar", label: null },
+        ref: null,
+        payload: {
+          view: "week",
+          anchor: today,
+          range: week,
+          timezone: TZ,
+          events: events.slice(0, 3),
+          hidden: [],
+          free: [],
+          truncated: false,
+          loaded: [week],
+          scope: "all",
+          seq: 0,
+        },
+        actions: [{ id: "expand", kind: "expand" }],
+        intentId: null,
+        dataset: "calendar",
+        query: { tool: "calendar.listEvents", args: { from: monday, to: add(monday, 6) } },
+        turn: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    turn: 1,
+    next_handle: 2,
+    version: 1,
+  });
+  await signIn(page);
+  await page.goto(`/chat/${id}`);
+  const views = page.getByRole("group", { name: "Vista" });
+  const weekEvents = [/^Weekly Meeting, miércoles/, /^Teatro, miércoles/, /^Cumpleaños, viernes/];
+  const visible = async () => {
+    const out: boolean[] = [];
+    for (const name of weekEvents)
+      out.push(
+        await page
+          .getByRole("button", { name })
+          .isVisible()
+          .catch(() => false),
+      );
+    return out;
+  };
+  await expect.poll(visible).toEqual([true, true, true]);
+  await views.getByRole("button", { name: "Año" }).click();
+  await expect(views.getByRole("button", { name: "Año" })).toHaveAttribute("aria-pressed", "true");
+  await page.waitForTimeout(2_500); // the year read finishes (and fails: no Google here)
+  await page.screenshot({ path: info.outputPath("regression-year.png") });
+  const t0 = Date.now();
+  await views.getByRole("button", { name: "Semana" }).click();
+  await expect(page.getByRole("button", { name: weekEvents[0] })).toBeVisible();
+  const backMs = Date.now() - t0;
+  await expect.poll(visible).toEqual([true, true, true]);
+  await page.screenshot({ path: info.outputPath("regression-week-again.png") });
+
+  // Rapid: Week → Year → Month → Week before the reads answer.
+  await views.getByRole("button", { name: "Año" }).click();
+  await views.getByRole("button", { name: "Mes" }).click();
+  await views.getByRole("button", { name: "Semana" }).click();
+  await page.waitForTimeout(4_000); // every late answer has arrived
+  await expect(views.getByRole("button", { name: "Semana" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect.poll(visible).toEqual([true, true, true]);
+  // Server actions run one at a time per client: the queued clicks persist in order.
+  const read = async () =>
+    (await admin!.from("live_workspaces").select("surfaces").eq("conversation_id", id).single())
+      .data!.surfaces as { payload: { view: string; events: { id: string }[] } }[];
+  const settledAt = Date.now();
+  await expect.poll(async () => (await read())[0]!.payload.view, { timeout: 20_000 }).toBe("week");
+  const persistMs = Date.now() - settledAt + 4_000;
+  const stored = await read();
+  report.regression = {
+    backToWeekMs: backMs,
+    rapidPersistedWithinMs: persistMs,
+    storedView: stored[0]!.payload.view,
+    storedEvents: stored[0]!.payload.events.map((e) => e.id),
+  };
+  expect(stored).toHaveLength(1);
+  expect(stored[0]!.payload.view).toBe("week");
+  expect(stored[0]!.payload.events.map((e) => e.id).sort()).toEqual(["b", "m", "t"]);
+  await page.reload();
+  await expect.poll(visible).toEqual([true, true, true]);
+});
+
 test("A · phone: Day, Week (strip + day), Month, Year, Agenda without overflow", async ({
   page,
 }, info) => {

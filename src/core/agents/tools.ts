@@ -34,6 +34,7 @@ import type {
 import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { ContextKind, ContextStore } from "../contexts/model";
+import type { KnowledgeManager } from "../knowledge/admin";
 import type { KnowledgeReader } from "../knowledge/model";
 import type { LatLng, LocationCapability } from "../location/model";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
@@ -93,7 +94,8 @@ export interface CapabilityProviders {
   calendar: CalendarProvider;
   email: EmailProvider;
   /** ELISE's own index, whatever source fed it. */
-  knowledge: KnowledgeReader;
+  /** ELISE's own index (read) and its administration (ADR-035). */
+  knowledge: KnowledgeReader & KnowledgeManager;
   habits: HabitsProvider;
   goals: GoalsProvider;
   lists: ListsProvider;
@@ -158,7 +160,14 @@ export type ToolDisplay =
       event: CalendarEvent;
       change: "created" | "updated" | "deleted";
     }
-  | { kind: "event_list"; events: CalendarEvent[]; from: string; to: string }
+  | {
+      kind: "event_list";
+      events: CalendarEvent[];
+      from: string;
+      to: string;
+      /** False when the read stopped at its limit: more events exist in the range. */
+      complete?: boolean;
+    }
   | { kind: "calendars"; calendars: CalendarInfo[] }
   | {
       kind: "availability";

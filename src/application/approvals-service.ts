@@ -1,6 +1,11 @@
 import "server-only";
 
-import { executeApprovedAction, type ToolCallOutcome } from "@/core/agents/executor";
+import {
+  executeApprovedAction,
+  INTERNAL_CONNECTION_ID,
+  type ToolCallOutcome,
+} from "@/core/agents/executor";
+import { getCapability } from "@/core/capabilities/registry";
 import type { ActionOrigin, ToolDisplay } from "@/core/agents/tools";
 import { AppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
@@ -94,8 +99,12 @@ export async function resolveApproval(
     await resumeRun(approvalId, { approved: false, succeeded: false });
     return null;
   }
-  if (!approval.connection_id)
-    throw new AppError("CONFLICT", "The approved action has no destination");
+  // ELISE's own capabilities (archiving a Knowledge Space…) have no provider account: their
+  // approval runs through the internal binding the action was hashed with.
+  const tool = ports.registry.get(action.tool_name);
+  const internal = tool ? Boolean(getCapability(tool.capability).internal) : false;
+  const connectionId = approval.connection_id ?? (internal ? INTERNAL_CONNECTION_ID : null);
+  if (!connectionId) throw new AppError("CONFLICT", "The approved action has no destination");
 
   await auth.db.from("actions").update({ status: "executing" }).eq("id", action.id);
   const outcome = await executeApprovedAction(ports, ctx, {
@@ -103,7 +112,7 @@ export async function resolveApproval(
     approvalId,
     toolName: action.tool_name,
     input: action.input_snapshot,
-    connectionId: approval.connection_id,
+    connectionId,
     payloadHash: approval.payload_hash,
   });
   await resumeRun(approvalId, {

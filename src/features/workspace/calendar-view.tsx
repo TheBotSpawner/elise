@@ -3,9 +3,10 @@
 import { ChevronLeft, ChevronRight, ExternalLink, MapPin, Users, Video, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { todayIn, toLocalDateTime } from "@/core/time";
+import { addDays, todayIn, toLocalDateTime } from "@/core/time";
 import {
   agendaGroups,
+  isCovered,
   allDayBars,
   CALENDAR_VIEWS,
   calendarsOf,
@@ -95,7 +96,8 @@ export function CalendarBody({
   const mark = (e: CalendarItem) =>
     e.busy ? "bg-faint" : MARKS[calendars.findIndex((c) => c.id === e.calendarId) % MARKS.length];
   const shown = viewRange(p.view, p.anchor, p.range);
-  const loaded = (d: string) => d >= p.range.from && d < p.range.to;
+  // A day not read yet is "loading", never "no events" (ADR-033 §range state).
+  const loaded = (d: string) => isCovered(p, { from: d, to: addDays(d, 1) });
   const change = (c: CalendarChange) => {
     setDetail(null);
     onChange?.(c);
@@ -191,6 +193,9 @@ export function CalendarBody({
           <YearGrid
             anchor={p.anchor}
             events={events}
+            summary={
+              p.summary?.year === p.anchor.slice(0, 4) && !p.hidden.length ? p.summary : undefined
+            }
             tz={tz}
             today={today}
             f={f}
@@ -706,6 +711,7 @@ function MonthGrid({
 function YearGrid({
   anchor,
   events,
+  summary,
   tz,
   today,
   f,
@@ -713,6 +719,8 @@ function YearGrid({
 }: {
   anchor: string;
   events: CalendarItem[];
+  /** The year's density from its own read (kept apart from the detailed events). */
+  summary?: CalendarPayload["summary"];
   tz: string;
   today: string;
   f: ReturnType<typeof fmt>;
@@ -720,7 +728,10 @@ function YearGrid({
 }) {
   const { t } = useI18n();
   const year = anchor.slice(0, 4);
-  const density = useMemo(() => yearDensity(events, year, tz), [events, year, tz]);
+  const density = useMemo(
+    () => (summary ? new Map(Object.entries(summary.counts)) : yearDensity(events, year, tz)),
+    [summary, events, year, tz],
+  );
   const months = Array.from(
     { length: 12 },
     (_, i) => `${year}-${String(i + 1).padStart(2, "0")}-01`,
@@ -787,7 +798,12 @@ function Agenda({
   const { t } = useI18n();
   const groups = agendaGroups(events, p.range, p.timezone);
   const multi = calendarsOf(events).length > 1;
-  if (!groups.length) return <p className="text-[14px] text-muted">{t.calendar.noEvents}</p>;
+  if (!groups.length)
+    return (
+      <p className="text-[14px] text-muted">
+        {isCovered(p, p.range) ? t.calendar.noEvents : t.calendar.loading}
+      </p>
+    );
   return (
     <div className="flex flex-col gap-3">
       {groups.map((g) => (

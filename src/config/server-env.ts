@@ -28,6 +28,16 @@ const serverEnvSchema = z.object({
   SPEECH_PROVIDER: z.enum(["openai", "elevenlabs"]).default("openai"),
   /** Server-only: never NEXT_PUBLIC_, never sent to the browser. */
   ELEVENLABS_API_KEY: z.string().min(1).optional(),
+  /**
+   * OCR (ADR-035): Google Document AI, Enterprise Document OCR processor — full resource name,
+   * "projects/PROJECT/locations/us/processors/ID" — and the service account's JSON key (raw or
+   * base64). Server only; unset = scanned pages are reported as unreadable instead of read.
+   */
+  GOOGLE_DOCUMENT_AI_PROCESSOR: z
+    .string()
+    .regex(/^projects\/[^/]+\/locations\/[a-z0-9-]+\/processors\/[^/]+$/)
+    .optional(),
+  GOOGLE_SERVICE_ACCOUNT_JSON: z.string().min(1).optional(),
   /** The "ELISE" voice profile (and an optional alternative). */
   ELEVENLABS_VOICE_ID: z.string().min(1).optional(),
   ELEVENLABS_VOICE_ID_ALT: z.string().min(1).optional(),

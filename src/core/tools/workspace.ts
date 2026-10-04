@@ -2,12 +2,13 @@ import { z } from "zod";
 
 import type { ToolDefinition, ToolRunEnv, ToolRunResult } from "../agents/tools";
 import { AppError } from "../errors";
-import { addDays, toLocalDateTime } from "../time";
+import { toLocalDateTime } from "../time";
 import { timelineTool, visualizeTool } from "./visualize";
 import {
   CALENDAR_VIEWS,
   calendarsOf,
-  navigate,
+  changeCalendar,
+  nextSeq,
   visibleEvents,
   type CalendarPayload,
   type CalendarView,
@@ -551,42 +552,37 @@ async function showCalendar(
     : undefined;
   const view = CALENDAR_VIEWS.includes(q.as as CalendarView) ? (q.as as CalendarView) : undefined;
   const today = toLocalDateTime(env.ctx.now, env.ctx.timezone).slice(0, 10);
-  const { payload, fetch } = navigate(p, { view, anchor: q.date, hidden }, today);
-  let next = payload;
-  let query = surface.query;
-  if (fetch) {
-    if (!env.invoke)
-      throw new AppError("PROVIDER_UNAVAILABLE", "Can't read more of the calendar here");
-    const args = { from: fetch.from, to: addDays(fetch.to, -1) };
-    const fresh = await env.invoke("calendar.listEvents", args);
-    const draft =
-      fresh.status === "succeeded"
-        ? surfacesFromOutcome("calendar.listEvents", fresh, {
-            key: "calendar",
-            timezone: env.ctx.timezone,
-          }).find((d) => d.type === "calendar")
-        : undefined;
-    if (!draft)
-      throw new AppError("PROVIDER_UNAVAILABLE", "Couldn't read those days of the calendar");
-    next = {
-      ...(draft.payload as CalendarPayload),
-      view: payload.view,
-      anchor: payload.anchor,
-      hidden: payload.hidden,
-    };
-    query = { tool: "calendar.listEvents", args };
-  }
-  port(env).apply([
-    { op: "update", id: surface.id, patch: { payload: next, ...(query ? { query } : {}) }, at },
+  const w = port(env);
+  // The same path as the Surface's own controls: presentation first, only missing days read.
+  const done = await changeCalendar({
+    current: () =>
+      (w.state().surfaces.find((s) => s.id === surface.id)?.payload as CalendarPayload) ?? null,
+    change: { view, anchor: q.date, hidden },
+    today,
+    seq: nextSeq(p),
+    read: async (args) => {
+      if (!env.invoke) throw new AppError("PROVIDER_UNAVAILABLE", "Can't read the calendar here");
+      return env.invoke("calendar.listEvents", args);
+    },
+  });
+  const latest = w.state().surfaces.find((s) => s.id === surface.id)?.payload as
+    CalendarPayload | undefined;
+  if (!done || !latest) throw new AppError("NOT_FOUND", "That calendar is no longer shown");
+  const { payload, query } = done.settle(latest);
+  w.apply([
+    { op: "update", id: surface.id, patch: { payload, query, state: "ready" }, at },
     { op: "focus", id: surface.id, item: null, at },
   ]);
-  const shown = visibleEvents(next);
+  const shown = visibleEvents(payload);
   return {
     output: {
       shown: surface.handle,
-      view: next.view,
-      date: next.anchor,
+      view: payload.view,
+      date: payload.anchor,
       events: shown.length,
+      ...(done.read === "failed"
+        ? { note: "Couldn't read the missing days; what was already loaded is still shown." }
+        : {}),
       instructions:
         "The calendar on screen moved there (same Surface). Answer briefly from it; don't list every event.",
     },

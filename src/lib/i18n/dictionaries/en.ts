@@ -834,6 +834,7 @@ export const en = {
     detail: {
       uploading: "Uploading…",
       reading: "Reading document",
+      ocr: "Recognizing text",
       indexing: "Understanding it",
     },
     sourceStatus: {

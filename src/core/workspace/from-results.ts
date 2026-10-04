@@ -366,7 +366,10 @@ function resultSurface(display: ToolDisplay, opts: PresentOptions, capability: s
 
 /** A calendar dataset (events or busy/free time) as one Calendar Surface. */
 function calendarSurface(
-  data: Pick<Parameters<typeof calendarPayload>[0], "events" | "from" | "to" | "free" | "busy">,
+  data: Pick<
+    Parameters<typeof calendarPayload>[0],
+    "events" | "from" | "to" | "free" | "busy" | "complete"
+  >,
   opts: PresentOptions,
 ) {
   const timezone = opts.timezone ?? "UTC";
@@ -474,7 +477,12 @@ export function surfacesFromOutcome(
       const long = Date.parse(d.to) - Date.parse(d.from) > 8 * 86_400_000;
       return d.events.length === 1 && long
         ? one(eventSurface(d.events[0]!, opts))
-        : one(calendarSurface({ events: d.events, from: d.from, to: d.to }, opts));
+        : one(
+            calendarSurface(
+              { events: d.events, from: d.from, to: d.to, complete: d.complete !== false },
+              opts,
+            ),
+          );
     }
     case "availability":
       return one(

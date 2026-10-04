@@ -130,3 +130,59 @@ the event count:
 - Dragging a block could call `calendar.updateEvent` through the same approval path. The grid
   already has minute-accurate positions to support this.
 - Resizing events and per-calendar colors from the provider are not built.
+
+## Range state (2026-10-04): view is presentation, events are data
+
+**Root cause of Week → Year → Week losing the week.**
+
+- Year read `calendar.listEvents` with the tool's **default limit of 50**. The provider returned
+  the year's first 50 events (January–February).
+- That truncated result **replaced** the Surface's events and its `range` became the whole year.
+- Back on Week, the week counted as loaded, so nothing was read, and the grid was empty.
+
+So the cause was a range-cache failure: a truncated read was recorded as complete coverage, and
+the read replaced the data instead of merging into it. It was not a race. A real race was found
+afterwards (see "Races" below).
+
+**Data state** (payload):
+
+- `events`: detailed events, deduplicated by provider event id, which already names the account,
+  calendar and event.
+- `loaded`: day ranges that were read completely. A read that hit its limit (`complete: false`
+  on `event_list`) is never counted.
+- `scope`: `all`, or one calendar id. This is the fingerprint: data loaded for one calendar
+  never satisfies "all".
+- `summary`: per-day counts for one year, kept apart for the Year view. It never replaces
+  events.
+
+**Presentation state:** `view`, one `anchor` shared by every view, `range` (the Agenda window),
+`hidden` and `seq`.
+
+**One path.** A click and "Ponelo en vista anual" (`ui.show`) both call `changeCalendar`:
+
+1. `navigate` decides the presentation.
+2. Only days not covered are read, in one range read at limit 250 (`CALENDAR_READ_LIMIT`).
+3. `mergeFetched` merges the read:
+   - inside a complete read's range, the read is authoritative (gone there means deleted);
+   - outside it, everything known is kept;
+   - a truncated read only adds.
+4. The step `settle(current)` is applied to the state as it is right before writing.
+
+**Races.**
+
+- Presentation changes are numbered (`nextSeq`, by arrival). A late answer still enriches the
+  data but never changes the view (`presentationNewer`).
+- On the client, a per-Surface request generation keeps a stale response from replacing a newer
+  choice.
+- A failed read keeps everything known, and those days show as "loading", never as "no events".
+
+**Mutations.** The Surface's refresh query covers everything loaded (`refreshRange`). A write
+re-reads that range once and merges it. Week, Month and the Year summary converge.
+
+**Bounded.** At most 200 events are kept, the nearest to the anchor. Coverage shrinks to match,
+so trimmed days are read again instead of looking empty. The summary holds at most 366 day
+counts.
+
+**Limitation.** Next.js runs a client's server actions one at a time, so rapid switching
+persists in order. Measured: about 5.6 s for Year → Month → Week, while the screen updates
+instantly. The load→save step on the server is not atomic, and is marked `ponytail:`.

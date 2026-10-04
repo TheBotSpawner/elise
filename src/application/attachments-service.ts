@@ -10,6 +10,7 @@ import {
 } from "@/core/attachments/model";
 import { AppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
+import { extractionText } from "@/core/knowledge/extraction";
 import { documentText } from "@/core/knowledge/model";
 import { contentMatchesType, parseDocument } from "@/infrastructure/knowledge/parsers";
 import { logger } from "@/infrastructure/observability/logger";
@@ -21,6 +22,7 @@ import {
 } from "@/infrastructure/supabase/storage";
 
 import type { AuthContext } from "./auth-context";
+import { extractDocument } from "./extraction-service";
 
 /**
  * Chat attachments (ADR-031). A file dropped or picked in the composer is staged for the
@@ -39,7 +41,14 @@ export interface StagedUpload {
 /** What a turn receives from its attachments (the model input), plus what the turn keeps. */
 export interface TurnAttachments {
   sent: SentAttachment[];
-  documents: { id: string; name: string; text: string; truncated: boolean }[];
+  documents: {
+    id: string;
+    name: string;
+    text: string;
+    truncated: boolean;
+    /** Scanned pages not read yet (OCR limit or not configured). */
+    unreadPages?: number[];
+  }[];
   images: { id: string; name: string; dataUrl: string }[];
 }
 
@@ -194,18 +203,32 @@ export async function loadTurnAttachments(
       });
       continue;
     }
-    // Plain text is read as is (a short note is a fine attachment); PDF/DOCX go through the
-    // document parsers, and an unreadable one (a scanned PDF) is marked as such for the model.
-    const text = row.mime_type.startsWith("text/")
-      ? new TextDecoder("utf-8").decode(data).trim()
-      : await parseDocument({ title: row.name, mimeType: row.mime_type, data })
-          .then(documentText)
-          .catch(() => "");
+    // Plain text is read as is (a short note is a fine attachment). A PDF goes through the
+    // shared extraction (ADR-035): native text, OCR for scanned pages — and pages not read yet
+    // are named, so ELISE never answers about them as if she had read them.
+    let text = "";
+    let unread: number[] = [];
+    if (row.mime_type.startsWith("text/")) text = new TextDecoder("utf-8").decode(data).trim();
+    else if (row.mime_type === "application/pdf") {
+      const x = await extractDocument(
+        auth.workspaceId,
+        { data, mimeType: row.mime_type },
+        {
+          purpose: "chat",
+        },
+      ).catch(() => null);
+      text = x ? extractionText(x) : "";
+      unread = x?.unreadPages ?? [];
+    } else
+      text = await parseDocument({ title: row.name, mimeType: row.mime_type, data })
+        .then(documentText)
+        .catch(() => "");
     result.documents.push({
       id: row.id,
       name: row.name,
       text: text.slice(0, ATTACHMENT_LIMITS.maxTextChars),
       truncated: text.length > ATTACHMENT_LIMITS.maxTextChars,
+      ...(unread.length ? { unreadPages: unread } : {}),
     });
   }
   return result;

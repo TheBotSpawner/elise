@@ -15,12 +15,14 @@ const synthesize = vi.fn(
       },
     }),
 );
+let providerId = "openai";
 vi.mock("@/infrastructure/ai", () => ({
   getSpeechInputProvider: () => null,
-  getSpeechOutputProvider: () => ({ synthesize, format: { sampleRate: 24000 } }),
+  getSpeechOutputProvider: () => ({ id: providerId, synthesize, format: { sampleRate: 24000 } }),
 }));
 
-const { synthesizeSentence } = await import("@/application/voice-service");
+const { synthesizeSentence, warmAcknowledgements } = await import("@/application/voice-service");
+const { acknowledgements } = await import("@/core/voice/speech-plan");
 
 const auth = {
   workspaceId: "w",
@@ -46,5 +48,38 @@ describe("acknowledgement audio", () => {
     await bytes((await synthesizeSentence(auth, "Encontré seis publicaciones.", "es")).stream);
     await bytes((await synthesizeSentence(auth, "Encontré seis publicaciones.", "es")).stream);
     expect(synthesize).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("warming the acknowledgements (ADR-034)", () => {
+  const user = () =>
+    ({
+      workspaceId: "w",
+      userId: `u-${crypto.randomUUID()}`,
+      profile: {
+        locale: "es",
+        voice: { enabled: true, speak: true, voice: `v-${crypto.randomUUID()}` },
+      },
+    }) as unknown as AuthContext;
+
+  it("synthesizes each line once in the user's voice; the first real acknowledgement is instant", async () => {
+    const who = user();
+    synthesize.mockClear();
+    const made = await warmAcknowledgements(who, "es");
+    expect(made).toBe(acknowledgements("es").length);
+    expect(synthesize).toHaveBeenCalledTimes(made);
+    await synthesizeSentence(who, "Reviso tu agenda.", "es");
+    expect(synthesize).toHaveBeenCalledTimes(made); // from memory
+    expect(await warmAcknowledgements(who, "es")).toBe(0); // already warm
+  });
+
+  it("is per provider and voice: an ElevenLabs voice never plays OpenAI audio", async () => {
+    const who = user();
+    await warmAcknowledgements(who, "es");
+    providerId = "elevenlabs";
+    synthesize.mockClear();
+    await synthesizeSentence(who, "Reviso tu agenda.", "es");
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    providerId = "openai";
   });
 });

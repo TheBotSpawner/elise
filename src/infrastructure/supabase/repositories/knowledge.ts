@@ -37,7 +37,7 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
   async spaces(): Promise<SpaceInfo[]> {
     const { data, error } = await this.db
       .from("knowledge_spaces")
-      .select("id, name, parent_space_id, description")
+      .select("id, name, parent_space_id, description, context")
       .eq("workspace_id", this.workspaceId)
       .eq("status", "active")
       .order("name");
@@ -48,6 +48,8 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
         name: s.name,
         parentId: s.parent_space_id,
         aliases: s.description ? [s.description] : [],
+        description: s.description,
+        context: s.context,
       })),
     );
   }

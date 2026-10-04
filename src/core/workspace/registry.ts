@@ -144,6 +144,20 @@ const calendarPayloadSchema = z.object({
   hidden: z.array(text(1000)).max(50),
   free: z.array(z.object({ start: text(40), end: text(40) })).max(100),
   truncated: z.boolean(),
+  loaded: z
+    .array(z.object({ from: isoDay, to: isoDay }))
+    .max(50)
+    .optional(),
+  scope: text(1000).optional(),
+  summary: z
+    .object({
+      year: z.string().regex(/^\d{4}$/),
+      counts: z.record(isoDay, z.number().int().min(0).max(1000)),
+      complete: z.boolean(),
+    })
+    .refine((s) => Object.keys(s.counts).length <= 366)
+    .optional(),
+  seq: z.number().int().min(0).optional(),
 });
 
 export const PAYLOADS = {

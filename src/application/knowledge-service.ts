@@ -1106,3 +1106,44 @@ export async function saveWebPageToKnowledge(
   await audit(auth, "knowledge.web_saved", "knowledge_item", item.id, { domain: page.domain });
   return { itemId: item.id };
 }
+
+/**
+ * A file ELISE already holds (a chat attachment, ADR-035) saved into a Space: a Knowledge copy
+ * of its bytes (the conversation keeps its own: each has its own lifecycle) that runs the normal
+ * ingestion — where an earlier extraction of the same bytes is reused, so nothing is OCR'd twice.
+ */
+export async function saveFileToKnowledge(
+  auth: AuthContext,
+  spaceId: string,
+  file: { name: string; mimeType: string; bytes: Uint8Array; origin: Record<string, unknown> },
+): Promise<{ itemId: string }> {
+  await ownSpace(auth, spaceId);
+  const sourceId = await uploadSource(auth, spaceId);
+  const { data: item, error } = await createAdminClient()
+    .from("knowledge_items")
+    .insert({
+      workspace_id: auth.workspaceId,
+      space_id: spaceId,
+      source_id: sourceId,
+      item_type: "file",
+      external_id: crypto.randomUUID(),
+      title: file.name.slice(0, 500),
+      mime_type: file.mimeType,
+      metadata: json({ savedFrom: file.origin }),
+      created_by_user_id: auth.userId,
+    })
+    .select("id")
+    .single();
+  if (error) throw new AppError("INTERNAL_ERROR", "Could not save the file", { cause: error });
+  const target = await newUploadVersion(auth, item.id, 1, {
+    name: file.name,
+    size: file.bytes.length,
+    mimeType: file.mimeType,
+  });
+  await uploadOriginal(auth.workspaceId, target.path, file.bytes, file.mimeType);
+  await completeUploads(auth, [target.versionId]);
+  await audit(auth, "knowledge.source_added", "knowledge_item", item.id, {
+    from: Object.keys(file.origin)[0] ?? "file",
+  });
+  return { itemId: item.id };
+}

@@ -87,6 +87,17 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       listRecentChanges: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
       compare: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
       overview: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      // Administration (ADR-035): reads and safe changes run; archiving/removing always asks.
+      listSpaces: READ,
+      getSpace: READ,
+      createSpace: WRITE,
+      updateSpace: WRITE,
+      moveDocument: WRITE,
+      retry: WRITE,
+      syncSource: WRITE,
+      saveAttachment: WRITE,
+      archiveSpace: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
+      remove: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
     },
   },
   // Everyday native writes are automatic; archiving something significant asks when ELISE

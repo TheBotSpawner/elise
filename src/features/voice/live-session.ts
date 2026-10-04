@@ -4,6 +4,7 @@ import type { ThreadRef } from "@/core/interaction";
 import { isCancellation, progressContent, TranscriptTimeline } from "@/core/voice/live";
 import type { VoicePhase, VoiceProblem, VoiceState } from "@/core/voice/session";
 import { initialVoice } from "@/core/voice/session";
+import { ackIntent, progressLine, PROGRESS_AFTER_MS } from "@/core/voice/speech-plan";
 import { draftAttachments } from "@/features/chat/draft-attachments";
 import type { SendOptions, StreamListener } from "@/features/chat/use-elise-chat";
 
@@ -30,6 +31,8 @@ interface Delegation {
   createdAt: number;
   startedAt: number | null;
   done: boolean;
+  /** Its one spoken progress update is scheduled (ADR-034). */
+  progressScheduled?: boolean;
 }
 
 const SILENT = 0.02;
@@ -316,6 +319,22 @@ export class LiveVoiceSession {
         this.progressSent.add(group);
         const p = progressContent(event.name, this.deps.locale);
         if (p) this.append("session.thinking.append", d.id, p);
+      }
+      // One spoken progress update, only if this delegation is still working after a real wait.
+      const intent = ackIntent(event.name);
+      if (intent && !d.progressScheduled) {
+        d.progressScheduled = true;
+        setTimeout(() => {
+          const line = progressLine(intent, this.deps.locale);
+          if (!line || d.done || this.active !== d) return;
+          this.append(
+            "session.commentary.append",
+            d.id,
+            this.deps.locale === "es"
+              ? `Avance real (decilo tal cual, sin anticipar resultados): ${line}`
+              : `Real progress (say exactly this, don't anticipate results): ${line}`,
+          );
+        }, PROGRESS_AFTER_MS);
       }
       return;
     }

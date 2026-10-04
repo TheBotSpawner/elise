@@ -48,7 +48,7 @@ export interface IngestionStore {
   loadVersion(workspaceId: string, versionId: string): Promise<VersionToIngest | null>;
   currentVersion(itemId: string): Promise<CurrentVersion | null>;
   /** Progress the user sees ("Reading document", "Understanding it"). */
-  markProcessing(v: VersionToIngest, detail: "reading" | "indexing"): Promise<void>;
+  markProcessing(v: VersionToIngest, detail: "reading" | "ocr" | "indexing"): Promise<void>;
   /** Same content as the current version: nothing to index, the item stays as it was. */
   markUnchanged(v: VersionToIngest, hash: string): Promise<void>;
   /**

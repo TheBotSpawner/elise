@@ -635,10 +635,13 @@ async function runWrite(
 }
 
 /** Stand-in binding for ELISE-internal tools; they never touch a provider. */
+/** ELISE-internal capabilities (Knowledge, Recall, settings) act through no provider account. */
+export const INTERNAL_CONNECTION_ID = "internal";
+
 const INTERNAL_BINDING: CapabilityBinding = {
   id: "internal",
   capability: "schedules",
-  connectionId: "internal",
+  connectionId: INTERNAL_CONNECTION_ID,
   providerKey: "elise_native",
   connectionStatus: "connected",
   contextType: null,
