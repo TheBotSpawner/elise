@@ -10,7 +10,7 @@ import {
 } from "@/core/knowledge/extraction";
 import type { NormalizedDocument } from "@/core/knowledge/model";
 import { extractFile, OCR_TYPES, unreadableReason } from "@/infrastructure/knowledge/extraction";
-import { parseDocument } from "@/infrastructure/knowledge/parsers";
+import { checkContent, parseDocument } from "@/infrastructure/knowledge/parsers";
 import { logger } from "@/infrastructure/observability/logger";
 import { getOcrProvider } from "@/infrastructure/ocr/google-document-ai";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
@@ -87,6 +87,8 @@ export async function extractDocument(
     // Each OCR batch is kept: a failure later doesn't lose (or re-bill) the pages already read.
     onProgress: async (partial) => {
       await save(partial, false);
+      // …and is a sign of life: the job's heartbeat (a long scan isn't a stalled one).
+      await opts.onOcr?.(partial.ocrPages.length);
     },
   });
   // Only a full read is final; one that left pages unread is retried later from where it was.
@@ -112,6 +114,7 @@ export async function readDocument(
   onOcr?: (pages: number) => void | Promise<void>,
 ): Promise<NormalizedDocument> {
   if (!OCR_TYPES.has(input.mimeType)) return parseDocument(input);
+  checkContent(input.mimeType, input.data);
   const x = await extractDocument(workspaceId, input, { purpose: "knowledge", onOcr });
   const doc = toNormalizedDocument(input.title, x);
   if (!doc.sections.length) throw unreadableReason(x);

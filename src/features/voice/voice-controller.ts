@@ -26,8 +26,8 @@ import { SentenceChunker } from "@/core/voice/speech-text";
 import {
   BargeInDetector,
   calibrateFloor,
+  endVerdict,
   isSelfEcho,
-  looksUnfinished,
   TurnDetector,
   VOICE_TURN,
 } from "@/core/voice/turn";
@@ -63,6 +63,11 @@ export interface PlayerPort {
   rms(): number;
   level(): number;
   chime?(): void;
+  /**
+   * Fetches a line's audio ahead without playing it: the acknowledgement chosen from the
+   * provisional transcript is ready by the time the turn ends (ADR-036). Preparation only.
+   */
+  prepare?(text: string, language: VoiceLanguage | null): void;
   readonly speaking: boolean;
   onStart: (() => void) | null;
   onIdle: (() => void) | null;
@@ -94,6 +99,7 @@ export type VoiceMarks = Partial<
     | "wake"
     | "listening"
     | "speechStart"
+    | "lastVoice"
     | "speechEnd"
     | "turnDetected"
     | "transcriptFinal"
@@ -114,7 +120,11 @@ export type VoiceMarks = Partial<
     | "firstAudioMs"
     | "bargeIn"
     | "audioStopped"
-    | "turnComplete",
+    | "turnComplete"
+    /** How the turn's end was decided: 1 complete phrase, 2 unfinished, 0 no verdict. */
+    | "endVerdict"
+    /** 1: this turn continued one that was cut too early (its text was carried over). */
+    | "continuation",
     number
   >
 >;
@@ -141,6 +151,8 @@ export interface VoiceDeps {
   every?: (ms: number, fn: () => void) => () => void;
   /** Runs `fn` once after `ms` (a manual clock in tests). */
   later?: (ms: number, fn: () => void) => void;
+  /** Cancels the chat request in flight (a turn cut too early is replaced by the whole one). */
+  cancel?: () => void;
   /** Synthesizes the acknowledgement lines ahead for this voice (fire and forget). */
   warmAcknowledgements?: (language: "es" | "en") => void;
   micProblem?: (error: unknown) => "permission_denied" | "no_microphone" | "not_supported";
@@ -189,6 +201,12 @@ interface Snapshot {
 /** Fired when voice preferences change without a reload (Settings, or ELISE herself). */
 export const VOICE_PREFS_EVENT = "elise:voice-prefs";
 
+/**
+ * Talking over ELISE this soon after a turn ended, before any result was spoken, means the turn
+ * was cut too early: what is said next continues it instead of replacing it (ADR-036).
+ */
+const CONTINUATION_MS = 4_000;
+
 /** Longest wait for a transcript before the turn is treated as not understood. */
 const TRANSCRIBE_TIMEOUT_MS = 25_000;
 
@@ -233,6 +251,11 @@ export class VoiceController {
   private lastSpoken = "";
   private hidden = false;
   private finishing = false;
+  /** The acknowledgement chosen from the provisional transcript, its audio being prepared. */
+  private preparedAck: { version: number; intent: AckIntent; line: string } | null = null;
+  /** A turn cut too early: its words lead the next utterance (premature-close recovery). */
+  private carry: string | null = null;
+  private tailUntil = 0;
 
   constructor(
     private deps: VoiceDeps,
@@ -368,6 +391,7 @@ export class VoiceController {
     const mic = this.mic;
     if (!mic || !isHearing(this.state)) return;
     this.dropSnapshot();
+    this.carry = null;
     mic.discard();
     mic.begin();
     this.capture++;
@@ -416,6 +440,7 @@ export class VoiceController {
       this.trace("calibrated", { floor: this.floor });
       return this.ready();
     }
+    if (this.state.tail) return this.tailFrame(mic.rms(), now);
     if (!isHearing(this.state) || !this.detector || this.finishing) return;
     const signal = this.detector.frame(mic.rms(), now);
     if (this.detector.noiseFloor) this.floor = this.detector.noiseFloor;
@@ -464,7 +489,10 @@ export class VoiceController {
       .transcribe(blob, () => {}, abort.signal)
       .then((r) => {
         if (this.snap?.version === version && r) {
-          this.detector?.unfinished(looksUnfinished(r.text));
+          const verdict = endVerdict(r.text);
+          this.detector?.verdict(verdict);
+          this.trace("provisional", { verdict, chars: r.text.length });
+          this.prepareAck(r.text, r.language, version);
           if (this.state.phase === "user_speaking") this.act({ type: "partial", text: r.text });
         }
         return r;
@@ -476,7 +504,24 @@ export class VoiceController {
   private dropSnapshot() {
     this.snap?.abort.abort();
     this.snap = null;
-    this.detector?.unfinished(false);
+    this.detector?.verdict(null);
+    this.preparedAck = null;
+  }
+
+  /**
+   * A stable provisional transcript that is clearly a lookup: choose its acknowledgement now
+   * and fetch its audio, so it plays the moment the turn ends. Preparation only — nothing is
+   * said or sent, and actions are never predicted (predictIntent refuses them).
+   */
+  private prepareAck(text: string, language: VoiceLanguage | null, version: number) {
+    if (!this.prefs.speak || !this.player?.prepare) return;
+    const intent = predictIntent(text);
+    if (!intent) return;
+    const lang = language ?? this.prefs.language;
+    const line = pickAcknowledgement(intent, lang, this.ackHistory);
+    this.preparedAck = { version, intent, line };
+    this.player.prepare(line, language);
+    this.trace("ack_prepared", { intent });
   }
 
   /** The turn is over: the speculative transcript if nothing was said since, else a new one. */
@@ -485,6 +530,11 @@ export class VoiceController {
     if (!mic || !isHearing(this.state)) return;
     const capture = this.capture;
     this.finishing = true;
+    const detector = this.detector;
+    if (detector && detector.lastVoiceAt >= 0)
+      this.marks.lastVoice ??= Math.max(0, Math.round(detector.lastVoiceAt - this.t0));
+    this.marks.endVerdict =
+      detector?.endVerdict === "complete" ? 1 : detector?.endVerdict === "unfinished" ? 2 : 0;
     this.mark("speechEnd");
     this.mark("turnDetected");
     this.act({ type: "speech_end" });
@@ -523,6 +573,8 @@ export class VoiceController {
     }
     if (capture !== this.capture) return this.trace("discard", { reason: "session_mismatch" });
     if (this.state.phase !== "finalizing_input") return; // ended meanwhile
+    // A continuation that can't be read never loses the request it continued: that goes again.
+    if (!result && this.carry) result = { text: "", language: null };
     if (!result) {
       if (this.deps.online && !this.deps.online()) return this.network(false);
       // Never invent what the user said: say so and listen again.
@@ -538,15 +590,22 @@ export class VoiceController {
       text = "";
     }
     if (!text) this.trace("discard", { reason: "empty_final", speculative });
+    // The previous turn was cut too early and this is its continuation: one request, whole.
+    if (this.carry) {
+      text = text ? `${this.carry} ${text}` : this.carry;
+      this.marks.continuation = 1;
+      this.trace("continuation", { chars: text.length });
+    }
+    this.carry = null;
     this.act({ type: "transcript", text });
     if (!text) {
       if ((this.state.phase as VoicePhase) === "sleeping") this.afterSleep();
       else this.listen();
       return;
     }
-    this.stopTicker();
     this.lastActivity = this.now;
     this.beginTurn(text, result.language, utterance.durationMs);
+    this.startTail();
   }
 
   private beginTurn(text: string, language: VoiceLanguage | null, durationMs: number) {
@@ -574,10 +633,18 @@ export class VoiceController {
     // A plain lookup is clear from the words alone: acknowledge now, while the request goes out,
     // instead of after the model picks its tool (ADR-034). Never for actions.
     const predicted = predictIntent(text);
+    const prepared = this.preparedAck;
+    this.preparedAck = null;
     if (predicted) {
       this.turn.acked = true;
-      this.trace("ack_predicted", { intent: predicted });
-      this.acknowledge(this.turn, predicted, language ?? this.prefs.language);
+      this.trace("ack_predicted", { intent: predicted, prepared: prepared?.intent === predicted });
+      // The line whose audio was fetched at the pause, when the final words agree.
+      this.acknowledge(
+        this.turn,
+        predicted,
+        language ?? this.prefs.language,
+        prepared?.intent === predicted ? prepared.line : undefined,
+      );
     }
     this.deps.send(text, {
       modality: "voice",
@@ -667,9 +734,9 @@ export class VoiceController {
   }
 
   /** A short, varied line for the work that's starting, and one later progress check. */
-  private acknowledge(turn: SpokenTurn, intent: AckIntent, lang: "es" | "en") {
+  private acknowledge(turn: SpokenTurn, intent: AckIntent, lang: "es" | "en", line?: string) {
     // Varied, deterministic: not the line said a moment ago (ADR-034).
-    const ack = pickAcknowledgement(intent, lang, this.ackHistory);
+    const ack = line ?? pickAcknowledgement(intent, lang, this.ackHistory);
     this.ackHistory = [...this.ackHistory, ack].slice(-6);
     turn.intent = intent;
     turn.marks.ackReady ??= Math.round(this.now - turn.t0);
@@ -747,6 +814,7 @@ export class VoiceController {
   }
 
   private onAudioStart() {
+    this.endTail();
     this.trace("tts_playback_started");
     if (this.turn) this.turn.marks.audioStart ??= Math.round(this.now - this.turn.t0);
     this.act({ type: "speaking" });
@@ -772,6 +840,58 @@ export class VoiceController {
     else this.listen();
   }
 
+  // ── Tail: a turn that ended too early (ADR-036) ─────────────────────────────
+
+  /**
+   * Right after the turn is sent, the mic keeps listening for a few seconds. Speech in that
+   * window, before any answer is spoken, means the user hadn't finished: the request is
+   * cancelled and what they say next is added to what they said (one turn, whole).
+   */
+  private startTail() {
+    const mic = this.mic;
+    if (!mic || !this.state.bargeIn || !this.turn) return this.stopTicker();
+    mic.begin();
+    this.tailUntil = this.now + CONTINUATION_MS;
+    this.detector = new TurnDetector(VOICE_TURN, { floor: this.floor });
+    this.act({ type: "tail", on: true });
+    this.startTicker();
+  }
+
+  private endTail() {
+    if (!this.state.tail) return;
+    this.act({ type: "tail", on: false });
+    this.mic?.discard();
+    this.detector = null;
+    if (this.state.phase !== "speaking") this.stopTicker();
+  }
+
+  private tailFrame(rms: number, now: number) {
+    const turn = this.turn;
+    if (!turn || turn.speech.resultQueued || now >= this.tailUntil) return this.endTail();
+    // Real speech (a quarter second of voice), not a cough or a chair, continues the turn.
+    this.detector?.frame(rms, now);
+    if (!this.detector?.heard) return;
+    this.trace("premature_close", { sinceEnd: Math.round(now - turn.t0) });
+    this.carry = turn.text;
+    this.deps.cancel?.();
+    this.player?.stop();
+    this.superseded = true;
+    this.turn = null;
+    this.act({ type: "tail", on: false });
+    this.act({ type: "barge_in" });
+    this.act({ type: "speech_start" });
+    // The recorder has been on since the turn ended: this utterance starts with their words.
+    this.dropSnapshot();
+    this.capture++;
+    this.voiceVersion++;
+    this.detector = new TurnDetector(VOICE_TURN, { floor: this.floor, resumed: true });
+    this.bargeTurn = false;
+    this.finishing = false;
+    this.t0 = now;
+    this.marks = { speechStart: 0 };
+    this.lastActivity = now;
+  }
+
   /** The user talked over ELISE: stop her now and take what they're saying as the next turn. */
   private bargeIn() {
     const turn = this.turn;
@@ -784,6 +904,15 @@ export class VoiceController {
     }
     this.lastSpoken = turn?.spoken ?? "";
     this.superseded = Boolean(turn && !turn.textDone);
+    // Talking over the acknowledgement right after the turn ended, before any answer: the user
+    // hadn't finished. Their words continue that request instead of replacing it.
+    const cutEarly =
+      turn &&
+      !turn.speech.resultQueued &&
+      turn.marks.transcriptFinal !== undefined &&
+      this.now - (turn.t0 + turn.marks.transcriptFinal) <= CONTINUATION_MS;
+    this.carry = cutEarly ? turn.text : null;
+    if (cutEarly) this.trace("premature_close", { sinceEnd: Math.round(this.now - turn.t0) });
     this.turn = null;
     this.barge = null;
     this.act({ type: "barge_in" });

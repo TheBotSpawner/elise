@@ -5,10 +5,11 @@ import type {
   CurrentVersion,
   IndexedChunk,
   IngestionStore,
+  IngestPhase,
   VersionToIngest,
 } from "@/core/knowledge/ingest";
 import type { KnowledgeSourceType } from "@/core/knowledge/model";
-import { SOURCE_LIFECYCLE } from "@/core/knowledge/source-state";
+import { retryDelayMinutes, SOURCE_LIFECYCLE } from "@/core/knowledge/source-state";
 import type {
   ExternalItem,
   KnownItem,
@@ -101,12 +102,13 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
     return (await this.currentVersion(itemId)) !== null;
   }
 
-  async markProcessing(v: VersionToIngest, detail: "reading" | "ocr" | "indexing") {
+  async markProcessing(v: VersionToIngest, detail: IngestPhase) {
     await this.db
       .from("knowledge_versions")
       .update({ status: "processing" })
       .eq("id", v.versionId)
       .eq("workspace_id", v.workspaceId);
+    await this.beat("knowledge_versions", v.workspaceId, v.versionId);
     // An item that is already searchable stays "ready" while its update is processed.
     const current = await this.hasCurrent(v.itemId);
     await this.db
@@ -297,12 +299,29 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
     };
   }
 
+  /**
+   * A worker's sign of life (ADR-036). Its own statement, so a database without the column yet
+   * (migration 029 not applied) only loses the heartbeat, never the work.
+   */
+  private async beat(table: "knowledge_versions" | "knowledge_sync_runs", ws: string, id: string) {
+    await this.db
+      .from(table)
+      .update({ heartbeat_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("workspace_id", ws);
+  }
+
+  async heartbeat(run: SyncRun) {
+    await this.beat("knowledge_sync_runs", run.workspaceId, run.id);
+  }
+
   async markRunning(run: SyncRun) {
     await this.db
       .from("knowledge_sync_runs")
       .update({ status: "running", started_at: new Date().toISOString() })
       .eq("id", run.id)
       .eq("workspace_id", run.workspaceId);
+    await this.heartbeat(run);
     await this.db
       .from("knowledge_sources")
       .update({ status: "syncing" })
@@ -492,10 +511,16 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
   }
 
   /**
-   * Work the runtime never started or never finished must not block a source (or keep it
-   * "preparing") forever. Stalled runs close as failed and their source says it needs
-   * attention (a source that synced before stays searchable); stalled ingestions fail their
-   * version, and the item keeps its last good version if it had one. Returns what it closed.
+   * The watchdog (ADR-036). Work the runtime never started or never finished must not block a
+   * source (or keep it "preparing") forever:
+   *   - a sync queued past `queuedStallMinutes` never started (BACKGROUND_STALLED);
+   *   - a started sync whose heartbeat stopped, or past its lease, died (TIMEOUT);
+   *   - a document being processed whose heartbeat stopped, or past its lease, died;
+   *   - a queued document never started while nothing in the workspace moved: the runtime
+   *     isn't executing jobs. A long queue that is moving is left alone.
+   * Closed syncs put their source in "needs attention" with its next automatic retry backed
+   * off; a document keeps its last good version if it had one. Idempotent: every update is
+   * guarded by the state it leaves. Returns what it closed.
    */
   async recoverStale(now: Date, workspaceId: string | null) {
     const ago = (m: number) => new Date(now.getTime() - m * 60_000).toISOString();
@@ -503,42 +528,87 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
     const L = SOURCE_LIFECYCLE;
     const inWorkspace = <T extends { eq: (c: string, v: string) => T }>(q: T) =>
       workspaceId ? q.eq("workspace_id", workspaceId) : q;
-    const closed: { source_id: string; workspace_id: string; error_code: string }[] = [];
-    for (const [status, column, minutes, code] of [
-      ["queued", "created_at", L.queuedStallMinutes, "BACKGROUND_STALLED"],
-      ["running", "started_at", L.runningStallMinutes, "TIMEOUT"],
-    ] as const) {
-      const { data } = await inWorkspace(
+
+    // ── Syncs ──
+    const runs = () =>
+      inWorkspace(
         this.db
           .from("knowledge_sync_runs")
-          .update({ status: "failed", error_code: code, completed_at: at })
-          .eq("status", status)
-          .lt(column, ago(minutes)),
-      ).select("source_id, workspace_id");
-      closed.push(...(data ?? []).map((r) => ({ ...r, error_code: code })));
-    }
-    for (const r of closed)
-      await this.db
-        .from("knowledge_sources")
-        .update({
-          status: "needs_attention",
-          last_error_code: r.error_code,
-          next_sync_at: new Date(now.getTime() + L.retryAfterMinutes * 60_000).toISOString(),
-        })
-        .eq("id", r.source_id)
-        .eq("workspace_id", r.workspace_id)
-        .is("archived_at", null);
+          .update({ status: "failed", completed_at: at, error_code: "TIMEOUT" }),
+      );
+    const stalledRuns = [
+      ...((
+        await inWorkspace(
+          this.db
+            .from("knowledge_sync_runs")
+            .update({ status: "failed", completed_at: at, error_code: "BACKGROUND_STALLED" }),
+        )
+          .eq("status", "queued")
+          .lt("created_at", ago(L.queuedStallMinutes))
+          .select("source_id, workspace_id, runtime_job_id, error_code")
+      ).data ?? []),
+      // Heartbeat stopped (needs migration 029; without it this finds nothing)…
+      ...((
+        await runs()
+          .eq("status", "running")
+          .lt("heartbeat_at", ago(L.heartbeatStallMinutes))
+          .select("source_id, workspace_id, runtime_job_id, error_code")
+      ).data ?? []),
+      // …or past the lease, whatever the heartbeat says (a task is capped at 10 minutes).
+      ...((
+        await runs()
+          .eq("status", "running")
+          .lt("started_at", ago(L.runningStallMinutes))
+          .select("source_id, workspace_id, runtime_job_id, error_code")
+      ).data ?? []),
+    ];
+    for (const r of stalledRuns)
+      await this.scheduleRetry(r.workspace_id, r.source_id, r.error_code ?? "TIMEOUT", now);
 
-    const { data: versions } = await inWorkspace(
-      this.db
-        .from("knowledge_versions")
-        .update({ status: "failed", error_code: "BACKGROUND_STALLED", processed_at: at })
-        .in("status", ["pending", "processing"])
-        .lt("created_at", ago(L.ingestStallMinutes))
-        // A retried version is measured from when it was queued again (processed_at).
-        .or(`processed_at.is.null,processed_at.lt.${ago(L.ingestStallMinutes)}`),
-    ).select("knowledge_item_id, workspace_id");
-    for (const v of versions ?? []) {
+    // ── Documents ──
+    const versions = () =>
+      inWorkspace(
+        this.db
+          .from("knowledge_versions")
+          .update({ status: "failed", error_code: "BACKGROUND_STALLED", processed_at: at }),
+      );
+    const cols = "knowledge_item_id, workspace_id, runtime_job_id";
+    const died = [
+      ...((
+        await versions()
+          .eq("status", "processing")
+          .lt("heartbeat_at", ago(L.heartbeatStallMinutes))
+          .select(cols)
+      ).data ?? []),
+      ...((
+        await versions()
+          .eq("status", "processing")
+          .lt("created_at", ago(L.ingestStallMinutes))
+          .or(`processed_at.is.null,processed_at.lt.${ago(L.ingestStallMinutes)}`)
+          .select(cols)
+      ).data ?? []),
+    ];
+    // Queued documents: failed by age only when the runtime shows no life in the window.
+    const { data: alive, error: noHeartbeats } = await inWorkspace(
+      this.db.from("knowledge_versions").select("id"),
+    )
+      .gt("heartbeat_at", ago(L.ingestNotStartedMinutes))
+      .limit(1);
+    const queuedLimit = noHeartbeats
+      ? L.ingestStallMinutes // before migration 029: the old fixed limit
+      : alive?.length
+        ? L.maxQueuedMinutes // the runtime is moving: a long queue is fine
+        : L.ingestNotStartedMinutes;
+    const neverStarted =
+      (
+        await versions()
+          .eq("status", "pending")
+          .lt("created_at", ago(queuedLimit))
+          // A retried version is measured from when it was queued again (processed_at).
+          .or(`processed_at.is.null,processed_at.lt.${ago(queuedLimit)}`)
+          .select(cols)
+      ).data ?? [];
+    for (const v of [...died, ...neverStarted]) {
       const current = await this.hasCurrent(v.knowledge_item_id);
       await this.db
         .from("knowledge_items")
@@ -551,7 +621,72 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
         .eq("workspace_id", v.workspace_id)
         .in("status", ["queued", "processing"]);
     }
-    return { runs: closed.length, versions: (versions ?? []).length };
+    const notStarted = [
+      ...stalledRuns.filter((r) => r.error_code === "BACKGROUND_STALLED"),
+      ...neverStarted,
+    ];
+    return {
+      runs: stalledRuns.length,
+      versions: died.length + neverStarted.length,
+      /** Dispatched, never picked up: the runtime itself isn't executing jobs. */
+      notStarted: notStarted.length,
+      runtimeJobs: notStarted
+        .map((r) => r.runtime_job_id)
+        .filter(Boolean)
+        .slice(0, 5),
+    };
+  }
+
+  /** How many syncs of this source failed in a row (the latest first). */
+  private async consecutiveFailures(workspaceId: string, sourceId: string) {
+    const { data } = await this.db
+      .from("knowledge_sync_runs")
+      .select("status")
+      .eq("workspace_id", workspaceId)
+      .eq("source_id", sourceId)
+      .not("status", "in", "(queued,running,cancelled)")
+      .order("created_at", { ascending: false })
+      .limit(12);
+    const runs = data ?? [];
+    const n = runs.findIndex((r) => r.status !== "failed");
+    return n === -1 ? runs.length : n;
+  }
+
+  /**
+   * A sync that failed or never ran: the source says it needs attention, and the next automatic
+   * attempt backs off (15 min, 30, 60 … a day) so a broken runtime isn't fed a job every tick.
+   */
+  async scheduleRetry(workspaceId: string, sourceId: string, code: string, now: Date) {
+    const failures = await this.consecutiveFailures(workspaceId, sourceId);
+    await this.db
+      .from("knowledge_sources")
+      .update({
+        status: "needs_attention",
+        last_error_code: code,
+        next_sync_at: new Date(now.getTime() + retryDelayMinutes(failures) * 60_000).toISOString(),
+      })
+      .eq("id", sourceId)
+      .eq("workspace_id", workspaceId)
+      .is("archived_at", null);
+  }
+
+  /**
+   * Retry by the user: a queued sync that hasn't started after a minute is replaced (it was
+   * handed to a runtime that isn't taking it). A running one is left alone. Returns how many.
+   */
+  async supersedeQueued(workspaceId: string, sourceId: string, now: Date) {
+    const { data } = await this.db
+      .from("knowledge_sync_runs")
+      .update({ status: "cancelled", error_code: "SUPERSEDED", completed_at: now.toISOString() })
+      .eq("workspace_id", workspaceId)
+      .eq("source_id", sourceId)
+      .eq("status", "queued")
+      .lt(
+        "created_at",
+        new Date(now.getTime() - SOURCE_LIFECYCLE.supersedeQueuedSeconds * 1000).toISOString(),
+      )
+      .select("id");
+    return (data ?? []).length;
   }
 
   /** The sync in progress per source (at most one, by a unique index). */
@@ -559,7 +694,8 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
     if (!sourceIds.length) return [];
     const { data } = await this.db
       .from("knowledge_sync_runs")
-      .select("source_id, status, created_at, started_at")
+      // "*": the heartbeat when migration 029 is applied, the rest either way.
+      .select("*")
       .eq("workspace_id", workspaceId)
       .in("source_id", sourceIds)
       .in("status", ["queued", "running"]);
@@ -584,17 +720,7 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
 
   /** The first (or a manual) sync could not even be queued: say so instead of "preparing". */
   async markSourceAttention(workspaceId: string, sourceId: string, code: string, now: Date) {
-    await this.db
-      .from("knowledge_sources")
-      .update({
-        status: "needs_attention",
-        last_error_code: code,
-        next_sync_at: new Date(
-          now.getTime() + SOURCE_LIFECYCLE.retryAfterMinutes * 60_000,
-        ).toISOString(),
-      })
-      .eq("id", sourceId)
-      .eq("workspace_id", workspaceId);
+    await this.scheduleRetry(workspaceId, sourceId, code, now);
   }
 
   async setVersionRuntime(workspaceId: string, versionId: string, runtimeJobId: string) {

@@ -18,6 +18,15 @@ export const ATTACHMENT_TYPES: Record<string, { kind: AttachmentKind; ext: reado
   "text/plain": { kind: "document", ext: ["txt"] },
   "text/markdown": { kind: "document", ext: ["md", "markdown"] },
   "text/csv": { kind: "document", ext: ["csv"] },
+  "text/html": { kind: "document", ext: ["html", "htm"] },
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+    kind: "document",
+    ext: ["xlsx"],
+  },
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": {
+    kind: "document",
+    ext: ["pptx"],
+  },
   "image/png": { kind: "image", ext: ["png"] },
   "image/jpeg": { kind: "image", ext: ["jpg", "jpeg"] },
   "image/webp": { kind: "image", ext: ["webp"] },

@@ -63,6 +63,8 @@ export interface SyncCounts {
 export interface SyncStore {
   loadRun(workspaceId: string, runId: string): Promise<{ run: SyncRun; source: SyncSource } | null>;
   markRunning(run: SyncRun): Promise<void>;
+  /** Sign of life while items are being created (ADR-036 lease). */
+  heartbeat?(run: SyncRun): Promise<void>;
   knownItems(sourceId: string): Promise<KnownItem[]>;
   /** New item + version 1 (pending). */
   createItem(source: SyncSource, item: ExternalItem): Promise<{ versionId: string }>;
@@ -172,6 +174,10 @@ export async function syncSource(
 
   counts.discovered = external.length;
   const plan = planSync(await ports.store.knownItems(source.id), external);
+  let done = 0;
+  const beat = async () => {
+    if (++done % 25 === 0) await ports.store.heartbeat?.(run);
+  };
   for (const item of plan.created) {
     try {
       const { versionId } = await ports.store.createItem(source, item);
@@ -180,6 +186,7 @@ export async function syncSource(
     } catch {
       counts.failed++;
     }
+    await beat();
   }
   for (const { itemId, item } of plan.updated) {
     try {
@@ -189,6 +196,7 @@ export async function syncSource(
     } catch {
       counts.failed++;
     }
+    await beat();
   }
   if (plan.removed.length) {
     await ports.store.markRemoved(source, plan.removed);

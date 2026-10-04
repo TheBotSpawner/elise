@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import type {
@@ -57,6 +57,7 @@ const DOT: Record<string, string> = {
 
 const STATE_DOT: Record<SourceView["state"], string> = {
   preparing: "bg-accent animate-pulse",
+  retrying: "bg-approval animate-pulse",
   syncing: "bg-accent animate-pulse",
   up_to_date: "bg-success",
   needs_attention: "bg-approval",
@@ -124,6 +125,16 @@ export function SpaceView({
   const versionInput = useRef<HTMLInputElement>(null);
   const [versionFor, setVersionFor] = useState<string | null>(null);
   useRealtimeRefresh(workspaceId, ["knowledge_items", "knowledge_sources", "knowledge_sync_runs"]);
+  // While work is in flight, look again now and then: a job the runtime never picks up writes
+  // nothing (no Realtime event), and each look runs the watchdog, so "stalled" shows on time.
+  const working =
+    sources.some((s) => s.phase !== null && s.state !== "needs_attention") ||
+    items.some((i) => i.status === "queued" || i.status === "processing");
+  useEffect(() => {
+    if (!working) return;
+    const timer = setInterval(() => router.refresh(), 20_000);
+    return () => clearInterval(timer);
+  }, [working, router]);
 
   /** Sync now / Retry: an active sync is the answer, not an error. */
   function syncSource(sourceId: string) {
@@ -345,6 +356,11 @@ export function SpaceView({
                         {s.state === "up_to_date" && s.lastSyncedAt
                           ? t.knowledge.upToDate(relative(s.lastSyncedAt))
                           : t.knowledge.sourceState[s.state]}
+                        {/* What it is doing right now: queued, discovering, extracting… */}
+                        {s.phase &&
+                          s.state !== "needs_attention" &&
+                          s.state !== "up_to_date" &&
+                          ` · ${t.knowledge.sourcePhase[s.phase]}`}
                         {/* Partial readiness: what is ready is already usable. */}
                         {s.state === "preparing" &&
                           s.counts.ready + s.counts.processing > 0 &&

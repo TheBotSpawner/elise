@@ -12,7 +12,7 @@ import { AppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import { extractionText } from "@/core/knowledge/extraction";
 import { documentText } from "@/core/knowledge/model";
-import { contentMatchesType, parseDocument } from "@/infrastructure/knowledge/parsers";
+import { contentMatchesType, decodeText, parseDocument } from "@/infrastructure/knowledge/parsers";
 import { logger } from "@/infrastructure/observability/logger";
 import {
   chatAttachmentPath,
@@ -208,7 +208,8 @@ export async function loadTurnAttachments(
     // are named, so ELISE never answers about them as if she had read them.
     let text = "";
     let unread: number[] = [];
-    if (row.mime_type.startsWith("text/")) text = new TextDecoder("utf-8").decode(data).trim();
+    // Same extractors as Knowledge (ADR-036); only a short plain note skips them.
+    if (["text/plain", "text/markdown"].includes(row.mime_type)) text = decodeText(data).trim();
     else if (row.mime_type === "application/pdf") {
       const x = await extractDocument(
         auth.workspaceId,

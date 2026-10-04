@@ -151,7 +151,7 @@ export function ChatSurface({
     void send(run);
   }, [run, send]);
   // Voice is another way into the same ELISE (ADR-014): same send, same stream, same Surfaces.
-  const legacyVoice = useVoice({ prefs: voice, send, subscribe, level: presence.level });
+  const legacyVoice = useVoice({ prefs: voice, send, stop, subscribe, level: presence.level });
   const liveVoice = useLiveVoice({
     prefs: voice,
     send,

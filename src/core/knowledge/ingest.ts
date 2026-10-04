@@ -9,6 +9,7 @@ import {
   type KnowledgeSourceType,
   type NormalizedDocument,
 } from "./model";
+import { canMove, type IngestState } from "./source-state";
 
 /**
  * Ingestion of one KnowledgeVersion (docs/architecture/09 §14): fetch → extract → normalize →
@@ -33,6 +34,9 @@ export interface VersionToIngest {
   status: string;
 }
 
+/** The working states of a version, stored as the item's status detail. */
+export type IngestPhase = "reading" | "extracting" | "ocr" | "indexing";
+
 export interface CurrentVersion {
   id: string;
   contentHash: string | null;
@@ -47,8 +51,8 @@ export interface IndexedChunk extends ChunkDraft {
 export interface IngestionStore {
   loadVersion(workspaceId: string, versionId: string): Promise<VersionToIngest | null>;
   currentVersion(itemId: string): Promise<CurrentVersion | null>;
-  /** Progress the user sees ("Reading document", "Understanding it"). */
-  markProcessing(v: VersionToIngest, detail: "reading" | "ocr" | "indexing"): Promise<void>;
+  /** Progress the user sees ("Leyendo", "Reconociendo texto"…); also the job's heartbeat. */
+  markProcessing(v: VersionToIngest, detail: IngestPhase): Promise<void>;
   /** Same content as the current version: nothing to index, the item stays as it was. */
   markUnchanged(v: VersionToIngest, hash: string): Promise<void>;
   /**
@@ -74,8 +78,14 @@ export interface IngestionStore {
 }
 
 export interface ContentFetcher {
-  /** Returns the normalized document for this version (uploads, Drive, Notion…). */
-  fetch(v: VersionToIngest): Promise<{ doc: NormalizedDocument; revision?: string | null }>;
+  /**
+   * Returns the normalized document for this version (uploads, Drive, Notion…). `progress`
+   * says when the bytes are in and extraction (or OCR, per batch) is running.
+   */
+  fetch(
+    v: VersionToIngest,
+    progress: (phase: "extracting" | "ocr") => Promise<void>,
+  ): Promise<{ doc: NormalizedDocument; revision?: string | null }>;
 }
 
 export interface IngestionPorts {
@@ -101,9 +111,17 @@ export async function ingestVersion(
   if (!job.force && ["ready", "unchanged", "superseded"].includes(v.status)) return "skipped";
   const started = Date.now();
 
+  // The state machine (source-state.ts): every step is a legal edge from the previous one.
+  let state: IngestState = "queued";
+  const move = async (to: IngestPhase) => {
+    if (!canMove(state, to)) throw new AppError("INTERNAL_ERROR", `Illegal step ${state} → ${to}`);
+    state = to;
+    await ports.store.markProcessing(v, to);
+  };
+
   try {
-    await ports.store.markProcessing(v, "reading");
-    const { doc, revision } = await ports.fetcher.fetch(v);
+    await move("reading");
+    const { doc, revision } = await ports.fetcher.fetch(v, move);
     const text = documentText(doc);
     const hash = await contentHash(text);
     const embeddings = ports.embeddings();
@@ -125,7 +143,7 @@ export async function ingestVersion(
         details: { knowledge: "needs_attention" },
       });
     }
-    await ports.store.markProcessing(v, "indexing");
+    await move("indexing");
     const vectors = await embeddings.embed(drafts.map((c) => embeddingText(v.title, c)));
     await ports.store.activate(v, {
       text,

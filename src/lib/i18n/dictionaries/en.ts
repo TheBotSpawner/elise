@@ -706,11 +706,21 @@ export const en = {
   knowledge: {
     sourceState: {
       preparing: "Preparing source…",
+      retrying: "Retrying…",
       up_to_date: "Up to date",
       syncing: "Syncing…",
       needs_attention: "Needs attention",
     },
     upToDate: (when: string) => `Updated ${when}`,
+    /** What a working source is doing right now (ADR-036). */
+    sourcePhase: {
+      queued: "Queued",
+      discovering: "Discovering files",
+      reading: "Reading source",
+      extracting: "Extracting content",
+      ocr: "Recognizing text",
+      indexing: "Indexing",
+    },
     readyOf: (ready: number, total: number) => `${ready} of ${total} ready`,
     sourceMenu: (name: string) => `Options for ${name}`,
     sourceCount: (n: number) => `${n} ${n === 1 ? "source" : "sources"}`,
@@ -722,6 +732,8 @@ export const en = {
       state: "Status",
       lastSync: "Last sync",
       nextCheck: "Next check",
+      nextRetry: "Next automatic retry",
+      phase: "Now",
       indexed: "Files indexed",
       lastError: "Last error",
       preparing: (n: number) => `${n} being prepared`,
@@ -733,7 +745,8 @@ export const en = {
       retry: "Retry",
       remove: "Remove source",
       errors: {
-        BACKGROUND_STALLED: "The sync never ran in the background. You can retry.",
+        BACKGROUND_STALLED:
+          "Background processing never picked up this sync. Retry; if it happens again, the processing service isn't running and needs a look.",
         TIMEOUT: "The sync took too long and stopped. You can retry.",
         CAPABILITY_UNAVAILABLE:
           "Background processing isn't available right now. Try again in a few minutes.",
@@ -823,7 +836,7 @@ export const en = {
         .filter(Boolean)
         .join(" · ") || "Empty",
     status: {
-      queued: "Waiting",
+      queued: "Queued",
       processing: "Reading…",
       ready: "Ready",
       needs_attention: "Needs attention",
@@ -833,9 +846,10 @@ export const en = {
     },
     detail: {
       uploading: "Uploading…",
-      reading: "Reading document",
+      reading: "Reading source",
+      extracting: "Extracting content",
       ocr: "Recognizing text",
-      indexing: "Understanding it",
+      indexing: "Indexing",
     },
     sourceStatus: {
       idle: "Waiting",

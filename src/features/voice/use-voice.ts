@@ -22,11 +22,14 @@ import { WebSpeechWakeEngine } from "./wake-engine";
 export function useVoice({
   prefs,
   send,
+  stop,
   subscribe,
   level,
 }: {
   prefs: VoicePreferences;
   send: (text: string, options?: SendOptions) => Promise<void>;
+  /** Cancels the chat request in flight. */
+  stop?: () => void;
   subscribe: (fn: StreamListener) => () => void;
   /** Shared with the Orb: the live input or output amplitude. */
   level: { current: number };
@@ -79,8 +82,8 @@ export function useVoice({
   );
 
   useEffect(
-    () => controller.update({ send: (text, options) => void send(text, options) }),
-    [controller, send],
+    () => controller.update({ send: (text, options) => void send(text, options), cancel: stop }),
+    [controller, send, stop],
   );
   useEffect(() => subscribe((event) => controller.onStream(event)), [controller, subscribe]);
 

@@ -5,8 +5,8 @@ import {
   INTERNAL_CONNECTION_ID,
   type ToolCallOutcome,
 } from "@/core/agents/executor";
-import { getCapability } from "@/core/capabilities/registry";
 import type { ActionOrigin, ToolDisplay } from "@/core/agents/tools";
+import { getCapability } from "@/core/capabilities/registry";
 import { AppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import type { PendingForVoice } from "@/core/voice/approval";

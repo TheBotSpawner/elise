@@ -1,6 +1,7 @@
 import { AppError } from "@/core/errors";
 import type { KnowledgeItemType } from "@/core/knowledge/model";
 import type { ExternalItem } from "@/core/knowledge/sync";
+import { EXTRACTORS } from "@/infrastructure/knowledge/parsers";
 
 import type { GoogleHttp } from "./http";
 
@@ -43,13 +44,11 @@ const NATIVE: Record<string, { itemType: KnowledgeItemType; exportAs: string; pa
     parseAs: "text/plain",
   },
 };
-const FILES = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-]);
+/**
+ * Ordinary files ELISE can read: the same extractor registry as uploads. Images are left out —
+ * a synced photo folder would be OCR'd picture by picture; a scan the user wants is uploaded.
+ */
+const FILES = new Set(EXTRACTORS.filter((e) => e.parse).flatMap((e) => e.mimeTypes));
 
 export function isSupportedDriveFile(mimeType: string): boolean {
   return mimeType in NATIVE || FILES.has(mimeType);

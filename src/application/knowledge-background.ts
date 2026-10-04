@@ -46,7 +46,7 @@ function ingestionPorts(auth: AuthContext): IngestionPorts {
     isNeedsAttention,
     log,
     fetcher: {
-      async fetch(v) {
+      async fetch(v, progress) {
         switch (v.sourceType) {
           case "note": {
             // The note row is the source of truth: always index its latest text.
@@ -64,12 +64,13 @@ function ingestionPorts(auth: AuthContext): IngestionPorts {
             if (!v.storagePath || !v.mimeType)
               throw new AppError("NOT_FOUND", "The original file is missing");
             const data = await downloadOriginal(v.workspaceId, v.storagePath);
+            await progress("extracting");
             // Native text first; scanned pages are recognized (OCR) right here, in the job.
             return {
               doc: await readDocument(
                 v.workspaceId,
                 { title: v.title, mimeType: v.mimeType, data },
-                () => store.markProcessing(v, "ocr"),
+                () => progress("ocr"),
               ),
             };
           }
@@ -80,9 +81,10 @@ function ingestionPorts(auth: AuthContext): IngestionPorts {
               });
             const drive = new GoogleDriveClient(googleHttpFor(auth, v.connectionId));
             const content = await drive.content(v.externalId, v.mimeType);
+            await progress("extracting");
             return {
               doc: await readDocument(v.workspaceId, { title: v.title, ...content }, () =>
-                store.markProcessing(v, "ocr"),
+                progress("ocr"),
               ),
             };
           }
@@ -104,26 +106,49 @@ function ingestionPorts(auth: AuthContext): IngestionPorts {
  * TRIGGER_SECRET_KEY it runs in this server process instead, so a connected Drive/Notion
  * source still prepares itself without any manual step. Production always needs Trigger.dev.
  */
+/**
+ * The inline runtime runs a few jobs at a time, like Trigger.dev's queue (concurrency 5): a
+ * 240-page Notion sync must not open 240 provider requests at once.
+ * ponytail: one in-process queue; enough for development, Trigger.dev is the real runtime.
+ */
+const INLINE_CONCURRENCY = 4;
+let inlineActive = 0;
+const inlineQueue: (() => Promise<unknown>)[] = [];
+function runInline(task: () => Promise<unknown>) {
+  inlineQueue.push(task);
+  const next = () => {
+    while (inlineActive < INLINE_CONCURRENCY && inlineQueue.length) {
+      const job = inlineQueue.shift()!;
+      inlineActive++;
+      void job().finally(() => {
+        inlineActive--;
+        next();
+      });
+    }
+  };
+  setTimeout(next, 0);
+}
+
 function knowledgeRuntime(): BackgroundRuntime {
   if (isBackgroundConfigured() || serverEnv().ELISE_ENV === "production")
     return new TriggerDevBackgroundRuntime();
   return {
     async enqueue(job) {
       const id = `inline:${crypto.randomUUID()}`;
-      setTimeout(() => {
+      runInline(() => {
         const run =
           job.type === "knowledge.sync"
             ? runSync(job.payload)
             : job.type === "knowledge.ingest"
               ? runIngestion({ ...job.payload, attempt: 1 })
               : Promise.reject(new Error(`no inline runner for ${job.type}`));
-        run.catch((error: unknown) =>
+        return run.catch((error: unknown) =>
           log("knowledge.inline_job_failed", {
             type: job.type,
             code: (error as { code?: string }).code,
           }),
         );
-      }, 0);
+      });
       return { runtimeJobId: id };
     },
     async cancel() {},
@@ -216,6 +241,14 @@ export async function recoverStaleWork(workspaceId: string | null) {
     workspaceId,
   );
   if (closed.runs || closed.versions) log("knowledge.stale_recovered", closed);
+  // Dispatched and never picked up: not a document problem — the runtime isn't executing
+  // jobs (tasks not deployed to this environment, or no worker). Operators need to see this.
+  if (closed.notStarted)
+    logger.error("knowledge.runtime_not_starting", {
+      jobs: closed.notStarted,
+      runtime_job_ids: closed.runtimeJobs,
+      runtime: isBackgroundConfigured() ? "trigger.dev" : "inline",
+    });
   return closed;
 }
 
@@ -248,6 +281,25 @@ export async function startSync(
     throw error;
   }
   return runId;
+}
+
+/**
+ * Text formats (TXT, Markdown, CSV, HTML) are read in milliseconds: a small one is indexed
+ * right away, in this request, instead of waiting in a queue. Anything that goes wrong falls
+ * back to the background runtime, so the fast path can only make things faster.
+ */
+export async function ingestNowOrEnqueue(workspaceId: string, versionId: string) {
+  try {
+    const outcome = await runIngestion({ workspaceId, versionId, attempt: 1 });
+    log("knowledge.ingest_fast_path", { version_id: versionId, outcome });
+    return;
+  } catch (error) {
+    log("knowledge.ingest_fast_path_fallback", {
+      version_id: versionId,
+      code: (error as { code?: string }).code,
+    });
+  }
+  await enqueueIngestion(workspaceId, versionId);
 }
 
 /** Hands one version to the background runtime for ingestion. */

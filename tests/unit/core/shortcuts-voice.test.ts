@@ -71,9 +71,20 @@ describe("turn detection", () => {
     const c = { now: 0 };
     feed(d, c, VOICE_TURN.calibrateMs, 0.002);
     feed(d, c, 500, 0.1);
-    d.unfinished(true);
+    d.verdict("unfinished");
     expect(feed(d, c, VOICE_TURN.endSilenceMs + 200, 0.002)).toEqual(["pause"]);
     expect(feed(d, c, VOICE_TURN.unfinishedSilenceMs, 0.002)).toEqual(["end"]);
+  });
+
+  it("a complete-sounding transcript ends the turn sooner (ADR-036)", () => {
+    const d = new TurnDetector();
+    const c = { now: 0 };
+    feed(d, c, VOICE_TURN.calibrateMs, 0.002);
+    feed(d, c, 500, 0.1);
+    d.verdict("complete");
+    expect(VOICE_TURN.completeSilenceMs).toBeLessThanOrEqual(800);
+    expect(feed(d, c, VOICE_TURN.completeSilenceMs + 50, 0.002)).toEqual(["pause", "end"]);
+    expect(d.endVerdict).toBe("complete");
   });
 
   it("noise below the calibrated floor is not speech; nothing said ends empty", () => {

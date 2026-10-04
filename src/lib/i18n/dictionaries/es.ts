@@ -716,11 +716,21 @@ export const es: Dictionary = {
   knowledge: {
     sourceState: {
       preparing: "Preparando fuente…",
+      retrying: "Reintentando…",
       up_to_date: "Actualizado",
       syncing: "Sincronizando…",
       needs_attention: "Necesita atención",
     },
     upToDate: (when: string) => `Actualizado ${when}`,
+    /** What a working source is doing right now (ADR-036). */
+    sourcePhase: {
+      queued: "En cola",
+      discovering: "Descubriendo archivos",
+      reading: "Leyendo fuente",
+      extracting: "Extrayendo contenido",
+      ocr: "Reconociendo texto",
+      indexing: "Indexando",
+    },
     readyOf: (ready: number, total: number) => `${ready} de ${total} listos`,
     sourceMenu: (name: string) => `Opciones de ${name}`,
     sourceCount: (n: number) => `${n} ${n === 1 ? "fuente" : "fuentes"}`,
@@ -732,6 +742,8 @@ export const es: Dictionary = {
       state: "Estado",
       lastSync: "Última sincronización",
       nextCheck: "Próxima comprobación",
+      nextRetry: "Próximo intento automático",
+      phase: "Ahora",
       indexed: "Archivos indexados",
       lastError: "Último error",
       preparing: (n: number) => `${n} preparándose`,
@@ -744,7 +756,7 @@ export const es: Dictionary = {
       remove: "Quitar fuente",
       errors: {
         BACKGROUND_STALLED:
-          "La sincronización no llegó a ejecutarse en segundo plano. Podés reintentar.",
+          "El procesamiento en segundo plano nunca tomó esta sincronización. Reintentá; si vuelve a pasar, el servicio de procesamiento no está activo y necesita revisión.",
         TIMEOUT: "La sincronización tardó demasiado y se detuvo. Podés reintentar.",
         CAPABILITY_UNAVAILABLE:
           "El procesamiento en segundo plano no está disponible ahora. Reintentá en unos minutos.",
@@ -835,7 +847,7 @@ export const es: Dictionary = {
         .filter(Boolean)
         .join(" · ") || "Vacío",
     status: {
-      queued: "En espera",
+      queued: "En cola",
       processing: "Leyendo…",
       ready: "Listo",
       needs_attention: "Necesita atención",
@@ -845,9 +857,10 @@ export const es: Dictionary = {
     },
     detail: {
       uploading: "Subiendo…",
-      reading: "Leyendo el documento",
+      reading: "Leyendo fuente",
+      extracting: "Extrayendo contenido",
       ocr: "Reconociendo texto",
-      indexing: "Entendiéndolo",
+      indexing: "Indexando",
     },
     sourceStatus: {
       idle: "En espera",

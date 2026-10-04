@@ -11,6 +11,8 @@
  *   listening ─30 s silence / page hidden→ sleeping ─wake phrase / tap→ arming
  *   any active ─network lost→ offline ─back online→ sleeping
  *   reply done with an approval pending → waiting_approval (listening for "sí" / "no")
+ *   thinking/executing + tail: for a few seconds after a turn ends, the mic keeps listening —
+ *   a user who wasn't done continues that turn (ADR-036); the indicator says so.
  */
 
 export type VoicePhase =
@@ -60,6 +62,8 @@ export interface VoiceState {
   misses: number;
   sleep: SleepReason | null;
   wake: WakeStatus;
+  /** Just after a turn ended, still listening for its continuation (thinking/executing only). */
+  tail: boolean;
 }
 
 export type VoiceEvent =
@@ -85,6 +89,7 @@ export type VoiceEvent =
   | { type: "offline" }
   | { type: "online" }
   | { type: "wake_status"; status: WakeStatus }
+  | { type: "tail"; on: boolean }
   | { type: "end" };
 
 export const initialVoice: VoiceState = {
@@ -97,6 +102,7 @@ export const initialVoice: VoiceState = {
   misses: 0,
   sleep: null,
   wake: "off",
+  tail: false,
 };
 
 const MAX_MISSES = 2;
@@ -128,6 +134,8 @@ export function voiceReducer(state: VoiceState, event: VoiceEvent): VoiceState {
   const to = (phase: VoicePhase, patch: Partial<VoiceState> = {}): VoiceState => ({
     ...state,
     phase,
+    // The tail only lives while ELISE works on the turn; any other phase ends it.
+    tail: phase === "thinking" || phase === "executing" ? state.tail : false,
     ...patch,
   });
   switch (event.type) {
@@ -216,6 +224,11 @@ export function voiceReducer(state: VoiceState, event: VoiceEvent): VoiceState {
         : state;
     case "wake_status":
       return { ...state, wake: event.status };
+    case "tail":
+      return {
+        ...state,
+        tail: event.on && (state.phase === "thinking" || state.phase === "executing"),
+      };
     case "end":
       return {
         ...initialVoice,
@@ -229,7 +242,7 @@ export function voiceReducer(state: VoiceState, event: VoiceEvent): VoiceState {
 
 /** The microphone may be capturing for ELISE right now (the indicator must say so). */
 export const micCapturing = (s: VoiceState) =>
-  HEARING.has(s.phase) || (s.phase === "speaking" && s.bargeIn);
+  HEARING.has(s.phase) || (s.phase === "speaking" && s.bargeIn) || s.tail;
 /** Back-compat name: the recorder is listening for the user's turn. */
 export const micOpen = (s: VoiceState) => HEARING.has(s.phase);
 /** The on-device wake engine is listening (only while asleep). */

@@ -690,6 +690,8 @@ export type KnowledgeVersionRow = {
   metadata: Json;
   created_at: Ts;
   processed_at: Ts | null;
+  /** ADR-036: the worker's last sign of life. */
+  heartbeat_at?: Ts | null;
 };
 
 export type KnowledgeChunkRow = {
@@ -727,6 +729,8 @@ export type KnowledgeSyncRunRow = {
   items_failed: number;
   error_code: string | null;
   created_at: Ts;
+  /** ADR-036: the worker's last sign of life. */
+  heartbeat_at?: Ts | null;
 };
 
 type Source = "user_ui" | "ai" | "schedule" | "import" | "system";

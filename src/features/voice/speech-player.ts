@@ -55,6 +55,12 @@ export class SpeechPlayer {
   private working = false;
   private samples = new Float32Array(1024);
   private generation = 0;
+  /**
+   * Lines fetched ahead (the acknowledgement chosen at the pause, ADR-036), by language and
+   * text. Used once and dropped: the server keeps the reusable copy, so a voice change never
+   * plays a stale one for long.
+   */
+  private prepared = new Map<string, Promise<{ body: ArrayBuffer; format: string } | null>>();
   onStart: (() => void) | null = null;
   onIdle: (() => void) | null = null;
   onError: (() => void) | null = null;
@@ -78,6 +84,36 @@ export class SpeechPlayer {
     else this.prefetch();
   }
 
+  prepare(text: string, language: VoiceLanguage | null) {
+    const key = `${language ?? ""}|${text}`;
+    if (this.prepared.has(key)) return;
+    if (this.prepared.size >= 8) this.prepared.clear(); // bounded: a few acknowledgements
+    this.prepared.set(
+      key,
+      this.fetchSpeech(text, language, "", new AbortController().signal)
+        .then(async (r) =>
+          r.ok
+            ? { body: await r.arrayBuffer(), format: r.headers.get("x-audio-format") ?? "" }
+            : null,
+        )
+        .catch(() => null),
+    );
+  }
+
+  private fetchSpeech(
+    text: string,
+    language: VoiceLanguage | null,
+    previous: string,
+    signal: AbortSignal,
+  ) {
+    return fetch("/api/voice/speak", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text, language, ...(previous ? { previous } : {}) }),
+      signal,
+    });
+  }
+
   /** Requests the next queued segment now, unless one is already on its way. */
   private prefetch() {
     if (this.ahead) return;
@@ -96,20 +132,20 @@ export class SpeechPlayer {
     this.flights.add(controller);
     const previous = this.said;
     this.said = item.text;
+    const key = `${item.language ?? ""}|${item.text}`;
+    const ready = this.prepared.get(key);
+    this.prepared.delete(key);
+    const live = () => this.fetchSpeech(item.text, item.language, previous, controller.signal);
     return {
       item,
       controller,
       requestedAt: performance.now(),
-      response: fetch("/api/voice/speak", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          text: item.text,
-          language: item.language,
-          ...(previous ? { previous } : {}),
-        }),
-        signal: controller.signal,
-      }),
+      // Audio prepared at the pause plays at once; if preparing failed, it's fetched as usual.
+      response: ready
+        ? ready.then((p) =>
+            p ? new Response(p.body, { headers: { "x-audio-format": p.format } }) : live(),
+          )
+        : live(),
     };
   }
 

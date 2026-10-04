@@ -24,9 +24,14 @@ export const VOICE_TURN = {
   floorFactor: 2.5,
   /** Voiced time before a pause can end the turn. */
   minSpeechMs: 250,
-  /** A pause this long starts a speculative transcription of what was said so far. */
-  snapshotPauseMs: 600,
-  /** Silence that ends a turn that sounds finished… */
+  /**
+   * A pause this long starts a provisional transcription of what was said so far (ADR-036:
+   * earlier than before, so its verdict is in by the time a complete phrase may end).
+   */
+  snapshotPauseMs: 450,
+  /** Silence that ends a turn whose provisional transcript sounds complete ("…mañana?")… */
+  completeSilenceMs: 700,
+  /** …one we know nothing about yet (no provisional transcript)… */
   endSilenceMs: 1100,
   /** …and one that sounds unfinished ("y", "pero", "the", a comma). Conservative on purpose. */
   unfinishedSilenceMs: 2400,
@@ -48,10 +53,13 @@ export const VOICE_TURN = {
 
 export type TurnSignal = "speech_start" | "pause" | "resumed" | "end" | "no_speech" | null;
 
+/** What the provisional transcript says about the phrase so far (null: nothing yet). */
+export type EndVerdict = "complete" | "unfinished" | null;
+
 /**
  * One utterance's turn detection. `frame()` takes the input RMS every tick and returns at
- * most one signal. `unfinished(true)` (the speculative transcript sounds cut off) asks for a
- * longer silence before the turn ends.
+ * most one signal. `verdict()` (from the provisional transcript) adapts the silence that ends
+ * the turn: short for a complete phrase, long for one that sounds cut off.
  */
 export class TurnDetector {
   private start = -1;
@@ -61,7 +69,7 @@ export class TurnDetector {
   private speaking = false;
   private paused = false;
   private done = false;
-  private wantLonger = false;
+  private verdictNow: EndVerdict = null;
   private calibrated = false;
   private resumed = false;
   private samples: number[] = [];
@@ -94,8 +102,18 @@ export class TurnDetector {
     return this.voicedMs >= this.cfg.minSpeechMs;
   }
 
-  unfinished(yes: boolean) {
-    this.wantLonger = yes;
+  verdict(v: EndVerdict) {
+    this.verdictNow = v;
+  }
+
+  /** The verdict the turn ended with (telemetry: which rule cut it). */
+  get endVerdict(): EndVerdict {
+    return this.verdictNow;
+  }
+
+  /** When the user's voice was last heard (the real end of speech), or -1. */
+  get lastVoiceAt() {
+    return this.lastVoice;
   }
 
   frame(rms: number, now: number): TurnSignal {
@@ -134,7 +152,12 @@ export class TurnDetector {
     if (elapsed >= this.cfg.maxUtteranceMs) return this.finish("end");
     if (!this.heard) return elapsed >= this.cfg.noSpeechMs ? this.finish("no_speech") : null;
     const silence = now - this.lastVoice;
-    const needed = this.wantLonger ? this.cfg.unfinishedSilenceMs : this.cfg.endSilenceMs;
+    const needed =
+      this.verdictNow === "complete"
+        ? this.cfg.completeSilenceMs
+        : this.verdictNow === "unfinished"
+          ? this.cfg.unfinishedSilenceMs
+          : this.cfg.endSilenceMs;
     if (silence >= needed) return this.finish("end");
     if (!this.paused && silence >= this.cfg.snapshotPauseMs) {
       this.paused = true;
@@ -188,6 +211,27 @@ export function looksUnfinished(text: string): boolean {
     .filter(Boolean)
     .at(-1);
   return last ? UNFINISHED_WORDS.has(last) : false;
+}
+
+/**
+ * The provisional transcript is a whole phrase: it ends like a sentence (the recognizer's
+ * punctuation) on a word that doesn't ask for more, and it has at least two words. Anything
+ * else waits the normal silence — a fast end is only for what clearly sounds finished.
+ */
+export function looksComplete(text: string): boolean {
+  const t = text.trim();
+  if (!/[.!?]$/.test(t) || t.endsWith("...")) return false;
+  const bare = t.replace(/[.!?]+$/, "");
+  if (bare.split(/\s+/).filter(Boolean).length < 2) return false;
+  return !looksUnfinished(bare);
+}
+
+/** The provisional transcript's verdict on the phrase so far. */
+export function endVerdict(text: string): EndVerdict {
+  // Recognizers close even a cut phrase with a period ("…que me digas y."): look past it.
+  if (looksUnfinished(text) || looksUnfinished(text.trim().replace(/\.+$/, "")))
+    return "unfinished";
+  return looksComplete(text) ? "complete" : null;
 }
 
 /**

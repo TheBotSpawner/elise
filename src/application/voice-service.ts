@@ -131,7 +131,7 @@ export async function synthesizeSentence(
   // The acknowledgements (ADR-028) are a few fixed lines: synthesized once per instance and
   // voice, then served from memory, so "Lo busco." plays while the work starts, not ~2 s later.
   const fixed = ACKNOWLEDGEMENT_LINES.has(spoken);
-  const key = `${provider.id}|${auth.profile.voice.voice}|${spoken}`;
+  const key = ackKey(provider, auth.profile.voice.voice, lang, spoken);
   const cached = fixed ? ackAudio.get(key) : undefined;
   if (cached)
     return {
@@ -174,7 +174,7 @@ export async function warmAcknowledgements(auth: AuthContext, language: VoiceLan
   const provider = getSpeechOutputProvider();
   let made = 0;
   for (const line of acknowledgements(language).map((l) => formatForSpeech(l, language))) {
-    const key = `${provider.id}|${auth.profile.voice.voice}|${line}`;
+    const key = ackKey(provider, auth.profile.voice.voice, language, line);
     if (ackAudio.has(key)) continue;
     const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
     const stream = await withUsageScope(scope, () =>
@@ -197,6 +197,19 @@ const ACKNOWLEDGEMENT_LINES = new Set([
 ]);
 // Bounded by construction: ~30 fixed lines × the few voices (~40 KB each). Not user content.
 const ackAudio = new Map<string, Uint8Array>();
+
+/**
+ * Bump to drop every cached acknowledgement (new lines' wording, a formatting change). The
+ * provider, its model, the voice and the language are part of the key, so changing any of
+ * them never plays audio made for another (ADR-036).
+ */
+const ACK_CACHE_VERSION = 2;
+export const ackKey = (
+  provider: { id: string; model: string },
+  voice: string,
+  language: string,
+  line: string,
+) => `${ACK_CACHE_VERSION}|${provider.id}|${provider.model}|${voice}|${language}|${line}`;
 
 /**
  * What Settings shows about spoken replies (ADR-030): which provider speaks and the curated
@@ -243,7 +256,12 @@ export async function previewVoice(
 
 /** Latency of one voice turn, in milliseconds from the moment the microphone opened. */
 export const VOICE_TIMINGS = [
+  "lastVoice",
   "speechEnd",
+  "turnDetected",
+  "speculative",
+  "endVerdict",
+  "continuation",
   "transcriptFinal",
   "runtimeStart",
   "ackReady",
@@ -263,10 +281,35 @@ export const VOICE_TIMINGS = [
   "firstAudioMs",
 ] as const;
 
+/**
+ * A turn's latency split into its stages (ADR-036), each measured on its own:
+ *   turn_detection    the user stopped talking → ELISE decided the turn was over
+ *   stt_finalization  turn over → final transcript
+ *   ack_selection     final transcript → acknowledgement chosen
+ *   tts_first_audio   acknowledgement (or answer) chosen → first audio playing
+ *   perceived         the user stopped talking → ELISE's first audio
+ */
+export function voiceStages(t: Partial<Record<(typeof VOICE_TIMINGS)[number], number>>) {
+  const span = (from?: number, to?: number) =>
+    from !== undefined && to !== undefined && to >= from ? to - from : undefined;
+  const firstLine = t.ackReady ?? t.resultSpeech;
+  return {
+    turn_detection_ms: span(t.lastVoice, t.turnDetected ?? t.speechEnd),
+    stt_finalization_ms: span(t.turnDetected ?? t.speechEnd, t.transcriptFinal),
+    ack_selection_ms: span(t.transcriptFinal, t.ackReady),
+    tts_first_audio_ms: span(firstLine, t.audioStart),
+    perceived_ms: span(t.lastVoice, t.audioStart),
+  };
+}
+
 export function recordVoiceTimings(
   auth: AuthContext,
   timings: Partial<Record<(typeof VOICE_TIMINGS)[number], number>>,
 ) {
   // Numbers only: no audio, no transcript, no content.
-  logger.info("voice.turn_timing", { workspace_id: auth.workspaceId, ...timings });
+  logger.info("voice.turn_timing", {
+    workspace_id: auth.workspaceId,
+    ...timings,
+    ...voiceStages(timings),
+  });
 }

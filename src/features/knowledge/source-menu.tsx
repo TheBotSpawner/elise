@@ -94,6 +94,12 @@ export function SourceMenu({
           <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-[14px]">
             <dt className="text-muted">{k.sourceDetails.state}</dt>
             <dd>{k.sourceState[s.state]}</dd>
+            {s.phase && s.state !== "needs_attention" && s.state !== "up_to_date" && (
+              <>
+                <dt className="text-muted">{k.sourceDetails.phase}</dt>
+                <dd>{k.sourcePhase[s.phase]}</dd>
+              </>
+            )}
             {s.runningSince && (
               <>
                 <dt className="text-muted">{k.sourceDetails.runningSince}</dt>
@@ -108,9 +114,13 @@ export function SourceMenu({
                 <dd>{when(s.lastRunAt)}</dd>
               </>
             )}
-            {s.state !== "needs_attention" && s.nextSyncAt && (
+            {s.nextSyncAt && (
               <>
-                <dt className="text-muted">{k.sourceDetails.nextCheck}</dt>
+                <dt className="text-muted">
+                  {s.state === "needs_attention"
+                    ? k.sourceDetails.nextRetry
+                    : k.sourceDetails.nextCheck}
+                </dt>
                 <dd>{when(s.nextSyncAt)}</dd>
               </>
             )}

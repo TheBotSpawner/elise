@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthContext } from "@/application/auth-context";
+import { voiceStages } from "@/application/voice-service";
 import { WorkspaceSession } from "@/application/workspace-service";
 import { buildContextPackage } from "@/core/agents/context";
 import { groupRecall } from "@/core/recall/model";
@@ -25,7 +26,7 @@ import {
   stillSayable,
 } from "@/core/voice/speech-plan";
 import { SentenceChunker, SpokenSplitter, toSpeakable } from "@/core/voice/speech-text";
-import { calibrateFloor, TurnDetector, VOICE_TURN } from "@/core/voice/turn";
+import { calibrateFloor, endVerdict, TurnDetector, VOICE_TURN } from "@/core/voice/turn";
 import { emptyWorkspace } from "@/core/workspace/model";
 import type { SpeakOptions } from "@/features/voice/speech-player";
 import {
@@ -269,6 +270,10 @@ class FakePlayer implements PlayerPort {
   chime() {
     this.chimes++;
   }
+  prepared: string[] = [];
+  prepare(text: string) {
+    this.prepared.push(text);
+  }
 }
 
 class FakeWake implements WakeEngine {
@@ -322,6 +327,7 @@ function setup(
   let tick: (() => void) | null = null;
   const timers: { at: number; fn: () => void }[] = [];
   const warmed: string[] = [];
+  const cancels: number[] = [];
   const controller = new VoiceController(
     {
       createMic: () => mic,
@@ -342,6 +348,7 @@ function setup(
       online: () => true,
       later: (ms, fn) => void timers.push({ at: now + ms, fn }),
       warmAcknowledgements: (language) => void warmed.push(language),
+      cancel: () => void cancels.push(now),
     },
     { ...PREFS, ...opts.prefs },
   );
@@ -367,7 +374,20 @@ function setup(
     await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
     await settle();
   };
-  return { controller, mic, player, wake, sent, timings, uploads, hear, say, wait, warmed };
+  return {
+    controller,
+    mic,
+    player,
+    wake,
+    sent,
+    timings,
+    uploads,
+    hear,
+    say,
+    wait,
+    warmed,
+    cancels,
+  };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -1252,5 +1272,141 @@ describe("acknowledging from the words, before the model picks a tool (ADR-034)"
     controller.onStream({ type: "finished", failed: false });
     const audible = player.lines.filter((l) => !l.options.valid || l.options.valid());
     expect(audible.map((l) => l.text)).toEqual(["Tenés una tarea pendiente para mañana."]);
+  });
+});
+
+describe("voice turn latency (ADR-036)", () => {
+  it("a complete-sounding phrase ends after a short silence, not the full second", async () => {
+    const { controller, sent, hear } = setup({ transcripts: ["¿Qué tengo mañana?"] });
+    await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await hear(800, 0.1);
+    await hear(VOICE_TURN.completeSilenceMs + 100, 0.002);
+    await settle();
+    expect(sent).toHaveLength(1);
+    expect(VOICE_TURN.completeSilenceMs).toBeLessThan(VOICE_TURN.endSilenceMs);
+  });
+
+  it("the acknowledgement is chosen and its audio fetched at the pause, then played at the end", async () => {
+    const { controller, player, say } = setup({
+      transcripts: ["Buscame las últimas noticias sobre el clima."],
+    });
+    await controller.start();
+    await say();
+    expect(player.prepared).toEqual(["Lo busco."]);
+    expect(player.spoken).toEqual(["Lo busco."]);
+  });
+
+  it("actions are never prepared from a provisional transcript", async () => {
+    const { controller, player, say } = setup({
+      transcripts: ["Mandale un mail a Juan diciendo que llego tarde."],
+    });
+    await controller.start();
+    await say();
+    expect(player.prepared).toEqual([]);
+  });
+
+  it("talking over the acknowledgement right after the turn ended continues that turn", async () => {
+    const { controller, sent, hear, say } = setup({
+      transcripts: ["Buscame las últimas noticias sobre el clima.", "en Córdoba para mañana."],
+    });
+    await controller.start();
+    await say();
+    expect(sent[0]!.text).toBe("Buscame las últimas noticias sobre el clima.");
+    expect(controller.state.phase).toBe("speaking"); // the acknowledgement is playing
+    // …and the user hadn't finished.
+    await hear(VOICE_TURN.barge.calibrateMs, 0.002);
+    await hear(VOICE_TURN.barge.holdMs + 50, 0.3);
+    await hear(600, 0.1);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    expect(sent[1]!.text).toBe(
+      "Buscame las últimas noticias sobre el clima. en Córdoba para mañana.",
+    );
+  });
+
+  it("still talking while ELISE thinks: the cut request is cancelled and continued, whole", async () => {
+    const { controller, sent, hear, say, cancels } = setup({
+      transcripts: ["Creá una tarea.", "para comprar pan mañana."],
+    });
+    await controller.start();
+    await say();
+    expect(sent[0]!.text).toBe("Creá una tarea.");
+    expect(micCapturing(controller.state)).toBe(true); // the indicator tells the truth
+    await hear(300, 0.1); // the user goes on
+    expect(cancels).toHaveLength(1);
+    expect(controller.state.phase).toBe("user_speaking");
+    await hear(500, 0.1);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    expect(sent[1]!.text).toBe("Creá una tarea. para comprar pan mañana.");
+  });
+
+  it("a cough after the turn doesn't cancel it; the tail ends on its own", async () => {
+    const { controller, sent, hear, say, cancels } = setup({
+      transcripts: ["¿Cómo viene mi día?"],
+    });
+    await controller.start();
+    await say();
+    await hear(100, 0.3); // a short noise
+    await hear(4_000, 0.002);
+    expect(cancels).toHaveLength(0);
+    expect(sent).toHaveLength(1);
+    expect(controller.state.tail).toBe(false);
+    expect(micCapturing(controller.state)).toBe(false);
+  });
+
+  it("a continuation that can't be transcribed sends the original request again", async () => {
+    const { controller, sent, hear, say } = setup({ transcripts: ["Creá una tarea.", ""] });
+    await controller.start();
+    await say();
+    await hear(400, 0.1);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    expect(sent.map((x) => x.text)).toEqual(["Creá una tarea.", "Creá una tarea."]);
+  });
+
+  it("an interruption after the answer started is a new turn, not a continuation", async () => {
+    const { controller, sent, hear, say } = setup({
+      transcripts: ["¿Cómo viene mi día?", "Otra cosa."],
+    });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "spoken", delta: "Tenés dos reuniones hoy. " });
+    await hear(VOICE_TURN.barge.calibrateMs, 0.002);
+    await hear(VOICE_TURN.barge.holdMs + 50, 0.3);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    expect(sent[1]!.text).toBe("Otra cosa.");
+  });
+});
+
+describe("turn verdicts and latency stages (ADR-036)", () => {
+  it("complete, unfinished, or not sure — only a clear sentence ends early", () => {
+    expect(endVerdict("¿Qué tengo mañana?")).toBe("complete");
+    expect(endVerdict("Buscame las noticias de hoy.")).toBe("complete");
+    expect(endVerdict("Quiero que me digas y.")).toBe("unfinished");
+    expect(endVerdict("Recordame llamar a")).toBe("unfinished");
+    expect(endVerdict("Hola.")).toBe(null); // one word: wait the normal silence
+    expect(endVerdict("bueno entonces")).toBe("unfinished");
+    expect(endVerdict("Pasame el informe")).toBe(null); // no sentence end yet
+  });
+
+  it("each stage of a turn's latency is measured on its own", () => {
+    expect(
+      voiceStages({
+        lastVoice: 1000,
+        turnDetected: 1750,
+        transcriptFinal: 1800,
+        ackReady: 1802,
+        audioStart: 2100,
+      }),
+    ).toEqual({
+      turn_detection_ms: 750,
+      stt_finalization_ms: 50,
+      ack_selection_ms: 2,
+      tts_first_audio_ms: 298,
+      perceived_ms: 1100,
+    });
   });
 });

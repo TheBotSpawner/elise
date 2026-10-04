@@ -14,9 +14,16 @@ import {
   type SpaceIcon,
 } from "@/core/knowledge/appearance";
 import { spacePaths, withDescendants, type SpaceInfo } from "@/core/knowledge/model";
-import { sourceState, type SourceState } from "@/core/knowledge/source-state";
+import {
+  sourcePhase,
+  sourceState,
+  type ActiveRun,
+  type SourcePhase,
+  type SourceState,
+} from "@/core/knowledge/source-state";
 import { isBackgroundConfigured } from "@/infrastructure/background/trigger/runtime";
 import {
+  isTextFormat,
   SUPPORTED_UPLOADS,
   UPLOAD_LIMITS,
   uploadMimeType,
@@ -44,7 +51,12 @@ import {
 
 import type { AuthContext } from "./auth-context";
 import { googleHttpFor, notionClientFor } from "./elise";
-import { enqueueIngestion, recoverStaleWork, startSync } from "./knowledge-background";
+import {
+  enqueueIngestion,
+  ingestNowOrEnqueue,
+  recoverStaleWork,
+  startSync,
+} from "./knowledge-background";
 
 /**
  * Knowledge for the UI (docs/architecture/09): Spaces, uploads, external sources, sync and
@@ -346,6 +358,8 @@ export interface SourceView {
   status: KnowledgeSourceRow["status"];
   /** What the user sees (core/knowledge/source-state.ts). */
   state: SourceState;
+  /** What it is doing right now (queued, discovering, extracting…), when working. */
+  phase: SourcePhase | null;
   lastSyncedAt: string | null;
   nextSyncAt: string | null;
   lastErrorCode: string | null;
@@ -426,6 +440,15 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       };
       const run = active.find((r) => r.source_id === s.id);
       const done = last.find((r) => r.source_id === s.id);
+      const activeRun: ActiveRun | null = run
+        ? {
+            status: run.status as "queued" | "running",
+            createdAt: run.created_at,
+            startedAt: run.started_at,
+            heartbeatAt: run.heartbeat_at ?? null,
+          }
+        : null;
+      const working = own.filter((i) => i.status === "queued" || i.status === "processing");
       return {
         id: s.id,
         sourceType: s.source_type,
@@ -436,15 +459,13 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
           status: s.status,
           lastSyncedAt: s.last_synced_at,
           createdAt: s.created_at,
-          activeRun: run
-            ? {
-                status: run.status as "queued" | "running",
-                createdAt: run.created_at,
-                startedAt: run.started_at,
-              }
-            : null,
+          activeRun,
           counts,
         }),
+        phase: sourcePhase(
+          activeRun,
+          working.map((i) => i.status_detail),
+        ),
         lastSyncedAt: s.last_synced_at,
         nextSyncAt: s.next_sync_at,
         lastErrorCode: s.last_error_code,
@@ -630,12 +651,15 @@ export async function prepareNewVersion(
   return newUploadVersion(auth, itemId, (last?.version_number ?? 0) + 1, valid);
 }
 
+/** Text files up to this size are indexed in the upload request itself. */
+const FAST_PATH_BYTES = 2 * 1024 * 1024;
+
 /** After the browser uploaded: verify each file really is in Storage, then understand it. */
 export async function completeUploads(auth: AuthContext, versionIds: string[]) {
   const admin = createAdminClient();
   const { data: versions } = await auth.db
     .from("knowledge_versions")
-    .select("id, knowledge_item_id, storage_path, status")
+    .select("id, knowledge_item_id, storage_path, status, mime_type")
     .eq("workspace_id", auth.workspaceId)
     .in("id", versionIds);
   let started = 0;
@@ -660,7 +684,10 @@ export async function completeUploads(auth: AuthContext, versionIds: string[]) {
       .eq("id", v.knowledge_item_id)
       .eq("workspace_id", auth.workspaceId);
     try {
-      await enqueueIngestion(auth.workspaceId, v.id);
+      // A small text file is indexed now (ADR-036 fast path); the rest go to the runtime.
+      if (v.mime_type && isTextFormat(v.mime_type) && size <= FAST_PATH_BYTES)
+        await ingestNowOrEnqueue(auth.workspaceId, v.id);
+      else await enqueueIngestion(auth.workspaceId, v.id);
       started++;
     } catch (error) {
       await admin
@@ -972,6 +999,13 @@ export async function syncNow(
   if (source.source_type === "upload" || source.source_type === "note")
     return { status: "not_syncable" };
   await recoverStaleWork(auth.workspaceId);
+  // A queued sync the runtime hasn't picked up in a minute is replaced, so Retry dispatches
+  // real work; a double click within that minute is "already syncing" (one active run, by index).
+  await new SupabaseKnowledgeStore(createAdminClient()).supersedeQueued(
+    auth.workspaceId,
+    sourceId,
+    new Date(),
+  );
   const runId = await startSync(auth.workspaceId, sourceId, "manual");
   return { status: runId ? "started" : "already_syncing" };
 }
