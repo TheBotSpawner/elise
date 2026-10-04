@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { signOut } from "@/features/auth/actions";
-import { NewChatButton, useActiveThread } from "@/features/chat/continuity";
+import { NewChatButton, useActiveThread, useHomeNavClick } from "@/features/chat/continuity";
 import { homeHref } from "@/lib/active-thread";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -116,6 +116,7 @@ function MobileNavOverlay({
   const { t } = useI18n();
   const active = activeSection(pathname);
   const home = homeHref(useActiveThread());
+  const homeClick = useHomeNavClick(active === "home");
   const closeRef = useRef<HTMLButtonElement>(null);
   const [modulesOpen, setModulesOpen] = useState(active === "myElise");
 
@@ -174,6 +175,15 @@ function MobileNavOverlay({
           <motion.div key={s.key} {...item(i)}>
             <Link
               href={s.key === "home" ? home : s.href}
+              onClick={
+                s.key === "home"
+                  ? (e) => {
+                      homeClick(e);
+                      // Still on "/": the path doesn't change, so close the menu here.
+                      if (e.defaultPrevented) onClose();
+                    }
+                  : undefined
+              }
               aria-current={active === s.key ? "page" : undefined}
               className={cn(
                 big,

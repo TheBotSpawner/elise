@@ -23,7 +23,8 @@ vi.mock("@/features/chat/attachment-actions", () => ({
   removeAttachmentAction: vi.fn(),
 }));
 
-const { NewChatButton, composerDraft } = await import("@/features/chat/continuity");
+const { NewChatButton, composerDraft, useHomeNavClick } =
+  await import("@/features/chat/continuity");
 const { draftAttachments } = await import("@/features/chat/draft-attachments");
 
 const A = { kind: "conversation" as const, id: "11111111-1111-4111-8111-111111111111" };
@@ -174,6 +175,39 @@ describe("Nueva conversación", () => {
     fireEvent.click(screen.getByRole("button", { name: "Descartar borrador y empezar otra" }));
     expect(remove).toHaveBeenCalled();
     expect(draftAttachments.get().items).toEqual([]);
+  });
+});
+
+describe("tapping Inicio again", () => {
+  function HomeLink({ onHome }: { onHome: boolean }) {
+    const onClick = useHomeNavClick(onHome);
+    return (
+      <a href="/" onClick={onClick}>
+        Inicio
+      </a>
+    );
+  }
+  const tap = (onHome: boolean) => {
+    const { unmount } = render(<HomeLink onHome={onHome} />);
+    const followed = fireEvent.click(screen.getByText("Inicio")); // false: navigation prevented
+    unmount();
+    return followed;
+  };
+
+  it("on Home in a conversation, starts a new one", () => {
+    rememberThread(A);
+    expect(tap(true)).toBe(false);
+    expect(readActiveThread()).toBeNull();
+    expect(push).toHaveBeenCalledWith(expect.stringMatching(/^\/\?new=/));
+  });
+
+  it("from another section, or with an unsent draft, it's an ordinary link", () => {
+    rememberThread(A);
+    expect(tap(false)).toBe(true);
+    composerDraft.text = "a medio escribir";
+    expect(tap(true)).toBe(true);
+    expect(push).not.toHaveBeenCalled();
+    expect(readActiveThread()).toEqual(A);
   });
 });
 

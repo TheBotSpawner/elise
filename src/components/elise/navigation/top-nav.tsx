@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { signOut } from "@/features/auth/actions";
-import { useActiveThread } from "@/features/chat/continuity";
+import { useActiveThread, useHomeNavClick } from "@/features/chat/continuity";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { homeHref } from "@/lib/active-thread";
 import { useI18n } from "@/lib/i18n/client";
@@ -36,6 +36,7 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
   const pathname = usePathname();
   const active = activeSection(pathname);
   const home = homeHref(useActiveThread());
+  const onHomeClick = useHomeNavClick(active === "home");
   const { state: orbState, docked, level, receded } = useOrbPresence();
   // The nav is hidden below md; only fly the Orb into it where it is visible.
   const desktop = useIsDesktop();
@@ -123,6 +124,7 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
                 <Link
                   key={s.key}
                   href={s.key === "home" ? home : s.href}
+                  onClick={s.key === "home" ? onHomeClick : undefined}
                   aria-current={active === s.key ? "page" : undefined}
                   className={cn(pill, active === s.key ? "bg-active text-fg" : "text-muted")}
                 >

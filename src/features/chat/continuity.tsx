@@ -47,6 +47,20 @@ export function useStartNewChat() {
 }
 
 /**
+ * Tapping Inicio while already on Home, in a conversation, starts a new one (the same as
+ * "+ Nueva conversación"). With an unsent draft it just stays: a nav tap never discards text.
+ */
+export function useHomeNavClick(onHome: boolean) {
+  const start = useStartNewChat();
+  const active = useActiveThread();
+  return (e: { preventDefault(): void }) => {
+    if (!onHome || !active || hasUnsentDraft()) return;
+    e.preventDefault();
+    start();
+  };
+}
+
+/**
  * "+ Nueva conversación": visible on Home whenever there is a conversation to leave. With an
  * unsent draft, the first press asks (inline, no modal) and the second one discards it.
  */
