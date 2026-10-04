@@ -172,3 +172,56 @@ export function sourcePhase(
     if (itemDetails.includes(phase)) return phase;
   return itemDetails.length ? "queued" : null;
 }
+
+/**
+ * What a logical source (a Notion database, a Drive folder, one uploaded document) looks like
+ * at a glance (ADR-037). Its child pages/files never count as sources of their own.
+ *
+ *   failed           unusable: the source itself failed and nothing from it is ready, or every
+ *                    child failed
+ *   needs_attention  usable, but something needs the user: the source failed after an earlier
+ *                    good sync, or some children couldn't be read (344 ready + 2 failed)
+ *   processing       work in flight (preparing, retrying, syncing). Never "needs attention"
+ *                    just because a sync is running or new children aren't done yet
+ *   ready            everything settled and readable (an empty source is ready)
+ *
+ * Rules apply in that order, so the result is deterministic.
+ */
+export type SourceRollup = "ready" | "processing" | "needs_attention" | "failed";
+
+export function sourceRollup(
+  state: SourceState,
+  counts: { ready: number; processing: number; attention: number },
+): SourceRollup {
+  if (state === "needs_attention") return counts.ready > 0 ? "needs_attention" : "failed";
+  if (state === "preparing" || state === "retrying" || state === "syncing" || counts.processing)
+    return "processing";
+  if (counts.attention > 0) return counts.ready > 0 ? "needs_attention" : "failed";
+  return "ready";
+}
+
+/** One status per uploaded document or note: each is a logical source of its own. */
+export function documentRollup(status: string, errorCode: string | null = null): SourceRollup {
+  if (status === "queued" || status === "processing") return "processing";
+  if (status === "failed") return "failed";
+  if (status === "needs_attention" || errorCode) return "needs_attention";
+  return "ready";
+}
+
+export interface SourceTotals {
+  /** Logical sources. */
+  total: number;
+  ready: number;
+  processing: number;
+  /** Logical sources that need the user: needs attention or failed. */
+  attention: number;
+}
+
+export function sourceTotals(rollups: readonly SourceRollup[]): SourceTotals {
+  return {
+    total: rollups.length,
+    ready: rollups.filter((r) => r === "ready").length,
+    processing: rollups.filter((r) => r === "processing").length,
+    attention: rollups.filter((r) => r === "needs_attention" || r === "failed").length,
+  };
+}

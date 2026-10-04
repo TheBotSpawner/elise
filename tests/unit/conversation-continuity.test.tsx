@@ -182,6 +182,7 @@ describe("tapping Inicio again", () => {
   function HomeLink({ onHome }: { onHome: boolean }) {
     const onClick = useHomeNavClick(onHome);
     return (
+      // eslint-disable-next-line @next/next/no-html-link-for-pages -- the click hook is under test, not Next's router
       <a href="/" onClick={onClick}>
         Inicio
       </a>

@@ -15,11 +15,16 @@ import {
 } from "@/core/knowledge/appearance";
 import { spacePaths, withDescendants, type SpaceInfo } from "@/core/knowledge/model";
 import {
+  documentRollup,
   sourcePhase,
+  sourceRollup,
   sourceState,
+  sourceTotals,
   type ActiveRun,
   type SourcePhase,
+  type SourceRollup,
   type SourceState,
+  type SourceTotals,
 } from "@/core/knowledge/source-state";
 import { isBackgroundConfigured } from "@/infrastructure/background/trigger/runtime";
 import {
@@ -30,7 +35,7 @@ import {
 } from "@/infrastructure/knowledge/parsers";
 import { logger } from "@/infrastructure/observability/logger";
 import { GoogleDriveClient } from "@/infrastructure/providers/google/drive";
-import { pageTitle } from "@/infrastructure/providers/notion/client";
+import { notionChoices, type NotionChoice } from "@/infrastructure/providers/notion/client";
 import { isNotionConfigured } from "@/infrastructure/providers/notion/oauth";
 import { rateLimit } from "@/infrastructure/rate-limit";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
@@ -57,6 +62,8 @@ import {
   recoverStaleWork,
   startSync,
 } from "./knowledge-background";
+
+export type { NotionChoice };
 
 /**
  * Knowledge for the UI (docs/architecture/09): Spaces, uploads, external sources, sync and
@@ -104,11 +111,15 @@ export interface SpaceSummary extends SpaceInfo {
   context: string | null;
   icon: SpaceIcon;
   color: SpaceColor;
+  /** Documents (child pages/files included) by readiness: diagnostics, never shown as sources. */
   counts: { ready: number; processing: number; attention: number };
   /**
-   * Sources directly in this Space/Section: each connected Drive/Notion source is one (however
-   * many files it holds, and even before its first sync), each uploaded document and note is one.
+   * Logical sources directly in this Space/Section (ADR-037): each connected Notion database,
+   * Notion page or Drive folder is one however many pages it holds, each uploaded document and
+   * note is one. `attention` counts sources, never their children.
    */
+  sources: SourceTotals;
+  /** Same as sources.total. */
   sourceCount: number;
   /** Distinct kinds of source connected to this Space (uploads, Drive, Notion, notes). */
   sourceTypes: KnowledgeSourceRow["source_type"][];
@@ -116,48 +127,119 @@ export interface SpaceSummary extends SpaceInfo {
   updatedAt: string;
 }
 
+const isContainer = (type: KnowledgeSourceRow["source_type"]) =>
+  type === "upload" || type === "note";
+
+type ChildCounts = { ready: number; processing: number; attention: number };
+
+function childCounts(items: readonly { status: string }[]): ChildCounts {
+  return {
+    ready: items.filter((i) => i.status === "ready").length,
+    processing: items.filter((i) => i.status === "queued" || i.status === "processing").length,
+    attention: items.filter((i) => i.status === "failed" || i.status === "needs_attention").length,
+  };
+}
+
+function toActiveRun(
+  run:
+    | {
+        status: string;
+        created_at: string;
+        started_at: string | null;
+        heartbeat_at?: string | null;
+      }
+    | undefined,
+): ActiveRun | null {
+  return run
+    ? {
+        status: run.status as "queued" | "running",
+        createdAt: run.created_at,
+        startedAt: run.started_at,
+        heartbeatAt: run.heartbeat_at ?? null,
+      }
+    : null;
+}
+
+/** Every live item of the workspace, past PostgREST's 1000-row page. */
+async function allItems(auth: AuthContext, spaceId?: string) {
+  const out: {
+    space_id: string;
+    source_id: string;
+    status: KnowledgeItemRow["status"];
+    status_detail: string | null;
+    error_code: string | null;
+    updated_at: string;
+  }[] = [];
+  for (let offset = 0; offset < 50_000; offset += 1000) {
+    let query = auth.db
+      .from("knowledge_items")
+      .select("space_id, source_id, status, status_detail, error_code, updated_at")
+      .eq("workspace_id", auth.workspaceId)
+      .is("archived_at", null)
+      .neq("status", "removed");
+    if (spaceId) query = query.eq("space_id", spaceId);
+    const { data } = await query.order("id").range(offset, offset + 999);
+    out.push(...(data ?? []));
+    if ((data ?? []).length < 1000) break;
+  }
+  return out;
+}
+
 export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
-  const [{ data: spaces, error }, { data: items }, { data: sources }, contexts] = await Promise.all(
-    [
-      auth.db
-        .from("knowledge_spaces")
-        .select("id, name, parent_space_id, description, icon, color, updated_at")
-        .eq("workspace_id", auth.workspaceId)
-        .eq("status", "active")
-        .order("name"),
-      auth.db
-        .from("knowledge_items")
-        .select("space_id, source_id, status, updated_at")
-        .eq("workspace_id", auth.workspaceId)
-        .is("archived_at", null)
-        .neq("status", "removed"),
-      auth.db
-        .from("knowledge_sources")
-        .select("id, space_id, source_type")
-        .eq("workspace_id", auth.workspaceId)
-        .is("archived_at", null),
-      // Read apart: a database without migration 24 still shows Knowledge (just no context).
-      auth.db
-        .from("knowledge_spaces")
-        .select("id, context")
-        .eq("workspace_id", auth.workspaceId)
-        .eq("status", "active"),
-    ],
-  );
+  const [{ data: spaces, error }, items, { data: sources }, contexts] = await Promise.all([
+    auth.db
+      .from("knowledge_spaces")
+      .select("id, name, parent_space_id, description, icon, color, updated_at")
+      .eq("workspace_id", auth.workspaceId)
+      .eq("status", "active")
+      .order("name"),
+    allItems(auth),
+    auth.db
+      .from("knowledge_sources")
+      .select("id, space_id, source_type, status, last_synced_at, created_at")
+      .eq("workspace_id", auth.workspaceId)
+      .is("archived_at", null),
+    // Read apart: a database without migration 24 still shows Knowledge (just no context).
+    auth.db
+      .from("knowledge_spaces")
+      .select("id, context")
+      .eq("workspace_id", auth.workspaceId)
+      .eq("status", "active"),
+  ]);
   if (error) throw new AppError("INTERNAL_ERROR", "Could not load Knowledge", { cause: error });
+  const connected = (sources ?? []).filter((x) => !isContainer(x.source_type));
+  const runs = await new SupabaseKnowledgeStore(createAdminClient()).activeRuns(
+    auth.workspaceId,
+    connected.map((x) => x.id),
+  );
+  const itemsBySource = Map.groupBy(items, (i) => i.source_id);
+  const now = new Date();
   const contextOf = new Map((contexts.data ?? []).map((r) => [r.id, r.context]));
   return spacePaths(
     spaces.map((s) => ({ id: s.id, name: s.name, parentId: s.parent_space_id })),
   ).map((s) => {
     const row = spaces.find((r) => r.id === s.id);
-    const own = (items ?? []).filter((i) => i.space_id === s.id);
+    const own = items.filter((i) => i.space_id === s.id);
     const ownSources = (sources ?? []).filter((x) => x.space_id === s.id);
-    // Uploads and notes live in one container source per Space: there, each document counts.
-    const containers = new Set(
-      ownSources
-        .filter((x) => x.source_type === "upload" || x.source_type === "note")
-        .map((x) => x.id),
-    );
+    const rollups: SourceRollup[] = ownSources.flatMap((x) => {
+      const children = itemsBySource.get(x.id) ?? [];
+      // Uploads and notes live in one container source per Space: there, each document counts.
+      if (isContainer(x.source_type))
+        return children.map((i) => documentRollup(i.status, i.error_code));
+      const counts = childCounts(children);
+      const state = sourceState(
+        {
+          status: x.status,
+          lastSyncedAt: x.last_synced_at,
+          createdAt: x.created_at,
+          activeRun: toActiveRun(runs.find((r) => r.source_id === x.id)),
+          counts,
+        },
+        now,
+      );
+      return [sourceRollup(state, counts)];
+    });
+    const totals = sourceTotals(rollups);
     return {
       ...s,
       description: row?.description ?? null,
@@ -165,21 +247,30 @@ export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
       icon: spaceIcon(row?.icon),
       color: spaceColor(row?.color),
       sourceTypes: [...new Set(ownSources.map((x) => x.source_type))],
-      sourceCount:
-        ownSources.filter((x) => !containers.has(x.id)).length +
-        own.filter((i) => i.source_id && containers.has(i.source_id)).length,
+      sources: totals,
+      sourceCount: totals.total,
       updatedAt: own.reduce(
         (latest, i) => (i.updated_at > latest ? i.updated_at : latest),
         row?.updated_at ?? "",
       ),
-      counts: {
-        ready: own.filter((i) => i.status === "ready").length,
-        processing: own.filter((i) => i.status === "queued" || i.status === "processing").length,
-        attention: own.filter((i) => i.status === "failed" || i.status === "needs_attention")
-          .length,
-      },
+      counts: childCounts(own),
     };
   });
+}
+
+/** Spaces and Sections as "Work › Client A", for pickers elsewhere (Scheduled). Names only. */
+export async function spaceOptions(auth: AuthContext): Promise<{ id: string; path: string }[]> {
+  const { data } = await auth.db
+    .from("knowledge_spaces")
+    .select("id, name, parent_space_id")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("status", "active")
+    .order("name");
+  return spacePaths(
+    (data ?? []).map((s) => ({ id: s.id, name: s.name, parentId: s.parent_space_id })),
+  )
+    .map((s) => ({ id: s.id, path: s.path }))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
 
 async function ownSpace(auth: AuthContext, spaceId: string) {
@@ -358,6 +449,10 @@ export interface SourceView {
   status: KnowledgeSourceRow["status"];
   /** What the user sees (core/knowledge/source-state.ts). */
   state: SourceState;
+  /** At a glance, children rolled up (ADR-037). */
+  rollup: SourceRollup;
+  /** What was connected: a Notion database or page, a Drive folder or file; null for containers. */
+  kind: "database" | "page" | "folder" | "file" | "mixed" | null;
   /** What it is doing right now (queued, discovering, extracting…), when working. */
   phase: SourcePhase | null;
   lastSyncedAt: string | null;
@@ -385,16 +480,28 @@ export interface ItemView {
   versions: number;
 }
 
+/** The kind of root a connected source follows (one per source since ADR-037; "mixed" before). */
+function selectionKind(configuration: Json): SourceView["kind"] {
+  const parsed = z
+    .object({
+      selection: z.array(z.object({ kind: z.enum(["folder", "file", "page", "database"]) })),
+    })
+    .safeParse(configuration);
+  if (!parsed.success || !parsed.data.selection.length) return null;
+  // Several roots in one source (before ADR-037): no single kind describes it.
+  return parsed.data.selection.length === 1 ? parsed.data.selection[0]!.kind : "mixed";
+}
+
 export async function getSpace(auth: AuthContext, spaceId: string) {
   const space = await ownSpace(auth, spaceId);
   // Lost background work is closed before it's shown, so no state is stale on screen.
   await recoverStaleWork(auth.workspaceId).catch(() => null);
   const spaces = await listSpaces(auth);
-  const [{ data: sources }, { data: items }] = await Promise.all([
+  const [{ data: sources }, { data: items }, children] = await Promise.all([
     auth.db
       .from("knowledge_sources")
       .select(
-        "id, source_type, display_name, status, last_synced_at, next_sync_at, last_error_code, created_at",
+        "id, source_type, display_name, status, last_synced_at, next_sync_at, last_error_code, created_at, configuration",
       )
       .eq("workspace_id", auth.workspaceId)
       .eq("space_id", spaceId)
@@ -410,6 +517,8 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       .is("archived_at", null)
       .order("updated_at", { ascending: false })
       .limit(300),
+    // Counts read every child, not just the recent ones listed (a database can hold hundreds).
+    allItems(auth, spaceId),
   ]);
   const sourceIds = (sources ?? []).map((s) => s.id);
   const runs = new SupabaseKnowledgeStore(createAdminClient());
@@ -423,6 +532,7 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       parentId: space.parent_space_id,
       path: space.name,
       counts: { ready: 0, processing: 0, attention: 0 },
+      sources: sourceTotals([]),
       sourceCount: 0,
       icon: spaceIcon(space.icon),
       color: spaceColor(space.color),
@@ -430,38 +540,30 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       updatedAt: space.updated_at,
     },
     children: spaces.filter((s) => s.parentId === spaceId),
+    allSpaces: spaces,
     sources: (sources ?? []).map((s): SourceView => {
-      const own = (items ?? []).filter((i) => i.source_id === s.id);
-      const counts = {
-        ready: own.filter((i) => i.status === "ready").length,
-        processing: own.filter((i) => i.status === "queued" || i.status === "processing").length,
-        attention: own.filter((i) => i.status === "needs_attention" || i.status === "failed")
-          .length,
-      };
+      const own = children.filter((i) => i.source_id === s.id);
+      const counts = childCounts(own);
       const run = active.find((r) => r.source_id === s.id);
       const done = last.find((r) => r.source_id === s.id);
-      const activeRun: ActiveRun | null = run
-        ? {
-            status: run.status as "queued" | "running",
-            createdAt: run.created_at,
-            startedAt: run.started_at,
-            heartbeatAt: run.heartbeat_at ?? null,
-          }
-        : null;
+      const activeRun = toActiveRun(run);
       const working = own.filter((i) => i.status === "queued" || i.status === "processing");
+      const state = sourceState({
+        container: isContainer(s.source_type),
+        status: s.status,
+        lastSyncedAt: s.last_synced_at,
+        createdAt: s.created_at,
+        activeRun,
+        counts,
+      });
       return {
         id: s.id,
         sourceType: s.source_type,
         name: s.display_name,
         status: s.status,
-        state: sourceState({
-          container: s.source_type === "upload" || s.source_type === "note",
-          status: s.status,
-          lastSyncedAt: s.last_synced_at,
-          createdAt: s.created_at,
-          activeRun,
-          counts,
-        }),
+        state,
+        rollup: sourceRollup(state, counts),
+        kind: isContainer(s.source_type) ? null : selectionKind(s.configuration),
         phase: sourcePhase(
           activeRun,
           working.map((i) => i.status_detail),
@@ -902,23 +1004,46 @@ export async function browseDrive(auth: AuthContext, connectionId: string, folde
   };
 }
 
-export async function searchNotion(auth: AuthContext, connectionId: string, query: string) {
+/** Roots already connected directly to a Space/Section, by external id (ADR-037 duplicates). */
+async function connectedRoots(auth: AuthContext, spaceId: string, provider: "google" | "notion") {
+  const { data } = await auth.db
+    .from("knowledge_sources")
+    .select("configuration")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("space_id", spaceId)
+    .eq("provider_key", provider)
+    .is("archived_at", null);
+  const ids = new Set<string>();
+  for (const row of data ?? []) {
+    const parsed = z
+      .object({ selection: z.array(z.object({ id: z.string() })) })
+      .safeParse(row.configuration);
+    for (const root of parsed.success ? parsed.data.selection : []) ids.add(root.id);
+  }
+  return ids;
+}
+
+/**
+ * The Notion picker (ADR-037): databases by default — one per database, however many data
+ * sources and rows it holds — or standalone pages, never the rows inside a database.
+ */
+export async function searchNotion(
+  auth: AuthContext,
+  connectionId: string,
+  query: string,
+  kind: "database" | "page" = "database",
+  spaceId: string | null = null,
+): Promise<NotionChoice[]> {
   await ownConnection(auth, connectionId, "notion");
-  const results = await notionClientFor(auth, connectionId).search(query.slice(0, 100));
-  // Search returns one result per data source; Knowledge follows the database that holds it.
-  const seen = new Set<string>();
-  return results.flatMap((p) => {
-    const database =
-      p.object === "data_source"
-        ? (p.parent?.database_id ?? null)
-        : p.object === "database"
-          ? p.id
-          : null;
-    const id = database ?? p.id;
-    if (seen.has(id)) return [];
-    seen.add(id);
-    return [{ id, name: pageTitle(p), kind: database ? ("database" as const) : ("page" as const) }];
-  });
+  if (spaceId) await ownSpace(auth, spaceId);
+  const [results, added] = await Promise.all([
+    notionClientFor(auth, connectionId).search(
+      query.slice(0, 100),
+      kind === "database" ? "data_source" : "page",
+    ),
+    spaceId ? connectedRoots(auth, spaceId, "notion") : new Set<string>(),
+  ]);
+  return notionChoices(results, kind, added);
 }
 
 const selectionSchema = z
@@ -932,7 +1057,11 @@ const selectionSchema = z
   .min(1)
   .max(50);
 
-/** A Drive selection or Notion page tree becomes a source of a Space, then syncs at once. */
+/**
+ * Each picked root — a Notion database or page, a Drive folder or file — becomes ONE logical
+ * source of the Space/Section (ADR-037) and syncs at once. A root already connected to that
+ * same destination is skipped, never duplicated; another Space or Section may connect it too.
+ */
 export async function addExternalSource(
   auth: AuthContext,
   input: {
@@ -941,39 +1070,45 @@ export async function addExternalSource(
     provider: "google" | "notion";
     selection: unknown;
   },
-) {
+): Promise<{ added: string[]; skipped: number }> {
   await ownSpace(auth, input.spaceId);
-  const account = await ownConnection(auth, input.connectionId, input.provider);
+  await ownConnection(auth, input.connectionId, input.provider);
   const selection = selectionSchema.parse(input.selection);
   const kinds = input.provider === "google" ? ["folder", "file"] : ["page", "database"];
   if (selection.some((s) => !kinds.includes(s.kind)))
     throw new AppError("VALIDATION_ERROR", "Invalid selection");
-  const label =
-    selection.length === 1 ? selection[0]!.name : `${selection[0]!.name} +${selection.length - 1}`;
-  const { data, error } = await auth.db
-    .from("knowledge_sources")
-    .insert({
-      workspace_id: auth.workspaceId,
-      space_id: input.spaceId,
-      provider_key: input.provider,
-      connection_id: input.connectionId,
-      source_type: input.provider === "google" ? "google_drive" : "notion",
-      display_name: `${label} · ${account.name}`.slice(0, 200),
-      configuration: json({ selection }),
-      created_by_user_id: auth.userId,
-    })
-    .select("id")
-    .single();
-  if (error) throw new AppError("INTERNAL_ERROR", "Could not add the source", { cause: error });
-  await audit(auth, "knowledge.source_added", "knowledge_source", data.id, {
-    provider: input.provider,
-    roots: selection.length,
-  });
-  // The first sync starts now; if the runtime is unavailable, the scheduler retries it.
-  await startSync(auth.workspaceId, data.id, "initial").catch((error: unknown) =>
-    logger.warn("knowledge.initial_sync_deferred", { code: (error as { code?: string }).code }),
+  const existing = await connectedRoots(auth, input.spaceId, input.provider);
+  const roots = selection.filter(
+    (r, i) => !existing.has(r.id) && selection.findIndex((x) => x.id === r.id) === i,
   );
-  return data.id;
+  const added: string[] = [];
+  for (const root of roots) {
+    const { data, error } = await auth.db
+      .from("knowledge_sources")
+      .insert({
+        workspace_id: auth.workspaceId,
+        space_id: input.spaceId,
+        provider_key: input.provider,
+        connection_id: input.connectionId,
+        source_type: input.provider === "google" ? "google_drive" : "notion",
+        display_name: root.name.slice(0, 200),
+        configuration: json({ selection: [root] }),
+        created_by_user_id: auth.userId,
+      })
+      .select("id")
+      .single();
+    if (error) throw new AppError("INTERNAL_ERROR", "Could not add the source", { cause: error });
+    await audit(auth, "knowledge.source_added", "knowledge_source", data.id, {
+      provider: input.provider,
+      kind: root.kind,
+    });
+    // The first sync starts now; if the runtime is unavailable, the scheduler retries it.
+    await startSync(auth.workspaceId, data.id, "initial").catch((error: unknown) =>
+      logger.warn("knowledge.initial_sync_deferred", { code: (error as { code?: string }).code }),
+    );
+    added.push(data.id);
+  }
+  return { added, skipped: selection.length - roots.length };
 }
 
 async function ownSource(auth: AuthContext, sourceId: string) {
@@ -1019,6 +1154,76 @@ export async function removeSource(auth: AuthContext, sourceId: string) {
   await ownSource(auth, sourceId);
   await purgeSources(auth.workspaceId, [sourceId], "archived");
   await audit(auth, "knowledge.source_removed", "knowledge_source", sourceId);
+}
+
+export interface SourceProblem {
+  id: string;
+  title: string;
+  status: KnowledgeItemRow["status"];
+  errorCode: string | null;
+  detail: string | null;
+  sourceUrl: string | null;
+  updatedAt: string;
+}
+
+/**
+ * Needs attention, explained (ADR-037): only the children that have a problem, never the
+ * hundreds that are fine. A ready child with an error kept its last good version.
+ */
+export async function sourceProblems(
+  auth: AuthContext,
+  sourceId: string,
+): Promise<{ problems: SourceProblem[]; total: number }> {
+  await ownSource(auth, sourceId);
+  const { data, count } = await auth.db
+    .from("knowledge_items")
+    .select("id, title, status, status_detail, error_code, source_url, updated_at", {
+      count: "exact",
+    })
+    .eq("workspace_id", auth.workspaceId)
+    .eq("source_id", sourceId)
+    .is("archived_at", null)
+    .or("status.in.(failed,needs_attention),and(status.eq.ready,error_code.not.is.null)")
+    .order("updated_at", { ascending: false })
+    .limit(100);
+  return {
+    total: count ?? (data ?? []).length,
+    problems: (data ?? []).map((i) => ({
+      id: i.id,
+      title: i.title,
+      status: i.status,
+      errorCode: i.error_code,
+      detail: i.status_detail,
+      sourceUrl: i.source_url,
+      updatedAt: i.updated_at,
+    })),
+  };
+}
+
+/** "Retry failed items": every child that failed or needs attention, queued again. */
+export async function retryProblems(auth: AuthContext, sourceId: string) {
+  await ownSource(auth, sourceId);
+  const { data } = await auth.db
+    .from("knowledge_items")
+    .select("id")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("source_id", sourceId)
+    .is("archived_at", null)
+    .in("status", ["failed", "needs_attention"])
+    .limit(500);
+  let retried = 0;
+  for (const item of data ?? []) {
+    try {
+      await retryItem(auth, item.id);
+      retried++;
+    } catch (error) {
+      logger.warn("knowledge.retry_item_failed", {
+        code: error instanceof AppError ? error.code : "INTERNAL_ERROR",
+      });
+    }
+  }
+  await audit(auth, "knowledge.source_retried", "knowledge_source", sourceId, { retried });
+  return { retried };
 }
 
 export async function purgeSources(

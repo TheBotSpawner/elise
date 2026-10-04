@@ -5,12 +5,7 @@ import { z } from "zod";
 import { requireAuthContext } from "@/application/auth-context";
 import { relatedConversations } from "@/application/history-service";
 import { syncDueSources } from "@/application/knowledge-background";
-import {
-  getSpace,
-  knowledgeAccounts,
-  knowledgeSetup,
-  listSpaces,
-} from "@/application/knowledge-service";
+import { getSpace, knowledgeAccounts, knowledgeSetup } from "@/application/knowledge-service";
 import { PageContainer } from "@/components/shared/page";
 import { SpaceView } from "@/features/knowledge/space-view";
 
@@ -18,14 +13,13 @@ export default async function SpacePage({
   params,
   searchParams,
 }: PageProps<"/knowledge/spaces/[id]">) {
-  const [{ id }, { add }] = await Promise.all([params, searchParams]);
+  const [{ id }, { add, attention }] = await Promise.all([params, searchParams]);
   if (!z.uuid().safeParse(id).success) notFound();
   const auth = await requireAuthContext();
   const data = await getSpace(auth, id).catch(() => null);
   if (!data) notFound();
-  const [accounts, allSpaces, conversations] = await Promise.all([
+  const [accounts, conversations] = await Promise.all([
     knowledgeAccounts(auth),
-    listSpaces(auth),
     relatedConversations(auth, id).catch(() => []),
   ]);
   // This Space's (and its Sections') due sources refresh after the page is sent.
@@ -47,11 +41,12 @@ export default async function SpacePage({
         sources={data.sources}
         items={data.items}
         accounts={accounts}
-        allSpaces={allSpaces}
+        allSpaces={data.allSpaces}
         workspaceId={auth.workspaceId}
         notionAvailable={setup.notionAvailable}
         backgroundAvailable={setup.backgroundAvailable}
         initialAdd={add === "drive" || add === "notion" ? add : null}
+        initialAttention={attention === "1"}
       />
     </PageContainer>
   );

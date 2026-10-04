@@ -273,6 +273,40 @@ describe("Notion", () => {
     ]);
   });
 
+  it("the database picker searches data sources (API 2026-03-11) across result pages", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      bodies.push(body);
+      const first = !body.start_cursor;
+      return new Response(
+        JSON.stringify({
+          results: [
+            {
+              object: "data_source",
+              id: first ? "ds1" : "ds2",
+              parent: { type: "database_id", database_id: "db" },
+            },
+          ],
+          next_cursor: first ? "c2" : null,
+        }),
+        { status: 200 },
+      );
+    });
+    const client = new NotionClient(
+      async () => "token",
+      vi.fn(async () => {}),
+      fetchImpl,
+    );
+    const results = await client.search("proj", "data_source");
+    expect(results.map((r) => r.id)).toEqual(["ds1", "ds2"]);
+    expect(bodies[0]).toMatchObject({
+      query: "proj",
+      filter: { property: "object", value: "data_source" },
+    });
+    expect(bodies[1]).toMatchObject({ start_cursor: "c2" });
+  });
+
   it("a revoked Notion token marks the connection for reconnection", async () => {
     const unauthorized = vi.fn(async () => {});
     const client = new NotionClient(

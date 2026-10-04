@@ -1,4 +1,5 @@
 import { requireAuthContext } from "@/application/auth-context";
+import { spaceOptions } from "@/application/knowledge-service";
 import { listSchedules } from "@/application/schedules-service";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { scheduleInputSchema, type ScheduleInput } from "@/core/schedules/schedule";
@@ -20,7 +21,10 @@ function parseDraft(value: string | string[] | undefined): ScheduleInput | null 
 
 export default async function SchedulesPage({ searchParams }: PageProps<"/schedules">) {
   const [auth, { t }, params] = await Promise.all([requireAuthContext(), getT(), searchParams]);
-  const { schedules, backgroundAvailable } = await listSchedules(auth);
+  const [{ schedules, backgroundAvailable }, spaces] = await Promise.all([
+    listSchedules(auth),
+    spaceOptions(auth).catch(() => []),
+  ]);
   return (
     <PageContainer>
       <PageHeader title={t.schedules.title} subtitle={t.schedules.subtitle} />
@@ -28,6 +32,7 @@ export default async function SchedulesPage({ searchParams }: PageProps<"/schedu
         schedules={schedules}
         workspaceId={auth.workspaceId}
         timezone={auth.profile.timezone}
+        spaces={spaces}
         backgroundAvailable={backgroundAvailable}
         draft={parseDraft(params.draft)}
       />

@@ -18,6 +18,7 @@ export default async function ResultPage({ params }: PageProps<"/schedules/resul
           brief={result.brief}
           createdAt={result.createdAt}
           unread={result.readAt === null}
+          title={result.title}
         />
       </div>
     </PageContainer>

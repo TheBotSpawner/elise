@@ -17,7 +17,7 @@ import {
   newsTopics,
   type MorningBriefConfig,
 } from "@/core/schedules/schedule";
-import { toLocalDateTime } from "@/core/time";
+import { addDays, toLocalDateTime } from "@/core/time";
 import { logger } from "@/infrastructure/observability/logger";
 
 import type { AuthContext } from "./auth-context";
@@ -44,7 +44,7 @@ export async function gatherBrief(
   let attempted = 0;
   const retryable: boolean[] = [];
 
-  async function call(block: string, name: string, args: unknown, source: Source) {
+  async function invoke(block: string, name: string, args: unknown, source: Source) {
     attempted++;
     const run = () =>
       executeToolCall(ports, ctx, {
@@ -63,7 +63,7 @@ export async function gatherBrief(
         ?.unavailable;
       for (const u of unavailable ?? [])
         warnings.push({ block, code: u.error, account: u.account });
-      return out.display;
+      return out;
     }
     if (out.status === "approval_required") approvalId ??= out.approvalId;
     failed++;
@@ -79,16 +79,27 @@ export async function gatherBrief(
     });
     return undefined;
   }
+  const call = async (block: string, name: string, args: unknown, source: Source) =>
+    (await invoke(block, name, args, source))?.display;
 
   const today = toLocalDateTime(ctx.now, ctx.timezone).slice(0, 10);
   const want = new Set(config.blocks);
+  // Which days the calendar covers (ADR-037): today, tomorrow, or the next seven days.
+  const range =
+    config.horizon === "tomorrow"
+      ? { from: addDays(today, 1), days: 1 }
+      : config.horizon === "week"
+        ? { from: today, days: 7 }
+        : { from: today, days: 1 };
   const [events, unread, needsReply, waiting, tasks, habits, goals, month, recent, yesterday] =
     await Promise.all([
       want.has("calendar")
         ? call(
             "calendar",
             "calendar.listEvents",
-            { from: today, limit: 50 },
+            range.days > 1
+              ? { from: range.from, to: addDays(range.from, range.days - 1), limit: 100 }
+              : { from: range.from, limit: 50 },
             config.sources.calendar,
           )
         : undefined,
@@ -154,6 +165,19 @@ export async function gatherBrief(
     }),
   );
 
+  // Knowledge digest: what changed in one Space (its Sections included) over the period.
+  const knowledge =
+    want.has("knowledge") && config.knowledgeSpaceId
+      ? (
+          await invoke(
+            "knowledge",
+            "knowledge.listRecentChanges",
+            { space: config.knowledgeSpaceId, days: config.horizon === "week" ? 7 : 1 },
+            "all",
+          )
+        )?.output
+      : undefined;
+
   if (failed === attempted && attempted > 0) {
     // Nothing could be loaded: retry later if it looks transient, otherwise fail clearly.
     if (retryable.every(Boolean)) {
@@ -180,6 +204,8 @@ export async function gatherBrief(
           }
         : undefined,
       ...(topics.length ? { news } : {}),
+      ...(range.days > 1 || range.from !== today ? { range } : {}),
+      ...(knowledge ? { knowledge: knowledge as BriefData["knowledge"] } : {}),
       warnings,
     },
     approvalId,
@@ -220,6 +246,8 @@ export async function briefNow(auth: AuthContext): Promise<MorningBrief> {
     .eq("workspace_id", auth.workspaceId)
     .eq("action_type", "morning_brief")
     .neq("status", "archived")
+    // Other presets share the action type; "my brief" is the Morning Brief (or a pre-preset one).
+    .or("configuration->>preset.is.null,configuration->>preset.eq.morning_brief")
     .order("created_at")
     .limit(1)
     .maybeSingle();
@@ -277,7 +305,8 @@ export function morningBriefHandler(deps: {
       kind: "result",
       result: {
         type: "morning_brief",
-        title: "Morning Brief",
+        // The user's own name for it: "Morning Brief", "Weekly planning"…
+        title: schedule.name,
         content: brief,
         metadata: { date: brief.date, scheduleName: schedule.name },
       },

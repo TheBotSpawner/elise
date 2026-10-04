@@ -733,6 +733,78 @@ export const es: Dictionary = {
     },
     readyOf: (ready: number, total: number) => `${ready} de ${total} listos`,
     sourceMenu: (name: string) => `Opciones de ${name}`,
+    /** Fuentes lógicas de un vistazo (ADR-037): una base es una fuente, tenga lo que tenga. */
+    sourceSummary: (total: number, processing: number, attention: number) =>
+      [
+        `${total} ${total === 1 ? "fuente" : "fuentes"}`,
+        processing ? `${processing} procesando` : "",
+        attention ? `${attention} ${attention === 1 ? "necesita" : "necesitan"} atención` : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    attentionCount: (n: number) => `${n} ${n === 1 ? "necesita" : "necesitan"} atención`,
+    rollup: {
+      ready: "Lista",
+      processing: "Procesando",
+      needs_attention: "Necesita atención",
+      failed: "No se pudo leer",
+    },
+    sourceKind: {
+      notion: {
+        database: "Base de datos de Notion",
+        page: "Página de Notion",
+        mixed: "Notion",
+      },
+      google_drive: { folder: "Carpeta de Drive", file: "Archivo de Drive", mixed: "Google Drive" },
+    } as Record<string, Record<string, string>>,
+    addTo: (where: string) => `Se suma a ${where}`,
+    attention: {
+      title: (name: string) => `${name}: qué necesita atención`,
+      spaceTitle: "Fuentes que necesitan atención",
+      spaceNone: "Ahora mismo todo está bien acá.",
+      summary: (ready: number, attention: number, processing: number) =>
+        [
+          `${ready} ${ready === 1 ? "elemento listo" : "elementos listos"}`,
+          attention ? `${attention} ${attention === 1 ? "necesita" : "necesitan"} atención` : "",
+          processing ? `${processing} procesando` : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      sourceProblem: "La fuente en sí",
+      problemItems: "Elementos con problemas",
+      showingOf: (shown: number, total: number) => `Se muestran ${shown} de ${total}`,
+      none: "Ningún elemento tiene problemas. ",
+      technical: "Detalles técnicos",
+      lastAttempt: "Último intento",
+      code: "Código",
+      message: "Mensaje",
+      retry: "Reintentar",
+      retryAll: (n: number) =>
+        n === 1 ? "Reintentar el elemento fallido" : `Reintentar los ${n} elementos fallidos`,
+      retried: (n: number) => `${n} ${n === 1 ? "elemento vuelve" : "elementos vuelven"} a la cola`,
+      reconnect: "Reconectar",
+      open: "Abrir",
+      openSource: "Abrir en la app original",
+      remove: "Quitar fuente",
+      inspect: "Ver qué necesita atención",
+      reasons: {
+        reconnect: "ELISE perdió el acceso a esta cuenta. Reconectala para seguir.",
+        access_lost:
+          "ELISE perdió el acceso a esta página. Volvé a compartirla con ELISE en Notion (o reconectá).",
+        no_text: "Este elemento no tiene texto que ELISE pueda leer.",
+        scanned_no_ocr:
+          "Es un documento escaneado y el reconocimiento de texto todavía no está configurado.",
+        ocr_failed: "El reconocimiento de texto (OCR) no encontró texto en este documento.",
+        too_large: "Es demasiado grande para que ELISE lo lea.",
+        unsupported: "Este tipo de archivo no es compatible.",
+        mismatch: "El contenido del archivo no coincide con su tipo.",
+        corrupt: "ELISE no pudo abrir el archivo (¿dañado o protegido?).",
+        stalled: "El procesamiento en segundo plano nunca terminó. Reintentar suele resolverlo.",
+        timeout: "Tardó demasiado y se detuvo. Podés reintentar.",
+        unreachable: "No se pudo llegar a la fuente. Probá de nuevo en unos minutos.",
+        unknown: "ELISE no pudo indexar este elemento.",
+      },
+    },
     sourceCount: (n: number) => `${n} ${n === 1 ? "fuente" : "fuentes"}`,
     documentCount: (n: number) => `${n} ${n === 1 ? "documento" : "documentos"}`,
     alreadySyncing: "La fuente ya se está sincronizando.",
@@ -887,7 +959,18 @@ export const es: Dictionary = {
     },
     picker: {
       titleDrive: "Elegí qué debería entender ELISE",
-      titleNotion: "Elegí páginas de Notion",
+      titleNotion: "Sumar desde Notion",
+      notionDatabases: "Bases de datos",
+      notionPages: "Páginas",
+      searchDatabases: "Buscá bases que compartiste con ELISE",
+      searchPages: "Buscá páginas sueltas que compartiste con ELISE",
+      databaseHint: "Cada base es una fuente; ELISE lee sus páginas por vos.",
+      alreadyAdded: "Ya agregada",
+      notionAccess:
+        "¿No la ves? ELISE solo ve lo que compartiste con ella en Notion: abrila ahí › ··· › Conexiones › ELISE, o reconectá Notion para elegir de nuevo.",
+      reconnectNotion: "Reconectar Notion",
+      skipped: (n: number) =>
+        `${n} ya ${n === 1 ? "estaba" : "estaban"} en este lugar y no se ${n === 1 ? "sumó" : "sumaron"} de nuevo.`,
       account: "Cuenta",
       noAccounts: "Primero conectá una cuenta con Drive o Notion en Conexiones.",
       enableDrive: "Permitir Drive en Conexiones",
@@ -1002,11 +1085,66 @@ export const es: Dictionary = {
   schedules: {
     title: "Programados",
     subtitle: "Lo que ELISE prepara por su cuenta.",
-    emptyTitle: "Todavía no hay programados",
+    emptyTitle: "Todavía no hay nada programado",
     emptyBody:
-      "Configurá tu Morning Brief una vez y ELISE lo prepara cada mañana. También podés pedirlo en el chat: “Todos los días de semana a las 7:30 preparame el Morning Brief.”",
-    create: "Nuevo Morning Brief",
-    morningBrief: "Morning Brief",
+      "Contale a ELISE qué querés que prepare y cuándo — o empezá por una idea de abajo. También podés pedirlo en el chat: “Todos los domingos a las 19 planificá mi semana.”",
+    yours: "Tus tareas programadas",
+    ideas: "Ideas para ELISE",
+    ideasHint:
+      "Cada idea completa una nueva tarea programada; podés cambiar todo antes de crearla.",
+    alreadyAdded: "Ya agregada",
+    newTitle: "Nueva tarea programada",
+    editTitle: (name: string) => `Editar “${name}”`,
+    presets: {
+      morning_brief: {
+        name: "Morning Brief",
+        purpose: "Empezá el día con tu agenda, tus tareas y lo importante.",
+        instructions: "",
+      },
+      weekly_planning: {
+        name: "Planificación semanal",
+        purpose: "Repasá la semana que viene y los compromisos importantes.",
+        instructions:
+          "Planificá la semana que viene: las reuniones y compromisos importantes día por día, las tareas que vencen esta semana y los objetivos para avanzar. Marcá los días cargados.",
+      },
+      end_of_day: {
+        name: "Cierre del día",
+        purpose: "Qué pasó hoy y qué quedó pendiente.",
+        instructions:
+          "Cerrá mi día: qué pasó hoy, qué tareas siguen abiertas o vencidas y qué hábitos me faltan. Sugerí una cosa para dejar lista para mañana.",
+      },
+      calendar_prep: {
+        name: "Agenda de mañana",
+        purpose: "Un adelanto de la agenda de mañana, la noche anterior.",
+        instructions:
+          "Preparame para mañana: las reuniones en orden, qué preparar para cada una, conflictos y tiempo libre.",
+      },
+      task_review: {
+        name: "Repaso de tareas",
+        purpose: "Tareas vencidas y próximas, en orden.",
+        instructions:
+          "Repasá mis tareas: primero las vencidas, después lo de hoy y lo próximo. Sugerí por dónde empezar.",
+      },
+      email_follow_up: {
+        name: "Seguimiento de mails",
+        purpose: "Mails importantes que pueden necesitar respuesta.",
+        instructions:
+          "Enfocate en el mail: qué necesita mi respuesta, a quién estoy esperando y los no leídos importantes. Ignorá newsletters.",
+      },
+      knowledge_digest: {
+        name: "Resumen de Conocimiento",
+        purpose: "Qué cambió hace poco en un Espacio de Conocimiento.",
+        instructions:
+          "Resumí qué se agregó o actualizó en este Espacio de Conocimiento y qué puede importar.",
+      },
+      habit_check_in: {
+        name: "Repaso de hábitos",
+        purpose: "Cómo vienen tus hábitos y objetivos.",
+        instructions:
+          "Repasá mis hábitos: qué me falta hoy, cuáles están en riesgo esta semana y cómo vienen mis objetivos. Breve y con buena onda.",
+      },
+    },
+    create: "Nueva tarea programada",
     status: {
       active: "Activo",
       paused: "Pausado",
@@ -1034,17 +1172,25 @@ export const es: Dictionary = {
     started: "En marcha. Sigue aunque cierres la app.",
     notConfigured: "La ejecución en segundo plano todavía no está configurada en este servidor.",
     form: {
+      what: "¿Qué debería hacer ELISE?",
+      whatPlaceholder: "Planificá mi semana: reuniones importantes, vencimientos y qué preparar.",
+      looksAt: "Qué mira ELISE",
+      horizon: "Días de la agenda",
+      horizons: { today: "Hoy", tomorrow: "Mañana", week: "Los próximos 7 días" },
+      space: "Espacio de Conocimiento",
+      spacePlaceholder: "Elegí un Espacio…",
+      spaceRequired: "Elegí qué Espacio resumir.",
+      noSpaces: "Primero creá un Espacio de Conocimiento.",
+      preview: "Se ejecuta",
+      timeIn: (tz: string) => `hora de ${tz}`,
       name: "Nombre",
       repeat: "Repetir",
       oneTime: "Una vez",
       date: "Fecha",
       time: "Hora",
       timezone: "Zona horaria",
-      include: "Qué incluir",
       notify: "Cuando esté listo",
       instructions: "Tus instrucciones (opcional)",
-      instructionsPlaceholder:
-        "Incluí solo los mails que necesitan mi atención. Ignorá newsletters.",
       save: "Guardar",
       create: "Crear",
       cancel: "Cancelar",
@@ -1055,7 +1201,7 @@ export const es: Dictionary = {
         "Solo estos temas, separados por comas (hasta 4). Unas pocas novedades recientes con sus fuentes.",
     },
     blocks: {
-      calendar: "Agenda de hoy",
+      calendar: "Agenda",
       email: "Mails importantes",
       needs_reply: "Para responder y en espera",
       tasks: "Tareas de hoy y vencidas",
@@ -1063,6 +1209,7 @@ export const es: Dictionary = {
       habits: "Hábitos",
       goals: "Objetivos",
       finance: "Finanzas (el mes hasta hoy, gastos de ayer)",
+      knowledge: "Cambios en Conocimiento (un Espacio)",
     },
     notify: { none: "Sin aviso", in_app: "En ELISE", browser: "Notificación del navegador" },
     enableBrowser: "Activar notificaciones del navegador",
@@ -1124,6 +1271,9 @@ export const es: Dictionary = {
       waiting_on_others: "Seguimientos de email",
       tasks: "Tareas",
     } as Record<string, string>,
+    knowledge: "Conocimiento",
+    noKnowledgeChanges: "No cambió nada en este Espacio en este período.",
+    knowledgeChange: { added: "agregado", updated: "actualizado", removed: "eliminado" },
     reconnect: "Abrir Conexiones",
     habits: "Hábitos",
     goals: "Objetivos",

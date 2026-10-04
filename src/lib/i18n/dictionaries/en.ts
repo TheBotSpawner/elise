@@ -723,6 +723,76 @@ export const en = {
     },
     readyOf: (ready: number, total: number) => `${ready} of ${total} ready`,
     sourceMenu: (name: string) => `Options for ${name}`,
+    /** Logical sources at a glance (ADR-037): a database is one source, whatever it holds. */
+    sourceSummary: (total: number, processing: number, attention: number) =>
+      [
+        `${total} ${total === 1 ? "source" : "sources"}`,
+        processing ? `${processing} processing` : "",
+        attention ? `${attention} ${attention === 1 ? "needs" : "need"} attention` : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    attentionCount: (n: number) => `${n} ${n === 1 ? "needs" : "need"} attention`,
+    rollup: {
+      ready: "Ready",
+      processing: "Processing",
+      needs_attention: "Needs attention",
+      failed: "Couldn't be read",
+    },
+    sourceKind: {
+      notion: {
+        database: "Notion database",
+        page: "Notion page",
+        mixed: "Notion",
+      },
+      google_drive: { folder: "Drive folder", file: "Drive file", mixed: "Google Drive" },
+    } as Record<string, Record<string, string>>,
+    addTo: (where: string) => `Add to ${where}`,
+    attention: {
+      title: (name: string) => `${name}: what needs attention`,
+      spaceTitle: "Sources that need attention",
+      spaceNone: "Everything here is fine right now.",
+      summary: (ready: number, attention: number, processing: number) =>
+        [
+          `${ready} ${ready === 1 ? "item" : "items"} ready`,
+          attention ? `${attention} ${attention === 1 ? "needs" : "need"} attention` : "",
+          processing ? `${processing} processing` : "",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      sourceProblem: "The source itself",
+      problemItems: "Items with a problem",
+      showingOf: (shown: number, total: number) => `Showing ${shown} of ${total}`,
+      none: "No item has a problem. ",
+      technical: "Technical details",
+      lastAttempt: "Last attempt",
+      code: "Code",
+      message: "Message",
+      retry: "Retry",
+      retryAll: (n: number) => `Retry ${n === 1 ? "the failed item" : `the ${n} failed items`}`,
+      retried: (n: number) => `${n} ${n === 1 ? "item" : "items"} queued again`,
+      reconnect: "Reconnect",
+      open: "Open",
+      openSource: "Open in the original app",
+      remove: "Remove source",
+      inspect: "See what needs attention",
+      reasons: {
+        reconnect: "ELISE lost access to this account. Reconnect it to continue.",
+        access_lost:
+          "ELISE lost access to this page. Share it with ELISE again in Notion (or reconnect).",
+        no_text: "There's no text ELISE can read in this item.",
+        scanned_no_ocr: "It's a scanned document and text recognition isn't set up yet.",
+        ocr_failed: "Text recognition (OCR) found no text in this document.",
+        too_large: "It's too large for ELISE to read.",
+        unsupported: "This file type isn't supported.",
+        mismatch: "The file's content doesn't match its type.",
+        corrupt: "ELISE couldn't open the file (damaged or protected?).",
+        stalled: "The background work never finished. Retrying usually fixes it.",
+        timeout: "It took too long and was stopped. You can retry.",
+        unreachable: "The source couldn't be reached. Try again in a few minutes.",
+        unknown: "ELISE couldn't index this item.",
+      },
+    },
     sourceCount: (n: number) => `${n} ${n === 1 ? "source" : "sources"}`,
     documentCount: (n: number) => `${n} ${n === 1 ? "document" : "documents"}`,
     alreadySyncing: "This source is already syncing.",
@@ -876,7 +946,18 @@ export const en = {
     },
     picker: {
       titleDrive: "Choose what ELISE should understand",
-      titleNotion: "Choose Notion pages",
+      titleNotion: "Add from Notion",
+      notionDatabases: "Databases",
+      notionPages: "Pages",
+      searchDatabases: "Search databases you shared with ELISE",
+      searchPages: "Search standalone pages you shared with ELISE",
+      databaseHint: "Each database is one source; ELISE reads its pages for you.",
+      alreadyAdded: "Already added",
+      notionAccess:
+        "Don't see one? ELISE only sees what you shared with it in Notion: open it there › ··· › Connections › ELISE, or reconnect Notion to choose again.",
+      reconnectNotion: "Reconnect Notion",
+      skipped: (n: number) =>
+        `${n} ${n === 1 ? "was" : "were"} already in this place and ${n === 1 ? "wasn't" : "weren't"} added again.`,
       account: "Account",
       noAccounts: "Connect an account with Drive or Notion in Connections first.",
       enableDrive: "Allow Drive in Connections",
@@ -991,11 +1072,66 @@ export const en = {
   schedules: {
     title: "Schedules",
     subtitle: "What ELISE prepares for you, on its own.",
-    emptyTitle: "No schedules yet",
+    emptyTitle: "Nothing scheduled yet",
     emptyBody:
-      "Set up your Morning Brief once and ELISE prepares it every morning. You can also ask in chat: “Every weekday at 7:30 prepare my Morning Brief.”",
-    create: "New Morning Brief",
-    morningBrief: "Morning Brief",
+      "Tell ELISE what to prepare for you and when — or start from an idea below. You can also ask in chat: “Every Sunday at 7 pm plan my week.”",
+    yours: "Your scheduled tasks",
+    ideas: "Ideas for ELISE",
+    ideasHint:
+      "Each idea fills in a new scheduled task; you can change everything before creating it.",
+    alreadyAdded: "Already added",
+    newTitle: "New scheduled task",
+    editTitle: (name: string) => `Edit “${name}”`,
+    presets: {
+      morning_brief: {
+        name: "Morning Brief",
+        purpose: "Start the day with your calendar, tasks and what matters.",
+        instructions: "",
+      },
+      weekly_planning: {
+        name: "Weekly planning",
+        purpose: "Review the coming week and surface important commitments.",
+        instructions:
+          "Plan the coming week: the important meetings and commitments day by day, tasks with deadlines this week, and the goals to keep moving. Point out busy days.",
+      },
+      end_of_day: {
+        name: "End-of-day review",
+        purpose: "What happened today and what's still open.",
+        instructions:
+          "Close my day: what happened today, which tasks are still open or overdue, and the habits I haven't done yet. Suggest one thing to leave ready for tomorrow.",
+      },
+      calendar_prep: {
+        name: "Tomorrow's calendar",
+        purpose: "A heads-up on tomorrow's schedule, the evening before.",
+        instructions:
+          "Prepare me for tomorrow: the meetings in order, what to prepare for each, conflicts and free time.",
+      },
+      task_review: {
+        name: "Task review",
+        purpose: "Overdue and upcoming tasks, in order.",
+        instructions:
+          "Review my tasks: overdue first, then what's due today and soon. Suggest what to do first.",
+      },
+      email_follow_up: {
+        name: "Email follow-up review",
+        purpose: "Important emails that may need a reply.",
+        instructions:
+          "Focus on email: what needs my reply, who I'm waiting on, and important unread messages. Skip newsletters.",
+      },
+      knowledge_digest: {
+        name: "Knowledge digest",
+        purpose: "What changed recently in one Knowledge Space.",
+        instructions:
+          "Summarize what was added or updated in this Knowledge Space and what may matter.",
+      },
+      habit_check_in: {
+        name: "Habit check-in",
+        purpose: "How your habits and goals are going.",
+        instructions:
+          "Check in on my habits: what's still pending today, which are at risk this week, and how my goals are going. Be encouraging and brief.",
+      },
+    },
+    create: "New scheduled task",
     status: {
       active: "Active",
       paused: "Paused",
@@ -1023,16 +1159,25 @@ export const en = {
     started: "Started. It keeps running if you close the app.",
     notConfigured: "Background execution isn't configured on this server yet.",
     form: {
+      what: "What should ELISE do?",
+      whatPlaceholder: "Plan my week: important meetings, deadlines and what to prepare.",
+      looksAt: "What ELISE looks at",
+      horizon: "Calendar days",
+      horizons: { today: "Today", tomorrow: "Tomorrow", week: "The next 7 days" },
+      space: "Knowledge Space",
+      spacePlaceholder: "Choose a Space…",
+      spaceRequired: "Choose which Space to summarize.",
+      noSpaces: "Create a Knowledge Space first.",
+      preview: "Runs",
+      timeIn: (tz: string) => `${tz} time`,
       name: "Name",
       repeat: "Repeat",
       oneTime: "One time",
       date: "Date",
       time: "Time",
       timezone: "Timezone",
-      include: "What to include",
       notify: "When it's ready",
       instructions: "Your instructions (optional)",
-      instructionsPlaceholder: "Only include emails that need my attention. Ignore newsletters.",
       save: "Save",
       create: "Create",
       cancel: "Cancel",
@@ -1043,7 +1188,7 @@ export const en = {
         "Only these topics, comma-separated (up to 4). A few recent items with their sources.",
     },
     blocks: {
-      calendar: "Today's calendar",
+      calendar: "Calendar",
       email: "Important email",
       needs_reply: "Needs reply & waiting on",
       tasks: "Tasks due & overdue",
@@ -1051,6 +1196,7 @@ export const en = {
       habits: "Habits",
       goals: "Goals",
       finance: "Finance (month so far, yesterday's spending)",
+      knowledge: "Knowledge changes (one Space)",
     },
     notify: { none: "Don't notify", in_app: "In ELISE", browser: "Browser notification" },
     enableBrowser: "Enable browser notifications",
@@ -1111,6 +1257,9 @@ export const en = {
       waiting_on_others: "Email follow-ups",
       tasks: "Tasks",
     } as Record<string, string>,
+    knowledge: "Knowledge",
+    noKnowledgeChanges: "Nothing changed in this Space in this period.",
+    knowledgeChange: { added: "added", updated: "updated", removed: "removed" },
     reconnect: "Open Connections",
     habits: "Habits",
     goals: "Goals",

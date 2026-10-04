@@ -140,8 +140,6 @@ const TERMINAL: ReadonlySet<RunStatus> = new Set([
   "skipped",
 ]);
 
-const RESULT_TITLES: Record<ActionType, string> = { morning_brief: "Morning Brief ready" };
-
 async function enqueue(ports: RunnerPorts, run: RunRecord): Promise<RunRecord> {
   try {
     const { runtimeJobId } = await ports.runtime.enqueue({
@@ -316,7 +314,7 @@ export async function executeRun(
   if (schedule.delivery.notify !== "none") {
     await ports.store.notify(run, schedule, {
       type: "schedule.result_ready",
-      title: RESULT_TITLES[schedule.actionType],
+      title: schedule.name,
       url: `/schedules/results/${resultId}`,
     });
   }

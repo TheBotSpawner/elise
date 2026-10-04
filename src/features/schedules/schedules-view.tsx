@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import type { RunView, ScheduleView } from "@/application/schedules-service";
 import { EmptyState } from "@/components/shared/page";
 import { Button } from "@/components/ui/button";
+import { PRESETS, presetOf } from "@/core/schedules/presets";
 import type { ScheduleInput } from "@/core/schedules/schedule";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
@@ -24,7 +25,7 @@ import {
   type ScheduleActionResult,
 } from "./actions";
 import { describeInstant, describeWhen } from "./format";
-import { defaultBrief, ScheduleForm } from "./schedule-form";
+import { blankTask, presetTask, ScheduleForm } from "./schedule-form";
 
 const ACTIVE_RUN = new Set(["queued", "running", "waiting_for_approval"]);
 const ATTENTION = new Set(["AUTH_EXPIRED", "PERMISSION_DENIED", "CAPABILITY_UNAVAILABLE"]);
@@ -33,67 +34,130 @@ export function SchedulesView({
   schedules,
   workspaceId,
   timezone,
+  spaces,
   backgroundAvailable,
   draft,
 }: {
   schedules: ScheduleView[];
   workspaceId: string;
   timezone: string;
+  /** Knowledge Spaces, for tasks that summarize one. */
+  spaces: { id: string; path: string }[];
   backgroundAvailable: boolean;
   /** A proposal from chat opened for editing. */
   draft: ScheduleInput | null;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const [editing, setEditing] = useState<{ id?: string; input: ScheduleInput } | null>(
     draft ? { input: draft } : null,
   );
   useRealtimeRefresh(workspaceId, ["schedules", "schedule_runs", "scheduled_results"]);
+  // A preset already in use opens that schedule instead of creating a second one (ADR-037).
+  const byPreset = new Map(
+    schedules.flatMap((s) => {
+      const preset = presetOf(s.input.configuration);
+      return preset ? [[preset, s] as const] : [];
+    }),
+  );
 
   const done = () => {
     setEditing(null);
     router.replace("/schedules");
     router.refresh();
   };
+  const open = (next: { id?: string; input: ScheduleInput }) => {
+    setEditing(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {!backgroundAvailable && (
         <p className="rounded-2xl border border-dashed border-border px-5 py-3.5 text-[13.5px] text-muted">
           {t.schedules.notConfigured}
         </p>
       )}
       {editing ? (
-        <ScheduleForm initial={editing.input} scheduleId={editing.id} onDone={done} />
+        <ScheduleForm
+          key={editing.id ?? editing.input.configuration.preset ?? "new"}
+          initial={editing.input}
+          scheduleId={editing.id}
+          spaces={spaces}
+          onDone={done}
+        />
       ) : (
         <div className="flex justify-end">
-          <Button
-            onClick={() => setEditing({ input: defaultBrief(timezone, t.schedules.morningBrief) })}
-          >
+          <Button onClick={() => open({ input: blankTask(timezone) })}>
+            <Plus />
             {t.schedules.create}
           </Button>
         </div>
       )}
 
-      {schedules.length === 0 && !editing ? (
-        <EmptyState
-          icon={CalendarClock}
-          title={t.schedules.emptyTitle}
-          body={t.schedules.emptyBody}
-        />
-      ) : (
-        <ul className="flex flex-col gap-3">
-          {schedules.map((s) => (
-            <li key={s.id}>
-              <ScheduleCard
-                schedule={s}
-                backgroundAvailable={backgroundAvailable}
-                onEdit={() => setEditing({ id: s.id, input: s.input })}
-              />
-            </li>
-          ))}
+      <section className="flex flex-col gap-3">
+        <h2 className="type-label text-faint">{t.schedules.yours}</h2>
+        {schedules.length === 0 ? (
+          <EmptyState
+            icon={CalendarClock}
+            title={t.schedules.emptyTitle}
+            body={t.schedules.emptyBody}
+          />
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {schedules.map((s) => (
+              <li key={s.id}>
+                <ScheduleCard
+                  schedule={s}
+                  backgroundAvailable={backgroundAvailable}
+                  onEdit={() => open({ id: s.id, input: s.input })}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3 border-t border-border pt-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="type-label text-faint">{t.schedules.ideas}</h2>
+          <p className="text-[13px] text-muted">{t.schedules.ideasHint}</p>
+        </div>
+        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {PRESETS.map((p) => {
+            const text = t.schedules.presets[p.id];
+            const existing = byPreset.get(p.id);
+            return (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    open(
+                      existing
+                        ? { id: existing.id, input: existing.input }
+                        : { input: presetTask(p.id, timezone, text) },
+                    )
+                  }
+                  className="flex h-full w-full flex-col items-start gap-1 rounded-2xl border border-border bg-surface px-4 py-3 text-left transition-colors hover:border-accent/50"
+                >
+                  <span className="flex w-full items-baseline justify-between gap-2">
+                    <span className="text-[14.5px] font-medium">{text.name}</span>
+                    {existing && (
+                      <span className="shrink-0 text-[12px] text-success">
+                        ✓ {t.schedules.alreadyAdded}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-[12.5px] text-faint">
+                    {describeWhen(p.definition, t, locale)}
+                  </span>
+                  <span className="text-[13px] text-muted">{text.purpose}</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
-      )}
+      </section>
     </div>
   );
 }

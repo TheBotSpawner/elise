@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import type { KnowledgeAccount } from "@/application/knowledge-service";
+import type { KnowledgeAccount, NotionChoice } from "@/application/knowledge-service";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n/client";
@@ -43,18 +43,26 @@ function Row({
   onToggle,
   label,
   action,
+  disabled = false,
 }: {
   selected: boolean;
   onToggle: () => void;
   label: string;
   action?: React.ReactNode;
+  disabled?: boolean;
 }) {
   return (
     <li className="flex items-center justify-between gap-3 px-3 py-2">
-      <label className="flex min-w-0 cursor-pointer items-center gap-3 text-sm">
+      <label
+        className={cn(
+          "flex min-w-0 items-center gap-3 text-sm",
+          disabled ? "text-muted" : "cursor-pointer",
+        )}
+      >
         <input
           type="checkbox"
-          checked={selected}
+          checked={selected || disabled}
+          disabled={disabled}
           onChange={onToggle}
           className="accent-[var(--accent)]"
         />
@@ -90,6 +98,15 @@ function Footer({
       </div>
     </div>
   );
+}
+
+/** After adding: one toast, plus what was already there (never added twice, ADR-037). */
+function useAdded() {
+  const { t } = useI18n();
+  return (value: { added: string[]; skipped: number }) => {
+    if (value.added.length) toast.success(t.knowledge.syncing);
+    if (value.skipped) toast(t.knowledge.picker.skipped(value.skipped));
+  };
 }
 
 function NoAccounts() {
@@ -135,6 +152,7 @@ export function DrivePicker({
   } | null>(null);
   const [pending, startTransition] = useTransition();
   const { selected, toggle, has } = useSelection();
+  const added = useAdded();
   const account = google.find((a) => a.connectionId === connectionId);
   const folder = trail.at(-1)!;
 
@@ -240,7 +258,7 @@ export function DrivePicker({
             });
             if (!r.ok) toast.error(t.errors.codes[r.error.code]);
             else {
-              toast.success(t.knowledge.syncing);
+              added(r.value);
               onDone();
             }
           })
@@ -250,7 +268,10 @@ export function DrivePicker({
   );
 }
 
-/** Pick Notion pages or databases (among those the user shared with ELISE in Notion). */
+/**
+ * Pick Notion databases (default) or standalone pages, among those shared with ELISE in Notion.
+ * Each one becomes one source; a database's rows are never listed (ADR-037).
+ */
 export function NotionPicker({
   spaceId,
   accounts,
@@ -265,18 +286,18 @@ export function NotionPicker({
   const { t } = useI18n();
   const notion = accounts.filter((a) => a.provider === "notion");
   const [connectionId, setConnectionId] = useState(notion[0]?.connectionId ?? "");
+  const [kind, setKind] = useState<"database" | "page">("database");
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<
-    { id: string; name: string; kind: "page" | "database" }[] | null
-  >(null);
+  const [results, setResults] = useState<NotionChoice[] | null>(null);
   const [pending, startTransition] = useTransition();
   const { selected, toggle, has } = useSelection();
+  const added = useAdded();
 
   useEffect(() => {
     if (!connectionId) return;
     let live = true;
     const timer = setTimeout(() => {
-      void searchNotionAction(connectionId, query).then((r) => {
+      void searchNotionAction(connectionId, query, kind, spaceId).then((r) => {
         if (!live) return;
         if (r.ok) setResults(r.value);
         else toast.error(t.errors.codes[r.error.code]);
@@ -286,37 +307,74 @@ export function NotionPicker({
       live = false;
       clearTimeout(timer);
     };
-  }, [connectionId, query, t]);
+  }, [connectionId, query, kind, spaceId, t]);
 
   if (!notionAvailable)
     return <p className="text-[13.5px] text-muted">{t.knowledge.picker.notionNotConfigured}</p>;
   if (!notion.length) return <NoAccounts />;
 
+  const p = t.knowledge.picker;
   return (
     <div className="flex flex-col gap-4">
       <AccountSelect accounts={notion} value={connectionId} onChange={setConnectionId} />
+      <div role="tablist" aria-label={p.titleNotion} className="flex gap-1.5">
+        {(["database", "page"] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={kind === k}
+            onClick={() => {
+              setKind(k);
+              setResults(null);
+            }}
+            className={cn(
+              "h-8 rounded-full border px-3 text-[13px] transition-colors",
+              kind === k
+                ? "border-accent bg-accent-soft text-accent-text"
+                : "border-border-strong text-muted hover:text-fg",
+            )}
+          >
+            {k === "database" ? p.notionDatabases : p.notionPages}
+          </button>
+        ))}
+      </div>
       <Input
-        aria-label={t.knowledge.picker.searchNotion}
-        placeholder={t.knowledge.picker.searchNotion}
+        aria-label={kind === "database" ? p.searchDatabases : p.searchPages}
+        placeholder={kind === "database" ? p.searchDatabases : p.searchPages}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
+      {kind === "database" && <p className="-mt-2 text-[12.5px] text-faint">{p.databaseHint}</p>}
       <ul className="max-h-80 divide-y divide-border overflow-y-auto rounded-xl border border-border">
         {!results ? (
           <li className="px-3 py-3 text-[13px] text-faint">…</li>
         ) : results.length === 0 ? (
-          <li className="px-3 py-3 text-[13px] text-faint">{t.knowledge.picker.nothing}</li>
+          <li className="px-3 py-3 text-[13px] text-faint">{p.nothing}</li>
         ) : (
-          results.map((p) => (
+          results.map((r) => (
             <Row
-              key={p.id}
-              label={p.kind === "database" ? `▦ ${p.name}` : p.name}
-              selected={has(p.id)}
-              onToggle={() => toggle({ id: p.id, kind: p.kind, name: p.name })}
+              key={r.id}
+              label={r.name}
+              disabled={r.added}
+              selected={has(r.id)}
+              onToggle={() => toggle({ id: r.id, kind: r.kind, name: r.name })}
+              action={
+                r.added ? (
+                  <span className="shrink-0 text-[12.5px] text-success">✓ {p.alreadyAdded}</span>
+                ) : undefined
+              }
             />
           ))
         )}
       </ul>
+      {/* Notion only shows ELISE what was shared with it: say so instead of looking empty. */}
+      <p className="text-[12.5px] text-muted">
+        {p.notionAccess}{" "}
+        <Link href="/connections" className="text-accent-text underline">
+          {p.reconnectNotion}
+        </Link>
+      </p>
       <Footer
         selected={selected.length}
         pending={pending}
@@ -331,7 +389,7 @@ export function NotionPicker({
             });
             if (!r.ok) toast.error(t.errors.codes[r.error.code]);
             else {
-              toast.success(t.knowledge.syncing);
+              added(r.value);
               onDone();
             }
           })

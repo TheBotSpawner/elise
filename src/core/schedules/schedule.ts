@@ -85,10 +85,34 @@ export const BRIEF_BLOCKS = [
   "goals",
   "finance",
   "news",
+  "knowledge",
 ] as const;
-/** Finance is personal and News needs topics: both are opt-in. */
-export const DEFAULT_BRIEF_BLOCKS = BRIEF_BLOCKS.filter((b) => b !== "finance" && b !== "news");
+/** Finance is personal, News needs topics and Knowledge a Space: all three are opt-in. */
+export const DEFAULT_BRIEF_BLOCKS = BRIEF_BLOCKS.filter(
+  (b) => b !== "finance" && b !== "news" && b !== "knowledge",
+);
 export type BriefBlock = (typeof BRIEF_BLOCKS)[number];
+
+/**
+ * Which days a scheduled briefing looks at (ADR-037): the calendar of today (the Morning
+ * Brief), of tomorrow (evening prep) or of the next seven days (weekly planning), and how far
+ * back recent Knowledge changes go (a day, or a week).
+ */
+export const BRIEF_HORIZONS = ["today", "tomorrow", "week"] as const;
+export type BriefHorizon = (typeof BRIEF_HORIZONS)[number];
+
+/** Presets prefill the one scheduled-task model; they are never separate capabilities. */
+export const SCHEDULE_PRESETS = [
+  "morning_brief",
+  "weekly_planning",
+  "end_of_day",
+  "task_review",
+  "calendar_prep",
+  "email_follow_up",
+  "knowledge_digest",
+  "habit_check_in",
+] as const;
+export type SchedulePreset = (typeof SCHEDULE_PRESETS)[number];
 
 export const morningBriefConfigSchema = z
   .object({
@@ -114,8 +138,17 @@ export const morningBriefConfigSchema = z
      * UiPath"). Only these — never inferred interests.
      */
     newsTopics: z.string().trim().max(300).default(""),
+    horizon: z.enum(BRIEF_HORIZONS).default("today"),
+    /** Knowledge block: the Space (or Section) whose recent changes it summarizes. */
+    knowledgeSpaceId: z.uuid().nullable().default(null),
+    /** The preset it was created from, if any (gallery "Already added"); null = custom. */
+    preset: z.enum(SCHEDULE_PRESETS).nullable().default(null),
   })
-  .strict();
+  .strict()
+  .refine((c) => !c.blocks.includes("knowledge") || c.knowledgeSpaceId, {
+    message: "Choose which Knowledge Space to summarize",
+    path: ["knowledgeSpaceId"],
+  });
 
 export type MorningBriefConfig = z.infer<typeof morningBriefConfigSchema>;
 

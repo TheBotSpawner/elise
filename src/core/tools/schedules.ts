@@ -4,6 +4,7 @@ import type { ToolDefinition } from "../agents/tools";
 import { AppError } from "../errors";
 import {
   BRIEF_BLOCKS,
+  BRIEF_HORIZONS,
   DEFAULT_BRIEF_BLOCKS,
   briefCapabilities,
   nextOccurrence,
@@ -34,7 +35,19 @@ const proposeInput = z
       .array(z.enum(BRIEF_BLOCKS))
       .min(1)
       .optional()
-      .describe("What to include. Omit for the default: calendar, email, needs_reply, tasks."),
+      .describe(
+        "What ELISE looks at. Omit for the default: calendar, email, needs_reply, tasks. knowledge = recent changes in one Knowledge Space (needs knowledgeSpaceId).",
+      ),
+    horizon: z
+      .enum(BRIEF_HORIZONS)
+      .default("today")
+      .describe(
+        "Days the calendar covers: today (Morning Brief), tomorrow (evening prep) or week (the next 7 days, weekly planning).",
+      ),
+    knowledgeSpaceId: z
+      .uuid()
+      .optional()
+      .describe("For the knowledge block: the Space id from knowledge.listSpaces."),
     notify: z.enum(["none", "in_app", "browser"]).default("in_app"),
     instructions: z
       .string()
@@ -55,7 +68,7 @@ export const proposeScheduleTool: ToolDefinition = {
   capability: "schedules",
   operation: "propose",
   description:
-    "Propose a Schedule (today: a Morning Brief) from the user's request. Shows a confirmation card; nothing is created until the user presses Create. Resolve times to the user's local time. If the time is vague (\"in the morning\"), ask first.",
+    "Propose a scheduled task from the user's request: a briefing ELISE prepares at set times — a Morning Brief, weekly planning, an end-of-day review, a task or email follow-up review, a Knowledge digest. instructions say what it should focus on. Shows a confirmation card; nothing is created until the user presses Create. Resolve times to the user's local time. If the time is vague (\"in the morning\"), ask first.",
   input: proposeInput,
   async describe() {
     return { summary: "Propose schedule" };
@@ -73,7 +86,11 @@ export const proposeScheduleTool: ToolDefinition = {
         ? { kind: "once", at: `${p.date}T${p.time}` }
         : { kind: "weekly", days: p.days, time: p.time },
       timezone: env.ctx.timezone,
-      configuration: { blocks: p.blocks ?? [...DEFAULT_BRIEF_BLOCKS] },
+      configuration: {
+        blocks: p.blocks ?? [...DEFAULT_BRIEF_BLOCKS],
+        horizon: p.horizon,
+        knowledgeSpaceId: p.knowledgeSpaceId ?? null,
+      },
       instructions: p.instructions ?? null,
       delivery: { notify: p.notify },
     });

@@ -38,6 +38,12 @@ import {
   type KnowledgeResult,
 } from "./actions";
 import { SpaceGlyph } from "./appearance";
+import {
+  SourceAttentionDialog,
+  SpaceAttentionDialog,
+  useSourceKind,
+  useSourceName,
+} from "./attention-dialog";
 import { UPLOAD_ACCEPT } from "./constants";
 import { SectionDialog } from "./section-dialog";
 import { SourceMenu } from "./source-menu";
@@ -79,6 +85,7 @@ export function SpaceView({
   notionAvailable,
   backgroundAvailable,
   initialAdd = null,
+  initialAttention = false,
   conversations = [],
 }: {
   /** Conversations linked to this Space (its Sections included) or Section (ADR-020). */
@@ -101,12 +108,19 @@ export function SpaceView({
   backgroundAvailable: boolean;
   /** Arriving from the create wizard with "Connect Google Drive / Notion" chosen. */
   initialAdd?: "drive" | "notion" | null;
+  /** Arriving from a card's "N need attention" (?attention=1). */
+  initialAttention?: boolean;
 }) {
   const { t } = useI18n();
   const router = useRouter();
   const relative = useRelative();
   const [pending, startTransition] = useTransition();
   const [adding, setAdding] = useState<AddSourceView | null>(initialAdd);
+  const [spaceAttention, setSpaceAttention] = useState(initialAttention);
+  // Kept by id so the dialog follows the live source after a refresh.
+  const [inspecting, setInspecting] = useState<string | null>(null);
+  const nameOf = useSourceName();
+  const kindOf = useSourceKind();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingSpace, setEditingSpace] = useState(false);
   const [creatingSection, setCreatingSection] = useState(false);
@@ -176,8 +190,6 @@ export function SpaceView({
     // Drop ?add= so a refresh doesn't reopen the picker.
     if (initialAdd) window.history.replaceState(null, "", `/knowledge/spaces/${space.id}`);
   };
-  const itemsOf = (type: SourceView["sourceType"]) =>
-    items.filter((i) => i.sourceType === type).length;
   const ordered = [...sources].sort(
     (a, b) => SOURCE_ORDER.indexOf(a.sourceType) - SOURCE_ORDER.indexOf(b.sourceType),
   );
@@ -266,19 +278,33 @@ export function SpaceView({
           ) : (
             <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {sections.map((c) => (
-                <li key={c.id}>
-                  <Link
-                    href={`/knowledge/spaces/${c.id}`}
-                    className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/50"
-                  >
-                    <SpaceGlyph icon={c.icon} color={c.color} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14.5px] font-medium">{c.name}</span>
-                      <span className="block truncate text-[12.5px] text-muted">
-                        {t.knowledge.sourceCount(c.sourceCount)}
-                      </span>
+                <li
+                  key={c.id}
+                  className="relative flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 transition-colors hover:border-accent/50"
+                >
+                  <SpaceGlyph icon={c.icon} color={c.color} />
+                  <span className="min-w-0 flex-1">
+                    <Link
+                      href={`/knowledge/spaces/${c.id}`}
+                      className="block truncate text-[14.5px] font-medium after:absolute after:inset-0 after:rounded-2xl"
+                    >
+                      {c.name}
+                    </Link>
+                    <span className="block truncate text-[12.5px] text-muted">
+                      {t.knowledge.sourceSummary(c.sources.total, c.sources.processing, 0)}
+                      {c.sources.attention > 0 && (
+                        <>
+                          {" · "}
+                          <Link
+                            href={`/knowledge/spaces/${c.id}?attention=1`}
+                            className="relative z-10 text-approval-text underline-offset-2 hover:underline"
+                          >
+                            {t.knowledge.attentionCount(c.sources.attention)}
+                          </Link>
+                        </>
+                      )}
                     </span>
-                  </Link>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -288,10 +314,22 @@ export function SpaceView({
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
-          <h2 className="flex items-center gap-2 type-label text-faint">
-            {isSection ? t.knowledge.sources : t.knowledge.sections.generalSources}
-            {uploading && <span className="text-accent-text">· {t.knowledge.uploading}</span>}
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 type-label text-faint">
+              {isSection ? t.knowledge.sources : t.knowledge.sections.generalSources}
+              {sources.length > 0 && (
+                <span>· {t.knowledge.sourceSummary(space.sources.total, 0, 0)}</span>
+              )}
+              {uploading && <span className="text-accent-text">· {t.knowledge.uploading}</span>}
+            </h2>
+            {/* Where sources are listed, adding one is right there too (same flow as the header). */}
+            {sources.length > 0 && (
+              <Button size="sm" variant="ghost" onClick={() => setAdding("choose")}>
+                <Plus />
+                {t.knowledge.addSource}
+              </Button>
+            )}
+          </div>
           <p className="text-[13px] text-muted">
             {isSection
               ? t.knowledge.sections.sectionSourcesHint(parent?.name ?? "")
@@ -336,26 +374,51 @@ export function SpaceView({
                   <SourceIcon type={s.sourceType} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {s.sourceType === "upload"
-                      ? t.knowledge.uploadedFiles
-                      : s.sourceType === "note"
-                        ? t.knowledge.sourceTypes.note
-                        : s.name}
-                  </p>
+                  <p className="truncate text-sm font-medium">{nameOf(s)}</p>
                   <p className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted">
                     {s.sourceType === "upload" || s.sourceType === "note" ? (
-                      t.knowledge.documentCount(itemsOf(s.sourceType))
+                      <>
+                        {t.knowledge.documentCount(
+                          s.counts.ready + s.counts.processing + s.counts.attention,
+                        )}
+                        {s.counts.attention > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setInspecting(s.id)}
+                            className="text-approval-text underline-offset-2 hover:underline"
+                          >
+                            · {t.knowledge.attentionCount(s.counts.attention)}
+                          </button>
+                        )}
+                      </>
                     ) : (
                       <>
-                        <span className="text-faint">{t.knowledge.sourceTypes[s.sourceType]}</span>
+                        <span className="text-faint">{kindOf(s)}</span>
                         <span
                           aria-hidden
-                          className={cn("size-1.5 rounded-full", STATE_DOT[s.state])}
+                          className={cn(
+                            "size-1.5 rounded-full",
+                            s.rollup === "needs_attention" || s.rollup === "failed"
+                              ? "bg-approval"
+                              : STATE_DOT[s.state],
+                          )}
                         />
-                        {s.state === "up_to_date" && s.lastSyncedAt
-                          ? t.knowledge.upToDate(relative(s.lastSyncedAt))
-                          : t.knowledge.sourceState[s.state]}
+                        {s.rollup === "needs_attention" || s.rollup === "failed" ? (
+                          <button
+                            type="button"
+                            onClick={() => setInspecting(s.id)}
+                            title={t.knowledge.attention.inspect}
+                            className="text-approval-text underline-offset-2 hover:underline"
+                          >
+                            {t.knowledge.rollup[s.rollup]}
+                            {s.counts.attention > 0 &&
+                              ` · ${t.knowledge.attentionCount(s.counts.attention)}`}
+                          </button>
+                        ) : s.state === "up_to_date" && s.lastSyncedAt ? (
+                          t.knowledge.upToDate(relative(s.lastSyncedAt))
+                        ) : (
+                          t.knowledge.sourceState[s.state]
+                        )}
                         {/* What it is doing right now: queued, discovering, extracting… */}
                         {s.phase &&
                           s.state !== "needs_attention" &&
@@ -446,10 +509,7 @@ export function SpaceView({
       )}
 
       <section className="flex flex-col gap-3 border-t border-border pt-6">
-        <h2 className="type-label text-faint">
-          {t.knowledge.recent} ·{" "}
-          {t.knowledge.counts(space.counts.ready, space.counts.processing, space.counts.attention)}
-        </h2>
+        <h2 className="type-label text-faint">{t.knowledge.recent}</h2>
         <input
           ref={versionInput}
           type="file"
@@ -589,8 +649,32 @@ export function SpaceView({
         onClose={closeAdd}
         onUpload={pickFiles}
         spaceId={space.id}
+        destination={space.path}
         accounts={accounts}
         notionAvailable={notionAvailable}
+      />
+      <SpaceAttentionDialog
+        open={spaceAttention}
+        sources={sources}
+        onClose={() => {
+          setSpaceAttention(false);
+          if (initialAttention)
+            window.history.replaceState(null, "", `/knowledge/spaces/${space.id}`);
+        }}
+        onPick={(s) => {
+          setSpaceAttention(false);
+          setInspecting(s.id);
+        }}
+      />
+      <SourceAttentionDialog
+        source={sources.find((s) => s.id === inspecting) ?? null}
+        onClose={() => setInspecting(null)}
+        onSync={(id) => syncSource(id)}
+        onRemove={(id) => {
+          if (!window.confirm(t.knowledge.removeSourceConfirm)) return;
+          setInspecting(null);
+          act(() => removeSourceAction(id));
+        }}
       />
       <CreateSpaceDialog
         open={editingSpace}

@@ -116,11 +116,14 @@ export function BriefView({
   brief,
   createdAt,
   unread,
+  title,
 }: {
   resultId?: string;
   brief: MorningBrief;
   createdAt: string;
   unread: boolean;
+  /** The schedule's own name ("Weekly planning"); the Morning Brief when absent. */
+  title?: string;
 }) {
   const { t, locale } = useI18n();
   useEffect(() => {
@@ -158,7 +161,7 @@ export function BriefView({
               resultId ? "text-[30px]" : "text-[20px]",
             )}
           >
-            {t.brief.title}
+            {title ?? t.brief.title}
           </h1>
         </div>
         <ListenButton text={brief.narrative ?? ""} />
@@ -222,7 +225,15 @@ export function BriefView({
       )}
 
       {brief.today && (
-        <Section label={t.brief.today}>
+        <Section
+          label={
+            !brief.period
+              ? t.brief.today
+              : brief.period.days > 1
+                ? t.schedules.form.horizons.week
+                : t.schedules.form.horizons.tomorrow
+          }
+        >
           {brief.today.events.length === 0 ? (
             <p className="text-[14px] text-muted">{t.brief.noEvents}</p>
           ) : (
@@ -349,6 +360,28 @@ export function BriefView({
               </li>
             ))}
           </ul>
+        </Section>
+      )}
+
+      {brief.knowledge && (
+        <Section label={`${t.brief.knowledge} · ${brief.knowledge.scope}`}>
+          {brief.knowledge.changes.length === 0 ? (
+            <p className="text-[14px] text-muted">{t.brief.noKnowledgeChanges}</p>
+          ) : (
+            <ul className="flex flex-col gap-1.5 text-[14px]">
+              {brief.knowledge.changes.map((c) => (
+                <li
+                  key={`${c.title}:${c.at}`}
+                  className="flex items-baseline justify-between gap-3"
+                >
+                  <span className="min-w-0 truncate">{c.title}</span>
+                  <span className="shrink-0 text-[12.5px] text-faint">
+                    {t.brief.knowledgeChange[c.change]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </Section>
       )}
 

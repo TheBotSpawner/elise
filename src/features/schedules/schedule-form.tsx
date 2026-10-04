@@ -5,11 +5,15 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
+import { PRESETS } from "@/core/schedules/presets";
 import {
   BRIEF_BLOCKS,
+  BRIEF_HORIZONS,
   DEFAULT_BRIEF_BLOCKS,
   type BriefBlock,
+  type BriefHorizon,
   type ScheduleInput,
+  type SchedulePreset,
 } from "@/core/schedules/schedule";
 import { addDays, todayIn } from "@/core/time";
 import { errorText } from "@/lib/i18n";
@@ -18,36 +22,69 @@ import { cn } from "@/lib/utils";
 
 import { createScheduleAction, updateScheduleAction } from "./actions";
 import { BrowserNotificationsPrompt } from "./browser-notifications";
+import { describeWhen } from "./format";
 
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
-export function defaultBrief(timezone: string, name: string): ScheduleInput {
+/** A blank scheduled task: the user says what ELISE should do; nothing is assumed beyond it. */
+export function blankTask(timezone: string): ScheduleInput {
   return {
-    name,
+    name: "",
     actionType: "morning_brief",
-    definition: { kind: "weekly", days: [1, 2, 3, 4, 5], time: "07:30" },
+    definition: { kind: "weekly", days: [1, 2, 3, 4, 5], time: "08:00" },
     timezone,
     configuration: {
       blocks: [...DEFAULT_BRIEF_BLOCKS],
       sources: { calendar: "all", email: "all", tasks: "all" },
       newsTopics: "",
+      horizon: "today",
+      knowledgeSpaceId: null,
+      preset: null,
     },
     instructions: null,
     delivery: { notify: "in_app" },
   };
 }
 
-/** Plain form, no technical syntax: when, what to include, how to notify, own instructions. */
+/** A preset prefills the same task (ADR-037): name, what to do, what to look at, when. */
+export function presetTask(
+  id: SchedulePreset,
+  timezone: string,
+  text: { name: string; instructions: string },
+): ScheduleInput {
+  const spec = PRESETS.find((p) => p.id === id)!;
+  const base = blankTask(timezone);
+  return {
+    ...base,
+    name: text.name,
+    definition: spec.definition,
+    configuration: {
+      ...base.configuration,
+      blocks: [...spec.blocks],
+      horizon: spec.horizon,
+      preset: id,
+    },
+    instructions: text.instructions || null,
+  };
+}
+
+/**
+ * The one scheduled-task form, no technical syntax: what ELISE should do, what it looks at,
+ * when (with a readable preview), and how to notify. Presets arrive here prefilled.
+ */
 export function ScheduleForm({
   initial,
   scheduleId,
+  spaces,
   onDone,
 }: {
   initial: ScheduleInput;
   scheduleId?: string;
+  /** Knowledge Spaces for the Knowledge block. */
+  spaces: { id: string; path: string }[];
   onDone: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [pending, startTransition] = useTransition();
   const [v, setV] = useState(initial);
   const timezones = useMemo(() => Intl.supportedValuesOf("timeZone"), []);
@@ -95,12 +132,19 @@ export function ScheduleForm({
   }
 
   const days = v.definition.kind === "weekly" ? v.definition.days : [];
+  const blocks = v.configuration.blocks;
+  const needsSpace = blocks.includes("knowledge") && !v.configuration.knowledgeSpaceId;
+  const setConfig = (patch: Partial<ScheduleInput["configuration"]>) =>
+    setV((s) => ({ ...s, configuration: { ...s.configuration, ...patch } }));
 
   return (
     <form
       onSubmit={submit}
       className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-5"
     >
+      <h2 className="text-base font-medium">
+        {scheduleId ? t.schedules.editTitle(initial.name) : t.schedules.newTitle}
+      </h2>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="schedule-name">{t.schedules.form.name}</Label>
         <Input
@@ -109,6 +153,19 @@ export function ScheduleForm({
           maxLength={120}
           required
           onChange={(e) => setV({ ...v, name: e.target.value })}
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="schedule-instructions">{t.schedules.form.what}</Label>
+        <textarea
+          id="schedule-instructions"
+          rows={3}
+          maxLength={2000}
+          value={v.instructions ?? ""}
+          placeholder={t.schedules.form.whatPlaceholder}
+          onChange={(e) => setV({ ...v, instructions: e.target.value || null })}
+          className="rounded-xl border border-border-strong bg-transparent px-3.5 py-2.5 text-sm placeholder:text-faint focus:border-accent focus:outline-none"
         />
       </div>
 
@@ -193,8 +250,16 @@ export function ScheduleForm({
         </div>
       </fieldset>
 
+      {/* What "when" means in plain words: no cron, no RRULE. */}
+      {(once || days.length > 0) && (
+        <p className="-mt-2 text-[13px] text-muted">
+          {t.schedules.form.preview}: {describeWhen(v.definition, t, locale)} ·{" "}
+          {t.schedules.form.timeIn(v.timezone)}
+        </p>
+      )}
+
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1.5 text-sm font-medium">{t.schedules.form.include}</legend>
+        <legend className="mb-1.5 text-sm font-medium">{t.schedules.form.looksAt}</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {BRIEF_BLOCKS.map((b) => (
             <label
@@ -203,7 +268,7 @@ export function ScheduleForm({
             >
               <input
                 type="checkbox"
-                checked={v.configuration.blocks.includes(b)}
+                checked={blocks.includes(b)}
                 onChange={() => toggleBlock(b)}
                 className="accent-[var(--accent)]"
               />
@@ -211,7 +276,48 @@ export function ScheduleForm({
             </label>
           ))}
         </div>
-        {v.configuration.blocks.includes("news") && (
+        {blocks.includes("calendar") && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            <Label htmlFor="schedule-horizon">{t.schedules.form.horizon}</Label>
+            <Select
+              id="schedule-horizon"
+              value={v.configuration.horizon}
+              onChange={(e) => setConfig({ horizon: e.target.value as BriefHorizon })}
+            >
+              {BRIEF_HORIZONS.map((h) => (
+                <option key={h} value={h}>
+                  {t.schedules.form.horizons[h]}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+        {blocks.includes("knowledge") && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            <Label htmlFor="schedule-space">{t.schedules.form.space}</Label>
+            {spaces.length === 0 ? (
+              <p className="text-[13px] text-muted">{t.schedules.form.noSpaces}</p>
+            ) : (
+              <Select
+                id="schedule-space"
+                value={v.configuration.knowledgeSpaceId ?? ""}
+                required
+                onChange={(e) => setConfig({ knowledgeSpaceId: e.target.value || null })}
+              >
+                <option value="">{t.schedules.form.spacePlaceholder}</option>
+                {spaces.map((sp) => (
+                  <option key={sp.id} value={sp.id}>
+                    {sp.path}
+                  </option>
+                ))}
+              </Select>
+            )}
+            {needsSpace && (
+              <p className="text-[12.5px] text-approval-text">{t.schedules.form.spaceRequired}</p>
+            )}
+          </div>
+        )}
+        {blocks.includes("news") && (
           <div className="mt-2 flex flex-col gap-1.5">
             <Label htmlFor="schedule-news-topics">{t.schedules.form.newsTopics}</Label>
             <Input
@@ -249,26 +355,19 @@ export function ScheduleForm({
         {v.delivery.notify === "browser" && <BrowserNotificationsPrompt />}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="schedule-instructions">{t.schedules.form.instructions}</Label>
-        <textarea
-          id="schedule-instructions"
-          rows={3}
-          maxLength={2000}
-          value={v.instructions ?? ""}
-          placeholder={t.schedules.form.instructionsPlaceholder}
-          onChange={(e) => setV({ ...v, instructions: e.target.value || null })}
-          className="rounded-xl border border-border-strong bg-transparent px-3.5 py-2.5 text-sm placeholder:text-faint focus:border-accent focus:outline-none"
-        />
-      </div>
-
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onDone} disabled={pending}>
           {t.schedules.form.cancel}
         </Button>
         <Button
           type="submit"
-          disabled={pending || v.configuration.blocks.length === 0 || (!once && days.length === 0)}
+          disabled={
+            pending ||
+            !v.name.trim() ||
+            blocks.length === 0 ||
+            needsSpace ||
+            (!once && days.length === 0)
+          }
         >
           {scheduleId ? t.schedules.form.save : t.schedules.form.create}
         </Button>

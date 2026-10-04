@@ -144,6 +144,56 @@ export function blocksToSections(
   return sections;
 }
 
+export interface NotionChoice {
+  id: string;
+  name: string;
+  kind: "database" | "page";
+  /** Already a source of this Space/Section: adding it again would duplicate it. */
+  added: boolean;
+}
+
+/** Search results → picker rows: data sources fold into their database; rows are left out. */
+export function notionChoices(
+  results: readonly NotionPage[],
+  kind: "database" | "page",
+  added: ReadonlySet<string>,
+): NotionChoice[] {
+  const seen = new Set<string>();
+  return results.flatMap((p) => {
+    let id: string;
+    if (kind === "database") {
+      if (p.object === "page") return [];
+      id = p.object === "data_source" ? (p.parent?.database_id ?? p.id) : p.id;
+    } else {
+      // Database rows are a database's content, not standalone pages.
+      if (p.object !== "page") return [];
+      if (p.parent?.type === "data_source_id" || p.parent?.type === "database_id") return [];
+      id = p.id;
+    }
+    if (seen.has(id)) return [];
+    seen.add(id);
+    return [{ id, name: pageTitle(p), kind, added: added.has(id) }];
+  });
+}
+
+export function notionDocument(
+  page: NotionPage,
+  blocks: readonly (NotionBlock & { children?: NotionBlock[] })[],
+): NormalizedDocument {
+  const title = pageTitle(page);
+  const props = propertyLines(page);
+  const sections = blocksToSections(blocks);
+  const all = props.length
+    ? [{ headingPath: [], page: null, blocks: props }, ...sections]
+    : sections;
+  return {
+    title,
+    // An untitled empty row stays empty (nothing to find), and says so.
+    sections:
+      all.length || title === "Untitled" ? all : [{ headingPath: [], page: null, blocks: [title] }],
+  };
+}
+
 export class NotionClient {
   private readonly http: NotionHttp;
 
@@ -160,14 +210,31 @@ export class NotionClient {
     return this.http.request<T>(method, path, body, true);
   }
 
-  /** Pages and databases the user shared with ELISE, for the picker. */
-  async search(query: string): Promise<NotionPage[]> {
-    const res = await this.request<{ results: NotionPage[] }>("POST", "/search", {
-      query,
-      page_size: 50,
-      sort: { direction: "descending", timestamp: "last_edited_time" },
-    });
-    return res.results.filter((p) => !p.in_trash && !p.is_archived);
+  /**
+   * What the user shared with ELISE, for the picker: data sources (each points at its database
+   * in `parent.database_id`) or pages. Search only filters by "page" | "data_source" (API
+   * 2026-03-11); a few pages of results, newest first.
+   */
+  async search(query: string, object?: "page" | "data_source"): Promise<NotionPage[]> {
+    const out: NotionPage[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 3; page++) {
+      const res = await this.request<{ results: NotionPage[]; next_cursor: string | null }>(
+        "POST",
+        "/search",
+        {
+          query,
+          page_size: 100,
+          sort: { direction: "descending", timestamp: "last_edited_time" },
+          ...(object ? { filter: { property: "object", value: object } } : {}),
+          ...(cursor ? { start_cursor: cursor } : {}),
+        },
+      );
+      out.push(...res.results);
+      cursor = res.next_cursor ?? undefined;
+      if (!cursor) break;
+    }
+    return out.filter((p) => !p.in_trash && !p.is_archived);
   }
 
   async page(pageId: string): Promise<NotionPage> {
@@ -270,17 +337,14 @@ export class NotionClient {
     return [...items.values()];
   }
 
-  /** A page as a normalized document (properties first for database pages). */
+  /**
+   * A page as a normalized document (properties first for database pages). A database row
+   * that is only a title ("CHOP" in Empresas) is still a document: its title is its content,
+   * so it is findable instead of "no readable text" (ADR-037).
+   */
   async pageDocument(pageId: string): Promise<NormalizedDocument> {
     const page = await this.page(pageId);
     const blocks = await this.tree(pageId, 0, { left: MAX_BLOCKS });
-    const props = propertyLines(page);
-    const sections = blocksToSections(blocks);
-    return {
-      title: pageTitle(page),
-      sections: props.length
-        ? [{ headingPath: [], page: null, blocks: props }, ...sections]
-        : sections,
-    };
+    return notionDocument(page, blocks);
   }
 }

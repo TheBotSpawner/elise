@@ -330,6 +330,7 @@ export function AddSourceDialog({
   onClose,
   onUpload,
   spaceId,
+  destination,
   accounts,
   notionAvailable,
 }: {
@@ -339,6 +340,8 @@ export function AddSourceDialog({
   /** Opens the page's file chooser (uploads show their progress on the page). */
   onUpload: () => void;
   spaceId: string;
+  /** "UTN › AMII": where the new source goes — this Section, never its parent Space. */
+  destination: string;
   accounts: KnowledgeAccount[];
   notionAvailable: boolean;
 }) {
@@ -361,6 +364,7 @@ export function AddSourceDialog({
       }
       description={view === "choose" ? t.knowledge.addBody : undefined}
     >
+      <p className="-mt-1 mb-3 text-[13px] text-muted">{t.knowledge.addTo(destination)}</p>
       {view === "choose" && (
         <SourceOptions
           choices={["documents", "drive", "notion"]}

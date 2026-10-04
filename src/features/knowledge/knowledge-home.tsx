@@ -18,8 +18,8 @@ import { SourceIcon, useRelative } from "./ui";
 function SpaceCard({ space, subspaces }: { space: SpaceSummary; subspaces: SpaceSummary[] }) {
   const { t } = useI18n();
   const relative = useRelative();
-  const c = space.counts;
-  const items = c.ready + c.processing + c.attention;
+  // Logical sources (ADR-037): a Notion database is one, however many pages it holds.
+  const c = space.sources;
   const dot = c.attention ? "bg-approval" : c.processing ? "bg-accent animate-pulse" : "bg-success";
   return (
     <li className="group relative flex flex-col gap-3 rounded-2xl border border-border bg-surface px-5 py-4 transition-colors hover:border-border-strong">
@@ -46,15 +46,22 @@ function SpaceCard({ space, subspaces }: { space: SpaceSummary; subspaces: Space
           </span>
         )}
         <span className="flex items-center gap-1.5">
-          {items > 0 && <span aria-hidden className={cn("size-1.5 rounded-full", dot)} />}
-          {space.sourceCount > 0
-            ? [
-                t.knowledge.sourceCount(space.sourceCount),
-                items > 0 && t.knowledge.counts(c.ready, c.processing, c.attention),
-              ]
-                .filter(Boolean)
-                .join(" · ")
+          {c.total > 0 && <span aria-hidden className={cn("size-1.5 rounded-full", dot)} />}
+          {c.total > 0
+            ? t.knowledge.sourceSummary(c.total, c.processing, 0)
             : t.knowledge.counts(0, 0, 0)}
+          {c.attention > 0 && (
+            <>
+              {" · "}
+              {/* Above the card's stretched link: opens what needs attention. */}
+              <Link
+                href={`/knowledge/spaces/${space.id}?attention=1`}
+                className="relative z-10 text-approval-text underline-offset-2 hover:underline"
+              >
+                {t.knowledge.attentionCount(c.attention)}
+              </Link>
+            </>
+          )}
         </span>
         {space.updatedAt && <span>{t.knowledge.updated(relative(space.updatedAt))}</span>}
       </div>

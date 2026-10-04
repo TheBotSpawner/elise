@@ -16,7 +16,9 @@ import {
   prepareUploads,
   removeSource,
   retryItem,
+  retryProblems,
   searchNotion,
+  sourceProblems,
   syncNow,
   updateSpace,
   updateSpaceContext,
@@ -194,14 +196,41 @@ export async function browseDriveAction(connectionId: string, folderId: string) 
   );
 }
 
-export async function searchNotionAction(connectionId: string, query: string) {
-  return run(async () =>
-    searchNotion(
+/** A read: never revalidates the page under the open picker. */
+export async function searchNotionAction(
+  connectionId: string,
+  query: string,
+  kind: "database" | "page",
+  spaceId: string,
+) {
+  try {
+    const value = await searchNotion(
       await requireAuthContext(),
       id.parse(connectionId),
       z.string().max(100).parse(query),
-    ),
-  );
+      z.enum(["database", "page"]).parse(kind),
+      id.parse(spaceId),
+    );
+    return { ok: true as const, value };
+  } catch (error) {
+    return { ok: false as const, error: toPublicError(error) };
+  }
+}
+
+/** The problem children of one source, for "Needs attention" (a read). */
+export async function sourceProblemsAction(sourceId: string) {
+  try {
+    return {
+      ok: true as const,
+      value: await sourceProblems(await requireAuthContext(), id.parse(sourceId)),
+    };
+  } catch (error) {
+    return { ok: false as const, error: toPublicError(error) };
+  }
+}
+
+export async function retryProblemsAction(sourceId: string) {
+  return run(async () => retryProblems(await requireAuthContext(), id.parse(sourceId)));
 }
 
 export async function addSourceAction(input: {
