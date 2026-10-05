@@ -23,6 +23,8 @@ export const MODEL_POLICY = {
   recall_summary: { tier: "background" },
   finance_mapping: { tier: "background" },
   structured_mapping: { tier: "background" },
+  /** Structuring a described procedure into a Method draft (ADR-040). */
+  method_draft: { tier: "fast", reasoning: "low" },
 } as const satisfies Record<string, ModelChoice>;
 
 export type ModelTask = keyof typeof MODEL_POLICY;

@@ -203,27 +203,7 @@ export async function loadTurnAttachments(
       });
       continue;
     }
-    // Plain text is read as is (a short note is a fine attachment). A PDF goes through the
-    // shared extraction (ADR-035): native text, OCR for scanned pages — and pages not read yet
-    // are named, so ELISE never answers about them as if she had read them.
-    let text = "";
-    let unread: number[] = [];
-    // Same extractors as Knowledge (ADR-036); only a short plain note skips them.
-    if (["text/plain", "text/markdown"].includes(row.mime_type)) text = decodeText(data).trim();
-    else if (row.mime_type === "application/pdf") {
-      const x = await extractDocument(
-        auth.workspaceId,
-        { data, mimeType: row.mime_type },
-        {
-          purpose: "chat",
-        },
-      ).catch(() => null);
-      text = x ? extractionText(x) : "";
-      unread = x?.unreadPages ?? [];
-    } else
-      text = await parseDocument({ title: row.name, mimeType: row.mime_type, data })
-        .then(documentText)
-        .catch(() => "");
+    const { text, unread } = await documentTextOf(auth, row, data);
     result.documents.push({
       id: row.id,
       name: row.name,
@@ -233,6 +213,66 @@ export async function loadTurnAttachments(
     });
   }
   return result;
+}
+
+/**
+ * A document attachment's text. Plain text is read as is (a short note is a fine attachment).
+ * A PDF goes through the shared extraction (ADR-035): native text, OCR for scanned pages — and
+ * pages not read yet are named, so ELISE never answers about them as if she had read them.
+ */
+async function documentTextOf(
+  auth: AuthContext,
+  row: { name: string; mime_type: string },
+  data: Uint8Array,
+): Promise<{ text: string; unread: number[] }> {
+  let text = "";
+  let unread: number[] = [];
+  // Same extractors as Knowledge (ADR-036); only a short plain note skips them.
+  if (["text/plain", "text/markdown"].includes(row.mime_type)) text = decodeText(data).trim();
+  else if (row.mime_type === "application/pdf") {
+    const x = await extractDocument(
+      auth.workspaceId,
+      { data, mimeType: row.mime_type },
+      { purpose: "chat" },
+    ).catch(() => null);
+    text = x ? extractionText(x) : "";
+    unread = x?.unreadPages ?? [];
+  } else
+    text = await parseDocument({ title: row.name, mimeType: row.mime_type, data })
+      .then(documentText)
+      .catch(() => "");
+  return { text, unread };
+}
+
+/**
+ * One of the author's own document attachments, read for keeping elsewhere (a Method's template,
+ * ADR-040). A file staged from the Methods editor is marked sent so it never expires.
+ */
+export async function attachmentText(
+  auth: AuthContext,
+  id: string,
+): Promise<{ id: string; name: string; mimeType: string; text: string }> {
+  const [row] = await own(auth, [id]);
+  if (!row || row.status === "uploading")
+    throw new AppError("NOT_FOUND", "Attachment not found", { recovery: "review" });
+  if (ATTACHMENT_TYPES[row.mime_type]?.kind === "image")
+    throw new AppError("VALIDATION_ERROR", "Images can't be kept as a Method's material yet", {
+      recovery: "review",
+    });
+  const data = await downloadChatAttachment(auth.workspaceId, row.storage_path);
+  if (!data) throw new AppError("NOT_FOUND", "The file is no longer available");
+  const { text } = await documentTextOf(auth, row, data);
+  if (!text.trim())
+    throw new AppError("VALIDATION_ERROR", "No text could be read from that file", {
+      recovery: "review",
+    });
+  if (row.status === "ready")
+    await auth.db
+      .from("chat_attachments")
+      .update({ status: "sent", sent_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("user_id", auth.userId);
+  return { id, name: row.name, mimeType: row.mime_type, text };
 }
 
 /** The attachments now belong to this turn's conversation or voice session. */

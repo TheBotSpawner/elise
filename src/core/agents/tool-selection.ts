@@ -64,6 +64,10 @@ const SIGNALS: readonly [string, RegExp][] = [
   ],
   ["location", LOCATION_SIGNAL],
   [
+    "methods",
+    /\b(m[eé]todos?|methods?|procedimientos?|procedures?|a partir de ahora|de ahora en (m[aá]s|adelante)|siempre|always|from now on|next time|la pr[oó]xima vez|aprend[eé]\w*|learn|guard[aá] (esta|este) (forma|manera)|formato|plantilla|template)\b/i,
+  ],
+  [
     "web",
     /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|publicaci\w*|anuncios?|listings?|ofertas?|productos?|opciones|departamentos?|alquiler\w*|en venta|comprar|usados?|cursos?|buscame|encontrame|find me)\b/i,
   ],

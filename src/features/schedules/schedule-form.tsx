@@ -40,6 +40,7 @@ export function blankTask(timezone: string): ScheduleInput {
       horizon: "today",
       knowledgeSpaceId: null,
       weatherLocation: null,
+      methodId: null,
       preset: null,
     },
     instructions: null,
@@ -77,8 +78,11 @@ export function ScheduleForm({
   initial,
   scheduleId,
   spaces,
+  methods = [],
   onDone,
 }: {
+  /** Methods the task can follow: the schedule says when, the Method how (ADR-040 §O). */
+  methods?: { id: string; name: string }[];
   initial: ScheduleInput;
   scheduleId?: string;
   /** Knowledge Spaces for the Knowledge block. */
@@ -169,6 +173,30 @@ export function ScheduleForm({
           className="rounded-xl border border-border-strong bg-transparent px-3.5 py-2.5 text-sm placeholder:text-faint focus:border-accent focus:outline-none"
         />
       </div>
+
+      {(methods.length > 0 || v.configuration.methodId) && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="schedule-method">{t.methods.scheduleMethod}</Label>
+          <Select
+            id="schedule-method"
+            value={v.configuration.methodId ?? ""}
+            onChange={(e) =>
+              setV({
+                ...v,
+                configuration: { ...v.configuration, methodId: e.target.value || null },
+              })
+            }
+          >
+            <option value="">{t.methods.scheduleNoMethod}</option>
+            {methods.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </Select>
+          <p className="text-[12.5px] text-faint">{t.methods.scheduleMethodHint}</p>
+        </div>
+      )}
 
       <fieldset className="flex flex-col gap-2.5">
         <legend className="mb-1.5 text-sm font-medium">{t.schedules.form.repeat}</legend>

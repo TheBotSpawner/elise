@@ -4,8 +4,10 @@ import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { getItemPreview } from "@/application/knowledge-service";
+import { knowledgeItemText } from "@/application/methods-service";
 import { PageContainer } from "@/components/shared/page";
 import { buttonVariants } from "@/components/ui/button";
+import { looksProcedural } from "@/core/skills/model";
 import { getT } from "@/lib/i18n/server";
 
 /**
@@ -21,8 +23,14 @@ export default async function KnowledgeItemPage({
   const chunk =
     typeof query.chunk === "string" && z.uuid().safeParse(query.chunk).success ? query.chunk : null;
   const [auth, { t, locale }] = await Promise.all([requireAuthContext(), getT()]);
-  const data = await getItemPreview(auth, id, chunk).catch(() => null);
+  const [data, doc] = await Promise.all([
+    getItemPreview(auth, id, chunk).catch(() => null),
+    knowledgeItemText(auth, id).catch(() => null),
+  ]);
   if (!data) notFound();
+  // A document that reads like a procedure can become a Method (ADR-040 §J3) — offered, never
+  // assumed: Knowledge stays Knowledge.
+  const procedural = Boolean(doc && looksProcedural(doc.text));
   const { item, versions, passage } = data;
   const format = new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
@@ -76,6 +84,18 @@ export default async function KnowledgeItemPage({
             )}
           </div>
         </header>
+
+        {procedural && (
+          <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-5 py-3">
+            <p className="text-[13.5px] text-muted">{t.methods.useAsMethodHint}</p>
+            <Link
+              href={`/my-elise/methods?fromItem=${item.id}`}
+              className={buttonVariants({ size: "sm", variant: "secondary" })}
+            >
+              {t.methods.useAsMethod}
+            </Link>
+          </section>
+        )}
 
         {passage && (
           <section className="flex flex-col gap-2 rounded-2xl border border-accent-line bg-accent-soft px-5 py-4">

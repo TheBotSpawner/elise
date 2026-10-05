@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import type {
@@ -87,7 +87,10 @@ export function SpaceView({
   initialAdd = null,
   initialAttention = false,
   conversations = [],
+  methods = null,
 }: {
+  /** This Space's Methods (ADR-040): how ELISE works here. */
+  methods?: ReactNode;
   /** Conversations linked to this Space (its Sections included) or Section (ADR-020). */
   conversations?: {
     key: string;
@@ -260,6 +263,8 @@ export function SpaceView({
         initial={space.context}
         isSection={isSection}
       />
+
+      {methods}
 
       {!isSection && (
         <section className="flex flex-col gap-3">

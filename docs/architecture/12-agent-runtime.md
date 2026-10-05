@@ -174,6 +174,9 @@ load everything
 
 # 7. One Intelligence, Multiple Skills
 
+> Implementado para los usuarios como **Métodos** (procedural memory, scoped, versionados):
+> ver ADR-040.
+
 ELISE puede tener Skills internas.
 
 Ejemplos:

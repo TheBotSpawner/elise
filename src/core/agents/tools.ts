@@ -41,6 +41,7 @@ import type { CapabilityBinding, ProviderKey } from "../providers/types";
 import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
 import type { ShortcutStore } from "../shortcuts/model";
+import type { MethodStore } from "../skills/model";
 import type { StudyPort } from "../study/model";
 import type { BriefPort } from "../tools/planning";
 import type { WakeStatus } from "../voice/session";
@@ -121,6 +122,8 @@ export interface CapabilityProviders {
   shortcuts: ShortcutStore;
   /** Today's Morning Brief, assembled like the scheduled one (ADR-017 §15). */
   briefs: BriefPort;
+  /** The workspace's Methods: how the user wants work done (ADR-040). */
+  methods: MethodStore;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -368,7 +371,16 @@ export type ToolDisplay =
   | { kind: "shortcut"; shortcut: SurfacePayloads["shortcut"] }
   | { kind: "map"; map: SurfacePayloads["map"] }
   | { kind: "place"; place: SurfacePayloads["place"] }
-  | { kind: "weather"; weather: SurfacePayloads["weather"] };
+  | { kind: "weather"; weather: SurfacePayloads["weather"] }
+  /** A Method ELISE used or changed (ADR-040): a subtle line with View / Undo. */
+  | {
+      kind: "method";
+      change: "used" | "created" | "updated" | "archived" | "restored" | "reference_added";
+      method: { id: string; name: string; version: number; scope: string };
+      /** The version before this change (Undo restores it). */
+      previousVersion?: number;
+      summary?: string;
+    };
 
 export interface StructuredSourceRef {
   id: string;

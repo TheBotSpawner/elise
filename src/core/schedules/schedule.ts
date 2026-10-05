@@ -144,6 +144,11 @@ export const morningBriefConfigSchema = z
     knowledgeSpaceId: z.uuid().nullable().default(null),
     /** Weather block (ADR-038): a city; null → the city of the schedule's timezone. */
     weatherLocation: z.string().trim().min(2).max(120).nullable().default(null),
+    /**
+     * The Method that says HOW to do this run (ADR-040 §O): the schedule says when, the Method
+     * how. Shapes the narration only; what is gathered and every permission stay the same.
+     */
+    methodId: z.uuid().nullable().default(null),
     /** The preset it was created from, if any (gallery "Already added"); null = custom. */
     preset: z.enum(SCHEDULE_PRESETS).nullable().default(null),
   })

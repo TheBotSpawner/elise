@@ -381,6 +381,20 @@ export function toolNotes(traces: readonly ToolTrace[]): string[] {
   });
 }
 
+/** `method "Crear propuesta" used (method <id> v3)`: parsed back by recentMethodId. */
+export function methodNote(display: Extract<ToolDisplay, { kind: "method" }>): string {
+  return `method "${display.method.name}" ${display.change} (method ${display.method.id} v${display.method.version})`;
+}
+
+/** The Method the latest turn that used one followed (from its notes). */
+export function recentMethodId(notes: readonly string[]): string | null {
+  for (const note of [...notes].reverse()) {
+    const id = /\(method ([0-9a-f-]{36}) v\d+\)/.exec(note)?.[1];
+    if (id) return id;
+  }
+  return null;
+}
+
 /** Email notes keep the ids later turns need ("summarize that thread", "send it"). */
 function emailNote(display: ToolDisplay): string | null {
   switch (display.kind) {
@@ -413,6 +427,9 @@ function emailNote(display: ToolDisplay): string | null {
         .slice(0, 5)
         .map((f) => `"${f.subject}" (thread ${f.threadId})`)
         .join("; ")}`;
+    // The Method a turn followed or changed: the next turn can correct or update it.
+    case "method":
+      return methodNote(display);
     default:
       return null;
   }

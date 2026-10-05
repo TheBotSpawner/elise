@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ToolDefinition } from "../agents/tools";
+import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { AppError } from "../errors";
 import {
   BRIEF_BLOCKS,
@@ -11,6 +11,7 @@ import {
   scheduleInputSchema,
   type ScheduleInput,
 } from "../schedules/schedule";
+import { nameKey } from "../skills/model";
 import { isIsoDate, toLocalDateTime } from "../time";
 
 const proposeInput = z
@@ -55,6 +56,15 @@ const proposeInput = z
       .max(2000)
       .optional()
       .describe('The user\'s own words about content, e.g. "Ignore newsletters".'),
+    method: z
+      .string()
+      .trim()
+      .min(1)
+      .max(160)
+      .optional()
+      .describe(
+        'A Method (by name) that says how to do it ("con mi método de revisión semanal"). The schedule says when; the Method how.',
+      ),
   })
   .strict();
 
@@ -79,6 +89,7 @@ export const proposeScheduleTool: ToolDefinition = {
       throw new AppError("VALIDATION_ERROR", "Give either days (recurring) or a date (one-time)", {
         recovery: "review",
       });
+    const method = p.method ? await findMethodId(env, p.method) : null;
     const parsed = scheduleInputSchema.safeParse({
       name: p.name,
       actionType: "morning_brief",
@@ -90,6 +101,7 @@ export const proposeScheduleTool: ToolDefinition = {
         blocks: p.blocks ?? [...DEFAULT_BRIEF_BLOCKS],
         horizon: p.horizon,
         knowledgeSpaceId: p.knowledgeSpaceId ?? null,
+        methodId: method?.id ?? null,
       },
       instructions: p.instructions ?? null,
       delivery: { notify: p.notify },
@@ -112,6 +124,7 @@ export const proposeScheduleTool: ToolDefinition = {
           when: input.definition,
           timezone: input.timezone,
           uses: briefCapabilities(input.configuration),
+          ...(method ? { method: method.name } : {}),
           firstRun: toLocalDateTime(next, input.timezone),
         },
         note: "A confirmation card is shown. Nothing is created until the user presses Create; say so briefly.",
@@ -120,5 +133,21 @@ export const proposeScheduleTool: ToolDefinition = {
     };
   },
 };
+
+/** The Method named for a schedule (active ones only); ambiguity is a question. */
+async function findMethodId(env: ToolRunEnv, ref: string) {
+  const all = await env.providers.get("methods", env.binding).index();
+  const key = nameKey(ref);
+  const hits = all.filter((m) => m.id === ref || nameKey(m.name) === key);
+  const found = hits.length ? hits : all.filter((m) => nameKey(m.name).includes(key));
+  if (found.length === 1) return found[0]!;
+  throw new AppError(
+    found.length ? "VALIDATION_ERROR" : "NOT_FOUND",
+    found.length
+      ? `Several Methods match "${ref}": ${found.map((m) => m.name).join(", ")}. Ask which one.`
+      : `No Method "${ref}".`,
+    { recovery: "review" },
+  );
+}
 
 export const SCHEDULE_TOOLS = [proposeScheduleTool];

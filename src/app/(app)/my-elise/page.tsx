@@ -1,4 +1,5 @@
 import {
+  BookOpenCheck,
   CheckSquare,
   Target,
   ListChecks,
@@ -24,6 +25,7 @@ const MODULES: { key: CapabilityKey; icon: LucideIcon; href: string }[] = [
   { key: "notes", icon: StickyNote, href: "/my-elise/notes" },
   { key: "finance", icon: Wallet, href: "/my-elise/finance" },
   { key: "shortcuts", icon: Zap, href: "/my-elise/shortcuts" },
+  { key: "methods", icon: BookOpenCheck, href: "/my-elise/methods" },
 ];
 
 /** ELISE Native modules, grouped so the primary navigation stays small. */

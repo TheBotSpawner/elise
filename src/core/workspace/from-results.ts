@@ -745,6 +745,9 @@ export function surfacesFromOutcome(
           ref: null,
         }),
       );
+    // A Method used or changed is a quiet line in the conversation, never a Surface (ADR-040 §N).
+    case "method":
+      return [];
     case "shortcut":
       return one(
         draft("shortcut", d.shortcut.name.toLowerCase(), d.shortcut, opts, {

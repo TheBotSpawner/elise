@@ -5,7 +5,7 @@ import { serverEnv } from "@/config/server-env";
 import { buildContextPackage } from "@/core/agents/context";
 import { executeToolCall, type ToolCallOutcome } from "@/core/agents/executor";
 import { escalateAfter, MODEL_POLICY, routeTurn } from "@/core/agents/model-policy";
-import { runElise, toolNotes } from "@/core/agents/runtime";
+import { methodNote, recentMethodId, runElise, toolNotes } from "@/core/agents/runtime";
 import { selectTools, toolsInNotes } from "@/core/agents/tool-selection";
 import type { ToolContext } from "@/core/agents/tools";
 import { getOperation } from "@/core/capabilities/registry";
@@ -25,7 +25,9 @@ import { TurnPerf } from "@/core/perf";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
 import { matchShortcut } from "@/core/shortcuts/match";
 import { stepsToCalls } from "@/core/shortcuts/model";
+import { planTurnMethods, scopeOf } from "@/core/skills/model";
 import { todayIn } from "@/core/time";
+import { loadMethod, scopeLabel } from "@/core/tools/methods";
 import { bindVoiceApproval } from "@/core/voice/approval";
 import { SpokenSplitter } from "@/core/voice/speech-text";
 import { approvalDecidedOps, intentForTool } from "@/core/workspace/from-results";
@@ -58,6 +60,7 @@ import { autoLinkThread, historyLinks } from "./history-links-service";
 import { openThread } from "./interaction-thread";
 import { syncDueSources } from "./knowledge-background";
 import { locationConfigured } from "./location-service";
+import { methodStore, methodsForTurn, recordMethodUse } from "./methods-service";
 import { queueRecallIndex, searchRecall } from "./recall-service";
 import { enabledShortcuts, shortcutStore } from "./shortcuts-service";
 import { structuredSourcesForChat } from "./structured-service";
@@ -152,7 +155,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
 
   // Setup in dependency phases (ADR-025): independent reads share one round trip. Nothing is
   // written before the rate limit passes; history is read before this turn's message is saved.
-  const [, { bindings }, contexts, shortcuts, nodes] = await perf.time(
+  const [, { bindings }, contexts, shortcuts, nodes, methods] = await perf.time(
     "setup.reads",
     Promise.all([
       perf.time("rate_limit", enforceRateLimit(auth)),
@@ -165,6 +168,8 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
           .nodes()
           .catch(() => []),
       ),
+      // Methods (ADR-040): the lightweight index only; one Method may load below.
+      perf.time("preload.methods", methodsForTurn(auth)),
     ]),
   );
   const capabilities = availableCapabilities(bindings);
@@ -335,6 +340,33 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     location_shared: Boolean(here),
   });
 
+  // Methods (ADR-040), progressive disclosure: the scope chain decides which Methods may apply
+  // (the active Section, the conversation's Space, a Space the message names, and their
+  // parents, plus global ones); at most one clear match is loaded in full, the rest are
+  // index lines the model can load.
+  const recentNotes = history.slice(-4).flatMap((m) => ("toolNotes" in m && m.toolNotes) || []);
+  const methodPlan = planTurnMethods({
+    index: methods.index,
+    spaces: methods.spaces,
+    message: input.message,
+    spaceIds: [activeProfile?.section?.spaceId, activeSpace?.id, mentioned?.id],
+    recentId: recentMethodId(recentNotes),
+  });
+  const methodParents = new Map(methods.spaces.map((s) => [s.id, s.parentId]));
+  const loadedMethod = methodPlan.load
+    ? await perf.time(
+        "method",
+        loadMethod(methodStore(auth), methodPlan.load.method.id, methods.spaces).catch(() => null),
+      )
+    : null;
+  if (loadedMethod)
+    logger.info("method.selected", {
+      run_id: runId,
+      scope: scopeOf(loadedMethod.method.spaceId, methodParents),
+      version: loadedMethod.method.version,
+      candidates: methodPlan.index.length + methodPlan.more + 1,
+    });
+
   const context = buildContextPackage({
     user: auth.profile,
     now: new Date(),
@@ -369,14 +401,36 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
       .map((p) => ({ name: p.name, kind: p.kind })),
     contextHint: turnHints || null,
     studySession: describeStudy(studySession, contexts.profiles),
+    methods:
+      loadedMethod || methodPlan.index.length || methodPlan.hint
+        ? {
+            loaded: loadedMethod
+              ? {
+                  name: loadedMethod.method.name,
+                  reason: methodPlan.reason ?? "it fits this request",
+                  content: loadedMethod.output,
+                }
+              : null,
+            index: methodPlan.index.map((c) => ({
+              id: c.method.id,
+              name: c.method.name,
+              description: c.method.description,
+              scope: scopeLabel(c.method.spaceId, methods.spaces),
+            })),
+            more: methodPlan.more,
+            hint: methodPlan.hint,
+          }
+        : null,
   });
   // Model profile and tool exposure (ADR-025): legacy sends every tool to the standard
   // profile; adaptive routes by request and exposes the relevant tool groups (rest on demand).
-  const route = adaptive
+  const routed = adaptive
     ? routeTurn(input.message)
     : modality === "voice"
       ? MODEL_POLICY.voice_turn
       : MODEL_POLICY.chat;
+  // Work that follows a Method is real work (a proposal, a review): not the quick profile.
+  const route = loadedMethod && routed.tier === "fast" ? { tier: "standard" as const } : routed;
   perf.profile = route.tier;
   const allTools = toolRegistry
     .available(capabilities)
@@ -386,11 +440,16 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
   const selection =
     env.ELISE_TOOL_SELECTION === "selected"
       ? selectTools(allTools, {
-          message: input.message,
+          // A loaded Method's preferred capabilities come with it — only among the tools this
+          // user has; a Method never makes a tool available.
+          message: loadedMethod
+            ? `${input.message}\n${loadedMethod.method.instructions}`
+            : input.message,
           surfaceTypes: workspace.state().surfaces.map((s) => s.type),
-          recentTools: toolsInNotes(
-            history.slice(-4).flatMap((m) => ("toolNotes" in m && m.toolNotes) || []),
-          ),
+          recentTools: [
+            ...toolsInNotes(recentNotes),
+            ...(loadedMethod || methodPlan.hint ? ["methods.get"] : []),
+          ],
           contextKind: activeProfile?.kind ?? null,
         })
       : { tools: allTools, rest: [] };
@@ -463,6 +522,12 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
 
         const contextAtStart = workspace.state().context?.id ?? null;
         const traces = new Map<string, ClientToolTrace>();
+        /** Methods this turn followed: preloaded, or loaded by the model (methods.get). */
+        const usedMethods = new Map<
+          string,
+          { method: { id: string; version: number; spaceId: string | null }; reason: string }
+        >();
+        const methodNotes: string[] = [];
         const stepStarted = new Map<string, number>();
         const started = Date.now();
         let finalText = "";
@@ -510,6 +575,34 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
               origin: "ai",
               result: "success",
               metadata: { steps: ranShortcut.steps.map((x) => x.type) },
+            });
+          }
+          if (loadedMethod) {
+            // "Usando método · X": a quiet line in the activity, kept with the message.
+            const m = loadedMethod.method;
+            const outcome = {
+              status: "succeeded" as const,
+              display: {
+                kind: "method" as const,
+                change: "used" as const,
+                method: {
+                  id: m.id,
+                  name: m.name,
+                  version: m.version,
+                  scope: scopeLabel(m.spaceId, methods.spaces),
+                },
+              },
+            };
+            usedMethods.set(m.id, { method: m, reason: methodPlan.reason ?? "matched" });
+            methodNotes.push(`methods.use ✓ ${methodNote(outcome.display)}`);
+            traces.set("method", { callId: "method", name: "methods.use", outcome, durationMs: 0 });
+            send({ type: "tool_started", callId: "method", name: "methods.use" });
+            send({
+              type: "tool_finished",
+              callId: "method",
+              name: "methods.use",
+              outcome,
+              durationMs: 0,
             });
           }
           for await (const event of runElise({
@@ -621,6 +714,15 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                   ? []
                   : workspace.present(event.name, event.callId, event.outcome, query, change);
                 if (event.name === "meeting.prepare") logMeetingPrep(event.outcome, durationMs);
+                const done = event.outcome.status === "succeeded" ? event.outcome.display : null;
+                if (done?.kind === "method" && done.change === "used") {
+                  const found = methods.index.find((m) => m.id === done.method.id);
+                  if (found && !usedMethods.has(found.id))
+                    usedMethods.set(found.id, {
+                      method: found,
+                      reason: "loaded by ELISE from the index",
+                    });
+                }
                 if (event.outcome.status === "succeeded" && TOOL_EVENTS[event.name])
                   trackEvent(auth, TOOL_EVENTS[event.name]!, { modality });
                 const shown = surfaceIds.length ? { surfaceIds } : {};
@@ -647,7 +749,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                 model = event.model;
                 await persistAssistant(finalText, {
                   tools: [...traces.values()],
-                  toolNotes: toolNotes(event.tools),
+                  toolNotes: [...methodNotes, ...toolNotes(event.tools)],
                 });
                 break;
               case "error":
@@ -655,7 +757,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                 failure = event.error;
                 await persistAssistant(finalText, {
                   tools: [...traces.values()],
-                  toolNotes: toolNotes(event.tools),
+                  toolNotes: [...methodNotes, ...toolNotes(event.tools)],
                   error: event.error,
                 });
                 send({ type: "error", error: event.error });
@@ -807,6 +909,20 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
           ]);
           if (modality === "voice") trackEvent(auth, "voice_used", { failed: Boolean(failure) });
           if (!failure) void trackFirstTurn(auth).catch(() => undefined);
+          // Method trace (ADR-040 §P): which Method, which version, why, and what it used.
+          const toolNames = [...traces.values()]
+            .map((x) => x.name)
+            .filter((n) => !n.startsWith("methods."));
+          for (const { method, reason } of usedMethods.values())
+            void recordMethodUse(auth, {
+              method,
+              scope: scopeOf(method.spaceId, methodParents),
+              origin: modality === "voice" ? "voice" : "chat",
+              reason,
+              aiRunId: runId,
+              tools: toolNames,
+              status: failure ? "failed" : "completed",
+            }).catch(() => undefined);
           if ([...traces.values()].some((x) => x.name.startsWith("knowledge.")))
             void syncDueSources(auth.workspaceId).catch(() => 0);
           // History tags (ADR-020): after the reply, from evidence; never delays the turn.

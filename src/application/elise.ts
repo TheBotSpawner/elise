@@ -27,6 +27,7 @@ import { KNOWLEDGE_ADMIN_TOOLS } from "@/core/tools/knowledge-admin";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { LOCATION_TOOLS } from "@/core/tools/location";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
+import { METHOD_TOOLS } from "@/core/tools/methods";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { PLANNING_TOOLS } from "@/core/tools/planning";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
@@ -74,6 +75,7 @@ import type { AuthContext } from "./auth-context";
 import { contextStore } from "./contexts-service";
 import { knowledgeManager } from "./knowledge-admin";
 import { locationCapability } from "./location-service";
+import { methodStore } from "./methods-service";
 import { syncNoteToKnowledge } from "./notes-knowledge";
 import { catchUpRecall } from "./recall-service";
 import { settingsStore } from "./settings-service";
@@ -108,6 +110,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...STUDY_TOOLS,
   ...PLANNING_TOOLS,
   ...SHORTCUT_TOOLS,
+  ...METHOD_TOOLS,
 );
 
 /**
@@ -369,6 +372,10 @@ function providerFactory(
     },
     shortcuts() {
       return shortcutStore(auth);
+    },
+    // The workspace's Methods (ADR-040): instructions only, never authority.
+    methods() {
+      return methodStore(auth);
     },
     // The Morning Brief service builds on this module; loaded lazily to keep imports acyclic.
     briefs() {

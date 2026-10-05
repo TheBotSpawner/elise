@@ -36,9 +36,12 @@ export function SchedulesView({
   workspaceId,
   timezone,
   spaces,
+  methods = [],
   backgroundAvailable,
   draft,
 }: {
+  /** Methods a task can follow (ADR-040 §O). */
+  methods?: { id: string; name: string }[];
   schedules: ScheduleView[];
   workspaceId: string;
   timezone: string;
@@ -85,6 +88,7 @@ export function SchedulesView({
           initial={editing.input}
           scheduleId={editing.id}
           spaces={spaces}
+          methods={methods}
           onDone={done}
         />
       ) : (

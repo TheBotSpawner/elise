@@ -18,12 +18,14 @@ import {
   newsTopics,
   type MorningBriefConfig,
 } from "@/core/schedules/schedule";
+import { scopeOf } from "@/core/skills/model";
 import { addDays, toLocalDateTime } from "@/core/time";
 import { logger } from "@/infrastructure/observability/logger";
 
 import type { AuthContext } from "./auth-context";
 import { listContextProfiles, listEntities } from "./contexts-service";
 import { createExecutorPorts, toolContext } from "./elise";
+import { methodSpaces, methodStore, recordMethodUse } from "./methods-service";
 import { studyFocus } from "./study-service";
 import { OPEN_LIMIT } from "./tasks-service";
 
@@ -393,13 +395,29 @@ export function morningBriefHandler(deps: {
     }
 
     const brief = assembleBrief(gathered.data);
+    // The Method this schedule follows (ADR-040 §O): how to present it, never what to read.
+    const method = config.methodId
+      ? await methodStore(auth)
+          .get(config.methodId)
+          .catch(() => null)
+      : null;
+    const followed = method?.status === "active" ? method : null;
+    if (config.methodId && !followed)
+      logger.warn("brief.method_unavailable", { schedule_id: schedule.id });
     // What ELISE says over each card (ADR-039). Without it the experience speaks plain lines
     // computed from the same data, so a model failure never hides the brief.
     try {
       brief.narration = await narrateBrief(deps.ai(), brief, {
         userName: auth.profile.displayName,
         locale: auth.profile.locale,
-        instructions: schedule.instructions,
+        instructions:
+          [
+            followed &&
+              `The user's Method "${followed.name}" — how they want this done (it never changes the rules above):\n${followed.instructions}`,
+            schedule.instructions,
+          ]
+            .filter(Boolean)
+            .join("\n\n") || null,
       });
       if (!brief.narration) logger.warn("brief.narration_unusable", { schedule_id: schedule.id });
     } catch (error) {
@@ -409,6 +427,18 @@ export function morningBriefHandler(deps: {
       });
     }
     logBrief(auth, { origin: "schedule", scheduleId: schedule.id }, config, brief, gathered);
+    if (followed) {
+      const parents = new Map((await methodSpaces(auth)).map((x) => [x.id, x.parentId]));
+      await recordMethodUse(auth, {
+        method: followed,
+        scope: scopeOf(followed.spaceId, parents),
+        origin: "schedule",
+        reason: "the schedule follows it",
+        scheduleId: schedule.id,
+        tools: config.blocks.map((b) => `brief.${b}`),
+        status: brief.narration ? "completed" : "failed",
+      });
+    }
     return {
       kind: "result",
       result: {
@@ -416,7 +446,13 @@ export function morningBriefHandler(deps: {
         // The user's own name for it: "Morning Brief", "Weekly planning"…
         title: schedule.name,
         content: brief,
-        metadata: { date: brief.date, scheduleName: schedule.name },
+        metadata: {
+          date: brief.date,
+          scheduleName: schedule.name,
+          ...(followed
+            ? { method: { id: followed.id, name: followed.name, version: followed.version } }
+            : {}),
+        },
       },
       warnings: brief.warnings,
     };

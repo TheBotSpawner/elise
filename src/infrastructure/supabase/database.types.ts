@@ -1130,6 +1130,77 @@ export type ShortcutRow = {
   updated_at: Ts;
 };
 
+export type MethodRow = {
+  id: string;
+  workspace_id: string;
+  space_id: string | null;
+  name: string;
+  description: string;
+  instructions: string;
+  hints: string[];
+  platforms: ("web" | "desktop" | "mobile")[];
+  status: "active" | "archived";
+  version: number;
+  change_summary: string;
+  change_source:
+    "user_ui" | "ai_explicit" | "ai_correction" | "ai_suggestion" | "import" | "restore";
+  change_ref: Json;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type MethodVersionRow = {
+  id: string;
+  workspace_id: string;
+  method_id: string;
+  version: number;
+  name: string;
+  description: string;
+  instructions: string;
+  hints: string[];
+  platforms: string[];
+  space_id: string | null;
+  change_summary: string;
+  change_source: MethodRow["change_source"];
+  change_ref: Json;
+  created_by_user_id: string | null;
+  created_at: Ts;
+};
+
+export type MethodReferenceRow = {
+  id: string;
+  workspace_id: string;
+  method_id: string;
+  kind: "reference" | "example" | "template";
+  title: string;
+  content: string | null;
+  mime_type: string | null;
+  source_type: "chat_attachment" | "knowledge_item" | "text";
+  attachment_id: string | null;
+  knowledge_item_id: string | null;
+  created_by_user_id: string | null;
+  created_at: Ts;
+};
+
+export type MethodUseRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  method_id: string;
+  method_version: number;
+  scope: "global" | "space" | "section";
+  origin: "chat" | "voice" | "schedule";
+  reason: string;
+  ai_run_id: string | null;
+  schedule_id: string | null;
+  tools: string[];
+  status: "completed" | "failed";
+  created_at: Ts;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -1160,6 +1231,26 @@ export type Database = {
       shortcuts: Table<
         ShortcutRow,
         "workspace_id" | "user_id" | "name" | "trigger_phrases" | "phrase_keys" | "steps"
+      >;
+      methods: Table<
+        MethodRow,
+        "workspace_id" | "name" | "description" | "instructions" | "created_by_user_id"
+      >;
+      method_versions: Table<MethodVersionRow, "workspace_id" | "method_id" | "version">;
+      method_references: Table<
+        MethodReferenceRow,
+        "workspace_id" | "method_id" | "kind" | "title" | "source_type" | "created_by_user_id"
+      >;
+      method_uses: Table<
+        MethodUseRow,
+        | "workspace_id"
+        | "user_id"
+        | "method_id"
+        | "method_version"
+        | "scope"
+        | "origin"
+        | "reason"
+        | "status"
       >;
       context_links: Table<
         ContextLinkRow,

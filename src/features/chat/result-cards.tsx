@@ -10,6 +10,7 @@ import type { CalendarEvent } from "@/core/capabilities/calendar";
 import type { Task } from "@/core/capabilities/tasks";
 import { addDays, todayIn } from "@/core/time";
 import { agendaGroups, calendarItem, localRange } from "@/core/workspace/calendar";
+import { MethodLine } from "@/features/methods/method-line";
 import { BriefView } from "@/features/schedules/brief-view";
 import { ScheduleProposalCard } from "@/features/schedules/proposal-card";
 import { WeatherView } from "@/features/workspace/canvas/weather";
@@ -395,6 +396,8 @@ export function DisplayCard({
     case "shortcut":
       // Shown as its Surface in the workspace; the trace line is enough here.
       return null;
+    case "method":
+      return <MethodLine display={display} embedded={embedded} />;
 
     case "availability":
       return (

@@ -300,6 +300,27 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       resume: WRITE,
     },
   },
+  // Methods (ADR-040): how the user wants work done. Reading and loading are reads; changes
+  // are audited writes, every one a version that can be restored (so archiving is reversible
+  // too). A Method is instructions only: it never grants a capability or skips an approval.
+  methods: {
+    key: "methods",
+    status: "available",
+    internal: true,
+    operations: {
+      list: READ,
+      search: READ,
+      get: READ,
+      history: READ,
+      create: WRITE,
+      update: WRITE,
+      archive: WRITE,
+      restore: WRITE,
+      rollback: WRITE,
+      attachReference: WRITE,
+      removeReference: WRITE,
+    },
+  },
   // Universal Recall: the user's past interactions, read-only (ADR-012).
   history: {
     key: "history",
