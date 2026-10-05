@@ -35,6 +35,7 @@ import { SHORTCUT_TOOLS } from "@/core/tools/shortcuts";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { STUDY_TOOLS } from "@/core/tools/study";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { WEATHER_TOOLS } from "@/core/tools/weather";
 import { WEB_TOOLS } from "@/core/tools/web";
 import { WORKSPACE_TOOLS } from "@/core/tools/workspace";
 import { getAIProvider, getEmbeddingProvider } from "@/infrastructure/ai";
@@ -79,6 +80,7 @@ import { settingsStore } from "./settings-service";
 import { shortcutStore } from "./shortcuts-service";
 import { startStructuredBulk } from "./structured-bulk";
 import { studyStore } from "./study-service";
+import { weatherCapability } from "./weather-service";
 import { webCapability } from "./web-service";
 
 /** Every tool ELISE can use. Exposure per run is filtered by available capabilities. */
@@ -101,6 +103,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...MEETING_TOOLS,
   ...WEB_TOOLS,
   ...LOCATION_TOOLS,
+  ...WEATHER_TOOLS,
   ...CONTEXT_TOOLS,
   ...STUDY_TOOLS,
   ...PLANNING_TOOLS,
@@ -331,6 +334,10 @@ function providerFactory(
     // Places and travel: server-provided, no user connection (ADR-023).
     location() {
       return locationCapability(auth);
+    },
+    // Forecasts: server-provided, no user connection (ADR-038).
+    weather() {
+      return weatherCapability(auth);
     },
     // Context Profiles (ADR-016): this workspace's organizational layer, through RLS. Task
     // lists come from every connected provider, read through the executor like any read.

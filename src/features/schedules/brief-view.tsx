@@ -5,14 +5,17 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import Markdown from "react-markdown";
 
 import { Button } from "@/components/ui/button";
-import type {
-  BriefFollowUp,
-  BriefTask,
-  BriefWarning,
-  MorningBrief,
+import {
+  briefIssues,
+  sourceState,
+  type BriefFollowUp,
+  type BriefTask,
+  type BriefWarning,
+  type MorningBrief,
 } from "@/core/briefs/morning-brief";
 import { useInsightText } from "@/features/chat/finance-cards";
 import { useMoney } from "@/features/finance/format";
+import { WeatherView } from "@/features/workspace/canvas/weather";
 import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -54,15 +57,17 @@ export function ListenButton({ text }: { text: string }) {
   );
 }
 
-function warningText(w: BriefWarning, t: Dictionary): string {
+/** One line per source: what happened, in the user's terms — never "not connected" for a setup problem. */
+export function warningText(w: BriefWarning, t: Dictionary): string {
   if (w.block === "summary") return t.brief.warnings.summary;
-  const what = w.account ?? t.brief.sources[w.block] ?? w.block;
-  if (w.code === "AUTH_EXPIRED" || w.code === "PERMISSION_DENIED")
-    return t.brief.warnings.needsAttention(what);
-  if (w.code === "CAPABILITY_UNAVAILABLE" || w.code === "NOT_FOUND")
-    return t.brief.warnings.notConnected(what);
-  return t.brief.warnings.failed(what);
+  const state = w.state ?? sourceState(w.code);
+  if (state === "needs_topics") return t.brief.issues.needs_topics;
+  const what = t.brief.sources[w.block] ?? w.block;
+  const accounts = w.accounts?.length ? t.brief.issues.accounts(w.accounts.join(", ")) : "";
+  return t.brief.issues[state](`${what}${accounts}`);
 }
+
+const RECONNECTABLE = new Set(["auth_expired", "permission_missing", "no_connection"]);
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -142,6 +147,8 @@ export function BriefView({
     month: "long",
     timeZone: brief.timezone,
   });
+  // Briefs stored before issues were deduplicated get the same one-line-per-source treatment.
+  const issues = briefIssues(brief.warnings);
   const empty =
     !brief.today?.events.length &&
     !brief.attention.emails.length &&
@@ -166,23 +173,6 @@ export function BriefView({
         </div>
         <ListenButton text={brief.narrative ?? ""} />
       </header>
-
-      {brief.warnings.length > 0 && (
-        <ul className="flex flex-col gap-1 rounded-2xl border border-approval-line bg-approval-bg px-4 py-3 text-[13.5px] text-approval-text">
-          {brief.warnings.map((w, i) => (
-            <li key={i}>{warningText(w, t)}</li>
-          ))}
-          {brief.warnings.some(
-            (w) => w.code === "AUTH_EXPIRED" || w.code === "PERMISSION_DENIED",
-          ) && (
-            <li>
-              <Link href="/connections" className="underline">
-                {t.brief.reconnect}
-              </Link>
-            </li>
-          )}
-        </ul>
-      )}
 
       {brief.narrative ? (
         <div className="prose-elise text-[15px] leading-[1.6]">
@@ -267,6 +257,12 @@ export function BriefView({
                 .join(" · ")}
             </p>
           )}
+        </Section>
+      )}
+
+      {brief.weather && (
+        <Section label={t.brief.weather}>
+          <WeatherView p={brief.weather} compact />
         </Section>
       )}
 
@@ -399,6 +395,25 @@ export function BriefView({
             ))}
           </ul>
         </Section>
+      )}
+
+      {issues.length > 0 && (
+        <section
+          aria-label={t.brief.issues.title}
+          className="flex flex-col gap-1 border-t border-border pt-4 text-[13px] text-muted"
+        >
+          <h2 className="type-label text-faint">{t.brief.issues.title}</h2>
+          <ul className="flex flex-col gap-0.5">
+            {issues.map((w) => (
+              <li key={`${w.block}:${w.state ?? w.code}`}>{warningText(w, t)}</li>
+            ))}
+          </ul>
+          {issues.some((w) => RECONNECTABLE.has(w.state ?? sourceState(w.code))) && (
+            <Link href="/connections" className="w-fit text-[13px] underline">
+              {t.brief.reconnect}
+            </Link>
+          )}
+        </section>
       )}
     </article>
   );

@@ -42,7 +42,7 @@ function provider(onUsage: (u: SearchUsage) => void): WebSearchProvider {
     return new TavilyWebSearch(env.TAVILY_API_KEY, onUsage);
   if (choice === "openai" && env.OPENAI_API_KEY)
     return new OpenAIWebSearch(env.OPENAI_API_KEY, env.OPENAI_WEB_SEARCH_MODEL, onUsage);
-  throw new AppError("CAPABILITY_UNAVAILABLE", "Web search isn't configured", {
+  throw new AppError("SERVER_NOT_CONFIGURED", "Web search isn't configured", {
     recovery: "configure",
   });
 }

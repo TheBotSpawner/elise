@@ -900,6 +900,8 @@ describe("meeting prep", () => {
         "knowledge.search",
         "tasks.list",
         "web.search",
+        // A weak first search is reworded once (ADR-038).
+        "web.search",
       ].sort(),
     );
     // Public context about the outside company reaches the brief, labelled as such…

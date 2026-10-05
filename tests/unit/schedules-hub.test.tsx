@@ -112,7 +112,7 @@ describe("Scheduled hub (ADR-037)", () => {
       actionType: "morning_brief",
       definition: { kind: "weekly", days: [0], time: "19:00" },
       configuration: {
-        blocks: ["calendar", "tasks", "goals"],
+        blocks: ["calendar", "tasks", "goals", "weather"],
         horizon: "week",
         preset: "weekly_planning",
       },

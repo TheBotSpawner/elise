@@ -25,6 +25,8 @@ export const CORE_GROUPS: ReadonlySet<string> = new Set([
   "knowledge",
   "calendar",
   "tasks",
+  // Two small tools; "¿cómo va a estar esta semana?" names no keyword and must never fall to web.
+  "weather",
 ]);
 
 /** A message about places or travel (the browser also refreshes the device location for it). */
@@ -63,7 +65,7 @@ const SIGNALS: readonly [string, RegExp][] = [
   ["location", LOCATION_SIGNAL],
   [
     "web",
-    /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|clima|weather|publicaci\w*|anuncios?|listings?|ofertas?|productos?|opciones|departamentos?|alquiler\w*|en venta|comprar|usados?|cursos?|buscame|encontrame|find me)\b/i,
+    /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|publicaci\w*|anuncios?|listings?|ofertas?|productos?|opciones|departamentos?|alquiler\w*|en venta|comprar|usados?|cursos?|buscame|encontrame|find me)\b/i,
   ],
 ];
 
@@ -86,6 +88,7 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   schedule: "schedules",
   map: "location",
   place: "location",
+  weather: "weather",
 };
 
 export interface ToolSelection {

@@ -25,11 +25,15 @@ If those paths don't exist, `@trigger.dev/sdk` isn't installed yet — install i
 ## Common mistakes
 
 - **CRITICAL: sending a follow-up by re-POSTing `POST /api/v1/sessions`.**
+
   ```ts
   // Wrong - a cached re-POST silently drops basePayload.message; basePayload is trigger config, not a channel
   await fetch("/api/v1/sessions", { method: "POST", body: JSON.stringify({ ...createBody }) });
   // Correct - append to the session's input channel
-  await fetch(`/realtime/v1/sessions/${id}/in/append`, { method: "POST", body: JSON.stringify({ kind: "message", payload }) });
+  await fetch(`/realtime/v1/sessions/${id}/in/append`, {
+    method: "POST",
+    body: JSON.stringify({ kind: "message", payload }),
+  });
   ```
 
 - **Using the wrong token for `.in` / `.out`.** Use `publicAccessToken` from the create response

@@ -24,6 +24,7 @@ import {
   runNowAction,
   type ScheduleActionResult,
 } from "./actions";
+import { warningText } from "./brief-view";
 import { describeInstant, describeWhen } from "./format";
 import { blankTask, presetTask, ScheduleForm } from "./schedule-form";
 
@@ -216,7 +217,7 @@ function ScheduleCard({
 
       {attention && (
         <p className="flex flex-wrap items-center gap-x-3 text-[13px] text-approval-text">
-          {t.brief.warnings.needsAttention(t.brief.sources[attention.block] ?? attention.block)}
+          {warningText(attention, t)}
           <Link href="/connections" className="underline">
             {t.brief.reconnect}
           </Link>

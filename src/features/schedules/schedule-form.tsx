@@ -39,6 +39,7 @@ export function blankTask(timezone: string): ScheduleInput {
       newsTopics: "",
       horizon: "today",
       knowledgeSpaceId: null,
+      weatherLocation: null,
       preset: null,
     },
     instructions: null,
@@ -330,6 +331,27 @@ export function ScheduleForm({
               }
             />
             <p className="text-[12.5px] text-faint">{t.schedules.form.newsTopicsHint}</p>
+          </div>
+        )}
+        {blocks.includes("weather") && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            <Label htmlFor="schedule-weather-location">{t.schedules.form.weatherLocation}</Label>
+            <Input
+              id="schedule-weather-location"
+              value={v.configuration.weatherLocation ?? ""}
+              maxLength={120}
+              placeholder={t.schedules.form.weatherLocationPlaceholder}
+              onChange={(e) =>
+                setV({
+                  ...v,
+                  configuration: {
+                    ...v.configuration,
+                    weatherLocation: e.target.value.trim() ? e.target.value : null,
+                  },
+                })
+              }
+            />
+            <p className="text-[12.5px] text-faint">{t.schedules.form.weatherLocationHint}</p>
           </div>
         )}
       </fieldset>

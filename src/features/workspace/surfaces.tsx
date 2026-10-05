@@ -29,6 +29,7 @@ import {
   BarChart3,
   Image as ImageIcon,
   Map as MapIcon,
+  CloudSun,
   MapPin,
   type LucideIcon,
 } from "lucide-react";
@@ -49,6 +50,7 @@ import { CalendarBody } from "./calendar-view";
 import type { VisualSize } from "./canvas/composition";
 import { MapBody, PlaceBody } from "./canvas/map";
 import { MediaBody } from "./canvas/media";
+import { WeatherView } from "./canvas/weather";
 import { Visualization } from "./viz/visualization";
 
 /**
@@ -91,6 +93,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   visualization: BarChart3,
   media: ImageIcon,
   map: MapIcon,
+  weather: CloudSun,
   place: MapPin,
   result: Sparkles,
 };
@@ -936,6 +939,14 @@ export function SurfaceBody({
         <PlaceBody
           p={surface.payload as SurfacePayloads["place"]}
           size={size ?? (large ? "large" : "medium")}
+        />
+      );
+    case "weather":
+      return (
+        <WeatherView
+          p={surface.payload as SurfacePayloads["weather"]}
+          size={size ?? (large ? "large" : "medium")}
+          onPrompt={handlers.onPrompt}
         />
       );
     case "result": {

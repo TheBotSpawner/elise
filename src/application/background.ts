@@ -15,7 +15,7 @@ import { createAdminClient } from "@/infrastructure/supabase/admin";
 import { SupabaseScheduleStore } from "@/infrastructure/supabase/repositories/schedules";
 
 import type { AuthContext } from "./auth-context";
-import { morningBriefHandler } from "./morning-brief-service";
+import { missingWorkerSecrets, morningBriefHandler } from "./morning-brief-service";
 
 /**
  * Background work runs without a browser session. It acts as the schedule's owner with the
@@ -87,6 +87,14 @@ export async function executeScheduleRun(job: {
   scheduleRunId: string;
   attempt: number;
 }): Promise<RunStatus> {
+  // Names only: a worker without these can't see the user's connections (A5).
+  const missing = missingWorkerSecrets();
+  if (missing.length)
+    logger.error("background.server_not_configured", {
+      workspace_id: job.workspaceId,
+      schedule_run_id: job.scheduleRunId,
+      missing,
+    });
   return executeRun(runnerPorts(), job);
 }
 

@@ -225,6 +225,13 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       compareTravelTimes: READ,
     },
   },
+  // Current conditions and forecasts (ADR-038): server-provided, no user connection, read-only.
+  weather: {
+    key: "weather",
+    status: "available",
+    internal: true,
+    operations: { current: READ, forecast: READ },
+  },
   // Context Profiles (ADR-016): an organizational layer over the user's data. Proposing,
   // activating and briefing only read (each source under its own permissions); creating or
   // changing a profile is an audited write; archiving asks when ELISE proposes it.

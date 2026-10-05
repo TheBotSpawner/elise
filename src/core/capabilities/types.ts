@@ -18,6 +18,7 @@ export type CapabilityKey =
   | "workspace"
   | "web_search"
   | "location"
+  | "weather"
   | "contexts"
   | "study"
   | "shortcuts"

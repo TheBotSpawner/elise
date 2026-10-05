@@ -94,7 +94,13 @@ export default defineConfig({
   maxDuration: 3600,
   retries: {
     enabledInDev: false,
-    default: { maxAttempts: 3, factor: 2, minTimeoutInMs: 1000, maxTimeoutInMs: 10000, randomize: true },
+    default: {
+      maxAttempts: 3,
+      factor: 2,
+      minTimeoutInMs: 1000,
+      maxTimeoutInMs: 10000,
+      randomize: true,
+    },
   },
 });
 ```

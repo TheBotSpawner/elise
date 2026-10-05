@@ -44,6 +44,7 @@ import type { ShortcutStore } from "../shortcuts/model";
 import type { StudyPort } from "../study/model";
 import type { BriefPort } from "../tools/planning";
 import type { WakeStatus } from "../voice/session";
+import type { WeatherCapability } from "../weather/model";
 import type { WebCapability } from "../web/model";
 import type { WorkspacePort } from "../workspace/port";
 import type { SurfacePayloads } from "../workspace/registry";
@@ -110,6 +111,8 @@ export interface CapabilityProviders {
   web_search: WebCapability;
   /** Places, addresses and travel times (ADR-023). */
   location: LocationCapability;
+  /** Current conditions and forecasts (ADR-038). */
+  weather: WeatherCapability;
   /** Context Profiles and people: the organizational layer (ADR-016). */
   contexts: ContextStore;
   /** Study sessions and progress, plus AI for questions and evaluation (ADR-016). */
@@ -364,7 +367,8 @@ export type ToolDisplay =
   | { kind: "morning_brief"; brief: MorningBrief }
   | { kind: "shortcut"; shortcut: SurfacePayloads["shortcut"] }
   | { kind: "map"; map: SurfacePayloads["map"] }
-  | { kind: "place"; place: SurfacePayloads["place"] };
+  | { kind: "place"; place: SurfacePayloads["place"] }
+  | { kind: "weather"; weather: SurfacePayloads["weather"] };
 
 export interface StructuredSourceRef {
   id: string;

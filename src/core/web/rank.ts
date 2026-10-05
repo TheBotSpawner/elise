@@ -108,3 +108,33 @@ export function isStale(
   const limit = { day: 2, week: 9, month: 35, year: 400 }[recency];
   return (now.getTime() - Date.parse(r.publishedAt)) / 86_400_000 > limit;
 }
+
+/**
+ * Weak evidence (E2): nothing came back, or none of the top results mentions any of the query's
+ * terms in its title or snippet. A heuristic that only decides whether to try again.
+ */
+export function isWeak(results: readonly WebResult[], query: string): boolean {
+  if (!results.length) return true;
+  const terms = queryTerms(query).map((t) => t.toLowerCase());
+  if (!terms.length) return false;
+  return !results
+    .slice(0, 3)
+    .some((r) => terms.some((t) => `${r.title} ${r.snippet}`.toLowerCase().includes(t)));
+}
+
+/**
+ * The bounded retries after a weak search, in order: the query's plain key terms, then the same
+ * without the recency filter (flagged as older than asked by `isStale`). A domain the user named
+ * is never dropped — leaving their site silently would answer a different question.
+ */
+export function reformulations(
+  query: string,
+  recency: string | null,
+): { query: string; dropRecency: boolean }[] {
+  const plain = queryTerms(query).slice(0, 6).join(" ");
+  const out: { query: string; dropRecency: boolean }[] = [];
+  if (plain && plain.toLowerCase() !== query.toLowerCase().trim())
+    out.push({ query: plain, dropRecency: false });
+  if (recency) out.push({ query: plain || query, dropRecency: true });
+  return out.slice(0, 2);
+}

@@ -5,6 +5,7 @@ import { executeToolCall, type ExecutorPorts, type ToolCallOutcome } from "@/cor
 import type { ToolContext } from "@/core/agents/tools";
 import {
   assembleBrief,
+  briefIssues,
   synthesizeBrief,
   type BriefData,
   type BriefWarning,
@@ -91,7 +92,7 @@ export async function gatherBrief(
       : config.horizon === "week"
         ? { from: today, days: 7 }
         : { from: today, days: 1 };
-  const [events, unread, needsReply, waiting, tasks, habits, goals, month, recent, yesterday] =
+  const [events, unread, needsReply, waiting, tasks, habits, goals, month, recent, yesterday, sky] =
     await Promise.all([
       want.has("calendar")
         ? call(
@@ -153,6 +154,23 @@ export async function gatherBrief(
             "all",
           )
         : undefined,
+      // Weather (ADR-038): the structured forecast for the brief's days, never a web search.
+      want.has("weather")
+        ? call(
+            "weather",
+            "weather.forecast",
+            {
+              when:
+                config.horizon === "week"
+                  ? "this_week"
+                  : config.horizon === "tomorrow"
+                    ? "tomorrow"
+                    : "today",
+              ...(config.weatherLocation ? { location: config.weatherLocation } : {}),
+            },
+            "all",
+          )
+        : undefined,
     ]);
 
   // News (ADR-015): recent events for the user's own topics only; no topics, no news.
@@ -206,6 +224,9 @@ export async function gatherBrief(
       ...(topics.length ? { news } : {}),
       ...(range.days > 1 || range.from !== today ? { range } : {}),
       ...(knowledge ? { knowledge: knowledge as BriefData["knowledge"] } : {}),
+      ...(sky?.kind === "weather" && sky.weather.mode !== "needs_location"
+        ? { weather: sky.weather }
+        : {}),
       warnings,
     },
     approvalId,
@@ -259,7 +280,70 @@ export async function briefNow(auth: AuthContext): Promise<MorningBrief> {
     briefContexts(auth),
   ]);
   if (contexts) gathered.data.contexts = contexts;
-  return assembleBrief(gathered.data);
+  const brief = assembleBrief(gathered.data);
+  logBrief(auth, { origin: "interactive", scheduleId: null }, config, brief, gathered);
+  return brief;
+}
+
+/**
+ * Secrets a background worker needs to see the same world as interactive ELISE (A5). Names only:
+ * values are never read into logs. Missing ones turn into SERVER_NOT_CONFIGURED, never into
+ * "not connected".
+ */
+const WORKER_SECRETS = [
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "SUPABASE_SECRET_KEY",
+  "ELISE_ENCRYPTION_KEY",
+  "GOOGLE_OAUTH_CLIENT_ID",
+  "GOOGLE_OAUTH_CLIENT_SECRET",
+  "OPENAI_API_KEY",
+] as const;
+
+export function missingWorkerSecrets(env: Record<string, string | undefined> = process.env) {
+  return WORKER_SECRETS.filter((k) => !env[k]);
+}
+
+/** Structured telemetry for one brief (H): what it found and produced — counts, never content. */
+function logBrief(
+  auth: AuthContext,
+  run: { origin: "interactive" | "schedule"; scheduleId: string | null },
+  config: MorningBriefConfig,
+  brief: MorningBrief,
+  gathered: { failed: number; attempted: number },
+) {
+  const sections = Object.entries({
+    calendar: brief.today?.events.length,
+    email: brief.attention.emails.length,
+    needs_reply: brief.waitingOnYou.replies.length,
+    tasks: brief.attention.tasks.length + brief.waitingOnYou.overdue.length,
+    habits: brief.habits?.length,
+    goals: brief.goals?.length,
+    news: brief.news?.length,
+    weather: brief.weather ? 1 : undefined,
+  }).filter(([, n]) => n !== undefined);
+  const issues = brief.warnings.filter((w) => w.block !== "summary");
+  logger.info("brief.run", {
+    workspace_id: auth.workspaceId,
+    user_id: auth.userId,
+    schedule_id: run.scheduleId,
+    origin: run.origin,
+    blocks: config.blocks,
+    calls: gathered.attempted,
+    failed_calls: gathered.failed,
+    produced: sections.filter(([, n]) => n! > 0).map(([k]) => k),
+    empty: sections.filter(([, n]) => n === 0).map(([k]) => k),
+    issues: issues.map(
+      (w) => `${w.block}:${w.state}${w.accounts ? `(${w.accounts.length} accounts)` : ""}`,
+    ),
+  });
+  if (issues.some((w) => w.state === "server_config"))
+    logger.error("brief.server_not_configured", {
+      workspace_id: auth.workspaceId,
+      schedule_id: run.scheduleId,
+      origin: run.origin,
+      blocks: issues.filter((w) => w.state === "server_config").map((w) => w.block),
+      missing: missingWorkerSecrets(),
+    });
 }
 
 /** The Morning Brief action: deterministic gathering + ranking, then one synthesis call. */
@@ -269,7 +353,12 @@ export function morningBriefHandler(deps: {
 }): ActionHandler {
   return async ({ schedule, now }) => {
     const config = morningBriefConfigSchema.parse(schedule.configuration ?? {});
+    // A4: every run is one user in one workspace; never a generic service identity.
+    if (!schedule.workspaceId || !schedule.ownerUserId)
+      throw new AppError("INTERNAL_ERROR", "Schedule run without an owner or workspace");
     const auth = await deps.authFor(schedule.workspaceId, schedule.ownerUserId);
+    if (auth.workspaceId !== schedule.workspaceId || auth.userId !== schedule.ownerUserId)
+      throw new AppError("INTERNAL_ERROR", "Schedule run resolved to another user or workspace");
     const ports = createExecutorPorts(auth);
     const ctx: ToolContext = { ...toolContext(auth, "schedule"), timezone: schedule.timezone, now };
 
@@ -281,7 +370,20 @@ export function morningBriefHandler(deps: {
     if (gathered.approvalId)
       return { kind: "waiting_for_approval", approvalId: gathered.approvalId };
     if (gathered.failed === gathered.attempted) {
-      // Permanent (e.g. every account needs reconnecting): fail now, never retry forever.
+      // Permanent: fail now, never retry forever. A worker missing secrets is an ELISE problem,
+      // not the user's connections (A5).
+      const issues = briefIssues(gathered.data.warnings);
+      if (issues.length && issues.every((w) => w.state === "server_config")) {
+        logger.error("brief.server_not_configured", {
+          workspace_id: auth.workspaceId,
+          schedule_id: schedule.id,
+          origin: "schedule",
+          missing: missingWorkerSecrets(),
+        });
+        throw new AppError("SERVER_NOT_CONFIGURED", "The background worker is missing secrets", {
+          recovery: "none",
+        });
+      }
       throw new AppError(
         "CAPABILITY_UNAVAILABLE",
         "None of the Morning Brief sources could be loaded",
@@ -301,6 +403,7 @@ export function morningBriefHandler(deps: {
       // The structured brief is still useful without the written summary.
       brief.warnings.push({ block: "summary", code: toAppError(error).code });
     }
+    logBrief(auth, { origin: "schedule", scheduleId: schedule.id }, config, brief, gathered);
     return {
       kind: "result",
       result: {

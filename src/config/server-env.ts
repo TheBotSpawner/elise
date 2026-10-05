@@ -49,6 +49,8 @@ const serverEnvSchema = z.object({
   TAVILY_API_KEY: z.string().min(1).optional(),
   /** Location (ADR-023): server key restricted to Places (New), Routes and Geocoding. */
   GOOGLE_MAPS_SERVER_API_KEY: z.string().min(1).optional(),
+  /** Weather (ADR-038): Open-Meteo commercial key; without it, the free non-commercial API. */
+  OPEN_METEO_API_KEY: z.string().min(1).optional(),
   NOTION_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   NOTION_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),

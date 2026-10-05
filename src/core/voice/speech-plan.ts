@@ -57,6 +57,7 @@ export type AckIntent =
   | "check_tasks"
   | "map_route"
   | "find_places"
+  | "check_weather"
   | "analyze_data"
   | "prepare_meeting"
   | "plan"
@@ -81,6 +82,7 @@ const READS: Record<string, AckIntent> = {
   email: "check_email",
   tasks: "check_tasks",
   location: "map_route",
+  weather: "check_weather",
   "location.searchPlaces": "find_places",
   "location.getPlace": "find_places",
   finance: "analyze_data",
@@ -139,6 +141,10 @@ const ACKS: Bank = {
     es: ["Busco los lugares.", "Lo busco en el mapa.", "Ya miro qué hay cerca."],
     en: ["Looking for places.", "Checking the map.", "Let me see what's nearby."],
   },
+  check_weather: {
+    es: ["Te reviso el pronóstico.", "Ya miro el clima.", "Sí, te lo reviso."],
+    en: ["Checking the forecast.", "Let me look at the weather.", "Sure, checking it."],
+  },
   analyze_data: {
     es: ["Reviso tus números.", "Lo reviso.", "Ya lo calculo."],
     en: ["Checking your numbers.", "Checking.", "Let me work it out."],
@@ -179,6 +185,10 @@ const ACTION_WORDS =
   /\b(mov[eé]|cambi[aá]|borr[aá]|elimin[aá]|cancel[aá]|agreg[aá]|a[ñn]ad[ií]|cre[aá]|agend[aá]|anot[aá]|mand[aá]|envi[aá]|respond[eé]|guard[aá]|archiv[aá]|marc[aá]|pon[eé]|move|change|delete|remove|cancel|add|create|schedule|send|reply|save|archive|mark|set)\b/i;
 const LOOKUPS: [RegExp, AckIntent][] = [
   [/\b(noticias|news|investig[aá]|research|en (la )?web|online|internet)\b/i, "search_web"],
+  [
+    /\b(clima|pron[oó]stico|va a llover|llueve|lluvia|temperatura|weather|forecast|going to rain)\b/i,
+    "check_weather",
+  ],
   [
     /\b(cu[aá]nto tardo|c[oó]mo llego|ruta|how long .*(get|drive)|directions|route)\b/i,
     "map_route",
@@ -222,6 +232,7 @@ const PROGRESS: Partial<Bank> = {
   check_email: { es: ["Sigo revisando tus mails."], en: ["Still going through your email."] },
   map_route: { es: ["Sigo con la ruta."], en: ["Still working out the route."] },
   find_places: { es: ["Sigo buscando lugares."], en: ["Still looking for places."] },
+  check_weather: { es: ["Sigo con el pronóstico."], en: ["Still checking the forecast."] },
   prepare_meeting: {
     es: ["Estoy revisando los últimos correos y la reunión."],
     en: ["Going through the latest emails and the meeting."],

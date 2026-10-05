@@ -20,6 +20,7 @@ import {
   type WorkspaceState,
 } from "./model";
 import { visualizationSpec, type VisualizationSpec } from "./visualization";
+import { weatherPayload, type WeatherPayload } from "./weather";
 import { TASK_STATUSES } from "../capabilities/tasks";
 import { CONTEXT_KINDS, LINK_TYPES } from "../contexts/model";
 import { toLocalDateTime } from "../time";
@@ -569,6 +570,8 @@ export const PAYLOADS = {
   map: mapPayload,
   /** One place in detail (ADR-023). */
   place: placePayload,
+  /** Current conditions, hours or days at one place (ADR-038). */
+  weather: weatherPayload,
   /** Any other tool result, rendered by its existing card. */
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
 } satisfies Record<SurfaceType, z.ZodType>;
@@ -1016,6 +1019,13 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     describe: (p) =>
       `${q(p.name)}${p.address ? ` · ${p.address}` : ""}${p.openNow == null ? "" : p.openNow ? " · open now" : " · closed now"} (place ${p.id})`,
   },
+  weather: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 70,
+    actions: (p) => (p.mode === "needs_location" ? [] : [expand]),
+    describe: describeWeather,
+  },
   result: {
     sizes: ["small", "medium", "large"],
     size: "medium",
@@ -1046,6 +1056,25 @@ function describeMap(p: MapPayload): string {
         `${i + 1}) ${q(x.name)}${x.distanceMeters != null ? ` ${x.distanceMeters} m` : ""}${x.rating ? ` ★${x.rating}` : ""} (place ${x.id})`,
     )
     .join("; ")}`;
+}
+
+/** The forecast as the model can talk about it: place, now, and each day or hour. */
+function describeWeather(p: WeatherPayload): string {
+  if (p.mode === "needs_location") return "Weather: waiting for the user to name a place";
+  const r = Math.round;
+  const place = p.location ? q(p.location.name) : "";
+  const now = p.current ? ` now ${r(p.current.temperature)}°C ${p.current.condition}` : "";
+  const days = p.days
+    .map(
+      (d) =>
+        `${d.date} ${r(d.min)}–${r(d.max)}°C ${d.condition} rain ${d.precipitationProbability ?? "?"}%`,
+    )
+    .join("; ");
+  const hours = p.hours
+    .slice(0, 12)
+    .map((h) => `${h.time.slice(11)} ${r(h.temperature)}° ${h.precipitationProbability ?? "?"}%`)
+    .join(", ");
+  return `Weather ${place}${now}${days ? ` · ${days}` : ""}${hours ? ` · hours ${hours}` : ""}`;
 }
 
 /** A chart, compactly: its template, title and the numbers it shows (so ELISE can talk about it). */

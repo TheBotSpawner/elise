@@ -34,7 +34,12 @@ const BY_MESSAGE: [RegExp, AttentionReason][] = [
 export function attentionReason(code: string | null, detail: string | null): AttentionReason {
   if (code === "AUTH_EXPIRED" || code === "AUTH_ERROR") return "reconnect";
   if (code === "PERMISSION_DENIED" || code === "NOT_FOUND") return "access_lost";
-  if (code === "BACKGROUND_STALLED" || code === "CAPABILITY_UNAVAILABLE") return "stalled";
+  if (
+    code === "BACKGROUND_STALLED" ||
+    code === "CAPABILITY_UNAVAILABLE" ||
+    code === "SERVER_NOT_CONFIGURED"
+  )
+    return "stalled";
   if (code === "TIMEOUT") return "timeout";
   if (code === "PROVIDER_UNAVAILABLE" || code === "RATE_LIMITED") return "unreachable";
   for (const [pattern, reason] of BY_MESSAGE) if (detail && pattern.test(detail)) return reason;

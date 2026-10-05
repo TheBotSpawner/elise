@@ -34,7 +34,7 @@ export interface Keyring {
 export function keyringFromEnv(env: Record<string, string | undefined> = process.env): Keyring {
   const current = env.ELISE_ENCRYPTION_KEY;
   if (!current) {
-    throw new AppError("CAPABILITY_UNAVAILABLE", "ELISE_ENCRYPTION_KEY is not configured", {
+    throw new AppError("SERVER_NOT_CONFIGURED", "ELISE_ENCRYPTION_KEY is not configured", {
       recovery: "configure",
     });
   }

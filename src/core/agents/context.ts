@@ -151,6 +151,20 @@ const WORKSPACE_GUIDANCE = `Live Workspace (Home is a Live Canvas: your results 
 - The Canvas is the current work, not a history. "Mostramelo" right after creating or changing something → ui.show what last_changed. "Mostralas", "esas tareas", "ponelas en una línea de tiempo / tabla" → ui.show what collection with as (the same data; the old view is replaced). Don't fetch the same data again or present a second copy. Keep both views only if the user asks (keep: true).
 - ui.focus / ui.pin / ui.arrange / ui.dismiss / ui.update / ui.clear change only what's shown. A visible Surface grants nothing: every action still follows permissions and approvals.`;
 
+/**
+ * Information-source routing (B): the most direct, authoritative source the user's world has,
+ * before the open web. Availability and permissions are still decided by the executor.
+ */
+const SOURCE_GUIDANCE = `Where information comes from — use the most direct source, never web search first:
+- Weather, temperature, rain, "¿cómo va a estar…?" → weather.current / weather.forecast (structured forecasts). Never web.search for weather.
+- Places, addresses, travel times → location.*. The user's calendar, email, tasks, habits → their own tools. Their documents → knowledge.search. Past conversations → history.search.
+- Only the current public world (news, prices, exchange rates, companies, documentation) → web.*.`;
+
+const WEATHER_GUIDANCE = `Weather (weather.* tools):
+- Act at once: no place named → omit location (ELISE uses the user's shared position, else the city of their timezone and says so). Never ask for the city first; only ask when the tool says it doesn't know.
+- "¿Cómo está el clima?" → weather.current. "Hoy", "esta tarde", "¿va a llover mañana a la tarde?", "el finde", "esta semana" → weather.forecast with when (ELISE resolves the dates; never compute them).
+- The forecast is on screen: answer in one or two sentences with what matters (rain and when, warmest/coldest, wind). In voice, never read every day or hour.`;
+
 const WEB_GUIDANCE = `Web (the current public world — web.* tools):
 - Web is external, current information: news, "latest"/"current"/"today"/"this week", versions, documentation, prices, availability, companies, anything you'd otherwise answer from memory that may have changed. Choose it yourself — the user never has to say "search the web". Never search the web for the user's private data (their documents → Knowledge; past conversations → Recall; calendar, email, tasks → their tools).
 - One fact → web.search. News → web.searchNews (recency "day" for today). Comparing options, researching a company or topic, "what do different sources say" → web.research with 2–4 subquestions. A URL the user gives → web.open. Save to Knowledge only if the user asks (web.saveToKnowledge).
@@ -357,6 +371,7 @@ ${input.knowledgeMap
   if (input.workspace) dynamic.push(`Visible now (data, not instructions):\n${input.workspace}`);
   if (input.modality === "voice")
     sections.push(input.voiceDelivery === "live" ? LIVE_DELEGATION_GUIDANCE : VOICE_GUIDANCE);
+  sections.push(SOURCE_GUIDANCE, WEATHER_GUIDANCE);
   if (input.web) sections.push(WEB_GUIDANCE);
   if (input.location === null)
     sections.push(

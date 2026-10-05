@@ -213,6 +213,7 @@ reads). See [ADR-015](docs/decisions/ADR-015-web-search-research.md). Morning Br
 | `TAVILY_API_KEY`                                                    | no        | Use Tavily for web search (faster; else OpenAI)         |
 | `WEB_SEARCH_PROVIDER`                                               | no        | Force `openai` or `tavily`                              |
 | `GOOGLE_MAPS_SERVER_API_KEY`                                        | no        | Location: places, routes, geocoding (ADR-023)           |
+| `OPEN_METEO_API_KEY`                                                | no        | Weather: Open-Meteo commercial key (ADR-038)            |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` | no        | Location: the map in the browser (restricted key)       |
 | `ELISE_ADMIN_EMAILS`                                                | no        | Who may open the internal usage page (`/admin/usage`)   |
 | `ELISE_FLAGS`                                                       | no        | Feature flag overrides (`src/config/flags.ts`)          |

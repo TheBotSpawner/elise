@@ -22,7 +22,7 @@ export function googleOAuthConfig(origin?: string): GoogleOAuthConfig {
   const env = serverEnv();
   if (!isGoogleConfigured() || !env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET) {
     throw new AppError(
-      "CAPABILITY_UNAVAILABLE",
+      "SERVER_NOT_CONFIGURED",
       "Google connections are not configured on this server",
       {
         recovery: "configure",

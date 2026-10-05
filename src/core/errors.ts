@@ -13,6 +13,11 @@ export const ERROR_CODES = [
   "RATE_LIMITED",
   "PROVIDER_UNAVAILABLE",
   "CAPABILITY_UNAVAILABLE",
+  /**
+   * This server (or background worker) lacks a secret or setting it needs — never the user's
+   * connection. Kept apart from CAPABILITY_UNAVAILABLE so it's never shown as "not connected".
+   */
+  "SERVER_NOT_CONFIGURED",
   "TIMEOUT",
   "AI_PROVIDER_ERROR",
   "AI_NOT_CONFIGURED",

@@ -33,6 +33,7 @@ import { SHORTCUT_TOOLS } from "@/core/tools/shortcuts";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { STUDY_TOOLS } from "@/core/tools/study";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { WEATHER_TOOLS } from "@/core/tools/weather";
 import { WEB_TOOLS } from "@/core/tools/web";
 import { WORKSPACE_TOOLS } from "@/core/tools/workspace";
 
@@ -248,6 +249,7 @@ export function makePorts(
       ...MEETING_TOOLS,
       ...WEB_TOOLS,
       ...LOCATION_TOOLS,
+      ...WEATHER_TOOLS,
       ...CONTEXT_TOOLS,
       ...STUDY_TOOLS,
       ...PLANNING_TOOLS,

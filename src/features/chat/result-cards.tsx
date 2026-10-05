@@ -12,6 +12,7 @@ import { addDays, todayIn } from "@/core/time";
 import { agendaGroups, calendarItem, localRange } from "@/core/workspace/calendar";
 import { BriefView } from "@/features/schedules/brief-view";
 import { ScheduleProposalCard } from "@/features/schedules/proposal-card";
+import { WeatherView } from "@/features/workspace/canvas/weather";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -383,6 +384,12 @@ export function DisplayCard({
             createdAt={`${display.brief.date}T12:00:00Z`}
             unread={false}
           />
+        </motion.section>
+      );
+    case "weather":
+      return (
+        <motion.section {...rise} aria-label={t.chat.resultLabel} className={CARD}>
+          <WeatherView p={display.weather} />
         </motion.section>
       );
     case "shortcut":

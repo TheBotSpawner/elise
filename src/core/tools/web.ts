@@ -14,7 +14,7 @@ import {
 import { selectPassages } from "../web/extract";
 import { itemKey, looksLikeItemUrl, type WebItem } from "../web/items";
 import { WEB_LIMITS, type Recency, type WebCapability, type WebPage } from "../web/model";
-import { groupNews, isStale, queryTerms, rankResults } from "../web/rank";
+import { groupNews, isStale, isWeak, queryTerms, rankResults, reformulations } from "../web/rank";
 import { checkUrl, domainOf, normalizeUrl } from "../web/url";
 import { surfaceId, type WorkspaceOp } from "../workspace/model";
 import { draftDefaults, PAYLOADS, type SurfacePayloads } from "../workspace/registry";
@@ -119,18 +119,49 @@ export const searchWebTool: ToolDefinition = {
   async run(raw, env) {
     const q = searchInput.parse(raw);
     const retrievedAt = env.ctx.now.toISOString();
-    const results = await searchStep(env, q.query, "web", q.recency ?? null, q.domains);
+    let results = await searchStep(env, q.query, "web", q.recency ?? null, q.domains);
+    // Weak evidence → bounded reformulation (E2) before giving up; results are merged and
+    // ranked again, so a good first hit is never lost.
+    const attempts = [q.query];
+    for (const next of isWeak(results, q.query) ? reformulations(q.query, q.recency ?? null) : []) {
+      const more = await searchStep(
+        env,
+        next.query,
+        "web",
+        next.dropRecency ? null : (q.recency ?? null),
+        q.domains,
+      ).catch(() => []);
+      attempts.push(next.query);
+      results = rankResults([...results, ...more], q.query, {
+        preferRecent: Boolean(q.recency),
+        now: env.ctx.now,
+      });
+      if (!isWeak(results, q.query)) break;
+    }
     if (!results.length)
       return {
         output: {
           found: false,
+          attempts,
           instructions:
-            "The web search found nothing relevant. Say so plainly; don't answer from memory as if it were current.",
+            "The web search found nothing relevant, even with reworded queries. Say so plainly and what was tried; don't answer from memory as if it were current.",
         },
       };
-    const pages = q.inspect
-      ? await Promise.all(results.slice(0, WEB_LIMITS.quickFetch).map((r) => read(env, r.url)))
-      : [];
+    // Answer from pages, not snippets (E3): if the best pages can't be read, try the next ones.
+    let pages: (WebPage | null)[] = [];
+    if (q.inspect) {
+      pages = await Promise.all(
+        results.slice(0, WEB_LIMITS.quickFetch).map((r) => read(env, r.url)),
+      );
+      if (!pages.some(Boolean))
+        pages = pages.concat(
+          await Promise.all(
+            results
+              .slice(WEB_LIMITS.quickFetch, WEB_LIMITS.quickFetch * 2)
+              .map((r) => read(env, r.url)),
+          ),
+        );
+    }
     const byUrl = new Map(
       pages.filter((p): p is WebPage => Boolean(p)).map((p) => [p.requestedUrl, p]),
     );
@@ -161,6 +192,7 @@ export const searchWebTool: ToolDefinition = {
       output: {
         found: true,
         query: q.query,
+        ...(attempts.length > 1 ? { attempts } : {}),
         retrievedAt,
         sources,
         ...(q.inspect && byUrl.size < Math.min(WEB_LIMITS.quickFetch, results.length)

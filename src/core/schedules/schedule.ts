@@ -86,6 +86,7 @@ export const BRIEF_BLOCKS = [
   "finance",
   "news",
   "knowledge",
+  "weather",
 ] as const;
 /** Finance is personal, News needs topics and Knowledge a Space: all three are opt-in. */
 export const DEFAULT_BRIEF_BLOCKS = BRIEF_BLOCKS.filter(
@@ -141,6 +142,8 @@ export const morningBriefConfigSchema = z
     horizon: z.enum(BRIEF_HORIZONS).default("today"),
     /** Knowledge block: the Space (or Section) whose recent changes it summarizes. */
     knowledgeSpaceId: z.uuid().nullable().default(null),
+    /** Weather block (ADR-038): a city; null → the city of the schedule's timezone. */
+    weatherLocation: z.string().trim().min(2).max(120).nullable().default(null),
     /** The preset it was created from, if any (gallery "Already added"); null = custom. */
     preset: z.enum(SCHEDULE_PRESETS).nullable().default(null),
   })

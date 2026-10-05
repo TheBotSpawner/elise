@@ -20,7 +20,7 @@ export function createAdminClient(): SupabaseClient<Database> {
   if (admin) return admin;
   const secret = serverEnv().SUPABASE_SECRET_KEY;
   if (!secret) {
-    throw new AppError("CAPABILITY_UNAVAILABLE", "SUPABASE_SECRET_KEY is not configured", {
+    throw new AppError("SERVER_NOT_CONFIGURED", "SUPABASE_SECRET_KEY is not configured", {
       recovery: "configure",
     });
   }

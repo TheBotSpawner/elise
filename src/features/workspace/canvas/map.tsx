@@ -458,7 +458,7 @@ function Comparison({ c }: { c: NonNullable<MapPayload["comparison"]> }) {
 }
 
 /** Asks for the position once, on the user's tap; then continues the request. */
-function LocateCard({ onPrompt }: { onPrompt: (text: string) => void }) {
+export function LocateCard({ onPrompt }: { onPrompt: (text: string) => void }) {
   const { t } = useI18n();
   const sharing = useSharedLocation();
   const [state, setState] = useState<"idle" | "locating" | "denied" | "failed">("idle");

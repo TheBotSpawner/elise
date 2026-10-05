@@ -210,6 +210,7 @@ describe("schedule timing", () => {
       "tasks",
       "habits",
       "goals",
+      "weather",
     ]);
     expect(
       scheduleInputSchema.safeParse({
@@ -516,7 +517,10 @@ describe("Morning Brief assembly", () => {
     expect(brief.waitingOnYou.overdue.map((t) => [t.title, t.source])).toEqual([
       ["Pay invoice", "Personal"],
     ]);
-    expect(brief.warnings).toEqual([{ block: "needs_reply", code: "AUTH_EXPIRED" }]);
+    // Follow-ups are Email: one line, with what it means for the user.
+    expect(brief.warnings).toEqual([
+      { block: "email", code: "AUTH_EXPIRED", state: "auth_expired" },
+    ]);
   });
 });
 

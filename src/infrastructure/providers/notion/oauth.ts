@@ -28,7 +28,7 @@ export function isNotionConfigured(): boolean {
 export function notionOAuthConfig(origin?: string): NotionOAuthConfig {
   const env = serverEnv();
   if (!isNotionConfigured() || !env.NOTION_OAUTH_CLIENT_ID || !env.NOTION_OAUTH_CLIENT_SECRET) {
-    throw new AppError("CAPABILITY_UNAVAILABLE", "Notion is not configured on this server", {
+    throw new AppError("SERVER_NOT_CONFIGURED", "Notion is not configured on this server", {
       recovery: "configure",
     });
   }

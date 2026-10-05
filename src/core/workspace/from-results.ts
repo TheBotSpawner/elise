@@ -709,6 +709,18 @@ export function surfacesFromOutcome(
           ref: { resource: "place", id: d.place.id },
         }),
       );
+    case "weather": {
+      const w = d.weather;
+      // One forecast per interaction: asking again (another day, another city) updates it.
+      return one(
+        draft("weather", "weather", w, opts, {
+          title: w.location?.name ?? (opts.locale === "es" ? "Clima" : "Weather"),
+          source: { capability: "weather", label: w.attribution.name },
+          ref: null,
+          ...(w.mode === "needs_location" ? { state: "attention" as const } : {}),
+        }),
+      );
+    }
     case "study_question":
       return one(
         draft("study_question", d.question.sessionId, d.question, opts, {
@@ -858,6 +870,7 @@ const INTENT_BY_CAPABILITY: Record<string, IntentKind> = {
   notes: "planning",
   web: "research",
   location: "planning",
+  weather: "planning",
   study: "study",
   work: "work_brief",
   planning: "planning",

@@ -2,6 +2,7 @@
 
 import {
   CalendarDays,
+  CloudSun,
   FileText,
   Globe,
   GraduationCap,
@@ -41,6 +42,7 @@ const PROVENANCE: Record<string, LucideIcon> = {
   email: Mail,
   web_search: Globe,
   location: MapPin,
+  weather: CloudSun,
   knowledge: FileText,
   history: History,
   tasks: ListChecks,

@@ -39,6 +39,7 @@ export const SURFACE_TYPES = [
   "media",
   "map",
   "place",
+  "weather",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
