@@ -1293,10 +1293,13 @@ export const es: Dictionary = {
     focusReview: "Repasar",
     conflicts: "Superposiciones",
     freeTime: "Tiempo libre",
-    noEvents: "Sin reuniones hoy",
+    noEventsIn: {
+      today: "Sin reuniones hoy",
+      tomorrow: "Sin reuniones mañana",
+      week: "Sin reuniones esta semana",
+    },
+    transcript: "Transcripción",
     overdue: "Vencida",
-    nothing: "Nada te necesita esta mañana.",
-    details: "Detalles",
     warnings: {
       summary: "El resumen escrito no está disponible; acá tenés los detalles.",
     },

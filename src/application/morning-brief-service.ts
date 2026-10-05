@@ -6,7 +6,7 @@ import type { ToolContext } from "@/core/agents/tools";
 import {
   assembleBrief,
   briefIssues,
-  synthesizeBrief,
+  narrateBrief,
   type BriefData,
   type BriefWarning,
   type MorningBrief,
@@ -207,6 +207,7 @@ export async function gatherBrief(
     data: {
       now: ctx.now,
       timezone: ctx.timezone,
+      locale: ctx.locale,
       events: events?.kind === "event_list" ? events.events : undefined,
       unread: unread?.kind === "email_list" ? unread.messages : undefined,
       needsReply: needsReply?.kind === "email_followups" ? needsReply.items : undefined,
@@ -392,16 +393,20 @@ export function morningBriefHandler(deps: {
     }
 
     const brief = assembleBrief(gathered.data);
+    // What ELISE says over each card (ADR-039). Without it the experience speaks plain lines
+    // computed from the same data, so a model failure never hides the brief.
     try {
-      brief.narrative =
-        (await synthesizeBrief(deps.ai(), brief, {
-          userName: auth.profile.displayName,
-          locale: auth.profile.locale,
-          instructions: schedule.instructions,
-        })) || null;
+      brief.narration = await narrateBrief(deps.ai(), brief, {
+        userName: auth.profile.displayName,
+        locale: auth.profile.locale,
+        instructions: schedule.instructions,
+      });
+      if (!brief.narration) logger.warn("brief.narration_unusable", { schedule_id: schedule.id });
     } catch (error) {
-      // The structured brief is still useful without the written summary.
-      brief.warnings.push({ block: "summary", code: toAppError(error).code });
+      logger.warn("brief.narration_failed", {
+        schedule_id: schedule.id,
+        code: toAppError(error).code,
+      });
     }
     logBrief(auth, { origin: "schedule", scheduleId: schedule.id }, config, brief, gathered);
     return {

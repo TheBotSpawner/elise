@@ -1279,10 +1279,13 @@ export const en = {
     focusReview: "Review",
     conflicts: "Overlaps",
     freeTime: "Free time",
-    noEvents: "No meetings today",
+    noEventsIn: {
+      today: "No meetings today",
+      tomorrow: "No meetings tomorrow",
+      week: "No meetings this week",
+    },
+    transcript: "Transcript",
     overdue: "Overdue",
-    nothing: "Nothing needs you this morning.",
-    details: "Details",
     warnings: {
       summary: "The written summary isn't available; here are the details.",
     },
