@@ -41,7 +41,7 @@ function check(error: { message: string } | null, what: string) {
 export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
   constructor(private readonly db: Db) {}
 
-  // ── Ingestion ──────────────────────────────────────────────────────────────
+  // â”€â”€ Ingestion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async loadVersion(workspaceId: string, versionId: string): Promise<VersionToIngest | null> {
     const { data } = await this.db
@@ -262,7 +262,7 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
       .eq("workspace_id", v.workspaceId);
   }
 
-  // ── Sync ───────────────────────────────────────────────────────────────────
+  // â”€â”€ Sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async loadRun(workspaceId: string, runId: string) {
     const { data: run } = await this.db
@@ -332,93 +332,80 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
   async knownItems(sourceId: string): Promise<KnownItem[]> {
     const { data, error } = await this.db
       .from("knowledge_items")
-      .select(
-        "id, external_id, status, error_code, knowledge_versions!knowledge_versions_knowledge_item_id_fkey(version_number, source_revision)",
-      )
+      .select("id, external_id, status, error_code, metadata")
       .eq("source_id", sourceId);
     check(error, "load items");
-    return (data ?? []).map((i) => {
-      const versions = (i.knowledge_versions ?? []) as unknown as {
-        version_number: number;
-        source_revision: string | null;
-      }[];
-      const newest = versions.sort((a, b) => b.version_number - a.version_number)[0];
-      return {
-        id: i.id,
-        externalId: i.external_id,
-        status: i.status,
-        revision: newest?.source_revision ?? null,
-        errorCode: i.error_code,
-      };
+    return (data ?? []).map((i) => ({
+      id: i.id,
+      externalId: i.external_id,
+      status: i.status,
+      // The catalog's revision; entries from before ADR-046 have none and are refreshed once.
+      revision: (i.metadata as { revision?: string } | null)?.revision ?? null,
+      errorCode: i.error_code,
+    }));
+  }
+
+  /** Catalog metadata of an external entry (ADR-046): never its content. */
+  private static catalogFields(item: ExternalItem) {
+    return {
+      item_type: item.itemType,
+      title: item.title.slice(0, 500) || "Untitled",
+      source_url: item.url,
+      mime_type: item.mimeType,
+      external_modified_at: item.modifiedAt,
+      metadata: json({ path: item.path, revision: item.revision }),
+      status: "ready" as const,
+      status_detail: null,
+      error_code: null,
+      archived_at: null,
+    };
+  }
+
+  async catalogItem(source: SyncSource, item: ExternalItem) {
+    const { error } = await this.db.from("knowledge_items").insert({
+      workspace_id: source.workspaceId,
+      space_id: source.spaceId,
+      source_id: source.id,
+      external_id: item.externalId,
+      ...SupabaseKnowledgeStore.catalogFields(item),
     });
+    check(error, "add catalog entry");
   }
 
-  async createItem(source: SyncSource, item: ExternalItem) {
-    const { data, error } = await this.db
+  async updateCatalogItem(source: SyncSource, itemId: string, item: ExternalItem) {
+    const { error } = await this.db
       .from("knowledge_items")
-      .insert({
-        workspace_id: source.workspaceId,
-        space_id: source.spaceId,
-        source_id: source.id,
-        item_type: item.itemType,
-        external_id: item.externalId,
-        title: item.title.slice(0, 500) || "Untitled",
-        source_url: item.url,
-        mime_type: item.mimeType,
-        external_modified_at: item.modifiedAt,
-        metadata: json({ path: item.path }),
-      })
-      .select("id")
-      .single();
-    check(error, "create item");
-    return this.newVersion(source.workspaceId, data!.id, 1, item);
-  }
-
-  private async newVersion(
-    workspaceId: string,
-    itemId: string,
-    number: number,
-    item: ExternalItem,
-  ) {
-    const { data, error } = await this.db
-      .from("knowledge_versions")
-      .insert({
-        workspace_id: workspaceId,
-        knowledge_item_id: itemId,
-        version_number: number,
-        source_revision: item.revision,
-        mime_type: item.mimeType,
-      })
-      .select("id")
-      .single();
-    check(error, "create version");
-    return { versionId: data!.id };
-  }
-
-  async addVersion(source: SyncSource, itemId: string, item: ExternalItem) {
-    const { data: last } = await this.db
-      .from("knowledge_versions")
-      .select("version_number")
-      .eq("knowledge_item_id", itemId)
-      .order("version_number", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const current = await this.hasCurrent(itemId);
-    await this.db
-      .from("knowledge_items")
-      .update({
-        title: item.title.slice(0, 500) || "Untitled",
-        source_url: item.url,
-        mime_type: item.mimeType,
-        external_modified_at: item.modifiedAt,
-        metadata: json({ path: item.path }),
-        // A removed item that came back is searchable again once re-indexed.
-        status: current ? "ready" : "queued",
-        archived_at: null,
-      })
+      .update(SupabaseKnowledgeStore.catalogFields(item))
       .eq("id", itemId)
       .eq("workspace_id", source.workspaceId);
-    return this.newVersion(source.workspaceId, itemId, (last?.version_number ?? 0) + 1, item);
+    check(error, "update catalog entry");
+  }
+
+  /**
+   * The catalog entry of a resource live search just read (opportunistic catalog refresh):
+   * found or added by (source, external id), so every citation has a stable item to point at.
+   */
+  async ensureCatalogItem(source: SyncSource, item: ExternalItem): Promise<string> {
+    const find = () =>
+      this.db
+        .from("knowledge_items")
+        .select("id, metadata, status")
+        .eq("workspace_id", source.workspaceId)
+        .eq("source_id", source.id)
+        .eq("external_id", item.externalId)
+        .limit(1)
+        .maybeSingle();
+    const { data } = await find();
+    if (data) {
+      const revision = (data.metadata as { revision?: string } | null)?.revision;
+      if (revision !== item.revision || data.status !== "ready")
+        await this.updateCatalogItem(source, data.id, item);
+      return data.id;
+    }
+    await this.catalogItem(source, item).catch(() => undefined);
+    const again = await find();
+    if (!again.data) throw new AppError("INTERNAL_ERROR", "Could not record the catalog entry");
+    return again.data.id;
   }
 
   async markRemoved(source: SyncSource, itemIds: string[]) {
@@ -450,6 +437,12 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
       })
       .eq("id", run.id)
       .eq("workspace_id", run.workspaceId);
+    const configuration = r.catalog
+      ? json({
+          ...((source.configuration as Record<string, unknown> | null) ?? {}),
+          catalog: { ...r.catalog, refreshedAt: new Date().toISOString() },
+        })
+      : undefined;
     await this.db
       .from("knowledge_sources")
       .update({
@@ -457,12 +450,13 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
         last_error_code: r.errorCode,
         next_sync_at: r.nextSyncAt.toISOString(),
         ...(r.status !== "failed" ? { last_synced_at: new Date().toISOString() } : {}),
+        ...(configuration ? { configuration } : {}),
       })
       .eq("id", source.id)
       .eq("workspace_id", source.workspaceId);
   }
 
-  // ── Scheduling syncs ───────────────────────────────────────────────────────
+  // â”€â”€ Scheduling syncs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /** External sources due for their periodic sync. */
   async dueSources(now: Date, limit: number) {
@@ -529,7 +523,7 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
     const inWorkspace = <T extends { eq: (c: string, v: string) => T }>(q: T) =>
       workspaceId ? q.eq("workspace_id", workspaceId) : q;
 
-    // ── Syncs ──
+    // â”€â”€ Syncs â”€â”€
     const runs = () =>
       inWorkspace(
         this.db
@@ -547,14 +541,14 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
           .lt("created_at", ago(L.queuedStallMinutes))
           .select("source_id, workspace_id, runtime_job_id, error_code")
       ).data ?? []),
-      // Heartbeat stopped (needs migration 029; without it this finds nothing)…
+      // Heartbeat stopped (needs migration 029; without it this finds nothing)â€¦
       ...((
         await runs()
           .eq("status", "running")
           .lt("heartbeat_at", ago(L.heartbeatStallMinutes))
           .select("source_id, workspace_id, runtime_job_id, error_code")
       ).data ?? []),
-      // …or past the lease, whatever the heartbeat says (a task is capped at 10 minutes).
+      // â€¦or past the lease, whatever the heartbeat says (a task is capped at 10 minutes).
       ...((
         await runs()
           .eq("status", "running")
@@ -565,7 +559,7 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
     for (const r of stalledRuns)
       await this.scheduleRetry(r.workspace_id, r.source_id, r.error_code ?? "TIMEOUT", now);
 
-    // ── Documents ──
+    // â”€â”€ Documents â”€â”€
     const versions = () =>
       inWorkspace(
         this.db
@@ -654,7 +648,7 @@ export class SupabaseKnowledgeStore implements IngestionStore, SyncStore {
 
   /**
    * A sync that failed or never ran: the source says it needs attention, and the next automatic
-   * attempt backs off (15 min, 30, 60 … a day) so a broken runtime isn't fed a job every tick.
+   * attempt backs off (15 min, 30, 60 â€¦ a day) so a broken runtime isn't fed a job every tick.
    */
   async scheduleRetry(workspaceId: string, sourceId: string, code: string, now: Date) {
     const failures = await this.consecutiveFailures(workspaceId, sourceId);

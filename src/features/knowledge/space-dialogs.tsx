@@ -193,6 +193,8 @@ export function CreateSpaceDialog({
                   id="space-name"
                   data-autofocus=""
                   required
+                  // General Knowledge keeps its name (ADR-047); everything else is editable.
+                  disabled={Boolean(space?.general)}
                   value={name}
                   maxLength={120}
                   placeholder={t.knowledge.spacePlaceholder}
@@ -227,7 +229,7 @@ export function CreateSpaceDialog({
                 }}
               />
             </div>
-            {editing && !hasSections && (
+            {editing && !hasSections && !space?.general && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="space-parent">{t.knowledge.parent}</Label>
                 <Select

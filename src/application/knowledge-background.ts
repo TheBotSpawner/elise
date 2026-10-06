@@ -29,7 +29,7 @@ import { googleHttpFor, notionClientFor } from "./elise";
 import { readDocument } from "./extraction-service";
 
 /**
- * Knowledge in the background (docs/architecture/09 §14-17, 14 §27-28): ingestion of one
+ * Knowledge in the background (docs/architecture/09 Â§14-17, 14 Â§27-28): ingestion of one
  * version and incremental sync of one source. Business logic lives in Core; this file only
  * connects it to Supabase, Storage, Drive, Notion and the runtime. Runs as the workspace owner
  * with the service role, every statement scoped to the workspace in the payload.
@@ -37,7 +37,7 @@ import { readDocument } from "./extraction-service";
 
 const log = (event: string, fields: Record<string, unknown>) => logger.info(event, fields);
 
-function ingestionPorts(auth: AuthContext): IngestionPorts {
+function ingestionPorts(): IngestionPorts {
   const store = new SupabaseKnowledgeStore(createAdminClient());
   return {
     store,
@@ -74,27 +74,11 @@ function ingestionPorts(auth: AuthContext): IngestionPorts {
               ),
             };
           }
-          case "google_drive": {
-            if (!v.connectionId || !v.mimeType)
-              throw new AppError("PROVIDER_UNAVAILABLE", "The Drive account is not connected", {
-                recovery: "reconnect",
-              });
-            const drive = new GoogleDriveClient(googleHttpFor(auth, v.connectionId));
-            const content = await drive.content(v.externalId, v.mimeType);
-            await progress("extracting");
-            return {
-              doc: await readDocument(v.workspaceId, { title: v.title, ...content }, () =>
-                progress("ocr"),
-              ),
-            };
-          }
-          case "notion": {
-            if (!v.connectionId)
-              throw new AppError("PROVIDER_UNAVAILABLE", "The Notion account is not connected", {
-                recovery: "reconnect",
-              });
-            return { doc: await notionClientFor(auth, v.connectionId).pageDocument(v.externalId) };
-          }
+          // Drive and Notion are read live (ADR-046, knowledge-live.ts); ingestVersion never
+          // gets here for them.
+          case "google_drive":
+          case "notion":
+            throw new AppError("VALIDATION_ERROR", "Connected sources are not ingested");
         }
       },
     },
@@ -156,8 +140,8 @@ function knowledgeRuntime(): BackgroundRuntime {
 }
 
 /**
- * Safety net (and the only scheduler in development): sources of these Spaces that are due —
- * never synced, or past their next check — start syncing now. Cheap when nothing is due.
+ * Safety net (and the only scheduler in development): sources of these Spaces that are due â€”
+ * never synced, or past their next check â€” start syncing now. Cheap when nothing is due.
  */
 export async function syncDueSources(workspaceId: string, spaceIds: string[] | null = null) {
   const store = new SupabaseKnowledgeStore(createAdminClient());
@@ -176,13 +160,13 @@ export async function runIngestion(job: {
   attempt: number;
   force?: boolean;
 }): Promise<IngestOutcome> {
-  return ingestVersion(ingestionPorts(await workspaceContext(job.workspaceId)), job);
+  // Uploads and notes only (ADR-046): nothing here needs the user's provider credentials.
+  return ingestVersion(ingestionPorts(), job);
 }
 
 function syncPorts(auth: AuthContext): SyncPorts {
   return {
     store: new SupabaseKnowledgeStore(createAdminClient()),
-    runtime: knowledgeRuntime(),
     now: () => new Date(),
     log,
     lister: {
@@ -195,18 +179,21 @@ function syncPorts(auth: AuthContext): SyncPorts {
         const selection = ((source.configuration as { selection?: unknown[] })?.selection ??
           []) as never[];
         if (source.sourceType === "google_drive") {
-          return new GoogleDriveClient(googleHttpFor(auth, source.connectionId)).listSelection(
-            selection as DriveSelection[],
-            500,
-          );
+          // The folders found are the scope live search may look in (ADR-046).
+          const { items, folderIds } = await new GoogleDriveClient(
+            googleHttpFor(auth, source.connectionId),
+          ).catalog(selection as DriveSelection[], 500);
+          return { items, catalog: { folderIds } };
         }
         if (source.sourceType === "notion") {
-          return notionClientFor(auth, source.connectionId).listSelection(
-            selection as NotionSelection[],
-            500,
-          );
+          return {
+            items: await notionClientFor(auth, source.connectionId).listSelection(
+              selection as NotionSelection[],
+              500,
+            ),
+          };
         }
-        return [];
+        return { items: [] };
       },
     },
   };
@@ -241,7 +228,7 @@ export async function recoverStaleWork(workspaceId: string | null) {
     workspaceId,
   );
   if (closed.runs || closed.versions) log("knowledge.stale_recovered", closed);
-  // Dispatched and never picked up: not a document problem — the runtime isn't executing
+  // Dispatched and never picked up: not a document problem â€” the runtime isn't executing
   // jobs (tasks not deployed to this environment, or no worker). Operators need to see this.
   if (closed.notStarted)
     logger.error("knowledge.runtime_not_starting", {
@@ -255,7 +242,7 @@ export async function recoverStaleWork(workspaceId: string | null) {
 /**
  * Starts one sync of a source (manual, initial or periodic), at most one at a time: null when
  * one is already active. If the runtime refuses the job, the run closes and the source says it
- * needs attention — it never sits "preparing" waiting for work nobody will do.
+ * needs attention â€” it never sits "preparing" waiting for work nobody will do.
  */
 export async function startSync(
   workspaceId: string,

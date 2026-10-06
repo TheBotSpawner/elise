@@ -21,6 +21,7 @@ import {
 import { AppError, toPublicError } from "@/core/errors";
 import { knowledgeMap, resolveMentioned } from "@/core/history/links";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
+import { generalContextApplies } from "@/core/knowledge/model";
 import { coarse, type LatLng } from "@/core/location/model";
 import { TurnPerf } from "@/core/perf";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
@@ -384,13 +385,17 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     resolvedSpace: resolvedPath,
     spaceNotes: await perf.time(
       "space_notes",
-      spaceNotes(auth, [
-        activeSpace?.id ?? null,
-        mentioned?.id ?? null,
-        mentioned?.parentId ?? null,
-        activeProfile?.section?.spaceId ?? null,
-        activeProfile?.section?.parentId ?? null,
-      ]).catch(() => []),
+      spaceNotes(
+        auth,
+        [
+          activeSpace?.id ?? null,
+          mentioned?.id ?? null,
+          mentioned?.parentId ?? null,
+          activeProfile?.section?.spaceId ?? null,
+          activeProfile?.section?.parentId ?? null,
+        ],
+        input.message,
+      ).catch(() => []),
     ),
     structuredSources,
     recallEvidence,
@@ -987,13 +992,29 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
  * The user's own descriptions of their Spaces/Sections (ADR-020 §9): the active ones in full,
  * up to eight others briefly. Names and the user's words only — never documents.
  */
-async function spaceNotes(auth: AuthContext, activeIds: (string | null)[]) {
+async function spaceNotes(auth: AuthContext, activeIds: (string | null)[], message: string) {
   const { data } = await auth.db
     .from("knowledge_spaces")
-    .select("id, name, parent_space_id, description, context")
+    .select("id, name, parent_space_id, description, context, kind")
     .eq("workspace_id", auth.workspaceId)
     .eq("status", "active");
-  const rows = data ?? [];
+  // General Knowledge is the least specific layer (ADR-047): its context joins only when it
+  // applies (the default with no Space active; inside one, when the message touches it).
+  const general = (data ?? []).find((r) => r.kind === "general");
+  const generalNote =
+    general &&
+    !activeIds.includes(general.id) &&
+    generalContextApplies(general.context, message, activeIds.some(Boolean))
+      ? [
+          {
+            path: general.name,
+            context: general.context!.trim().slice(0, 1200),
+            active: false,
+            general: true,
+          },
+        ]
+      : [];
+  const rows = (data ?? []).filter((r) => r.kind !== "general" || activeIds.includes(r.id));
   const names = new Map(rows.map((r) => [r.id, r.name]));
   const active = new Set(activeIds.filter(Boolean));
   const path = (r: (typeof rows)[number]) =>
@@ -1014,6 +1035,7 @@ async function spaceNotes(auth: AuthContext, activeIds: (string | null)[]) {
       .filter((r) => !active.has(r.id) && r.context?.trim())
       .slice(0, 8)
       .map((r) => ({ path: path(r), context: clip(r.context!.trim(), 280), active: false })),
+    ...generalNote,
   ];
 }
 

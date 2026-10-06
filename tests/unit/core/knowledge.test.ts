@@ -296,10 +296,11 @@ describe("ingestion", () => {
     expect(store.failures[0]).toMatchObject({ status: "needs_attention" });
   });
 
-  it("retries transient failures and flags a revoked connection as needing attention", async () => {
+  it("retries transient failures and flags a lost original as needing attention", async () => {
     const { store, ports, fetch } = ingestion();
-    store.add({ versionId: "v1", sourceType: "google_drive", connectionId: "c" });
-    fetch.mockRejectedValueOnce(new AppError("PROVIDER_UNAVAILABLE", "Google did not respond"));
+    // Uploads are the indexed sources now; Drive/Notion are read live (ADR-046, federated.test).
+    store.add({ versionId: "v1", sourceType: "upload" });
+    fetch.mockRejectedValueOnce(new AppError("PROVIDER_UNAVAILABLE", "Storage did not respond"));
     await expect(
       ingestVersion(ports, { workspaceId: "ws", versionId: "v1", attempt: 1 }),
     ).rejects.toMatchObject({
@@ -379,37 +380,37 @@ describe("sync", () => {
         { id: "i1", externalId: "a", status: "ready", revision: "1" },
         { id: "i2", externalId: "gone", status: "ready", revision: "1" },
       ],
-      createItem: async (_s, item) => (
-        calls.push(`create:${item.externalId}`),
-        { versionId: `v-${item.externalId}` }
-      ),
-      addVersion: async (_s, id) => (calls.push(`version:${id}`), { versionId: `v-${id}` }),
+      catalogItem: async (_s, item) => void calls.push(`catalog:${item.externalId}`),
+      updateCatalogItem: async (_s, id) => void calls.push(`update:${id}`),
       markRemoved: async (_s, ids) => void calls.push(`removed:${ids.join()}`),
       finish: async (_r, _s, result) => void finished.push(result),
     };
-    const enqueued: string[] = [];
     const ports: SyncPorts = {
       store,
-      lister: { list },
-      runtime: {
-        enqueue: async (job) => (enqueued.push(job.idempotencyKey), { runtimeJobId: "r" }),
-        cancel: async () => {},
-      },
+      lister: { list: async () => ({ items: await list(), catalog: { folderIds: ["f"] } }) },
       now: () => new Date("2026-09-29T12:00:00Z"),
     };
-    return { ports, calls, finished, enqueued };
+    return { ports, calls, finished };
   }
 
-  it("ingests only what changed and removes what disappeared", async () => {
-    const { ports, calls, finished, enqueued } = syncSetup(async () => [
-      ext("a", "2"),
-      ext("new", "1"),
-    ]);
+  it("refreshes the catalog only — no versions, no ingestion (ADR-046)", async () => {
+    const { ports, calls, finished } = syncSetup(async () => [ext("a", "2"), ext("new", "1")]);
     const counts = await syncSource(ports, { workspaceId: "ws", syncRunId: "run" });
     expect(counts).toMatchObject({ discovered: 2, created: 1, updated: 1, removed: 1 });
-    expect(calls).toEqual(["create:new", "version:i1", "removed:i2"]);
-    expect(enqueued).toEqual(["knowledge-ingest:v-new", "knowledge-ingest:v-i1"]);
-    expect(finished[0]).toMatchObject({ status: "completed", sourceStatus: "ready" });
+    expect(calls).toEqual(["catalog:new", "update:i1", "removed:i2"]);
+    expect(finished[0]).toMatchObject({
+      status: "completed",
+      sourceStatus: "ready",
+      catalog: { folderIds: ["f"] },
+    });
+  });
+
+  it("refreshes an entry left in a pre-ADR-046 ingestion state, even unchanged", () => {
+    const plan = planSync(
+      [{ id: "i1", externalId: "a", status: "needs_attention", revision: "1" }],
+      [ext("a", "1")],
+    );
+    expect(plan.updated.map((u) => u.itemId)).toEqual(["i1"]);
   });
 
   it("removes nothing when the source can't be read (revoked access)", async () => {
@@ -528,6 +529,85 @@ describe("knowledge tools", () => {
       output: { enoughEvidence: false, evidence: [] },
     });
     expect(JSON.stringify(out)).toContain("does not contain enough evidence");
+  });
+
+  it("asks connected sources live in the same scope and cites them as read live (ADR-046)", async () => {
+    const k = reader([]);
+    const asked: unknown[] = [];
+    const live: KnowledgeHit = {
+      ...evidenceHit("Proyecto: Portal RSFA · Estado: En curso · Cliente: RSFA"),
+      chunkId: "live:66666666-6666-4666-8666-666666666666:0",
+      itemId: "66666666-6666-4666-8666-666666666666",
+      versionId: "",
+      versionNumber: 0,
+      title: "Portal RSFA",
+      itemType: "notion_database_page",
+      sourceType: "notion",
+      sourceUrl: "https://notion.so/portal",
+      headingPath: [],
+      page: null,
+      live: { modifiedAt: "2026-10-05T12:00:00Z", path: ["Pipeline de Proyectos"] },
+    };
+    const withLive = {
+      ...k,
+      liveSearch: async (q: unknown) => (
+        asked.push(q),
+        { hits: [live], consulted: ["Pipeline de Proyectos"], unavailable: [] }
+      ),
+    };
+    const { ports } = withKnowledge(withLive);
+    const out = await executeToolCall(
+      ports,
+      makeCtx({ knowledgeSpaceId: "11111111-1111-4111-8111-111111111111" }),
+      { name: "knowledge.search", args: { query: "último proyecto de la pipeline", recent: true } },
+    );
+    expect(asked[0]).toMatchObject({ recent: true, text: "último proyecto de la pipeline" });
+    expect((asked[0] as { spaceIds: string[] }).spaceIds.sort()).toEqual([
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+    ]);
+    expect(out).toMatchObject({
+      status: "succeeded",
+      output: {
+        enoughEvidence: true,
+        connectedSourcesAsked: ["Pipeline de Proyectos"],
+        evidence: [
+          {
+            ref: 1,
+            source: "Notion",
+            readLive: true,
+            lastEdited: "2026-10-05",
+            in: "Pipeline de Proyectos",
+          },
+        ],
+      },
+      display: { evidence: [{ url: "https://notion.so/portal", sourceType: "notion" }] },
+    });
+    // A live passage never claims an index version.
+    expect(JSON.stringify((out as { output: unknown }).output)).not.toContain('"version":0');
+  });
+
+  it("names connected sources that couldn't be read instead of failing the search", async () => {
+    const k = {
+      ...reader([evidenceHit("The Unique ID associates the email with the client file.")]),
+      liveSearch: async () => ({
+        hits: [],
+        consulted: ["CRM"],
+        unavailable: [{ name: "CRM", code: "AUTH_EXPIRED" }],
+      }),
+    };
+    const { ports } = withKnowledge(k);
+    const out = await executeToolCall(ports, makeCtx(), {
+      name: "knowledge.search",
+      args: { query: "unique id email filing" },
+    });
+    expect(out).toMatchObject({
+      status: "succeeded",
+      output: {
+        enoughEvidence: true,
+        connectedSourcesUnavailable: [{ name: "CRM", code: "AUTH_EXPIRED" }],
+      },
+    });
   });
 
   it("an unknown Space name fails with the list of Spaces", async () => {

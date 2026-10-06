@@ -4,6 +4,9 @@
  * Chunks are the searchable, citable passages of the current version.
  */
 
+import { AppError } from "../errors";
+import { searchTerms, termScore } from "./live";
+
 export type KnowledgeSourceType = "upload" | "google_drive" | "notion" | "note";
 
 export type KnowledgeItemType =
@@ -62,6 +65,39 @@ export interface SpaceInfo {
   description?: string | null;
   /** Background the user wrote for it (dates, preferences…). */
   context?: string | null;
+  /** The workspace's General Knowledge Space (ADR-047): horizontal, least specific. */
+  general?: boolean;
+}
+
+/**
+ * General Knowledge (ADR-047): every workspace's one system Space for cross-domain context,
+ * sources and Methods. Its content is fully editable; it can't be renamed, archived/deleted or
+ * moved (the database refuses too). Identity is `kind = 'general'`, never this name.
+ */
+export const GENERAL_KNOWLEDGE_NAME = "General Knowledge";
+
+/**
+ * Whether General Knowledge's context joins a turn (ADR-047 §AO-AP). With no Space or Section
+ * active it is the default scope, so its context comes along (clipped by the caller). Inside a
+ * Space it supplements, and only when the message touches what it says — never every turn.
+ */
+export function generalContextApplies(
+  context: string | null | undefined,
+  message: string,
+  inSpace: boolean,
+): boolean {
+  if (!context?.trim()) return false;
+  return !inSpace || termScore(context, searchTerms(message)) > 0;
+}
+
+export function generalKnowledgeProtected(action: "rename" | "archive" | "move"): AppError {
+  return new AppError(
+    "VALIDATION_ERROR",
+    `General Knowledge is ELISE's base Space, so it can't be ${
+      action === "rename" ? "renamed" : action === "archive" ? "deleted or archived" : "moved"
+    }. Its content can change: Sections, sources, context and Methods. Say so naturally and offer that; don't ask for approval.`,
+    { recovery: "review", details: { reason: "general_knowledge_protected", action } },
+  );
 }
 
 export interface KnowledgeHit {
@@ -82,6 +118,19 @@ export interface KnowledgeHit {
   similarity: number | null;
   keywordMatched: boolean;
   score: number;
+  /**
+   * Read live from the provider for this question (ADR-046): not an indexed copy. `chunkId` is
+   * then synthetic and the citation opens the original (sourceUrl).
+   */
+  live?: { modifiedAt: string | null; path: string[] };
+}
+
+export interface LiveSearchOutcome {
+  hits: KnowledgeHit[];
+  /** Connected sources that were asked, by name (provenance of the answer). */
+  consulted: string[];
+  /** Connected sources that couldn't be read now, with why. */
+  unavailable: { name: string; code: string }[];
 }
 
 export interface ItemDetail {
@@ -111,6 +160,8 @@ export interface SourceInfo {
   name: string;
   status: string;
   lastSyncedAt: string | null;
+  /** Drive/Notion: consulted live when needed, nothing indexed (ADR-046). */
+  readLive?: boolean;
   items: { ready: number; processing: number; failed: number };
 }
 
@@ -142,6 +193,12 @@ export interface KnowledgeReader {
     itemIds: string[] | null;
     limit: number;
   }): Promise<{ hits: KnowledgeHit[]; semantic: boolean }>;
+  /** Connected sources (Drive, Notion) asked live; absent where none can be (tests, no auth). */
+  liveSearch?(query: {
+    text: string;
+    spaceIds: string[] | null;
+    recent: boolean;
+  }): Promise<LiveSearchOutcome>;
   getItem(itemId: string): Promise<ItemDetail | null>;
   listSources(spaceIds: string[] | null): Promise<SourceInfo[]>;
   recentChanges(spaceIds: string[] | null, since: Date): Promise<ChangeEntry[]>;

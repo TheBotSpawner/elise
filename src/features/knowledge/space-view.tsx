@@ -67,6 +67,7 @@ const STATE_DOT: Record<SourceView["state"], string> = {
   syncing: "bg-accent animate-pulse",
   up_to_date: "bg-success",
   needs_attention: "bg-approval",
+  available: "bg-success",
 };
 
 const SOURCE_ORDER: SourceView["sourceType"][] = ["upload", "google_drive", "notion", "note"];
@@ -222,6 +223,10 @@ export function SpaceView({
           {space.description && (
             <p className="max-w-2xl text-[15px] text-muted">{space.description}</p>
           )}
+          {/* A new General Knowledge says what it's for — nothing invented, no warnings. */}
+          {space.general && sources.length === 0 && sections.length === 0 && !space.context && (
+            <p className="max-w-2xl text-[13.5px] text-faint">{t.knowledge.generalIntro}</p>
+          )}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <Link href={`/?space=${space.id}`} className={buttonVariants()}>
@@ -242,15 +247,18 @@ export function SpaceView({
             <Pencil />
             {isSection ? t.knowledge.editSection : t.knowledge.editSpace}
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t.knowledge.settings}
-            title={t.knowledge.more}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <MoreHorizontal />
-          </Button>
+          {/* General Knowledge can't be archived (ADR-047): its only setting isn't offered. */}
+          {!space.general && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t.knowledge.settings}
+              title={t.knowledge.more}
+              onClick={() => setSettingsOpen(true)}
+            >
+              <MoreHorizontal />
+            </Button>
+          )}
         </div>
         {!backgroundAvailable && (
           <p className="text-[13.5px] text-muted">{t.knowledge.background}</p>
@@ -419,6 +427,13 @@ export function SpaceView({
                             {s.counts.attention > 0 &&
                               ` · ${t.knowledge.attentionCount(s.counts.attention)}`}
                           </button>
+                        ) : s.state === "available" ? (
+                          // Read live when needed (ADR-046): no indexing to report.
+                          <span title={t.knowledge.liveHint}>
+                            {t.knowledge.sourceState.available}
+                            {s.lastSyncedAt &&
+                              ` · ${t.knowledge.checked(relative(s.lastSyncedAt))}`}
+                          </span>
                         ) : s.state === "up_to_date" && s.lastSyncedAt ? (
                           t.knowledge.upToDate(relative(s.lastSyncedAt))
                         ) : (

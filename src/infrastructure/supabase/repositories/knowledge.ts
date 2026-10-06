@@ -37,7 +37,7 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
   async spaces(): Promise<SpaceInfo[]> {
     const { data, error } = await this.db
       .from("knowledge_spaces")
-      .select("id, name, parent_space_id, description, context")
+      .select("id, name, parent_space_id, description, context, kind")
       .eq("workspace_id", this.workspaceId)
       .eq("status", "active")
       .order("name");
@@ -47,9 +47,10 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
         id: s.id,
         name: s.name,
         parentId: s.parent_space_id,
-        aliases: s.description ? [s.description] : [],
+        aliases: s.description && s.kind !== "general" ? [s.description] : [],
         description: s.description,
         context: s.context,
+        ...(s.kind === "general" ? { general: true } : {}),
       })),
     );
   }
@@ -205,7 +206,7 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
   async listSources(spaceIds: string[] | null): Promise<SourceInfo[]> {
     let query = this.db
       .from("knowledge_sources")
-      .select("id, space_id, source_type, display_name, status, last_synced_at")
+      .select("id, space_id, source_type, access_mode, display_name, status, last_synced_at")
       .eq("workspace_id", this.workspaceId)
       .is("archived_at", null);
     if (spaceIds) query = query.in("space_id", spaceIds);
@@ -220,7 +221,9 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
     ]);
     const spaceName = new Map(spaces.map((s) => [s.id, s.path]));
     return (sources ?? []).map((s) => {
-      const own = (items ?? []).filter((i) => i.source_id === s.id);
+      const live = s.access_mode === "external_live";
+      // A live source holds no copies: its catalog entries are not documents (ADR-046).
+      const own = live ? [] : (items ?? []).filter((i) => i.source_id === s.id);
       return {
         id: s.id,
         spaceId: s.space_id,
@@ -229,6 +232,7 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
         name: s.display_name,
         status: s.status,
         lastSyncedAt: s.last_synced_at,
+        ...(live ? { readLive: true } : {}),
         items: {
           ready: own.filter((i) => i.status === "ready").length,
           processing: own.filter((i) => i.status === "queued" || i.status === "processing").length,
@@ -301,7 +305,7 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
     let query = this.db
       .from("knowledge_versions")
       .select(
-        "id, version_number, created_at, extracted_text, knowledge_item_id, knowledge_items!knowledge_versions_knowledge_item_id_fkey(title)",
+        "id, version_number, created_at, extracted_text, knowledge_item_id, knowledge_items!knowledge_versions_knowledge_item_id_fkey(title, knowledge_sources(access_mode))",
       )
       .eq("workspace_id", this.workspaceId)
       .eq("knowledge_item_id", itemId)
@@ -312,7 +316,12 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
         : query.eq("version_number", versionNumber);
     const { data } = await query.limit(1).maybeSingle();
     if (!data?.extracted_text) return null;
-    const item = data.knowledge_items as unknown as { title: string } | null;
+    const item = data.knowledge_items as unknown as {
+      title: string;
+      knowledge_sources: { access_mode: string } | null;
+    } | null;
+    // A live source's old copy is not the document (ADR-046): never compared as if it were.
+    if (item?.knowledge_sources?.access_mode === "external_live") return null;
     return {
       itemId: data.knowledge_item_id,
       versionId: data.id,
@@ -326,8 +335,12 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
   async overview(spaceIds: string[] | null, limit: number) {
     let items = this.db
       .from("knowledge_items")
-      .select("id, title, current_version_id", { count: "exact" })
+      .select("id, title, current_version_id, knowledge_sources!inner(access_mode)", {
+        count: "exact",
+      })
       .eq("workspace_id", this.workspaceId)
+      // Previews come from ELISE's own copies; a live source's legacy copy is never shown.
+      .eq("knowledge_sources.access_mode", "native_indexed")
       .eq("status", "ready")
       .is("archived_at", null)
       .order("updated_at", { ascending: false })

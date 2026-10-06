@@ -110,6 +110,8 @@ export interface SpaceRef {
   parentId: string | null;
   /** "Space › Section" */
   path: string;
+  /** General Knowledge (ADR-047): its Methods are the workspace-wide ones (spaceId null). */
+  general?: boolean;
 }
 
 /** Persistence port (workspace-shared rows, RLS). Implemented in the application layer. */
@@ -384,6 +386,7 @@ export function planTurnMethods(input: {
     teachingHint(
       teachingSignal(input.message),
       active ? { name: active.name, id: active.id } : null,
+      input.message,
     ),
   ].filter(Boolean);
   return {
@@ -405,6 +408,23 @@ const DURABLE =
 const CORRECTION =
   /^\s*(no[\s,.!]|nop|mal\b|eso no|as[ií] no|no as[ií]|en realidad|mejor |cambi[aá]|correg|corrig|wrong|not like that|actually|instead|that's not|no,)/i;
 
+/** Teaching it explicitly as a Method ("guardalo como método", "save it as a method"). */
+const SAVE_AS_METHOD =
+  /\b(guard[aá](lo|la)? (como|en) (un |mis )?m[eé]todo|(como|un) m[eé]todo general|save (it|this) as a method)\b/i;
+
+/**
+ * Words that put an instruction above any one Space (ADR-047 §AN): "siempre", "en general",
+ * "para cualquier proyecto", "sin importar el espacio"… A strong signal for General Knowledge,
+ * not a rule: the conversation can still limit "siempre" to one client.
+ */
+const CROSS_DOMAIN =
+  /\b(siempre|en general|general(es)?|para cualquier (proyecto|cliente|cosa|tema)|para todos mis (clientes|proyectos)|cada vez que|sin importar (el|en qu[eé]) espacio|aplic[aá]lo a todo|en todos (lados|mis espacios)|always|in general|for any (project|client)|for all my (clients|projects)|regardless of)\b/i;
+
+export const crossDomainSignal = (message: string) => CROSS_DOMAIN.test(message);
+
+const SCOPE_GUIDANCE =
+  'Where to save it: the narrowest scope that represents what the user means — a Section for one subject, client or project; its Space for work across that Space; General Knowledge (space: "General Knowledge") for cross-domain ways of working (planning the day, writing for them, deciding), even inside a Space conversation. Ask only if it is genuinely ambiguous and the scope matters. Settings (timezone, language, theme, notifications) are not Methods: point to Settings. Never save something you only inferred from past conversations.';
+
 /** Editing what was just produced: "hacela más corta", "agregá…", "make it shorter", "redo it". */
 const FOLLOW_UP =
   /\b(\p{L}+[aeiáéí](la|lo|las|los|selo|sela)|otra vez|otra versi[oó]n|m[aá]s (corta|larga|breve|formal|simple|detallada)|cambi\w*|agreg\w*|sac[aá]\w*|quit[aá]\w*|correg\w*|corrig\w*|reescrib\w*|rehac\w*|ajust[aá]\w*|shorter|longer|redo|rewrite|change it|make it|add|remove|again)\b/iu;
@@ -416,7 +436,7 @@ export const followsUp = (message: string) =>
 export type TeachingSignal = "durable" | "correction" | null;
 
 export function teachingSignal(message: string): TeachingSignal {
-  if (DURABLE.test(message)) return "durable";
+  if (DURABLE.test(message) || SAVE_AS_METHOD.test(message)) return "durable";
   if (CORRECTION.test(message)) return "correction";
   return null;
 }
@@ -425,11 +445,15 @@ export function teachingSignal(message: string): TeachingSignal {
 export function teachingHint(
   signal: TeachingSignal,
   active: { name: string; id: string } | null,
+  message = "",
 ): string | null {
+  const crossDomain = crossDomainSignal(message)
+    ? ' Its wording ("siempre", "en general", "cada vez que"…) reads as cross-domain: General Knowledge, unless the conversation clearly limits it to one Space or Section.'
+    : "";
   if (signal === "durable")
     return active
       ? `The user is giving a durable instruction about how this work should be done. If it applies to the Method "${active.name}" (id ${active.id}), update it now with methods.update (read it with methods.get first if you haven't; pass baseVersion and a short changeSummary), then do the work the new way. Don't save it as a memory or a Space note.`
-      : "The user is giving a durable instruction about how a kind of work should be done. Save it as a Method with methods.create (or methods.update if a Method for that work exists — methods.search first), in the Space/Section it's about, or global when it isn't tied to one. Don't save it as a memory or a Space note.";
+      : `The user is giving a durable instruction about how a kind of work should be done. Save it as a Method with methods.create (or methods.update if a Method for that work exists — methods.search first). ${SCOPE_GUIDANCE}${crossDomain} Don't save it as a memory or a Space note.`;
   if (signal === "correction" && active)
     return `The user is correcting work done with the Method "${active.name}" (id ${active.id}). Fix the result first. If the correction reads as a general rule for this kind of work (not a one-off detail of this case), ask in one short sentence whether to update the Method; update it only if they agree. Never turn a one-off detail into a Method.`;
   return null;

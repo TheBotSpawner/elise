@@ -9,7 +9,8 @@ import { runUserTool as run } from "./elise";
 /**
  * The one Tasks read path for Home, My Elise → Tasks and anything else in the UI. It goes
  * through tasks.list (same resolution, provenance and definitions as Chat and the Morning
- * Brief): every enabled task account, each read live from its own source of truth.
+ * Brief): every enabled task account, each read live from its own source of truth. Nothing is
+ * cached server-side; screens re-read when their snapshot is stale (use-refresh-when-stale).
  */
 
 /** Enough for every open task a person realistically has, across all accounts. */
@@ -52,6 +53,8 @@ export interface TasksOverview {
   counts: ReturnType<typeof taskCounts>;
   today: string;
   unavailable: string[];
+  /** When every account was read (live): screens refresh a snapshot older than this. */
+  fetchedAt: string;
 }
 
 export async function tasksOverview(
@@ -86,6 +89,7 @@ export async function tasksOverview(
     counts: open.counts,
     today: open.today,
     unavailable: [...new Set([...open.unavailable, ...(completed?.unavailable ?? [])])],
+    fetchedAt: new Date().toISOString(),
   };
 }
 

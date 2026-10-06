@@ -168,8 +168,8 @@ describe("sync heartbeat", () => {
       markRunning: async () => undefined,
       heartbeat,
       knownItems: async () => [],
-      createItem: async () => ({ versionId: crypto.randomUUID() }),
-      addVersion: vi.fn(),
+      catalogItem: async () => undefined,
+      updateCatalogItem: vi.fn(),
       markRemoved: vi.fn(),
       finish: vi.fn(),
     } as unknown as SyncStore;
@@ -185,8 +185,7 @@ describe("sync heartbeat", () => {
     }));
     const ports: SyncPorts = {
       store,
-      lister: { list: async () => items },
-      runtime: { enqueue: async () => ({ runtimeJobId: "j" }), cancel: async () => undefined },
+      lister: { list: async () => ({ items }) },
       now: () => NOW,
     };
     expect(await syncSource(ports, { workspaceId: "w", syncRunId: "r" })).toMatchObject({
@@ -209,8 +208,7 @@ describe("sync heartbeat", () => {
     await syncSource(
       {
         store,
-        lister: { list: async () => [] },
-        runtime: {} as never,
+        lister: { list: async () => ({ items: [] }) },
         now: () => NOW,
       },
       { workspaceId: "w", syncRunId: "r" },

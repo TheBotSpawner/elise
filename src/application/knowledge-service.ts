@@ -13,7 +13,13 @@ import {
   type SpaceColor,
   type SpaceIcon,
 } from "@/core/knowledge/appearance";
-import { spacePaths, withDescendants, type SpaceInfo } from "@/core/knowledge/model";
+import { sourceMode } from "@/core/knowledge/live";
+import {
+  generalKnowledgeProtected,
+  spacePaths,
+  withDescendants,
+  type SpaceInfo,
+} from "@/core/knowledge/model";
 import {
   documentRollup,
   sourcePhase,
@@ -130,6 +136,15 @@ export interface SpaceSummary extends SpaceInfo {
 const isContainer = (type: KnowledgeSourceRow["source_type"]) =>
   type === "upload" || type === "note";
 
+/** A connected source read live (ADR-046): Drive or Notion. Its items are only a catalog. */
+const isLive = (type: KnowledgeSourceRow["source_type"]) => sourceMode(type) === "external_live";
+
+/** A live source's health is its own: available, or it needs the user (reconnect, re-share). */
+const liveRollup = (state: SourceState): SourceRollup =>
+  state === "available" ? "ready" : "needs_attention";
+
+const NO_COUNTS = { ready: 0, processing: 0, attention: 0 };
+
 type ChildCounts = { ready: number; processing: number; attention: number };
 
 function childCounts(items: readonly { status: string }[]): ChildCounts {
@@ -186,12 +201,14 @@ async function allItems(auth: AuthContext, spaceId?: string) {
 }
 
 export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
-  const [{ data: spaces, error }, items, { data: sources }, contexts] = await Promise.all([
+  const [{ data: spaces, error }, everyItem, { data: sources }, contexts] = await Promise.all([
     auth.db
       .from("knowledge_spaces")
-      .select("id, name, parent_space_id, description, icon, color, updated_at")
+      .select("id, name, parent_space_id, description, icon, color, updated_at, kind")
       .eq("workspace_id", auth.workspaceId)
       .eq("status", "active")
+      // General Knowledge first (ADR-047), then by name.
+      .order("kind") // "general" < "standard"
       .order("name"),
     allItems(auth),
     auth.db
@@ -207,13 +224,10 @@ export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
       .eq("status", "active"),
   ]);
   if (error) throw new AppError("INTERNAL_ERROR", "Could not load Knowledge", { cause: error });
-  const connected = (sources ?? []).filter((x) => !isContainer(x.source_type));
-  const runs = await new SupabaseKnowledgeStore(createAdminClient()).activeRuns(
-    auth.workspaceId,
-    connected.map((x) => x.id),
-  );
+  const liveIds = new Set((sources ?? []).filter((x) => isLive(x.source_type)).map((x) => x.id));
+  // Catalog entries of live sources are not documents ELISE holds: never counted.
+  const items = everyItem.filter((i) => !liveIds.has(i.source_id));
   const itemsBySource = Map.groupBy(items, (i) => i.source_id);
-  const now = new Date();
   const contextOf = new Map((contexts.data ?? []).map((r) => [r.id, r.context]));
   return spacePaths(
     spaces.map((s) => ({ id: s.id, name: s.name, parentId: s.parent_space_id })),
@@ -226,22 +240,18 @@ export async function listSpaces(auth: AuthContext): Promise<SpaceSummary[]> {
       // Uploads and notes live in one container source per Space: there, each document counts.
       if (isContainer(x.source_type))
         return children.map((i) => documentRollup(i.status, i.error_code));
-      const counts = childCounts(children);
-      const state = sourceState(
-        {
-          status: x.status,
-          lastSyncedAt: x.last_synced_at,
-          createdAt: x.created_at,
-          activeRun: toActiveRun(runs.find((r) => r.source_id === x.id)),
-          counts,
-        },
-        now,
-      );
-      return [sourceRollup(state, counts)];
+      const state = sourceState({
+        live: true,
+        status: x.status,
+        lastSyncedAt: x.last_synced_at,
+        counts: NO_COUNTS,
+      });
+      return [liveRollup(state)];
     });
     const totals = sourceTotals(rollups);
     return {
       ...s,
+      general: row?.kind === "general",
       description: row?.description ?? null,
       context: contextOf.get(s.id) ?? null,
       icon: spaceIcon(row?.icon),
@@ -330,8 +340,14 @@ export async function updateSpace(
     color?: string | null;
   },
 ) {
-  await ownSpace(auth, spaceId);
+  const current = await ownSpace(auth, spaceId);
   if (input.parentId) await ownSpace(auth, input.parentId);
+  // General Knowledge keeps its name and place; everything else about it is editable (ADR-047).
+  if (current.kind === "general") {
+    if (input.name !== undefined && nameSchema.parse(input.name) !== current.name)
+      throw generalKnowledgeProtected("rename");
+    if (input.parentId) throw generalKnowledgeProtected("move");
+  }
   const { error } = await auth.db
     .from("knowledge_spaces")
     .update({
@@ -398,7 +414,8 @@ export async function updateSpaceContext(
 }
 
 export async function archiveSpace(auth: AuthContext, spaceId: string) {
-  await ownSpace(auth, spaceId);
+  if ((await ownSpace(auth, spaceId)).kind === "general")
+    throw generalKnowledgeProtected("archive");
   const tree = spacePaths(
     (
       (
@@ -447,6 +464,8 @@ export interface SourceView {
   sourceType: KnowledgeSourceRow["source_type"];
   name: string;
   status: KnowledgeSourceRow["status"];
+  /** Drive/Notion: read live when needed, nothing copied (ADR-046). */
+  live: boolean;
   /** What the user sees (core/knowledge/source-state.ts). */
   state: SourceState;
   /** At a glance, children rolled up (ADR-037). */
@@ -510,11 +529,13 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
     auth.db
       .from("knowledge_items")
       .select(
-        "id, source_id, title, item_type, status, status_detail, error_code, source_url, updated_at, knowledge_sources(source_type), knowledge_versions!knowledge_versions_knowledge_item_id_fkey(id)",
+        "id, source_id, title, item_type, status, status_detail, error_code, source_url, updated_at, knowledge_sources!inner(source_type, access_mode), knowledge_versions!knowledge_versions_knowledge_item_id_fkey(id)",
       )
       .eq("workspace_id", auth.workspaceId)
       .eq("space_id", spaceId)
       .is("archived_at", null)
+      // Only what ELISE holds; a live source's catalog never fills the list (ADR-046).
+      .eq("knowledge_sources.access_mode", "native_indexed")
       .order("updated_at", { ascending: false })
       .limit(300),
     // Counts read every child, not just the recent ones listed (a database can hold hundreds).
@@ -529,6 +550,7 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
   return {
     space: spaces.find((s) => s.id === spaceId) ?? {
       ...space,
+      general: space.kind === "general",
       parentId: space.parent_space_id,
       path: space.name,
       counts: { ready: 0, processing: 0, attention: 0 },
@@ -542,7 +564,8 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
     children: spaces.filter((s) => s.parentId === spaceId),
     allSpaces: spaces,
     sources: (sources ?? []).map((s): SourceView => {
-      const own = children.filter((i) => i.source_id === s.id);
+      const live = isLive(s.source_type);
+      const own = live ? [] : children.filter((i) => i.source_id === s.id);
       const counts = childCounts(own);
       const run = active.find((r) => r.source_id === s.id);
       const done = last.find((r) => r.source_id === s.id);
@@ -550,6 +573,7 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       const working = own.filter((i) => i.status === "queued" || i.status === "processing");
       const state = sourceState({
         container: isContainer(s.source_type),
+        live,
         status: s.status,
         lastSyncedAt: s.last_synced_at,
         createdAt: s.created_at,
@@ -561,13 +585,17 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
         sourceType: s.source_type,
         name: s.display_name,
         status: s.status,
+        live,
         state,
-        rollup: sourceRollup(state, counts),
+        rollup: live ? liveRollup(state) : sourceRollup(state, counts),
         kind: isContainer(s.source_type) ? null : selectionKind(s.configuration),
-        phase: sourcePhase(
-          activeRun,
-          working.map((i) => i.status_detail),
-        ),
+        // A live source has no ingestion phases: its catalog refresh is invisible.
+        phase: live
+          ? null
+          : sourcePhase(
+              activeRun,
+              working.map((i) => i.status_detail),
+            ),
         lastSyncedAt: s.last_synced_at,
         nextSyncAt: s.next_sync_at,
         lastErrorCode: s.last_error_code,
@@ -577,6 +605,8 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
         runningSince: run ? (run.started_at ?? run.created_at) : null,
       };
     }),
+    // Documents ELISE holds. A connected database's rows are the database's data, read when
+    // needed — never listed as Knowledge items of their own (ADR-046).
     items: (items ?? []).map((i): ItemView => ({
       id: i.id,
       title: i.title,
@@ -815,6 +845,17 @@ export async function completeUploads(auth: AuthContext, versionIds: string[]) {
 
 /** Try again for a document that failed (e.g. after reconnecting its account). */
 export async function retryItem(auth: AuthContext, itemId: string) {
+  const { data: item } = await auth.db
+    .from("knowledge_items")
+    .select("knowledge_sources(source_type)")
+    .eq("id", itemId)
+    .eq("workspace_id", auth.workspaceId)
+    .maybeSingle();
+  const type = (
+    item?.knowledge_sources as unknown as { source_type: KnowledgeSourceRow["source_type"] } | null
+  )?.source_type;
+  // A live source's page is read when needed (ADR-046): there is nothing to ingest again.
+  if (type && isLive(type)) return;
   const { data } = await auth.db
     .from("knowledge_versions")
     .select("id, status")

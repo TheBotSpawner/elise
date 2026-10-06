@@ -5,6 +5,7 @@ import { clip } from "../capabilities/email";
 import { AppError } from "../errors";
 import { matchKey } from "../history/links";
 import type { SpaceOverview } from "../knowledge/admin";
+import { generalKnowledgeProtected } from "../knowledge/model";
 
 /**
  * Knowledge administration tools (ADR-035): ELISE inspects and organizes the user's Knowledge —
@@ -54,6 +55,11 @@ async function resolveSpace(env: ToolRunEnv, ref: string): Promise<SpaceOverview
   );
 }
 
+/** General Knowledge keeps its name (ADR-047); "renaming" it to the same name is a no-op. */
+function refuseRename(s: SpaceOverview, name: string) {
+  if (s.general && name.trim() !== s.name) throw generalKnowledgeProtected("rename");
+}
+
 const counts = (s: SpaceOverview) => ({
   sections: s.sections,
   sources: s.sources,
@@ -79,6 +85,8 @@ export const listSpacesTool: ToolDefinition = {
         count: spaces.length,
         spaces: spaces.map((s) => ({
           path: s.path,
+          // ADR-047: cross-domain context, sources and Methods; can't be renamed or deleted.
+          ...(s.general ? { generalKnowledge: true } : {}),
           ...(s.description ? { description: clip(s.description, 300) } : {}),
           ...(s.context ? { context: clip(s.context, 300) } : {}),
           ...counts(s),
@@ -223,12 +231,15 @@ export const updateSpaceTool: ToolDefinition = {
     'Rename a Space/Section or change its description or context ("Renombrá Álgebra a Álgebra Lineal", "decile a esta sección que el final es en diciembre"). Effective immediately for ELISE.',
   input: updateInput,
   async describe(raw, env) {
-    const space = updateInput.parse(raw).space;
-    return { summary: es(env) ? `Actualizar “${space}”` : `Update “${space}”` };
+    const q = updateInput.parse(raw);
+    // An operation that can never happen is refused here, before anything is proposed.
+    if (q.name !== undefined) refuseRename(await resolveSpace(env, q.space), q.name);
+    return { summary: es(env) ? `Actualizar “${q.space}”` : `Update “${q.space}”` };
   },
   async run(raw, env) {
     const q = updateInput.parse(raw);
     const s = await resolveSpace(env, q.space);
+    if (q.name !== undefined) refuseRename(s, q.name);
     const context =
       q.addToContext !== undefined
         ? [s.context?.trim(), q.addToContext].filter(Boolean).join("\n")
@@ -263,6 +274,8 @@ export const archiveSpaceTool: ToolDefinition = {
   input: archiveInput,
   async describe(raw, env) {
     const s = await resolveSpace(env, archiveInput.parse(raw).space);
+    // Never an approval for something that can never be done (ADR-047).
+    if (s.general) throw generalKnowledgeProtected("archive");
     const docs = s.documents.ready + s.documents.processing + s.documents.attention;
     return {
       summary: es(env)
@@ -273,6 +286,7 @@ export const archiveSpaceTool: ToolDefinition = {
   },
   async run(raw, env) {
     const s = await resolveSpace(env, archiveInput.parse(raw).space);
+    if (s.general) throw generalKnowledgeProtected("archive");
     await km(env).archiveSpace(s.id);
     return { output: { archived: s.path }, target: { type: "knowledge_space", id: s.id } };
   },

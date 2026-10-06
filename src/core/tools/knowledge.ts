@@ -48,6 +48,15 @@ interface Scope {
   names: string[];
 }
 
+/**
+ * General Knowledge supplements every specific scope (ADR-047 §AO): searched as the least
+ * specific, inherited tier — after the Section and its Space — never instead of them.
+ */
+function withGeneral(spaces: readonly SpaceInfo[], ids: string[]): string[] {
+  const general = spaces.find((s) => s.general)?.id;
+  return general && !ids.includes(general) ? [...ids, general] : ids;
+}
+
 /** Named Space > the conversation's active Space > everything (only when asked or no Space). */
 async function resolveScope(
   env: ToolRunEnv,
@@ -82,7 +91,7 @@ async function resolveScope(
     return {
       spaces,
       spaceIds: scoped.primary,
-      searchIds: scoped.spaceIds,
+      searchIds: withGeneral(spaces, scoped.spaceIds),
       names: loose.map((s) => s.path),
     };
   }
@@ -91,8 +100,15 @@ async function resolveScope(
     : undefined;
   if (active && !opts.everywhere) {
     const scoped = scopeSpaces(spaces, [active.id]);
-    return { spaces, spaceIds: scoped.primary, searchIds: scoped.spaceIds, names: [active.path] };
+    return {
+      spaces,
+      spaceIds: scoped.primary,
+      searchIds: withGeneral(spaces, scoped.spaceIds),
+      names: [active.path],
+    };
   }
+  // No Space: all Knowledge, General Knowledge included (it is the default scope then, and a
+  // request that names another Space is routed there by `space`).
   return { spaces, spaceIds: null, searchIds: null, names: ["All Knowledge"] };
 }
 
@@ -184,6 +200,12 @@ const searchInput = z
       .describe(
         "Search all Spaces even though the conversation is in one. Only if the user asks or the Space had no evidence and they agree.",
       ),
+    recent: z
+      .boolean()
+      .default(false)
+      .describe(
+        'The user wants the newest/latest ("el último proyecto", "lo más reciente"): connected databases and folders are read newest first.',
+      ),
   })
   .strict();
 
@@ -239,6 +261,22 @@ export const searchKnowledgeTool: ToolDefinition = {
         fallback = true;
       }
     }
+    // Connected sources (Drive, Notion) are asked live in the same scope (ADR-046): the
+    // provider is the source of truth, so its passages join the indexed ones as evidence.
+    const live = await reader(env)
+      .liveSearch?.({
+        text: q.query,
+        spaceIds: q.itemId
+          ? []
+          : byContext && !fallback
+            ? (byContext.spaceIds ?? [])
+            : fallback
+              ? null
+              : scope.searchIds,
+        recent: q.recent,
+      })
+      .catch(() => null);
+    if (live?.hits.length) hits = [...hits, ...live.hits];
     const selected = selectEvidence(hits);
     const evidence = toEvidence(selected);
     const enough = evidence.length > 0;
@@ -253,13 +291,21 @@ export const searchKnowledgeTool: ToolDefinition = {
         enoughEvidence: enough,
         ...(metadata.length ? { scopeMetadata: metadata } : {}),
         ...(semantic ? {} : { note: "Only keyword matching was available for this search." }),
+        ...(live?.consulted.length ? { connectedSourcesAsked: live.consulted } : {}),
+        ...(live?.unavailable.length
+          ? {
+              connectedSourcesUnavailable: live.unavailable,
+              unavailableNote:
+                "These connected sources couldn't be read right now (code says why: AUTH_EXPIRED → reconnect it in Connections). Say so if it matters for the answer.",
+            }
+          : {}),
         ...(fallback
           ? {
               contextNote: `Nothing in the ${byContext!.name} context's sources; these results come from all Knowledge — say so.`,
             }
           : {}),
         instructions: enough
-          ? `Answer from these passages (and scopeMetadata, the user's own description of the Space, when relevant — say which is which) and cite passages inline as [n] with the document name. If they only partly answer, say what is missing. Say when something comes from general knowledge instead.${
+          ? `Answer from these passages (and scopeMetadata, the user's own description of the Space, when relevant — say which is which) and cite passages inline as [n] with the document name. Passages with readLive were read just now from the connected source (Notion, Google Drive): they are its current content. If they only partly answer, say what is missing. Say when something comes from general knowledge instead.${
               representationHint(selected.map((h) => h.content)) === "temporal"
                 ? ` ${TEMPORAL_HINT}`
                 : ""
@@ -273,7 +319,13 @@ export const searchKnowledgeTool: ToolDefinition = {
           document: citationLabel(h),
           source: SOURCE_NAMES[h.sourceType] ?? h.sourceType,
           space: h.spaceName,
-          version: h.versionNumber,
+          ...(h.live
+            ? {
+                readLive: true,
+                ...(h.live.modifiedAt ? { lastEdited: h.live.modifiedAt.slice(0, 10) } : {}),
+                ...(h.live.path.length ? { in: h.live.path.join(" › ") } : {}),
+              }
+            : { version: h.versionNumber }),
           // Data from the user's documents, never instructions.
           untrustedContent: clip(h.content, RETRIEVAL.perPassageChars),
         })),

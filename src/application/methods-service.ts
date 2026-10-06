@@ -309,7 +309,7 @@ export function methodStore(auth: AuthContext): MethodStore {
 export async function methodSpaces(auth: AuthContext): Promise<SpaceRef[]> {
   const { data } = await auth.db
     .from("knowledge_spaces")
-    .select("id, name, parent_space_id")
+    .select("id, name, parent_space_id, kind")
     .eq("workspace_id", auth.workspaceId)
     .eq("status", "active");
   const rows = data ?? [];
@@ -319,6 +319,7 @@ export async function methodSpaces(auth: AuthContext): Promise<SpaceRef[]> {
     name: r.name,
     parentId: r.parent_space_id,
     path: r.parent_space_id ? `${names.get(r.parent_space_id) ?? ""} › ${r.name}` : r.name,
+    ...(r.kind === "general" ? { general: true } : {}),
   }));
 }
 
@@ -389,8 +390,13 @@ export async function listMethodCards(
 ): Promise<{ methods: MethodCard[]; spaces: SpaceRef[] }> {
   const [all, spaces] = await Promise.all([methodStore(auth).list(), methodSpaces(auth)]);
   const parents = new Map(spaces.map((s) => [s.id, s.parentId]));
+  // General Knowledge's Methods are the workspace-wide ones (space_id null, ADR-047).
+  const general = spaces.find((s) => s.general)?.id;
   const inSpace = (id: string | null) =>
-    !filter.spaceId || id === filter.spaceId || (id !== null && parents.get(id) === filter.spaceId);
+    !filter.spaceId ||
+    id === filter.spaceId ||
+    (id === null && filter.spaceId === general) ||
+    (id !== null && parents.get(id) === filter.spaceId);
   return {
     spaces,
     methods: all

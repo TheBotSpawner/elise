@@ -23,7 +23,9 @@ const STOPWORDS = new Set(
   (
     "a an and are as at be but by can de del did do does el en es esta este for from has have how i in is it la las " +
     "lo los me my of on or para por que qué se sobre su the this to un una was what when where which who why with y " +
-    "cómo cuál cuando donde dónde dice dicen say says about our nuestro nuestra"
+    "cómo cuál cuando donde dónde dice dicen say says about our nuestro nuestra " +
+    // Requests, not subjects ("buscame el cronograma", "mostrame…", "find me…").
+    "buscame búscame buscá busca mostrame decime dame contame encontrame find show tell give"
   ).split(" "),
 );
 

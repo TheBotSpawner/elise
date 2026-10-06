@@ -107,6 +107,8 @@ export function KnowledgeHome({
   useRealtimeRefresh(workspaceId, ["knowledge_spaces", "knowledge_items", "knowledge_sources"]);
   const top = spaces.filter((s) => !s.parentId);
   const childrenOf = (id: string) => spaces.filter((s) => s.parentId === id);
+  // General Knowledge always exists (ADR-047); the first-run invitation is about the user's own.
+  const general = top.find((s) => s.general);
 
   return (
     <div className="flex flex-col gap-4">
@@ -115,7 +117,12 @@ export function KnowledgeHome({
           {t.knowledge.background}
         </p>
       )}
-      {top.length === 0 ? (
+      {top.every((s) => s.general) && general && (
+        <ul className="grid gap-3 sm:grid-cols-2">
+          <SpaceCard space={general} subspaces={childrenOf(general.id)} />
+        </ul>
+      )}
+      {top.every((s) => s.general) ? (
         <EmptyState
           icon={BookOpen}
           title={t.knowledge.emptyTitle}

@@ -385,6 +385,9 @@ export const en = {
     createList: "Create list",
     unavailable: (accounts: string) =>
       `${accounts} couldn't be reached, so its tasks aren't shown right now.`,
+    updatedNow: "Updated just now",
+    updatedAgo: (minutes: number) =>
+      minutes < 60 ? `Updated ${minutes} min ago` : `Updated ${Math.floor(minutes / 60)} h ago`,
     add: "Add task",
     newTitle: "What needs to be done?",
     due: "Due",
@@ -834,8 +837,15 @@ export const en = {
       up_to_date: "Up to date",
       syncing: "Syncing…",
       needs_attention: "Needs attention",
+      available: "Available",
     },
     upToDate: (when: string) => `Updated ${when}`,
+    checked: (when: string) => `checked ${when}`,
+    liveHint:
+      "ELISE consults this source live whenever it needs it. Nothing is copied: the original stays the reference.",
+    checkNow: "Check now",
+    generalIntro:
+      "This is ELISE's general context: the sources and Methods that can help you in any area live here.",
     /** What a working source is doing right now (ADR-036). */
     sourcePhase: {
       queued: "Queued",
@@ -925,6 +935,7 @@ export const en = {
     sourceDetails: {
       state: "Status",
       lastSync: "Last sync",
+      lastCheck: "Last checked",
       nextCheck: "Next check",
       nextRetry: "Next automatic retry",
       phase: "Now",
@@ -1099,6 +1110,8 @@ export const en = {
       current: "Current",
       passage: "Cited passage",
       openOriginal: "Open original",
+      live: (provider: string) =>
+        `ELISE reads this document live from ${provider} whenever it needs it; what's there is always current.`,
       download: "Download original",
       page: (n: number) => `Page ${n}`,
       askAbout: "Ask about this document",
@@ -1784,6 +1797,12 @@ export const en = {
     bulk: (n: number) => `${n} records will change`,
   },
   settings: {
+    startup: {
+      title: "Startup",
+      sound: "Startup sound",
+      soundHint:
+        "A short, soft sound when you open ELISE. Once per session, never while navigating.",
+    },
     location: {
       title: "Location",
       use: "Use my current location",
@@ -2477,8 +2496,12 @@ export const en = {
     spaceHint: (name: string) =>
       `How ELISE works in ${name}. Its Sections can refine them, and general Methods apply too.`,
     sectionHint: (name: string) => `Only in this Section; added to those of ${name}.`,
-    globalTitle: "General Methods",
+    globalTitle: "General Knowledge",
     globalHint: "They apply everywhere in ELISE, in any Space.",
+    generalHint:
+      "Ways of working ELISE uses in any area. A Space or Section can have its own, and those win.",
+    generalExample:
+      "For example: “When you plan my day…”, “When you write something for me…”, “Before making a decision…”",
     empty:
       "No Methods yet. Teach ELISE how you want something done and she'll do it that way every time.",
     emptyExample:

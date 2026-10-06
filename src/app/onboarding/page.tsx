@@ -67,7 +67,8 @@ export default async function OnboardingPage({ searchParams }: PageProps<"/onboa
         googleAvailable={connections?.googleAvailable ?? false}
         notionAvailable={connections?.notionAvailable ?? false}
         spaces={spaces
-          .filter((s) => !s.parentId)
+          // The user's own areas; General Knowledge exists already (ADR-047).
+          .filter((s) => !s.parentId && !s.general)
           .map((s) => ({ id: s.id, name: s.name, icon: s.icon, color: s.color }))}
         returned={{
           connected: typeof params.connected === "string",

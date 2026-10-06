@@ -83,6 +83,7 @@ import { SupabaseRecallReader } from "@/infrastructure/supabase/repositories/rec
 import type { AuthContext } from "./auth-context";
 import { contextStore } from "./contexts-service";
 import { knowledgeManager } from "./knowledge-admin";
+import { liveKnowledge } from "./knowledge-live";
 import { locationCapability } from "./location-service";
 import { methodStore } from "./methods-service";
 import { syncNoteToKnowledge } from "./notes-knowledge";
@@ -154,7 +155,7 @@ async function markNeedsReauthorization(
       workspace_id: auth.workspaceId,
       user_id: auth.userId,
       notification_type: "connection.needs_attention",
-      title: `${providerName} “${data.display_name}” needs to be reconnected`,
+      title: `${providerName} â€œ${data.display_name}â€ needs to be reconnected`,
       priority: "high",
       source_type: "provider_connection",
       source_id: ref.connectionId,
@@ -232,7 +233,8 @@ function providerFactory(
     }
     return http;
   };
-  let knowledge: (SupabaseKnowledgeReader & KnowledgeManager) | undefined;
+  let knowledge:
+    (SupabaseKnowledgeReader & KnowledgeManager & ReturnType<typeof liveKnowledge>) | undefined;
 
   const make: {
     [K in ImplementedCapability]: (binding: CapabilityBinding) => CapabilityProviders[K];
@@ -325,6 +327,8 @@ function providerFactory(
       knowledge ??= Object.assign(
         new SupabaseKnowledgeReader(auth.db, auth.workspaceId, getEmbeddingProvider),
         knowledgeManager(auth),
+        // Drive and Notion are asked live, never read from a copy (ADR-046).
+        liveKnowledge(auth),
       );
       return knowledge;
     },

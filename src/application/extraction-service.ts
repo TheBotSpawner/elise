@@ -34,16 +34,23 @@ export const sha256 = (data: Uint8Array) => createHash("sha256").update(data).di
 export async function extractDocument(
   workspaceId: string,
   input: { data: Uint8Array; mimeType: string },
-  opts: { purpose: "chat" | "knowledge"; onOcr?: (pages: number) => void | Promise<void> },
+  opts: {
+    purpose: "chat" | "knowledge" | "live";
+    onOcr?: (pages: number) => void | Promise<void>;
+  },
 ): Promise<ExtractionResult> {
   const hash = sha256(input.data);
   const db = createAdminClient();
-  const { data: row } = await db
-    .from("document_extractions")
-    .select("pages, method, page_count, ocr_pages, complete, warnings")
-    .eq("workspace_id", workspaceId)
-    .eq("content_hash", hash)
-    .maybeSingle();
+  // A live read of a connected source (ADR-046) is temporary: its text is never stored.
+  const persist = opts.purpose !== "live";
+  const { data: row } = persist
+    ? await db
+        .from("document_extractions")
+        .select("pages, method, page_count, ocr_pages, complete, warnings")
+        .eq("workspace_id", workspaceId)
+        .eq("content_hash", hash)
+        .maybeSingle()
+    : { data: null };
   const stored = (row?.pages ?? []) as unknown as ExtractedPage[];
   if (row?.complete) {
     logger.info("extraction.reused", { method: row.method, pages: row.page_count });
@@ -59,8 +66,9 @@ export async function extractDocument(
     };
   }
   const ocr = getOcrProvider();
-  const save = (x: DocumentExtraction, complete: boolean) =>
-    db.from("document_extractions").upsert(
+  const save = async (x: DocumentExtraction, complete: boolean) => {
+    if (!persist) return;
+    await db.from("document_extractions").upsert(
       {
         workspace_id: workspaceId,
         content_hash: hash,
@@ -75,11 +83,12 @@ export async function extractDocument(
       },
       { onConflict: "workspace_id,content_hash" },
     );
+  };
   const started = Date.now();
   const extraction = await extractFile(input, {
     ocr,
     maxOcrPages:
-      opts.purpose === "chat"
+      opts.purpose !== "knowledge"
         ? EXTRACTION_LIMITS.chatOcrPages
         : EXTRACTION_LIMITS.maxOcrPagesPerJob,
     known: new Map(stored.filter((p) => p.method === "ocr").map((p) => [p.page, p.text])),
@@ -112,10 +121,11 @@ export async function readDocument(
   workspaceId: string,
   input: { title: string; mimeType: string; data: Uint8Array },
   onOcr?: (pages: number) => void | Promise<void>,
+  purpose: "knowledge" | "live" = "knowledge",
 ): Promise<NormalizedDocument> {
   if (!OCR_TYPES.has(input.mimeType)) return parseDocument(input);
   checkContent(input.mimeType, input.data);
-  const x = await extractDocument(workspaceId, input, { purpose: "knowledge", onOcr });
+  const x = await extractDocument(workspaceId, input, { purpose, onOcr });
   const doc = toNormalizedDocument(input.title, x);
   if (!doc.sections.length) throw unreadableReason(x);
   return doc;

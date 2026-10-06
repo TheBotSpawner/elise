@@ -1,5 +1,6 @@
 import { AppError, toAppError } from "../errors";
 import { CHUNKING, chunkDocument, embeddingText } from "./chunking";
+import { sourceMode } from "./live";
 import {
   contentHash,
   documentText,
@@ -108,6 +109,9 @@ export async function ingestVersion(
 ): Promise<IngestOutcome> {
   const v = await ports.store.loadVersion(job.workspaceId, job.versionId);
   if (!v) return "skipped";
+  // Connected sources are read live, never copied (ADR-046): retry, reindex or a job queued
+  // before the change never persists a provider's content.
+  if (sourceMode(v.sourceType) === "external_live") return "skipped";
   if (!job.force && ["ready", "unchanged", "superseded"].includes(v.status)) return "skipped";
   const started = Date.now();
 

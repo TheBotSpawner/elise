@@ -84,7 +84,7 @@ export function SourceMenu({
           role="menu"
           className="absolute top-full right-0 z-40 mt-1 flex w-52 flex-col rounded-2xl border border-border bg-[var(--menu-bg)] p-1 shadow-lg backdrop-blur"
         >
-          {external && item(k.syncNow, onSyncNow)}
+          {external && item(s.live ? k.checkNow : k.syncNow, onSyncNow)}
           {external && item(k.details, () => setDetails(true))}
           {item(k.removeSource, onRemove, true)}
         </div>
@@ -106,7 +106,9 @@ export function SourceMenu({
                 <dd>{when(s.runningSince)}</dd>
               </>
             )}
-            <dt className="text-muted">{k.sourceDetails.lastSync}</dt>
+            <dt className="text-muted">
+              {s.live ? k.sourceDetails.lastCheck : k.sourceDetails.lastSync}
+            </dt>
             <dd>{s.lastSyncedAt ? when(s.lastSyncedAt) : "—"}</dd>
             {s.lastRunAt && s.lastRunAt !== s.lastSyncedAt && (
               <>
@@ -124,14 +126,19 @@ export function SourceMenu({
                 <dd>{when(s.nextSyncAt)}</dd>
               </>
             )}
-            <dt className="text-muted">{k.sourceDetails.discovered}</dt>
-            <dd>{s.discovered ?? "—"}</dd>
-            <dt className="text-muted">{k.sourceDetails.indexed}</dt>
-            <dd>
-              {s.counts.ready}
-              {s.counts.processing > 0 && ` · ${k.sourceDetails.preparing(s.counts.processing)}`}
-              {s.counts.attention > 0 && ` · ${k.sourceDetails.unreadable(s.counts.attention)}`}
-            </dd>
+            {!s.live && (
+              <>
+                <dt className="text-muted">{k.sourceDetails.discovered}</dt>
+                <dd>{s.discovered ?? "—"}</dd>
+                <dt className="text-muted">{k.sourceDetails.indexed}</dt>
+                <dd>
+                  {s.counts.ready}
+                  {s.counts.processing > 0 &&
+                    ` · ${k.sourceDetails.preparing(s.counts.processing)}`}
+                  {s.counts.attention > 0 && ` · ${k.sourceDetails.unreadable(s.counts.attention)}`}
+                </dd>
+              </>
+            )}
             {s.state === "needs_attention" && s.lastErrorCode && (
               <>
                 <dt className="text-muted">{k.sourceDetails.lastError}</dt>
@@ -142,6 +149,7 @@ export function SourceMenu({
               </>
             )}
           </dl>
+          {s.live && <p className="mt-4 text-[13px] text-muted">{k.liveHint}</p>}
           {s.state === "needs_attention" && s.counts.ready > 0 && (
             <p className="mt-4 text-[13px] text-muted">{k.sourceDetails.stillAvailable}</p>
           )}

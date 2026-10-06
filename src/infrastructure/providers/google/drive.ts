@@ -120,11 +120,70 @@ export class GoogleDriveClient {
     );
   }
 
+  /**
+   * Drive's own search inside what the user connected (ADR-046): files directly in any of
+   * `folderIds` (the selected folder and its subfolders, from the catalog), matching the terms
+   * by name or by Drive's full-text index. Newest first when asked for the latest, or when there
+   * is nothing to match; otherwise Drive's relevance. Metadata only — nothing is downloaded.
+   */
+  async search(q: {
+    folderIds: readonly string[];
+    terms: readonly string[];
+    recent: boolean;
+    limit: number;
+  }): Promise<GDriveFile[]> {
+    const quote = (s: string) => `'${s.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+    const terms = q.terms
+      .map((t) =>
+        q.recent
+          ? `name contains ${quote(t)}`
+          : `(name contains ${quote(t)} or fullText contains ${quote(t)})`,
+      )
+      .join(" or ");
+    const out = new Map<string, GDriveFile>();
+    // Long OR chains of parents are split: Drive limits the query's size.
+    for (let i = 0; i < q.folderIds.length && i < 60; i += 20) {
+      const parents = q.folderIds
+        .slice(i, i + 20)
+        .map((id) => `${quote(id)} in parents`)
+        .join(" or ");
+      const params = new URLSearchParams({
+        q: `trashed = false and mimeType != '${FOLDER}' and (${parents})${terms ? ` and (${terms})` : ""}`,
+        fields: `files(${FIELDS})`,
+        pageSize: String(Math.min(q.limit * 2, 50)),
+        supportsAllDrives: "true",
+        includeItemsFromAllDrives: "true",
+        corpora: "allDrives",
+        ...(q.recent || !terms ? { orderBy: "modifiedTime desc" } : {}),
+      });
+      const page = await this.http.request<{ files?: GDriveFile[] }>(
+        "GET",
+        `${API}/files?${params}`,
+      );
+      for (const f of page?.files ?? []) if (isSupportedDriveFile(f.mimeType)) out.set(f.id, f);
+    }
+    const files = [...out.values()];
+    if (q.recent || !terms)
+      files.sort((a, b) => (b.modifiedTime ?? "").localeCompare(a.modifiedTime ?? ""));
+    return files.slice(0, q.limit);
+  }
+
   /** Every supported file under the user's selection (folders recursively). */
   async listSelection(
     selection: readonly DriveSelection[],
     limit: number,
   ): Promise<ExternalItem[]> {
+    return (await this.catalog(selection, limit)).items;
+  }
+
+  /**
+   * The catalog of a selection: its files' metadata and every folder in it (the scope live
+   * search is allowed to look in). Never the files' content.
+   */
+  async catalog(
+    selection: readonly DriveSelection[],
+    limit: number,
+  ): Promise<{ items: ExternalItem[]; folderIds: string[] }> {
     const items = new Map<string, ExternalItem>();
     // A folder reachable twice (selected twice, or nested inside another selection) is read once.
     const visited = new Set<string>();
@@ -148,7 +207,7 @@ export class GoogleDriveClient {
         if (item) items.set(item.externalId, item);
       }
     }
-    return [...items.values()];
+    return { items: [...items.values()], folderIds: [...visited] };
   }
 
   /** Content to parse: exported text for Google-native files, the original bytes otherwise. */

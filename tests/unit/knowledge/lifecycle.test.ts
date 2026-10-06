@@ -122,9 +122,9 @@ describe("incremental sync is idempotent", () => {
       [ext("A"), ext("B", "2"), ext("D"), ext("E"), ext("F")],
     );
     expect(plan.created.map((i) => i.externalId)).toEqual(["F"]);
-    // Changed (B) and a stalled ingestion (D) get a new version; an unreadable file (E) waits
-    // for a real change instead of being re-ingested every hour.
-    expect(plan.updated.map((u) => u.itemId)).toEqual(["b", "d"]);
+    // Changed (B) refreshes its catalog entry; D and E still carry a pre-ADR-046 ingestion state,
+    // so their entries are refreshed once (to plain catalog metadata) and then left alone.
+    expect(plan.updated.map((u) => u.itemId)).toEqual(["b", "d", "e"]);
     expect(plan.removed).toEqual(["c"]);
     expect(
       planSync([{ id: "a", externalId: "A", status: "ready", revision: "1" }], [ext("A")]),
@@ -153,8 +153,8 @@ describe("incremental sync is idempotent", () => {
       }),
       markRunning: async () => undefined,
       knownItems: async () => [],
-      createItem: vi.fn(),
-      addVersion: vi.fn(),
+      catalogItem: vi.fn(),
+      updateCatalogItem: vi.fn(),
       markRemoved,
       finish,
     } as unknown as SyncStore;
@@ -164,7 +164,6 @@ describe("incremental sync is idempotent", () => {
         list: async () =>
           Promise.reject(Object.assign(new Error("x"), { code: "PROVIDER_UNAVAILABLE" })),
       },
-      runtime: { enqueue: vi.fn(), cancel: vi.fn() } as never,
       now: () => NOW,
       log,
     };

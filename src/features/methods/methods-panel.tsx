@@ -101,7 +101,11 @@ export function MethodsPanel({
 
   async function onImport(file: File | undefined) {
     if (!file) return;
-    const r = await importMethodAction(await file.text(), file.name, space?.id ?? null);
+    const r = await importMethodAction(
+      await file.text(),
+      file.name,
+      space?.general ? null : (space?.id ?? null),
+    );
     if (!r.ok) return void toast.error(errorText(t, r.error));
     toast.success(tm.imported);
     await open(r.value.id);
@@ -128,9 +132,11 @@ export function MethodsPanel({
           {heading && <h2 className="type-label text-faint">{tm.title}</h2>}
           <p className="text-[13px] text-muted">
             {space
-              ? parent
-                ? tm.sectionHint(parent.name)
-                : tm.spaceHint(space.name)
+              ? space.general
+                ? tm.generalHint
+                : parent
+                  ? tm.sectionHint(parent.name)
+                  : tm.spaceHint(space.name)
               : tm.subtitle}
           </p>
         </div>
@@ -167,7 +173,9 @@ export function MethodsPanel({
             <BookOpenCheck className="size-4 shrink-0 text-faint" aria-hidden />
             {tm.empty}
           </p>
-          <p className="text-[13px] text-faint">{tm.emptyExample}</p>
+          <p className="text-[13px] text-faint">
+            {space?.general ? tm.generalExample : tm.emptyExample}
+          </p>
         </div>
       ) : (
         groups
@@ -251,7 +259,8 @@ export function MethodsPanel({
         initialDetail={editing?.detail ?? null}
         initial={editing?.draft ?? null}
         spaces={spaces}
-        defaultSpaceId={space?.id ?? null}
+        // General Knowledge's Methods are the workspace-wide ones (ADR-047).
+        defaultSpaceId={space?.general ? null : (space?.id ?? null)}
         onClose={() => setEditing(null)}
         onSaved={(id) => {
           void open(id);
@@ -441,7 +450,8 @@ function MethodEditor({
               onChange={(e) => setForm((f) => ({ ...f, spaceId: e.target.value || null }))}
             >
               <option value="">{tm.everywhere}</option>
-              {[...spaces]
+              {spaces
+                .filter((s) => !s.general)
                 .sort((a, b) => a.path.localeCompare(b.path))
                 .map((s) => (
                   <option key={s.id} value={s.id}>

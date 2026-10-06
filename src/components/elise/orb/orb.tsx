@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { bootFrame, claimBoot } from "./boot";
 import { OrbRenderer } from "./orb-renderer";
 import { toRendererState, type OrbState } from "./orb-states";
 
@@ -12,6 +13,8 @@ import { toRendererState, type OrbState } from "./orb-states";
  * The ELISE Orb: one <canvas>, one requestAnimationFrame loop, DPR capped at 2.
  * Paused while the document is hidden or the orb is off-screen. Leans toward the pointer.
  * Honours prefers-reduced-motion (no rotation/deformation/tremor; state via colour, rings, halo).
+ * `boot`: this Orb plays the app's startup sequence if the document hasn't yet (boot.ts) — the
+ * same canvas and loop, nothing extra to load; `onBoot` runs once, when it starts.
  */
 export function Orb({
   state = "idle",
@@ -19,6 +22,8 @@ export function Orb({
   level = -1,
   levelSource,
   className,
+  boot = false,
+  onBoot,
 }: {
   state?: OrbState;
   /** Pixel size, or "fill" to size by CSS (className must set a square size, e.g. size-[300px]). */
@@ -28,10 +33,13 @@ export function Orb({
   /** A live level read every frame (microphone or ELISE's voice), without re-rendering. */
   levelSource?: { readonly current: number };
   className?: string;
+  boot?: boolean;
+  onBoot?: () => void;
 }) {
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const input = useRef({ state, size, level, levelSource });
+  const bootRequest = useRef({ boot, onBoot });
 
   useEffect(() => {
     input.current = { state, size, level, levelSource };
@@ -47,6 +55,10 @@ export function Orb({
     const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let visible = true;
     let raf = 0;
+    // Claimed at mount: a remount mid-sequence continues it, never replays it.
+    const claim = bootRequest.current.boot ? claimBoot(performance.now()) : null;
+    let bootStart = claim?.start ?? null;
+    if (claim?.fresh) bootRequest.current.onBoot?.();
 
     const onMove = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
@@ -76,6 +88,8 @@ export function Orb({
         canvas.width = backing;
         canvas.height = backing;
       }
+      const booting = bootStart === null ? null : bootFrame(now - bootStart, reducedQuery.matches);
+      if (!booting) bootStart = null;
       renderer.frame(ctx, px, dpr, now, {
         state: toRendererState(s),
         light: !document.documentElement.classList.contains("dark"),
@@ -83,6 +97,7 @@ export function Orb({
         reduced: reducedQuery.matches,
         level: lv,
         pointer,
+        boot: booting,
       });
     };
     raf = requestAnimationFrame(loop);

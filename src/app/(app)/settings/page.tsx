@@ -5,6 +5,7 @@ import { isEnabled } from "@/config/flags";
 import { LocationSettings } from "@/features/settings/location-settings";
 import { PrivacyCard } from "@/features/settings/privacy-card";
 import { SettingsForm } from "@/features/settings/settings-form";
+import { StartupSettings } from "@/features/settings/startup-settings";
 import { VoiceSettings } from "@/features/settings/voice-settings";
 import { getT } from "@/lib/i18n/server";
 
@@ -29,6 +30,9 @@ export default async function SettingsPage() {
           wakeAllowed={isEnabled("wakePhrase", auth)}
           speech={speechStatus()}
         />
+      </div>
+      <div className="mt-6">
+        <StartupSettings />
       </div>
       <div className="mt-6">
         <LocationSettings />

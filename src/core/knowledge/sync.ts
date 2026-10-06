@@ -1,10 +1,8 @@
-import type { BackgroundRuntime } from "../background/runtime";
 import { toAppError } from "../errors";
 import type { KnowledgeItemType, KnowledgeSourceType } from "./model";
-import { TRANSIENT_CODES } from "./source-state";
 
 /**
- * Incremental sync of an external Knowledge source (docs/architecture/09 §17-19, 54): list the
+ * Incremental sync of an external Knowledge source (docs/architecture/09 Â§17-19, 54): list the
  * selected roots, compare with what ELISE has (external id + revision), and only touch what
  * changed. New and modified items get a new version and are ingested in the background;
  * items that disappeared are marked removed and stop being searchable.
@@ -66,14 +64,10 @@ export interface SyncStore {
   /** Sign of life while items are being created (ADR-036 lease). */
   heartbeat?(run: SyncRun): Promise<void>;
   knownItems(sourceId: string): Promise<KnownItem[]>;
-  /** New item + version 1 (pending). */
-  createItem(source: SyncSource, item: ExternalItem): Promise<{ versionId: string }>;
-  /** Next version (pending) of an existing item; also restores a removed item. */
-  addVersion(
-    source: SyncSource,
-    itemId: string,
-    item: ExternalItem,
-  ): Promise<{ versionId: string }>;
+  /** A new catalog entry (metadata only, no version, no content). */
+  catalogItem(source: SyncSource, item: ExternalItem): Promise<void>;
+  /** An entry's metadata changed (or it came back after being removed). */
+  updateCatalogItem(source: SyncSource, itemId: string, item: ExternalItem): Promise<void>;
   markRemoved(source: SyncSource, itemIds: string[]): Promise<void>;
   finish(
     run: SyncRun,
@@ -84,18 +78,19 @@ export interface SyncStore {
       errorCode: string | null;
       nextSyncAt: Date;
       sourceStatus: "ready" | "needs_attention";
+      /** Source-level catalog facts (Drive: the folders live search may look in). */
+      catalog?: Record<string, unknown>;
     },
   ): Promise<void>;
 }
 
 export interface SourceLister {
-  list(source: SyncSource): Promise<ExternalItem[]>;
+  list(source: SyncSource): Promise<{ items: ExternalItem[]; catalog?: Record<string, unknown> }>;
 }
 
 export interface SyncPorts {
   store: SyncStore;
   lister: SourceLister;
-  runtime: BackgroundRuntime;
   now(): Date;
   log?(event: string, fields: Record<string, unknown>): void;
 }
@@ -108,27 +103,14 @@ export function planSync(known: readonly KnownItem[], external: readonly Externa
   for (const item of external) {
     const k = byId.get(item.externalId);
     if (!k) created.push(item);
-    else if (
-      k.status === "removed" ||
-      k.revision !== item.revision ||
-      // Same file, but its last ingestion never finished for a reason worth retrying.
-      ((k.status === "failed" || k.status === "needs_attention") &&
-        TRANSIENT_CODES.has(k.errorCode ?? ""))
-    )
+    // Changed, came back, or still carries a pre-ADR-046 ingestion state: refresh the entry.
+    else if (k.status !== "ready" || k.revision !== item.revision)
       updated.push({ itemId: k.id, item });
   }
   const removed = known
     .filter((k) => !seen.has(k.externalId) && k.status !== "removed" && k.status !== "archived")
     .map((k) => k.id);
   return { created, updated, removed };
-}
-
-async function enqueueIngest(ports: SyncPorts, workspaceId: string, versionId: string) {
-  await ports.runtime.enqueue({
-    type: "knowledge.ingest",
-    payload: { workspaceId, versionId },
-    idempotencyKey: `knowledge-ingest:${versionId}`,
-  });
 }
 
 export async function syncSource(
@@ -149,8 +131,11 @@ export async function syncSource(
   const next = new Date(ports.now().getTime() + SYNC_INTERVAL_MINUTES * 60_000);
 
   let external: ExternalItem[];
+  let catalog: Record<string, unknown> | undefined;
   try {
-    external = (await ports.lister.list(source)).slice(0, MAX_ITEMS_PER_SOURCE);
+    const listed = await ports.lister.list(source);
+    external = listed.items.slice(0, MAX_ITEMS_PER_SOURCE);
+    catalog = listed.catalog;
   } catch (error) {
     const e = toAppError(error);
     // Nothing is removed when the source can't be read: stale beats wrongly deleted.
@@ -180,8 +165,7 @@ export async function syncSource(
   };
   for (const item of plan.created) {
     try {
-      const { versionId } = await ports.store.createItem(source, item);
-      await enqueueIngest(ports, source.workspaceId, versionId);
+      await ports.store.catalogItem(source, item);
       counts.created++;
     } catch {
       counts.failed++;
@@ -190,8 +174,7 @@ export async function syncSource(
   }
   for (const { itemId, item } of plan.updated) {
     try {
-      const { versionId } = await ports.store.addVersion(source, itemId, item);
-      await enqueueIngest(ports, source.workspaceId, versionId);
+      await ports.store.updateCatalogItem(source, itemId, item);
       counts.updated++;
     } catch {
       counts.failed++;
@@ -208,6 +191,7 @@ export async function syncSource(
     errorCode: null,
     nextSyncAt: next,
     sourceStatus: "ready",
+    ...(catalog ? { catalog } : {}),
   });
   ports.log?.("knowledge.sync_completed", {
     sync_run_id: run.id,

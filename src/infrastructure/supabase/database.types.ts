@@ -617,6 +617,8 @@ export type KnowledgeSpaceRow = {
   icon: string | null;
   color: string | null;
   status: "active" | "archived";
+  /** ADR-047: "general" is the workspace's one General Knowledge Space (by identity, not name). */
+  kind: "standard" | "general";
   created_by_user_id: string | null;
   created_at: Ts;
   updated_at: Ts;
@@ -630,6 +632,8 @@ export type KnowledgeSourceRow = {
   provider_key: string;
   connection_id: string | null;
   source_type: "upload" | "google_drive" | "notion" | "note";
+  /** Generated from source_type (ADR-046): uploads/notes are indexed, Drive/Notion read live. */
+  access_mode: "native_indexed" | "external_live";
   display_name: string;
   source_url: string | null;
   configuration: Json;

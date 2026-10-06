@@ -44,6 +44,7 @@ const notionSource = (over: Partial<SourceView> = {}): SourceView => ({
   sourceType: "notion",
   name: "Projects",
   status: "ready",
+  live: false,
   state: "up_to_date",
   rollup: "needs_attention",
   kind: "database",
@@ -117,6 +118,22 @@ beforeEach(() => {
     },
   });
   actions.retryProblemsAction.mockResolvedValue({ ok: true, value: { retried: 2 } });
+});
+
+describe("Live connected sources (ADR-046)", () => {
+  it("a connected Notion database is one source that says Disponible — no indexing counts", () => {
+    view([
+      notionSource({
+        live: true,
+        state: "available",
+        rollup: "ready",
+        counts: { ready: 0, processing: 0, attention: 0 },
+        discovered: null,
+      }),
+    ]);
+    expect(screen.getByText(/Disponible/)).toBeInTheDocument();
+    expect(screen.queryByText(/indexad|listos|Preparando|Indexando/i)).toBeNull();
+  });
 });
 
 describe("Space sources (ADR-037)", () => {

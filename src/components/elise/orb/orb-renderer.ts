@@ -4,7 +4,10 @@
  * The params() table, easing constants and drawing are kept as in the reference:
  * motion τ 450 ms, colour τ 600 ms, pointer τ 400 ms; nothing snaps.
  * Transients: success shows 900 ms then idle; error 1200 ms then "rest" (dimmer idle).
+ * Boot (ADR-046): a cyan point, then the wireframe resolves and the ring comes online.
  */
+
+import type { BootFrame } from "./boot";
 
 export type RendererState =
   | "idle"
@@ -253,6 +256,8 @@ export interface OrbFrameInput {
   level: number;
   /** Normalized pointer position relative to the orb (-1..1, soft-clamped). */
   pointer: { x: number; y: number };
+  /** The startup sequence, while it plays (boot.ts); null/absent: the Orb as usual. */
+  boot?: BootFrame | null;
 }
 
 /** Stateful renderer: one instance per canvas. Phase-accumulated so speed changes never jump. */
@@ -329,8 +334,15 @@ export class OrbRenderer {
     let cx = size / 2 + this.ps.x * size * 0.018;
     const cy = size / 2 + this.ps.y * size * 0.018;
     if (s === "error" && e < 0.5 && !reduced) cx += Math.sin(e * 50) * (1 - e / 0.5) * size * 0.014;
-    const R = size * 0.27 * P.scale * (1 + 0.022 * breathe * P.breath + 0.07 * P.level);
-    this.draw(ctx, cx, cy, R, P, s, e, light, size);
+    const boot = input.boot ?? null;
+    // Booting: the sphere resolves outward from the point as its lines come in.
+    const R =
+      size *
+      0.27 *
+      P.scale *
+      (1 + 0.022 * breathe * P.breath + 0.07 * P.level) *
+      (boot ? 0.35 + 0.65 * boot.wire : 1);
+    this.draw(ctx, cx, cy, R, P, s, e, light, size, boot);
     ctx.globalCompositeOperation = "source-over";
   }
 
@@ -344,6 +356,7 @@ export class OrbRenderer {
     e: number,
     light: boolean,
     size: number,
+    boot: BootFrame | null,
   ) {
     const r = Math.round(P.col[0]);
     const g = Math.round(P.col[1]);
@@ -351,23 +364,39 @@ export class OrbRenderer {
     const dimK = 1 - P.dim;
     const c = (a: number) =>
       `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a * dimK)).toFixed(3)})`;
+    // Boot: lines (wire) and the ring/glow (ring) come online separately; 1 = as usual.
+    const W = boot?.wire ?? 1;
+    const G = boot?.ring ?? 1;
+    const cw = (a: number) => c(a * W);
+    const cg = (a: number) => c(a * G);
     const TAU = Math.PI * 2;
     const H = Math.PI / 2;
+    if (boot && boot.dot > 0.01) {
+      // The first trace: a small cyan point with a soft halo, at the very centre.
+      const d = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.06);
+      d.addColorStop(0, c(0.9 * boot.dot));
+      d.addColorStop(0.25, c(0.35 * boot.dot));
+      d.addColorStop(1, c(0));
+      ctx.fillStyle = d;
+      ctx.beginPath();
+      ctx.arc(cx, cy, size * 0.06, 0, TAU);
+      ctx.fill();
+    }
     // Below 90 px: mini orb (4 latitudes, 8 meridians, no inner core, no rings).
     const small = size < 90;
     const dph = this.dph;
     const scanY = Math.sin(this.sph);
     ctx.globalCompositeOperation = light ? "source-over" : "lighter";
     let gr = ctx.createRadialGradient(cx, cy, R * 0.3, cx, cy, R * 2);
-    gr.addColorStop(0, c((light ? 0.09 : 0.15) * P.glow * (small ? 1.4 : 1)));
+    gr.addColorStop(0, cg((light ? 0.09 : 0.15) * P.glow * (small ? 1.4 : 1)));
     gr.addColorStop(1, c(0));
     ctx.fillStyle = gr;
     ctx.beginPath();
     ctx.arc(cx, cy, R * 2, 0, TAU);
     ctx.fill();
     gr = ctx.createRadialGradient(cx - R * 0.25, cy - R * 0.3, 0, cx, cy, R * 1.02);
-    gr.addColorStop(0, c(light ? 0.1 : 0.2));
-    gr.addColorStop(0.7, c(light ? 0.04 : 0.06));
+    gr.addColorStop(0, cw(light ? 0.1 : 0.2));
+    gr.addColorStop(0.7, cw(light ? 0.04 : 0.06));
     gr.addColorStop(1, c(0));
     ctx.fillStyle = gr;
     ctx.beginPath();
@@ -418,7 +447,7 @@ export class OrbRenderer {
           const d = Math.abs(Math.sin(la) - scanY);
           al *= 1 + P.scan * 1.6 * Math.max(0, 1 - d / 0.18);
         }
-        ctx.strokeStyle = c(al);
+        ctx.strokeStyle = cw(al);
         ctx.beginPath();
         ctx.moveTo(a[0], a[1]);
         ctx.lineTo(q[0], q[1]);
@@ -453,9 +482,9 @@ export class OrbRenderer {
       sphere(R * 0.52, this.rot2, 4, 8, 32, 16, 0.9 * P.inner, false);
     }
 
-    const RR = R * 1.34;
+    const RR = R * 1.34 * (0.9 + 0.1 * G);
     ctx.lineWidth = small ? 0.8 : 1;
-    ctx.strokeStyle = c((light ? 0.22 : 0.18) + P.halo * 0.25);
+    ctx.strokeStyle = cg((light ? 0.22 : 0.18) + P.halo * 0.25);
     ctx.beginPath();
     ctx.arc(cx, cy, RR, 0, TAU);
     ctx.stroke();

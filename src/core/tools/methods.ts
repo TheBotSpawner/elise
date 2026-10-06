@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolDefinition, ToolDisplay, ToolRunEnv } from "../agents/tools";
 import { AppError } from "../errors";
 import { matchKey } from "../history/links";
+import { GENERAL_KNOWLEDGE_NAME } from "../knowledge/model";
 import {
   composeInstructions,
   METHOD_LIMITS,
@@ -41,20 +42,32 @@ const spaceRef = z
   .min(1)
   .max(200)
   .describe(
-    'Where it applies: a Space or Section by name ("Firbot", "Firbot › Cliente X") or id, or "global" for everywhere.',
+    'Where it applies: a Space or Section by name ("Firbot", "Firbot › Cliente X") or id, or "General Knowledge" for everywhere (cross-domain).',
   );
 
-const GLOBAL = new Set(["global", "general", "everywhere", "todo", "todos", "en todos lados"]);
+const GLOBAL = new Set([
+  "global",
+  "general",
+  "general knowledge",
+  "conocimiento general",
+  "everywhere",
+  "todo",
+  "todos",
+  "en todos lados",
+]);
 
-/** "Firbot › Cliente X" for a Space id, "global" for none. */
+/**
+ * "Firbot › Cliente X" for a Space id; "General Knowledge" for the workspace-wide Methods
+ * (space_id null), which are General Knowledge's Methods (ADR-047).
+ */
 export function scopeLabel(spaceId: string | null, spaces: readonly SpaceRef[]): string {
-  return spaceId ? (spaces.find((s) => s.id === spaceId)?.path ?? "?") : "global";
+  return spaceId ? (spaces.find((s) => s.id === spaceId)?.path ?? "?") : GENERAL_KNOWLEDGE_NAME;
 }
 
 function resolveSpace(ref: string, spaces: readonly SpaceRef[]): string | null {
   if (GLOBAL.has(ref.trim().toLowerCase())) return null;
   const byId = spaces.find((s) => s.id === ref);
-  if (byId) return byId.id;
+  if (byId) return byId.general ? null : byId.id;
   const wanted = matchKey(ref);
   const keys = (s: SpaceRef) => [s.name, s.path].map(matchKey);
   const exact = spaces.filter((s) => keys(s).includes(wanted));
@@ -63,7 +76,7 @@ function resolveSpace(ref: string, spaces: readonly SpaceRef[]): string | null {
     : wanted.length >= 3
       ? spaces.filter((s) => keys(s).some((k) => k.includes(wanted)))
       : [];
-  if (found.length === 1) return found[0]!.id;
+  if (found.length === 1) return found[0]!.general ? null : found[0]!.id;
   throw new AppError(
     found.length ? "VALIDATION_ERROR" : "NOT_FOUND",
     found.length
@@ -81,6 +94,12 @@ function here(env: ToolRunEnv, spaces: readonly SpaceRef[]): string[] {
     [env.ctx.context?.sectionSpaceId ?? null, env.ctx.knowledgeSpaceId ?? null],
     parentsOf(spaces),
   );
+}
+
+/** The scope a new Method gets by default: the conversation's, General Knowledge (null) when none. */
+function hereScope(env: ToolRunEnv, spaces: readonly SpaceRef[]): string | null {
+  const id = here(env, spaces)[0] ?? null;
+  return id && spaces.find((s) => s.id === id)?.general ? null : id;
 }
 
 /**
@@ -168,7 +187,7 @@ export const listMethodsTool: ToolDefinition = {
   capability: "methods",
   operation: "list",
   description:
-    '"¿Qué métodos tenés para Firbot?", "what Methods do I have?": the user\'s Methods (how they want kinds of work done) with where each applies. Names and descriptions only.',
+    '"¿Qué métodos tenés para Firbot?", "what Methods do I have?", "¿qué métodos generales tengo?" (space: "General Knowledge" — only those): the user\'s Methods (how they want kinds of work done) with where each applies. Names and descriptions only.',
   input: listInput,
   async describe() {
     return { summary: "List methods" };
@@ -351,7 +370,7 @@ const createInput = z
     space: spaceRef
       .optional()
       .describe(
-        'Omit to use the Space/Section this conversation is in (or global when none). "global" for everywhere.',
+        'The narrowest scope that matches what the user means (ADR-047): a Section ("UTN › Legislación") for work of that subject/client/project, its Space for work across it, "General Knowledge" for cross-domain ways of working (planning the day, writing for me, deciding — "siempre", "en general", "para cualquier proyecto", "sin importar el espacio"), even when the conversation is in a Space. Omit to use the Space/Section this conversation is in (General Knowledge when none).',
       ),
     ...sections,
     instructions: z
@@ -391,7 +410,7 @@ export const createMethodTool: ToolDefinition = {
     const q = createInput.parse(raw);
     const st = store(env);
     const [spaces, all] = await Promise.all([st.spaces(), st.index()]);
-    const spaceId = q.space ? resolveSpace(q.space, spaces) : (here(env, spaces)[0] ?? null);
+    const spaceId = q.space ? resolveSpace(q.space, spaces) : hereScope(env, spaces);
     const instructions = q.instructions ?? composeInstructions(q, env.ctx.locale);
     if (!instructions)
       throw new AppError("VALIDATION_ERROR", "Give the Method its steps or instructions", {
@@ -459,7 +478,11 @@ const updateInput = z
         "The whole new procedure (the current one with the change applied — keep everything else as it was).",
       ),
     hints,
-    space: spaceRef.optional().describe('Moves it ("mové este método a la sección Cliente X").'),
+    space: spaceRef
+      .optional()
+      .describe(
+        'Moves it ("mové este método a la sección Cliente X", "hacelo general" → "General Knowledge").',
+      ),
     platforms: z.array(z.enum(METHOD_PLATFORMS)).min(1).max(3).optional(),
     changeSummary: z
       .string()

@@ -125,7 +125,8 @@ async function firstRunPrompts(auth: AuthContext): Promise<string[]> {
         c.health === "connected" &&
         c.capabilities.some((x) => x.key === key && x.enabled && x.granted),
     );
-  const top = spaces.filter((s) => !s.parentId);
+  // The user's own Spaces (General Knowledge is always there, ADR-047).
+  const top = spaces.filter((s) => !s.parentId && !s.general);
   const preset = (progress.data?.value_json as { spacePreset?: SpacePreset } | null)?.spacePreset;
   return firstPromptKeys({
     calendar: on("calendar"),

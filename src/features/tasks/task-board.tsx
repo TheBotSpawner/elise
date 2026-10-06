@@ -3,7 +3,7 @@
 import { Check, CheckSquare, ListPlus, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { usePathname, useRouter } from "next/navigation";
-import { useOptimistic, useState, useTransition } from "react";
+import { useCallback, useEffect, useOptimistic, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { TasksOverview } from "@/application/tasks-service";
@@ -20,6 +20,7 @@ import {
   type TaskView,
 } from "@/core/capabilities/tasks";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
+import { useRefreshWhenStale } from "@/hooks/use-refresh-when-stale";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -60,6 +61,10 @@ export function TaskBoard({
   });
   const [listOpen, setListOpen] = useState(false);
   useRealtimeRefresh(workspaceId, ["tasks", "task_lists"]);
+  // Google Tasks can change outside ELISE and has no push: read every account again when this
+  // snapshot is stale — coming back to the page or to the tab (ADR-046).
+  const refresh = useCallback(() => startTransition(() => router.refresh()), [router]);
+  useRefreshWhenStale(overview.fetchedAt, refresh);
 
   const go = (next: { view?: TaskView; source?: string | null }) => {
     const params = new URLSearchParams();
@@ -192,6 +197,8 @@ export function TaskBoard({
             {t.tasks.unavailable(overview.unavailable.join(", "))}
           </p>
         )}
+        {/* Quiet: syncing is automatic, this only says how fresh the list is. */}
+        <Freshness at={overview.fetchedAt} />
       </div>
 
       {visible.length === 0 ? (
@@ -226,6 +233,22 @@ export function TaskBoard({
         onCreated={() => router.refresh()}
       />
     </div>
+  );
+}
+
+/** "Actualizado ahora" / "hace 3 min": starts at the snapshot's own time (same on server and client). */
+function Freshness({ at }: { at: string }) {
+  const { t } = useI18n();
+  const [now, setNow] = useState(() => Date.parse(at));
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const minutes = Math.floor((now - Date.parse(at)) / 60_000);
+  return (
+    <p className="text-[12px] text-faint">
+      {minutes < 1 ? t.tasks.updatedNow : t.tasks.updatedAgo(minutes)}
+    </p>
   );
 }
 

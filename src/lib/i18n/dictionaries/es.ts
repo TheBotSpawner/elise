@@ -390,6 +390,11 @@ export const es: Dictionary = {
     createList: "Crear lista",
     unavailable: (accounts: string) =>
       `No se pudo acceder a ${accounts}, así que sus tareas no se muestran ahora.`,
+    updatedNow: "Actualizado ahora",
+    updatedAgo: (minutes: number) =>
+      minutes < 60
+        ? `Actualizado hace ${minutes} min`
+        : `Actualizado hace ${Math.floor(minutes / 60)} h`,
     add: "Agregar tarea",
     newTitle: "¿Qué hay que hacer?",
     due: "Vence",
@@ -846,8 +851,15 @@ export const es: Dictionary = {
       up_to_date: "Actualizado",
       syncing: "Sincronizando…",
       needs_attention: "Necesita atención",
+      available: "Disponible",
     },
     upToDate: (when: string) => `Actualizado ${when}`,
+    checked: (when: string) => `comprobado ${when}`,
+    liveHint:
+      "ELISE consulta esta fuente en vivo cuando la necesita. No copia su contenido: el original sigue siendo la referencia.",
+    checkNow: "Comprobar ahora",
+    generalIntro:
+      "Este es el contexto general de ELISE. Acá viven las fuentes y métodos que pueden servirte en cualquier área.",
     /** What a working source is doing right now (ADR-036). */
     sourcePhase: {
       queued: "En cola",
@@ -939,6 +951,7 @@ export const es: Dictionary = {
     sourceDetails: {
       state: "Estado",
       lastSync: "Última sincronización",
+      lastCheck: "Última comprobación",
       nextCheck: "Próxima comprobación",
       nextRetry: "Próximo intento automático",
       phase: "Ahora",
@@ -1114,6 +1127,8 @@ export const es: Dictionary = {
       current: "Actual",
       passage: "Pasaje citado",
       openOriginal: "Abrir original",
+      live: (provider: string) =>
+        `ELISE lee este documento en vivo desde ${provider} cuando lo necesita; lo de ahí es siempre lo vigente.`,
       download: "Descargar original",
       page: (n: number) => `Página ${n}`,
       askAbout: "Preguntar sobre este documento",
@@ -1797,6 +1812,12 @@ export const es: Dictionary = {
     bulk: (n: number) => `Van a cambiar ${n} registros`,
   },
   settings: {
+    startup: {
+      title: "Inicio",
+      sound: "Sonido de inicio",
+      soundHint:
+        "Un sonido corto y suave cuando abrís ELISE. Solo una vez por sesión, nunca al navegar.",
+    },
     location: {
       title: "Ubicación",
       use: "Usar mi ubicación actual",
@@ -2489,8 +2510,12 @@ export const es: Dictionary = {
     spaceHint: (name: string) =>
       `Cómo trabaja ELISE en ${name}. Sus secciones pueden ajustarlos, y también valen los métodos generales.`,
     sectionHint: (name: string) => `Solo en esta sección; se suman a los de ${name}.`,
-    globalTitle: "Métodos generales",
+    globalTitle: "General Knowledge",
     globalHint: "Valen en todo ELISE, en cualquier espacio.",
+    generalHint:
+      "Formas de trabajar que ELISE usa en cualquier área. Un espacio o una sección pueden tener las suyas, y esas mandan.",
+    generalExample:
+      "Por ejemplo: “Cuando planifiques mi día…”, “Cuando redactes algo para mí…”, “Antes de tomar una decisión…”",
     empty:
       "Todavía no hay métodos. Enseñale a ELISE cómo querés que haga algo y lo va a hacer siempre así.",
     emptyExample:

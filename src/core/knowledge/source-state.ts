@@ -11,7 +11,17 @@
  * Work that never starts or never ends is not "preparing" forever: past these limits it is
  * stalled, the run is closed as failed and the source says it needs attention (ADR-036).
  */
-export type SourceState = "preparing" | "retrying" | "up_to_date" | "syncing" | "needs_attention";
+export type SourceState =
+  | "preparing"
+  | "retrying"
+  | "up_to_date"
+  | "syncing"
+  | "needs_attention"
+  /**
+   * A connected source read live (ADR-046): ELISE can consult it when needed. There is nothing
+   * to prepare or index, so its only other state is needs_attention (access lost, can't list).
+   */
+  | "available";
 
 /**
  * Where the work of a source is, for the line under its state:
@@ -132,10 +142,16 @@ export interface SourceFacts {
    * state. Only connected sources (Drive, Notion) go through the sync lifecycle.
    */
   container?: boolean;
+  /** Drive/Notion, read live (ADR-046): its pages are a catalog, never a reason to wait. */
+  live?: boolean;
 }
 
 export function sourceState(s: SourceFacts, now: Date = new Date()): SourceState {
   if (s.container) return s.counts.processing > 0 ? "syncing" : "up_to_date";
+  if (s.live)
+    return s.status === "disconnected" || s.status === "needs_attention"
+      ? "needs_attention"
+      : "available";
   if (s.status === "disconnected") return "needs_attention";
   const usable = Boolean(s.lastSyncedAt) && s.counts.ready > 0;
   // Callers that don't know about runs: the stored status says whether one is going on.
@@ -193,6 +209,8 @@ export function sourceRollup(
   state: SourceState,
   counts: { ready: number; processing: number; attention: number },
 ): SourceRollup {
+  // A live source has no children to roll up: its health is its own.
+  if (state === "available") return "ready";
   if (state === "needs_attention") return counts.ready > 0 ? "needs_attention" : "failed";
   if (state === "preparing" || state === "retrying" || state === "syncing" || counts.processing)
     return "processing";

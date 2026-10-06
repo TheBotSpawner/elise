@@ -18,6 +18,7 @@ import { ORB_LAYOUT_ID } from "@/components/elise/orb/orb-presence";
 import type { OrbState } from "@/components/elise/orb/orb-states";
 import type { VoiceState } from "@/core/voice/session";
 import type { Surface, WorkspaceState } from "@/core/workspace/model";
+import { playStartupSound } from "@/features/boot/startup-sound";
 import { FileDropZone } from "@/features/chat/attachments-ui";
 import { MessageThread, type ThreadHandlers } from "@/features/chat/message-thread";
 import type { ChatMessage } from "@/features/chat/types";
@@ -41,6 +42,8 @@ import { EASE, ORB_MOVE } from "./motion";
 import { GhostSlot, SkeletonSurface, SurfaceView, type CanvasHandlers } from "./surface-view";
 import { TemporalView } from "./temporal-view";
 import { TranscriptPanel } from "./transcript";
+
+const onBoot = () => void playStartupSound();
 
 const TRANSCRIPT_KEY = "elise.canvas.transcript";
 
@@ -354,7 +357,17 @@ function IdleHero({
   // The hero Orb follows the space it has (the input always keeps its room): limited by width
   // and by height, so a wide but short screen never gets a huge Orb. The canvas fills this box
   // (glow, rings and globe scale together); every other Orb keeps its fixed size.
-  const orb = <Orb state={orbState} size="fill" className="size-full" levelSource={level} />;
+  // The hero Orb carries the app's startup sequence (and its sound) once per document (ADR-046).
+  const orb = (
+    <Orb
+      state={orbState}
+      size="fill"
+      className="size-full"
+      levelSource={level}
+      boot
+      onBoot={onBoot}
+    />
+  );
   return (
     <div className="flex flex-col items-center pt-6 [--orb:clamp(250px,min(42vw,46dvh),620px)] md:pt-2">
       <motion.div

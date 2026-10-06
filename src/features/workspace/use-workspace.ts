@@ -17,6 +17,7 @@ import {
 } from "@/core/workspace/model";
 import type { SurfacePayloads } from "@/core/workspace/registry";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
+import { useRefreshWhenStale } from "@/hooks/use-refresh-when-stale";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { applyAppearance } from "@/lib/theme";
@@ -341,6 +342,18 @@ export function useWorkspaceController({
     if (busy || !id || !shown.length) return;
     void refreshWorkspaceAction(id, shown).then((r) => r.ok && setWorkspace(r.value));
   });
+
+  // Google Tasks changes outside ELISE without any push (ADR-046): a visible task list is read
+  // again when the user comes back to it after a while — not polled.
+  const [tasksReadAt, setTasksReadAt] = useState(() => Date.now());
+  const showsTasks = shown.includes("tasks");
+  const rereadTasks = useCallback(() => {
+    const id = getThread();
+    setTasksReadAt(Date.now());
+    if (busy || !id) return;
+    void refreshWorkspaceAction(id, ["tasks"]).then((r) => r.ok && setWorkspace(r.value));
+  }, [busy, getThread, setWorkspace]);
+  useRefreshWhenStale(showsTasks ? tasksReadAt : null, rereadTasks);
 
   return {
     dismiss,

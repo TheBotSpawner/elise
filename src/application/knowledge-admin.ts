@@ -33,6 +33,7 @@ export function knowledgeManager(auth: AuthContext): KnowledgeManager {
     name: s.name,
     path: s.path,
     parentId: s.parentId,
+    general: s.general,
     description: s.description,
     context: s.context,
     sections: all.filter((c) => c.parentId === s.id).length,

@@ -509,8 +509,11 @@ describe("knowledge", () => {
       ),
     ).rejects.toThrow(/cannot be moved under itself/);
     await expect(space(bob, "Sneaky", work)).rejects.toThrow(/same workspace|row-level security/);
+    // Bob sees only his own workspace's Spaces (his General Knowledge, ADR-047), never Alice's.
     const bobSees = await asUser(db, bob.userId, () =>
-      db.query("select id from public.knowledge_spaces"),
+      db.query("select id from public.knowledge_spaces where workspace_id <> $1", [
+        bob.workspaceId,
+      ]),
     );
     expect(bobSees.rows).toHaveLength(0);
   });
@@ -545,6 +548,152 @@ describe("knowledge", () => {
     expect(crossed.rows).toHaveLength(0);
     const own = await search(alice.userId, alice.workspaceId, "secret", 1);
     expect(own.rows.map((r) => r.content)).not.toContain("Bob's secret email filing notes.");
+  });
+
+  describe("General Knowledge (ADR-047)", () => {
+    const generalOf = async (workspaceId: string) =>
+      (
+        await db.query<{ id: string; name: string; parent_space_id: string | null }>(
+          "select id, name, parent_space_id from public.knowledge_spaces where workspace_id = $1 and kind = 'general'",
+          [workspaceId],
+        )
+      ).rows;
+
+    it("every workspace has exactly one, created with it; the backfill is idempotent", async () => {
+      const carol = await createUser(db, "carol-gk@example.com", {});
+      expect(await generalOf(carol.workspaceId)).toHaveLength(1);
+      expect(await generalOf(alice.workspaceId)).toHaveLength(1);
+      // Running the migration's backfill again adds nothing.
+      await db.query(
+        `insert into public.knowledge_spaces (workspace_id, name, kind, created_by_user_id)
+         select w.id, 'General Knowledge', 'general', w.owner_user_id from public.workspaces w
+         where not exists (select 1 from public.knowledge_spaces s where s.workspace_id = w.id and s.kind = 'general')`,
+      );
+      expect(await generalOf(carol.workspaceId)).toHaveLength(1);
+      // A second one is refused outright.
+      await expect(
+        db.query(
+          "insert into public.knowledge_spaces (workspace_id, name, kind) values ($1, 'Otro general', 'general')",
+          [carol.workspaceId],
+        ),
+      ).rejects.toThrow(/knowledge_spaces_one_general|duplicate/);
+    });
+
+    it("can't be renamed, archived, moved, or made from another Space — by anyone", async () => {
+      const [general] = await generalOf(alice.workspaceId);
+      const other = await space(alice, "Firbot GK");
+      const attempts = [
+        ["update public.knowledge_spaces set name = 'Mi base' where id = $1", [general!.id]],
+        [
+          "update public.knowledge_spaces set status = 'archived', archived_at = now() where id = $1",
+          [general!.id],
+        ],
+        [
+          "update public.knowledge_spaces set parent_space_id = $2 where id = $1",
+          [general!.id, other],
+        ],
+        ["update public.knowledge_spaces set kind = 'standard' where id = $1", [general!.id]],
+        ["update public.knowledge_spaces set kind = 'general' where id = $1", [other]],
+      ] as const;
+      for (const [sql, args] of attempts) {
+        // As the user (API) and as the service role (ELISE's own writes).
+        await expect(asUser(db, alice.userId, () => db.query(sql, [...args]))).rejects.toThrow(
+          /general_knowledge_protected/,
+        );
+        await expect(db.query(sql, [...args])).rejects.toThrow(/general_knowledge_protected/);
+      }
+      // Everything else is editable: description, context, look.
+      await asUser(db, alice.userId, () =>
+        db.query(
+          "update public.knowledge_spaces set description = 'Cómo trabajo', context = 'Trabajo mejor a la mañana', icon = 'heart' where id = $1",
+          [general!.id],
+        ),
+      );
+      expect((await generalOf(alice.workspaceId))[0]!.name).toBe("General Knowledge");
+    });
+
+    it("holds Sections and sources like any Space; a user Space named 'General Knowledge' stays ordinary", async () => {
+      const [general] = await generalOf(alice.workspaceId);
+      const section = await space(alice, "Productividad", general!.id);
+      expect(section).toBeTruthy();
+      await indexedDoc(alice.workspaceId, general!.id, "Mi manual personal de trabajo.", 7);
+      const lookalike = await space(alice, "General Knowledge");
+      const kind = await db.query<{ kind: string }>(
+        "select kind from public.knowledge_spaces where id = $1",
+        [lookalike],
+      );
+      expect(kind.rows[0]!.kind).toBe("standard");
+      expect(await generalOf(alice.workspaceId)).toHaveLength(1);
+    });
+
+    it("a Method saved in General Knowledge is workspace-wide (space_id null)", async () => {
+      const [general] = await generalOf(alice.workspaceId);
+      const m = await asUser(db, alice.userId, () =>
+        db.query<{ space_id: string | null }>(
+          `insert into public.methods (workspace_id, space_id, name, description, instructions, change_summary, change_source, created_by_user_id, updated_by_user_id)
+           values ($1, $2, 'Planificar el día', 'Cómo planifico mi día', 'Primero calendario, después tareas vencidas y prioridades.', 'creado', 'user_ui', $3, $3)
+           returning space_id`,
+          [alice.workspaceId, general!.id, alice.userId],
+        ),
+      );
+      expect(m.rows[0]!.space_id).toBeNull();
+    });
+
+    it("is private to its workspace", async () => {
+      const [mine] = await generalOf(alice.workspaceId);
+      const seen = await asUser(db, bob.userId, () =>
+        db.query("select id from public.knowledge_spaces where id = $1", [mine!.id]),
+      );
+      expect(seen.rows).toHaveLength(0);
+    });
+  });
+
+  it("never searches a live source's legacy copy; uploads stay indexed (ADR-046)", async () => {
+    const s = await space(alice, "Firbot");
+    await indexedDoc(alice.workspaceId, s, "Upload: pipeline review notes.", 4);
+    // A Notion page that was ingested before ADR-046: its chunks are still in the table.
+    const connection = (
+      await db.query<{ id: string }>(
+        `insert into public.provider_connections (workspace_id, provider_key, external_account_id, display_name, status)
+         values ($1, 'notion', 'n-alice-046', 'Firbot', 'connected') returning id`,
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    const notion = (
+      await db.query<{ id: string; access_mode: string }>(
+        "insert into public.knowledge_sources (workspace_id, space_id, provider_key, connection_id, source_type, display_name) values ($1, $2, 'notion', $3, 'notion', 'Pipeline') returning id, access_mode",
+        [alice.workspaceId, s, connection],
+      )
+    ).rows[0]!;
+    expect(notion.access_mode).toBe("external_live");
+    const item = (
+      await db.query<{ id: string }>(
+        "insert into public.knowledge_items (workspace_id, space_id, source_id, item_type, external_id, title, status) values ($1, $2, $3, 'notion_database_page', 'p1', 'Project', 'ready') returning id",
+        [alice.workspaceId, s, notion.id],
+      )
+    ).rows[0]!.id;
+    const version = (
+      await db.query<{ id: string }>(
+        "insert into public.knowledge_versions (workspace_id, knowledge_item_id, version_number, is_current, status) values ($1, $2, 1, true, 'ready') returning id",
+        [alice.workspaceId, item],
+      )
+    ).rows[0]!.id;
+    await db.query("update public.knowledge_items set current_version_id = $1 where id = $2", [
+      version,
+      item,
+    ]);
+    await db.query(
+      "insert into public.knowledge_chunks (workspace_id, space_id, source_id, knowledge_item_id, version_id, chunk_index, content, embedding, embedding_model) values ($1, $2, $3, $4, $5, 0, 'Notion: stale pipeline copy', $6, 'm')",
+      [alice.workspaceId, s, notion.id, item, version, vec(4)],
+    );
+    const found = await search(alice.userId, alice.workspaceId, "pipeline", 4, [s]);
+    expect(found.rows.map((r) => r.content)).toEqual(["Upload: pipeline review notes."]);
+    // The mode follows the type; nobody can declare a Notion source "indexed".
+    await expect(
+      db.query("update public.knowledge_sources set access_mode = 'native_indexed' where id = $1", [
+        notion.id,
+      ]),
+    ).rejects.toThrow(/generated|access_mode/);
   });
 
   it("stops returning an item once it is removed or superseded", async () => {

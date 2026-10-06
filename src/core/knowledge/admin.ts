@@ -16,6 +16,8 @@ export interface SpaceOverview {
   /** "Facultad › Análisis II" for a Section. */
   path: string;
   parentId: string | null;
+  /** General Knowledge (ADR-047): never renamed, moved or archived. */
+  general?: boolean;
   /** What it is, in the user's words (shown in the Knowledge UI). */
   description: string | null;
   /** Background ELISE reads when working there (dates, preferences…). */
