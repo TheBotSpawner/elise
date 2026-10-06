@@ -578,6 +578,12 @@ export const playMusicTool: ToolDefinition = {
 
 // ── Controls ─────────────────────────────────────────────────────────────────
 
+/** The browser refused to start audio until a real tap on the page (no voice can give it). */
+const NEEDS_TAP = {
+  es: "Lo tengo. Tocá Reproducir una vez para habilitar el audio.",
+  en: "Got it. Tap Play once to allow audio.",
+};
+
 const ACK: Record<"pause" | "resume" | "next" | "previous", { es: string; en: string }> = {
   pause: { es: "Listo, la pauso.", en: "Pausing it." },
   resume: { es: "Dale, la sigo.", en: "Resuming." },
@@ -602,7 +608,13 @@ function control(
       return { summary: es(env) ? says.es : says.en };
     },
     confirm(output, locale) {
-      const o = output as { track?: string; by?: string | null; pending?: boolean };
+      const o = output as {
+        track?: string;
+        by?: string | null;
+        pending?: boolean;
+        needsTap?: boolean;
+      };
+      if (o.needsTap) return NEEDS_TAP[locale];
       // An embedded player confirms on screen: say what is being done, not that it's done.
       if (o.pending) return ACK[op][locale];
       if (op === "pause") return locale === "es" ? "Listo, pausé la música." : "Paused.";
@@ -621,7 +633,22 @@ function control(
           ? { ...pb, playing: op === "resume", state: op === "resume" ? "playing" : "paused" }
           : pb,
       );
-      return embedded(p) ? { ...r, output: { ...(r.output as object), pending: true } } : r;
+      if (!embedded(p)) return r;
+      // Blocked by the browser: no command can start it, only the user's tap on Reproducir.
+      const needsTap = op !== "pause" && env.ctx.music?.state === "autoplay_blocked";
+      return {
+        ...r,
+        output: {
+          ...(r.output as object),
+          pending: true,
+          ...(needsTap
+            ? {
+                needsTap,
+                instructions: `The browser is waiting for one tap on the Play button. Say: «${NEEDS_TAP[env.ctx.locale]}» Never say it is playing.`,
+              }
+            : {}),
+        },
+      };
     },
   };
 }

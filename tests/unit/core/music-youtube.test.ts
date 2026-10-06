@@ -285,3 +285,45 @@ describe("YouTube exact resolution", () => {
     expect(output(out)).toMatchObject({ from: "screen" });
   });
 });
+
+describe("voice controls while the browser blocks audio", () => {
+  it("“seguí” asks for the one tap instead of claiming playback", async () => {
+    const api = fakeApi({});
+    const yt = new YouTubeMusicProvider("key", api.fetchImpl);
+    const { ports } = makePorts(
+      [
+        binding({
+          connectionId: CONN,
+          capability: "music",
+          providerKey: "youtube",
+          label: "YouTube",
+          isDefault: true,
+        }),
+      ],
+      { [CONN]: yt },
+    );
+    const blocked = {
+      provider: "youtube" as const,
+      playing: false,
+      state: "autoplay_blocked" as const,
+      item: null,
+      context: null,
+      progressMs: 0,
+      durationMs: 0,
+      device: null,
+      volume: 100,
+      at: new Date().toISOString(),
+    };
+    const r = await executeToolCall(ports, makeCtx({ music: blocked }), {
+      name: "music.resume",
+      args: {},
+    });
+    expect(output(r)).toMatchObject({ needsTap: true, pending: true });
+    expect(String(output(r).instructions)).toMatch(/Tocá Reproducir/);
+    const paused = await executeToolCall(ports, makeCtx({ music: blocked }), {
+      name: "music.pause",
+      args: {},
+    });
+    expect(output(paused).needsTap).toBeUndefined();
+  });
+});

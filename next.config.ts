@@ -22,7 +22,9 @@ const maps = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
  */
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}${maps.script}`,
+  // Music (ADR-042/044): the official YouTube IFrame Player API script (iframe_api and the
+  // widget API it loads); the player itself is framed from youtube-nocookie.com, below.
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://www.youtube.com${maps.script}`,
   `style-src 'self' 'unsafe-inline'${maps.style}`,
   "img-src 'self' blob: data: https:",
   `font-src 'self' data:${maps.font}`,

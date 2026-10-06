@@ -45,6 +45,7 @@ declare global {
       Player: new (
         el: HTMLElement,
         o: {
+          host?: string;
           height: string;
           width: string;
           playerVars: Record<string, number | string>;
@@ -67,6 +68,9 @@ export const YT = {
   BUFFERING: 3,
   CUED: 5,
 } as const;
+
+/** The API script plus the player's onReady: past this, loading failed (never "starting" forever). */
+export const PLAYER_LOAD_TIMEOUT_MS = 10_000;
 
 /** A load that hasn't started (nor been reported blocked) after this long is treated as blocked. */
 export const AUTOPLAY_WATCHDOG_MS = 3_500;
@@ -146,12 +150,17 @@ export function setYouTubeLocale(l: "es" | "en") {
 
 function loadApi(): Promise<void> {
   if (window.YT?.Player) return Promise.resolve();
-  api ??= new Promise((resolve) => {
+  api ??= new Promise((resolve, reject) => {
     window.onYouTubeIframeAPIReady = () => resolve();
     const s = document.createElement("script");
     s.src = "https://www.youtube.com/iframe_api";
     s.async = true;
+    // Blocked (CSP, an extension, offline): fail now instead of waiting forever.
+    s.onerror = () => reject(new Error("The YouTube player script could not load"));
     document.head.appendChild(s);
+  });
+  api.catch(() => {
+    api = null;
   });
   return api;
 }
@@ -209,7 +218,14 @@ function armWatchdog() {
 
 function ensurePlayer(): Promise<YTPlayer> {
   if (ready) return ready;
-  ready = loadApi().then(
+  let timeout = 0;
+  const limit = new Promise<never>((_, reject) => {
+    timeout = window.setTimeout(
+      () => reject(new Error("The YouTube player did not get ready")),
+      PLAYER_LOAD_TIMEOUT_MS,
+    );
+  });
+  const startup = loadApi().then(
     () =>
       new Promise<YTPlayer>((resolve, reject) => {
         if (!host) return reject(new Error("No YouTube host on this page"));
@@ -217,6 +233,7 @@ function ensurePlayer(): Promise<YTPlayer> {
         host.replaceChildren(el);
         trace("create");
         const p = new window.YT!.Player(el, {
+          host: "https://www.youtube-nocookie.com",
           height: "100%",
           width: "100%",
           // The API adds allow="autoplay" to the iframe; the browser still decides.
@@ -269,7 +286,9 @@ function ensurePlayer(): Promise<YTPlayer> {
         }, 5_000);
       }),
   );
-  ready.catch(() => {
+  ready = Promise.race([startup, limit]).finally(() => window.clearTimeout(timeout));
+  ready.catch((error: unknown) => {
+    trace("player_failed", { reason: error instanceof Error ? error.message : "unknown" });
     ready = null;
   });
   return ready;
@@ -280,7 +299,18 @@ async function playIndex(i: number) {
   const item = queue[index];
   if (!item) return;
   publish(player, player ? "play_requested" : "loading");
-  const p = await ensurePlayer();
+  let p: YTPlayer;
+  try {
+    p = await ensurePlayer();
+  } catch {
+    return publish(
+      null,
+      "error",
+      locale === "es"
+        ? "No pude cargar el reproductor de YouTube en esta página."
+        : "The YouTube player couldn't load on this page.",
+    );
+  }
   loadedAt = performance.now();
   trace("load", {
     kind: item.kind,

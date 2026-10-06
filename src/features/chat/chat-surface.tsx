@@ -548,24 +548,35 @@ function Ambient({ ambient }: { ambient: HomeAmbient }) {
     });
   if (items.length === 0 && !brief) return null;
   return (
-    <ul className="mt-6 flex flex-col items-center gap-1 text-[13px] text-muted md:flex-row md:flex-wrap md:justify-center md:gap-x-10">
+    // One row model: every item is a 32px cell centred on the row; inside it, label and value
+    // share a baseline (the small mono eyebrow sits on the text's line, not above or below it).
+    <ul className="mt-6 flex flex-col items-center gap-1 text-[13px] leading-5 text-muted md:flex-row md:flex-wrap md:justify-center md:gap-x-10">
       {brief && (
-        <li className="flex h-8 items-center gap-3">
-          <span className={cn("flex items-center gap-2", brief.read ? "text-faint" : "text-fg")}>
-            {!brief.read && <span aria-hidden className="size-1.5 rounded-full bg-accent" />}
-            {t.brief.ready}
+        <li className="flex h-8 items-center">
+          <span className="flex items-baseline gap-3">
+            <span
+              className={cn("flex items-baseline gap-2", brief.read ? "text-faint" : "text-fg")}
+            >
+              {!brief.read && (
+                <span
+                  aria-hidden
+                  className="size-1.5 shrink-0 self-center rounded-full bg-accent"
+                />
+              )}
+              {t.brief.ready}
+            </span>
+            <Link
+              href={`/schedules/results/${brief.id}`}
+              className="text-accent-text hover:underline"
+            >
+              {t.brief.view}
+            </Link>
           </span>
-          <Link
-            href={`/schedules/results/${brief.id}`}
-            className="text-accent-text hover:underline"
-          >
-            {t.brief.view}
-          </Link>
         </li>
       )}
       {items.map((item) => (
-        <li key={item.label}>
-          <Link href={item.href} className="flex h-8 items-baseline gap-2.5 hover:text-fg">
+        <li key={item.label} className="flex h-8 items-center">
+          <Link href={item.href} className="flex items-baseline gap-2.5 hover:text-fg">
             <span className="font-mono text-[10.5px] tracking-[0.16em] text-faint uppercase">
               {item.label}
             </span>

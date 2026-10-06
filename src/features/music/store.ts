@@ -76,6 +76,8 @@ export function embeddedSnapshot(now = Date.now()): Playback | null {
     volume: p.volume,
     at: new Date(now).toISOString(),
     ...(p.video !== undefined ? { video: p.video } : {}),
+    // "autoplay_blocked" tells ELISE to ask for the one tap instead of claiming playback.
+    ...(p.state ? { state: p.state } : {}),
   };
 }
 

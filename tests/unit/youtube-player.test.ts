@@ -12,6 +12,7 @@ const {
   stopYouTube,
   stateFromPlayer,
   AUTOPLAY_WATCHDOG_MS,
+  PLAYER_LOAD_TIMEOUT_MS,
   YT,
 } = await import("@/features/music/youtube-player");
 const { musicStore } = await import("@/features/music/store");
@@ -132,5 +133,34 @@ describe("YouTube player state", () => {
     expect(created).toBe(1);
     expect(fake.destroy).not.toHaveBeenCalled();
     expect(fake.loaded).toEqual(["a", "b"]);
+  });
+
+  it("frames from youtube-nocookie (the only player host the CSP allows)", async () => {
+    let host = "";
+    const Player = window.YT!.Player;
+    window.YT = {
+      Player: function (el: HTMLElement, opts: { host?: string; events: Events }) {
+        host = opts.host ?? "";
+        return new (Player as unknown as new (e: HTMLElement, o: unknown) => unknown)(el, opts);
+      },
+    } as unknown as typeof window.YT;
+    await applyYouTube({ action: "load", items: [video("a")], index: 0, video: false });
+    expect(host).toBe("https://www.youtube-nocookie.com");
+  });
+
+  it("a player that never gets ready ends in an error, never 'starting' forever", async () => {
+    window.YT = {
+      // Created, but onReady never comes (blocked script, broken embed).
+      Player: function () {
+        created++;
+        return fake;
+      },
+    } as unknown as typeof window.YT;
+    const started = applyYouTube({ action: "load", items: [video("a")], index: 0, video: false });
+    expect(state()).toBe("loading");
+    await vi.advanceTimersByTimeAsync(PLAYER_LOAD_TIMEOUT_MS + 1);
+    await started;
+    expect(state()).toBe("error");
+    expect(musicStore.get().payload?.notice).toMatch(/No pude cargar/);
   });
 });

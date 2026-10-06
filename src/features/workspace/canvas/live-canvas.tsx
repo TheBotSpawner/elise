@@ -262,7 +262,6 @@ export function LiveCanvas(props: LiveCanvasProps) {
             <IdleHero
               orbState={props.orbState}
               level={props.level}
-              mobile={mobile}
               status={props.idle.status}
               below={props.idle.below}
               context={props.idle.context}
@@ -334,7 +333,6 @@ export function LiveCanvas(props: LiveCanvasProps) {
 function IdleHero({
   orbState,
   level,
-  mobile,
   status,
   below,
   context,
@@ -345,7 +343,6 @@ function IdleHero({
   dock: ReactNode;
   orbState: OrbState;
   level: { readonly current: number };
-  mobile: boolean;
   status: ReactNode;
   below: ReactNode;
   context: ReactNode;
@@ -353,15 +350,17 @@ function IdleHero({
   voice: { state: VoiceState; handlers: VoiceHandlers } | null;
 }) {
   const { t } = useI18n();
-  const size = mobile ? 260 : 380;
   const phase = voice?.state.phase ?? "idle";
-  const orb = <Orb state={orbState} size={size} levelSource={level} />;
+  // The hero Orb follows the space it has (the input always keeps its room): limited by width
+  // and by height, so a wide but short screen never gets a huge Orb. The canvas fills this box
+  // (glow, rings and globe scale together); every other Orb keeps its fixed size.
+  const orb = <Orb state={orbState} size="fill" className="size-full" levelSource={level} />;
   return (
-    <div className="flex flex-col items-center pt-6 md:pt-2">
+    <div className="flex flex-col items-center pt-6 [--orb:clamp(250px,min(42vw,46dvh),620px)] md:pt-2">
       <motion.div
         layoutId={ORB_LAYOUT_ID}
         transition={ORB_MOVE}
-        style={{ width: size, height: size }}
+        className="size-[var(--orb)] shrink-0"
       >
         {voice ? (
           // The Orb is ELISE's voice presence: tap it to talk.
@@ -375,7 +374,7 @@ function IdleHero({
                   : voice.handlers.interrupt
             }
             aria-label={phase === "idle" ? t.voice.start : t.voice.finish}
-            className="block rounded-full"
+            className="block size-full rounded-full"
           >
             {orb}
           </button>
@@ -398,7 +397,7 @@ function IdleHero({
         </div>
       ) : (
         <>
-          <div className={cn(mobile ? "-mt-3" : "-mt-6")}>{status}</div>
+          <div className="mt-[calc(var(--orb)*-0.08)]">{status}</div>
           <h1 className="mt-3 text-center text-[28px] leading-[1.1] font-light tracking-[-0.025em] md:text-[46px]">
             {t.canvas.headline}
           </h1>

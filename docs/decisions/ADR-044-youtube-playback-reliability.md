@@ -54,4 +54,27 @@ browser had blocked autoplay.
 - The model may say "Lo encontré… arrancando" quickly. "Está sonando" depends on the browser.
 - Autoplay still depends on the browser's user-activation rules. ELISE does not work around
   them; it asks for one tap.
-- Real-Chrome validation is pending: there was no automated browser in this environment.
+- Real-Chrome validation: see the addendum below.
+
+## Addendum (2026-10-05): real-Chrome findings
+
+These findings come from Chrome 154 with the default autoplay policy, the real IFrame API and
+the real React music tree.
+
+- **Stuck at "Arrancando…".** ELISE's CSP blocked `https://www.youtube.com/iframe_api`
+  (`script-src`), and its `frame-src` allowed only `youtube-nocookie.com`. The player was never
+  created and the start promise never settled.
+- **Fixes.**
+  - `script-src` now allows `https://www.youtube.com` (the API script only).
+  - The player is framed from `https://www.youtube-nocookie.com`, so `frame-src` is unchanged.
+  - Startup is bounded at 10 s, and a script error fails at once. Either one becomes a
+    truthful `error` state.
+- **Fresh page, no user activation.** The player goes −1 → 3 → −1 and then fires
+  `onAutoplayBlocked`. It stays at −1, with the duration known and YouTube's Play button
+  showing.
+- **One tap** on ELISE's Reproducir or on YouTube's own Play button: PLAYING, unmuted, volume
+  100, `currentTime` advancing.
+- **After that tap**, pause, resume and new tracks loaded by command (no gesture) all play in
+  the same player.
+- **Voice "seguí" while blocked.** The tool returns `needsTap`, so ELISE asks for the tap
+  instead of acknowledging playback.
