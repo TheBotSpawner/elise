@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e ' *)",
+      "Bash(npx prettier *)",
+      "Bash(npm run *)"
+    ]
+  }
+}

@@ -1,3 +1,5 @@
+import type { MusicRequest, RankedCandidate } from "./music-match";
+
 /**
  * Music (ADR-042): a canonical ELISE capability. The model and the UI speak this contract —
  * search, play, pause, skip, seek, volume, devices — and provider adapters (Spotify, YouTube,
@@ -66,14 +68,41 @@ export interface Playback {
   at: string;
   /** Embedded playback: whether video is shown (a music request stays compact). */
   video?: boolean;
+  /**
+   * What the player is really doing (ADR-044). `playing` is true only in "playing": a play
+   * that was requested, blocked by the browser or still buffering is never "playing".
+   */
+  state?: PlayerState;
 }
+
+/** The truthful phases of playback, from the provider's own player (ADR-044). */
+export const PLAYER_STATES = [
+  "idle",
+  "loading",
+  "ready",
+  "play_requested",
+  "autoplay_blocked",
+  "buffering",
+  "playing",
+  "paused",
+  "ended",
+  "error",
+] as const;
+export type PlayerState = (typeof PLAYER_STATES)[number];
 
 /**
  * For embedded players (the browser holds playback): what the browser must do. The server
  * can't reach the player; the tool's result carries the command and the page executes it.
  */
 export type MusicCommand =
-  | { action: "load"; items: MusicItem[]; index: number; video: boolean }
+  | {
+      action: "load";
+      items: MusicItem[];
+      index: number;
+      video: boolean;
+      /** Next-best matches to try, in order, if the chosen one can't play (ADR-044 §L). */
+      fallbacks?: MusicItem[];
+    }
   | { action: "pause" }
   | { action: "resume" }
   | { action: "next" }
@@ -108,6 +137,11 @@ export interface MusicProvider {
   setVolume(percent: number): Promise<MusicCommand | void>;
   devices?(): Promise<MusicDevice[]>;
   transfer?(deviceId: string, play: boolean): Promise<void>;
+  /**
+   * Exact resolution with the provider's own bounded retries and music-specific ranking
+   * (ADR-044): best first, only playable candidates.
+   */
+  resolve?(req: MusicRequest): Promise<{ ranked: RankedCandidate[]; attempts: number }>;
 }
 
 /** The browser's own view of an embedded player, sent with each turn (never stored). */

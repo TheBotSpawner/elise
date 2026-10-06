@@ -14,7 +14,16 @@ import {
   type MusicProvider,
   type Playback,
 } from "../capabilities/music";
+import {
+  parseMusicRequest,
+  PLAY_CONFIDENCE,
+  rankCandidates,
+  youtubeVideoId,
+  type MusicCandidate,
+} from "../capabilities/music-match";
 import { AppError } from "../errors";
+import type { ProviderKey } from "../providers/types";
+import type { WorkspaceState } from "../workspace/model";
 import type { MusicPayload } from "../workspace/music";
 
 /**
@@ -64,6 +73,7 @@ export function musicPayloadOf(
     at: playback?.at ?? new Date().toISOString(),
     features: MUSIC_FEATURES.filter((f) => p.features.has(f)),
     ...(playback?.video !== undefined ? { video: playback.video } : {}),
+    ...(playback?.state ? { state: playback.state } : {}),
     ...extra,
   };
 }
@@ -73,6 +83,7 @@ function describe(pb: Playback | null) {
   if (!pb?.item) return { playing: false, nothing: true };
   return {
     playing: pb.playing,
+    ...(pb.state ? { state: pb.state } : {}),
     track: pb.item.title,
     by: pb.item.subtitle,
     ...(pb.context?.title ? { from: pb.context.title } : {}),
@@ -97,6 +108,61 @@ async function after(
   };
 }
 
+/** "En YouTube": the user named the provider (or it's what is playing now). Never silent. */
+const providerInput = z
+  .enum(["spotify", "youtube"])
+  .optional()
+  .describe(
+    'Only when the user named it ("en YouTube") or it is what is playing now (the Music Surface says which). Never switch provider silently.',
+  );
+
+const routeProvider = (input: unknown) => {
+  const key = (input as { provider?: ProviderKey } | null)?.provider;
+  return key ? { providerKey: key } : null;
+};
+
+const round = (n: number) => Number(n.toFixed(2));
+
+/**
+ * YouTube videos already on screen in this conversation — the Music Surface, a web result, a
+ * page ELISE read — so "reproducilo" plays what was found instead of searching again (§M, §N).
+ */
+export function mediaOnScreen(state: WorkspaceState | undefined): MusicCandidate[] {
+  const out: MusicCandidate[] = [];
+  const visit = (v: unknown, depth: number) => {
+    if (!v || typeof v !== "object" || depth > 6) return;
+    if (Array.isArray(v)) return v.forEach((x) => visit(x, depth + 1));
+    const o = v as Record<string, unknown>;
+    if (typeof o.ref === "string" && o.ref.startsWith("yt:video:") && typeof o.title === "string")
+      out.push({
+        item: o as unknown as MusicItem,
+        channel: typeof o.subtitle === "string" ? o.subtitle : "",
+        durationMs: typeof o.durationMs === "number" ? o.durationMs : null,
+      });
+    else if (typeof o.url === "string" && typeof o.title === "string") {
+      const id = youtubeVideoId(o.url);
+      if (id)
+        out.push({
+          item: {
+            ref: `yt:video:${id}`,
+            kind: "video",
+            title: o.title,
+            subtitle: null,
+            artwork: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+            durationMs: null,
+            url: `https://www.youtube.com/watch?v=${id}`,
+            provider: "youtube",
+          },
+          channel: "",
+          durationMs: null,
+        });
+    }
+    for (const x of Object.values(o)) if (x && typeof x === "object") visit(x, depth + 1);
+  };
+  for (const surface of state?.surfaces ?? []) visit(surface.payload, 0);
+  return out;
+}
+
 const KINDS = ["track", "album", "artist", "playlist", "video"] as const;
 
 // ── Read ─────────────────────────────────────────────────────────────────────
@@ -105,6 +171,7 @@ const searchInput = z
   .object({
     query: z.string().trim().min(1).max(200),
     kind: z.enum(KINDS).optional(),
+    provider: providerInput,
   })
   .strict();
 
@@ -115,6 +182,7 @@ export const searchMusicTool: ToolDefinition = {
   description:
     '"Buscame canciones de X", "¿qué discos tiene Y?": search without playing. Results appear on the Music Surface; play one with music.play and its ref.',
   input: searchInput,
+  route: routeProvider,
   async describe() {
     return { summary: "Search music" };
   },
@@ -189,8 +257,22 @@ const playInput = z
       .max(200)
       .optional()
       .describe(
-        'What to play, as named ("Daft Punk", "Random Access Memories") or, for discovery, a short descriptive search ("calm piano focus", "upbeat running", "instrumental lo-fi").',
+        'What to play, as named ("Daft Punk", "Random Access Memories") or, for discovery, a short descriptive search ("calm piano focus", "upbeat running", "instrumental lo-fi"). Include asked-for versions ("live", "karaoke").',
       ),
+    artist: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .optional()
+      .describe('For a specific song: the artist ("Daft Punk").'),
+    track: z
+      .string()
+      .trim()
+      .min(1)
+      .max(160)
+      .optional()
+      .describe('For a specific song: its title ("One More Time").'),
     mode: z
       .enum(["exact", "discovery"])
       .default("exact")
@@ -208,6 +290,15 @@ const playInput = z
       .max(300)
       .optional()
       .describe("A ref from search results or the Music Surface (with its kind)."),
+    url: z
+      .string()
+      .trim()
+      .url()
+      .max(500)
+      .optional()
+      .describe(
+        "A YouTube video link already found in this conversation (a web result, the screen): plays exactly that video, no new search.",
+      ),
     mine: z
       .boolean()
       .default(false)
@@ -223,44 +314,88 @@ const playInput = z
       .max(120)
       .optional()
       .describe('Where to play ("el parlante del living"), only if the user said it.'),
+    provider: providerInput,
   })
   .strict()
-  .refine((q) => q.query || q.ref, { message: "Say what to play (query) or pass a ref" });
+  .refine((q) => q.query || q.ref || q.url || q.track || q.artist, {
+    message: "Say what to play (query, artist/track), or pass a ref or url",
+  });
+
+/** On-screen media this sure of a match is reused instead of searching again. */
+const REUSE_CONFIDENCE = 0.75;
+
+/** Said when the player was asked to play: never "playing" before the player says so. */
+const PENDING =
+  "Found it and sent it to the YouTube player on the user's screen. Playback is NOT confirmed yet: never say it is playing. Say you found it and it's starting («Lo encontré: <title>. Arrancando…»). If the browser blocks audio, the screen shows a Play button — one tap starts it.";
 
 export const playMusicTool: ToolDefinition = {
   name: "music.play",
   capability: "music",
   operation: "play",
   description:
-    '"Poné Daft Punk", "poné mi playlist Workout", "poneme algo tranquilo para estudiar", "poné jazz": finds and starts music at once. An artist plays their music (don\'t ask which song); an exact name that matches nothing confidently returns choices to ask about. Playback controls never need approval.',
+    '"Poné Daft Punk", "reproducime One More Time de Daft Punk" (artist + track), "poné mi playlist Workout", "poneme algo tranquilo para estudiar": finds and starts music at once. An artist plays their music (don\'t ask which song). A YouTube link already found in this conversation → url (never search again). "En YouTube" → provider youtube. An exact name that matches nothing confidently returns choices to ask about.',
   input: playInput,
+  route: routeProvider,
   async describe(raw, env) {
     const q = playInput.parse(raw);
-    return { summary: es(env) ? `Poner ${q.query ?? "música"}` : `Play ${q.query ?? "music"}` };
+    const what = q.track ?? q.query ?? q.artist ?? "música";
+    return { summary: es(env) ? `Poner ${what}` : `Play ${what}` };
   },
   async run(raw, env) {
     const q = playInput.parse(raw);
     const p = provider(env);
     let item: MusicItem | null = null;
     let queue: MusicItem[] | null = null;
+    let fallbacks: MusicItem[] = [];
     let results: MusicItem[] = [];
+    let resolution: Record<string, unknown> = {};
 
-    if (q.ref) {
+    if (q.url) {
+      const id = youtubeVideoId(q.url);
+      if (!id)
+        throw new AppError("VALIDATION_ERROR", "That link isn't a YouTube video.", {
+          recovery: "review",
+        });
+      if (!embedded(p))
+        throw new AppError(
+          "VALIDATION_ERROR",
+          "A YouTube link plays with YouTube: pass provider youtube.",
+          {
+            recovery: "review",
+          },
+        );
+      item = {
+        ref: `yt:video:${id}`,
+        kind: "video",
+        title: q.track ?? q.query ?? "YouTube",
+        subtitle: q.artist ?? null,
+        artwork: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+        durationMs: null,
+        url: `https://www.youtube.com/watch?v=${id}`,
+        provider: "youtube",
+      };
+      resolution = { from: "link" };
+    } else if (q.ref) {
       item = {
         ref: q.ref,
-        kind: q.kind ?? "track",
-        title: q.query ?? "",
-        subtitle: null,
+        kind: q.ref.startsWith("yt:video:")
+          ? "video"
+          : q.ref.startsWith("yt:playlist:")
+            ? "playlist"
+            : (q.kind ?? "track"),
+        title: q.track ?? q.query ?? "",
+        subtitle: q.artist ?? null,
         artwork: null,
         durationMs: null,
         url: null,
         provider: p.key,
       };
+      resolution = { from: "ref" };
     } else if (q.mine) {
       need(p, "playlists", "Your own playlists");
       const own = await p.myPlaylists!();
       const ranked = own
-        .map((pl) => ({ pl, score: matchScore(pl, q.query!) }))
+        .map((pl) => ({ pl, score: matchScore(pl, q.query ?? q.track ?? "") }))
         .sort((a, b) => b.score - a.score);
       if (!ranked.length || ranked[0]!.score < 0.5)
         throw new AppError(
@@ -274,16 +409,77 @@ export const playMusicTool: ToolDefinition = {
           { recovery: "review" },
         );
       item = ranked[0]!.pl;
+    } else if (embedded(p) && q.mode === "exact" && q.kind !== "playlist") {
+      // Exact music on an embedded provider (ADR-044): reuse what's already on screen, else
+      // resolve with music-specific ranking and bounded retries.
+      const req = parseMusicRequest({ query: q.query, artist: q.artist, track: q.track });
+      const onScreen = rankCandidates(mediaOnScreen(env.ctx.workspace?.state()), req)[0];
+      if (onScreen && onScreen.confidence >= REUSE_CONFIDENCE) {
+        item = onScreen.item;
+        resolution = { from: "screen", confidence: round(onScreen.confidence) };
+      } else {
+        need(p, "search", "Searching");
+        const { ranked, attempts } = p.resolve
+          ? await p.resolve(req)
+          : {
+              ranked: rankCandidates(
+                (await p.search({ query: req.query, kinds: ["video"], limit: 15 })).map((i) => ({
+                  item: i,
+                  channel: i.subtitle ?? "",
+                  durationMs: i.durationMs,
+                })),
+                req,
+              ),
+              attempts: 1,
+            };
+        if (!ranked.length)
+          throw new AppError(
+            "NOT_FOUND",
+            `YouTube has no playable video for "${req.query}" (searched ${attempts} ways).`,
+            { recovery: "review" },
+          );
+        const confident = ranked.filter((r) => r.confidence >= PLAY_CONFIDENCE);
+        if (!confident.length) {
+          const pb = await current(p, env);
+          const options = ranked.slice(0, 5).map((r) => r.item);
+          return {
+            output: {
+              started: false,
+              needsChoice: options.map((c) => ({
+                ref: c.ref,
+                kind: c.kind,
+                title: c.title,
+                by: c.subtitle,
+              })),
+              instructions:
+                "These are the closest playable videos, none a sure match. Ask which one in one short question (they're on screen), then call music.play with its ref.",
+            },
+            display: { kind: "music", music: musicPayloadOf(p, pb, { results: options }) },
+          };
+        }
+        if (req.artist && !req.track) {
+          // "Poné Daft Punk": their songs, as a queue.
+          queue = confident.slice(0, 10).map((r) => r.item);
+          item = queue[0]!;
+        } else {
+          item = confident[0]!.item;
+          fallbacks = confident.slice(1, 4).map((r) => r.item);
+        }
+        resolution = { from: "search", attempts, confidence: round(confident[0]!.confidence) };
+      }
     } else {
       need(p, "search", "Searching");
+      const query = q.query ?? [q.artist, q.track].filter(Boolean).join(" ");
+      // An embedded provider only has videos and playlists: "track"/"artist" mean videos.
+      const kind = embedded(p) && q.kind && q.kind !== "playlist" ? undefined : q.kind;
       results = await p.search({
-        query: q.query!,
-        kinds: q.kind ? [q.kind] : defaultKinds(p, q.mode),
+        query,
+        kinds: kind ? [kind] : defaultKinds(p, q.mode),
         limit: 8,
       });
-      const pick = pickToPlay(results, q.query!, q.mode, q.kind);
+      const pick = pickToPlay(results, query, q.mode, kind);
       if (pick.kind === "none")
-        throw new AppError("NOT_FOUND", `Nothing found for "${q.query}".`, { recovery: "review" });
+        throw new AppError("NOT_FOUND", `Nothing found for "${query}".`, { recovery: "review" });
       if (pick.kind === "ambiguous") {
         const pb = await current(p, env);
         return {
@@ -330,56 +526,85 @@ export const playMusicTool: ToolDefinition = {
     // An embedded command loads with video only when asked: a music request stays compact.
     const cmd =
       command && command.action === "load"
-        ? { ...command, video: q.video }
+        ? { ...command, video: q.video, ...(fallbacks.length ? { fallbacks } : {}) }
         : (command ?? undefined);
-    return after(p, env, cmd, (pb) =>
-      pb?.item
-        ? pb
-        : // The provider hasn't reported it yet: show what was asked to play.
-          {
-            provider: p.key,
-            playing: true,
-            item: item!.kind === "track" || item!.kind === "video" ? item : null,
-            context:
-              item!.kind === "track" || item!.kind === "video"
-                ? null
-                : { kind: item!.kind, title: item!.title, ref: item!.ref },
-            progressMs: 0,
-            durationMs: item!.durationMs ?? 0,
-            device: pb?.device ?? null,
-            volume: pb?.volume ?? null,
-            at: new Date().toISOString(),
-            ...(embedded(p) ? { video: q.video } : {}),
-          },
-    ).then((r) => ({
+    const requested = (pb: Playback | null): Playback => ({
+      // Asked, not confirmed: only the provider's own player can say "playing".
+      provider: p.key,
+      playing: false,
+      state: "play_requested",
+      item: item!.kind === "track" || item!.kind === "video" ? item : null,
+      context:
+        item!.kind === "track" || item!.kind === "video"
+          ? null
+          : { kind: item!.kind, title: item!.title, ref: item!.ref },
+      progressMs: 0,
+      durationMs: item!.durationMs ?? 0,
+      device: pb?.device ?? null,
+      volume: pb?.volume ?? null,
+      at: new Date().toISOString(),
+      ...(embedded(p) ? { video: q.video } : {}),
+    });
+    const r = await after(p, env, cmd, (pb) =>
+      embedded(p)
+        ? requested(pb)
+        : pb?.item && pb.playing
+          ? { ...pb, state: "playing" }
+          : requested(pb),
+    );
+    const confirmed = !embedded(p) && Boolean((r.output as { playing?: boolean }).playing);
+    return {
       ...r,
       output: {
-        started: true,
-        playing: { title: item!.title, by: item!.subtitle, kind: item!.kind },
-        ...(r.output as object),
+        found: true,
+        confirmed,
+        title: item!.title,
+        by: item!.subtitle,
+        kind: item!.kind,
+        provider: p.key,
+        ...resolution,
+        ...(confirmed
+          ? { playing: true }
+          : {
+              playing: false,
+              instructions: embedded(p)
+                ? PENDING
+                : "Spotify accepted the request but hasn't reported it playing yet: say it's starting, never that it is playing.",
+            }),
       },
-    }));
+    };
   },
 };
 
 // ── Controls ─────────────────────────────────────────────────────────────────
+
+const ACK: Record<"pause" | "resume" | "next" | "previous", { es: string; en: string }> = {
+  pause: { es: "Listo, la pauso.", en: "Pausing it." },
+  resume: { es: "Dale, la sigo.", en: "Resuming." },
+  next: { es: "Paso a la siguiente.", en: "Skipping." },
+  previous: { es: "Vuelvo a la anterior.", en: "Going back." },
+};
 
 function control(
   op: "pause" | "resume" | "next" | "previous",
   description: string,
   says: { es: string; en: string },
 ): ToolDefinition {
+  const input = z.object({ provider: providerInput }).strict();
   return {
     name: `music.${op}`,
     capability: "music",
     operation: op,
     description,
-    input: z.object({}).strict(),
+    input,
+    route: routeProvider,
     async describe(_raw, env) {
       return { summary: es(env) ? says.es : says.en };
     },
     confirm(output, locale) {
-      const o = output as { track?: string; by?: string | null };
+      const o = output as { track?: string; by?: string | null; pending?: boolean };
+      // An embedded player confirms on screen: say what is being done, not that it's done.
+      if (o.pending) return ACK[op][locale];
       if (op === "pause") return locale === "es" ? "Listo, pausé la música." : "Paused.";
       if (op === "resume") return locale === "es" ? "Listo, sigue sonando." : "Playing again.";
       return o.track
@@ -391,9 +616,12 @@ function control(
     async run(_raw, env) {
       const p = provider(env);
       const command = await p[op]();
-      return after(p, env, command, (pb) =>
-        pb && (op === "pause" || op === "resume") ? { ...pb, playing: op === "resume" } : pb,
+      const r = await after(p, env, command, (pb) =>
+        pb && (op === "pause" || op === "resume") && !embedded(p)
+          ? { ...pb, playing: op === "resume", state: op === "resume" ? "playing" : "paused" }
+          : pb,
       );
+      return embedded(p) ? { ...r, output: { ...(r.output as object), pending: true } } : r;
     },
   };
 }
@@ -421,6 +649,7 @@ const seekInput = z
   .object({
     seconds: z.number().min(0).max(36_000).optional().describe("Absolute position."),
     by: z.number().min(-3_600).max(3_600).optional().describe("Relative: +30, -15."),
+    provider: providerInput,
   })
   .strict()
   .refine((q) => q.seconds !== undefined || q.by !== undefined, "Give seconds or by");
@@ -431,6 +660,7 @@ export const seekMusicTool: ToolDefinition = {
   operation: "seek",
   description: '"Adelantá 30 segundos", "volvé al principio", "andá al minuto 2".',
   input: seekInput,
+  route: routeProvider,
   async describe() {
     return { summary: "Seek" };
   },
@@ -456,6 +686,7 @@ const volumeInput = z
       .optional()
       .describe('"Subilo", "bajalo un poco", "silencio".'),
     by: z.number().min(1).max(100).optional().describe('How much, when said ("bajalo 20").'),
+    provider: providerInput,
   })
   .strict()
   .refine((q) => q.percent !== undefined || q.change, "Give percent or change");
@@ -466,6 +697,7 @@ export const setVolumeTool: ToolDefinition = {
   operation: "setVolume",
   description: '"Bajalo un poco", "subilo", "bajalo al 30%": the music\'s volume.',
   input: volumeInput,
+  route: routeProvider,
   async describe() {
     return { summary: "Music volume" };
   },

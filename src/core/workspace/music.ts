@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { isSafeHref } from "./model";
-import { MUSIC_FEATURES } from "../capabilities/music";
+import { MUSIC_FEATURES, PLAYER_STATES } from "../capabilities/music";
 
 /**
  * The Music Surface (ADR-042): one per interaction — `current_music_playback` — whose payload
@@ -57,6 +57,7 @@ export const playbackSchema = z
     volume: z.number().min(0).max(100).nullable(),
     at: text(40),
     video: z.boolean().optional(),
+    state: z.enum(PLAYER_STATES).optional(),
   })
   .strict();
 

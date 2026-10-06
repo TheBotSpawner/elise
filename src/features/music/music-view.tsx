@@ -30,7 +30,14 @@ import {
   type MusicOp,
 } from "./controller";
 import { formatTime, liveProgress, musicStore } from "./store";
-import { setYouTubeHost, stopYouTube } from "./youtube-player";
+import {
+  playFromTap,
+  registerYouTubeSlot,
+  setYouTubeHost,
+  setYouTubeLocale,
+  stopYouTube,
+  visibleSlot,
+} from "./youtube-player";
 
 const PROVIDER_NAME: Record<MusicPayload["provider"], string> = {
   spotify: "Spotify",
@@ -155,10 +162,14 @@ export function MusicSurfaceBody({
         notice: snapshot.notice,
       }
     : snapshot;
-  const now = useNow(p.playing);
+  const playing = p.state ? p.state === "playing" : p.playing;
+  const now = useNow(playing);
   const at = same ? live.at : Date.parse(snapshot.at) || now;
-  const progress = liveProgress(p, at, now);
-  const compact = size === "micro" || size === "small";
+  const progress = liveProgress({ ...p, playing }, at, now);
+  const youtube = p.provider === "youtube";
+  // YouTube always shows its real player, so it never shrinks to the compact row.
+  const compact = !youtube && (size === "micro" || size === "small");
+  const blocked = youtube && (p.state === "autoplay_blocked" || p.state === "ready");
   const has = (f: MusicPayload["features"][number]) => p.features.includes(f);
   const item = p.item;
   const name = PROVIDER_NAME[p.provider];
@@ -177,11 +188,14 @@ export function MusicSurfaceBody({
       )}
       <IconButton
         primary
-        label={p.playing ? t.music.pause : t.music.play}
-        onClick={() => void control(p.playing ? "pause" : "resume")}
+        label={playing ? t.music.pause : t.music.play}
+        onClick={() =>
+          // A blocked YouTube start needs this very tap to reach the player.
+          blocked ? playFromTap() : void control(playing ? "pause" : "resume")
+        }
         disabled={!item}
       >
-        {p.playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}
+        {playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}
       </IconButton>
       <IconButton label={t.music.next} onClick={() => void control("next")} disabled={!item}>
         <SkipForward className="size-4" />
@@ -195,7 +209,7 @@ export function MusicSurfaceBody({
         <Artwork src={item?.artwork ?? null} size={44} />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2 truncate text-[14px] font-medium">
-            <Equalizer playing={p.playing} />
+            <Equalizer playing={playing} />
             <span className="truncate">{item?.title ?? t.music.nothing}</span>
           </p>
           <p className="truncate text-[12.5px] text-muted">{item?.subtitle ?? name}</p>
@@ -208,11 +222,18 @@ export function MusicSurfaceBody({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className={cn("flex min-w-0 gap-4", large ? "flex-col sm:flex-row" : "items-center")}>
-        <Artwork src={item?.artwork ?? null} size={large ? 168 : 72} />
+        {!youtube && <Artwork src={item?.artwork ?? null} size={large ? 168 : 72} />}
         <div className="flex min-w-0 flex-1 flex-col justify-end gap-1">
-          <p className="flex items-center gap-2 text-[12px] text-faint">
-            <Equalizer playing={p.playing} />
-            {p.playing ? t.music.playing : t.music.paused}
+          <p
+            className={cn(
+              "flex items-center gap-2 text-[12px]",
+              p.state === "error" ? "text-danger-text" : "text-faint",
+            )}
+            aria-live="polite"
+          >
+            <Equalizer playing={playing} />
+            {youtube && <span className="font-mono tracking-[0.12em] uppercase">YouTube ·</span>}
+            {stateLabel(t, p, playing)}
             {p.device && <span>· {t.music.on(p.device.name)}</span>}
           </p>
           <p
@@ -227,6 +248,20 @@ export function MusicSurfaceBody({
         </div>
       </div>
 
+      {youtube && <YouTubeSlot />}
+      {blocked && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-accent-line bg-accent-soft px-4 py-3">
+          <button
+            type="button"
+            onClick={playFromTap}
+            className="flex h-10 items-center gap-2 rounded-full bg-fg px-4 text-[14px] font-medium text-bg hover:opacity-90"
+          >
+            <Play className="size-4" aria-hidden />
+            {t.music.playToStart}
+          </button>
+          <p className="min-w-0 flex-1 text-[13px] text-muted">{t.music.blockedHint}</p>
+        </div>
+      )}
       {item && (
         <div className="flex flex-col gap-1">
           <input
@@ -288,10 +323,12 @@ export function MusicSurfaceBody({
         </div>
       </div>
 
-      {live.autoplayBlocked && same && (
+      {live.autoplayBlocked && same && !youtube && (
         <p className="text-[12.5px] text-approval-text">{t.music.tapToStart}</p>
       )}
-      {p.notice && <p className="text-[12.5px] text-approval-text">{p.notice}</p>}
+      {p.notice && p.state !== "error" && (
+        <p className="text-[12.5px] text-approval-text">{p.notice}</p>
+      )}
       {p.provider === "youtube" && <p className="text-[12px] text-faint">{t.music.embeddedNote}</p>}
 
       {p.devices && p.devices.length > 0 && (
@@ -366,25 +403,48 @@ export function MusicSurfaceBody({
  * Closing it stops playback.
  */
 function YouTubeFrame() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const live = useMusic();
   const ref = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setYouTubeHost(ref.current);
+    setYouTubeLocale(locale);
     return () => setYouTubeHost(null);
-  }, []);
+  }, [locale]);
   const active = live.payload?.provider === "youtube";
   const video = Boolean(live.payload?.video);
+  // Follows the Music Surface's video slot while it is on screen; otherwise a corner. The
+  // iframe itself never moves in the DOM (moving it would reload the player).
+  useEffect(() => {
+    if (!active) return;
+    let raf = 0;
+    const place = () => {
+      raf = requestAnimationFrame(place);
+      const el = frame.current;
+      if (!el) return;
+      const slot = visibleSlot();
+      const corner = video ? { w: 480, h: 270 } : { w: 356, h: 200 };
+      const w = slot ? slot.width : Math.min(corner.w, window.innerWidth - 32);
+      const h = slot ? slot.height : Math.max(200, corner.h);
+      el.style.left = `${slot ? slot.left : window.innerWidth - w - 16}px`;
+      el.style.top = `${slot ? slot.top : window.innerHeight - h - 16}px`;
+      el.style.width = `${w}px`;
+      el.style.height = `${h}px`;
+      el.dataset.docked = slot ? "true" : "false";
+    };
+    place();
+    return () => cancelAnimationFrame(raf);
+  }, [active, video]);
   return (
     <div
+      ref={frame}
       className={cn(
-        "fixed right-4 bottom-4 z-40 overflow-hidden rounded-2xl border border-border bg-black shadow-2xl transition-[opacity,width,height]",
-        active ? "opacity-100" : "pointer-events-none opacity-0",
-        // At least 200×200 px of player (YouTube's minimum viewport), 16:9 when watching.
-        video
-          ? "h-[270px] w-[min(480px,calc(100vw-32px))]"
-          : "h-[200px] w-[min(356px,calc(100vw-32px))]",
+        "fixed z-40 overflow-hidden rounded-2xl border border-border bg-black data-[docked=false]:shadow-2xl",
+        // Visible whenever YouTube is active, at least 200×200 px (YouTube's minimum viewport).
+        active ? "opacity-100" : "pointer-events-none invisible opacity-0",
       )}
+      style={{ right: 16, bottom: 16, width: 356, height: 200 }}
       aria-hidden={!active}
     >
       <div ref={ref} className="size-full" />
@@ -400,6 +460,39 @@ function YouTubeFrame() {
       )}
     </div>
   );
+}
+
+/** Where the real YouTube player shows inside the Surface (the frame docks onto it). */
+function YouTubeSlot() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => (ref.current ? registerYouTubeSlot(ref.current) : undefined), []);
+  return (
+    <div
+      ref={ref}
+      data-youtube-slot
+      className="aspect-video min-h-[200px] w-full min-w-[200px] rounded-xl bg-black/80"
+    />
+  );
+}
+
+function stateLabel(t: ReturnType<typeof useI18n>["t"], p: MusicPayload, playing: boolean) {
+  const s = t.music.states;
+  switch (p.state) {
+    case "loading":
+    case "play_requested":
+      return s.starting;
+    case "buffering":
+      return s.buffering;
+    case "autoplay_blocked":
+    case "ready":
+      return s.ready;
+    case "ended":
+      return s.ended;
+    case "error":
+      return p.notice ?? s.error;
+    default:
+      return playing ? t.music.playing : t.music.paused;
+  }
 }
 
 /** Pages where the Live Canvas (with its Music Surface) is on screen. */

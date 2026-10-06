@@ -2411,6 +2411,15 @@ export const es: Dictionary = {
     backToCanvas: "Ir a la música",
     playing: "Sonando",
     paused: "En pausa",
+    playToStart: "Reproducir",
+    blockedHint: "Lo encontré. El navegador me pide un toque para arrancar el audio.",
+    states: {
+      starting: "Arrancando…",
+      buffering: "Cargando audio…",
+      ready: "Listo para reproducir",
+      ended: "Terminó",
+      error: "No se pudo reproducir",
+    },
     duck: "Bajar la música mientras ELISE habla",
     duckHint:
       "Solo donde el dispositivo deja ajustar el volumen con precisión; después vuelve a como estaba.",

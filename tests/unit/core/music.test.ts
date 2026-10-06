@@ -662,7 +662,9 @@ describe("music.* tools", () => {
 describe("YouTube (official Data API search + IFrame player)", () => {
   it("search maps videos and playlists, decoding titles", async () => {
     const yt = new YouTubeMusicProvider("key", async (url) => {
-      expect(url).toContain("videoCategoryId=10");
+      // Only videos that can play outside youtube.com.
+      expect(url).toContain("videoEmbeddable=true");
+      expect(url).toContain("videoSyndicated=true");
       return json(200, {
         items: [
           {

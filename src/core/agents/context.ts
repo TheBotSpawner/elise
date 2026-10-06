@@ -226,7 +226,10 @@ const MUSIC_GUIDANCE = `Music (the user's own player — music.* tools; controls
 - Answer in one short line ("Dale, te pongo algo tranqui."); the Surface shows the song, never describe it. In voice, never read track lists.
 - Never start music on your own (not in a brief, a schedule or a plan) unless the user asked, or a Method or Shortcut of theirs says to.
 - If a tool says Spotify Premium is required, no device is active, or a provider can't do something, say exactly that — never claim it is playing.
-- YouTube plays on screen; "quiero verlo" / a video → video:true. A plain music request stays compact.`;
+- YouTube plays on screen; "quiero verlo" / a video → video:true. A plain music request stays compact.
+- "En YouTube" / "de YouTube" → provider "youtube" (never switch provider silently). For a specific song pass artist and track ("One More Time de Daft Punk" → artist "Daft Punk", track "One More Time"); a version they asked for ("en vivo", "karaoke") stays in query.
+- A YouTube link or video already found (a web result, a page) → music.play with its url; don't search again.
+- Finding a video is not playing it: say "Lo encontré: <título>. Arrancando…" — never "está sonando" until the Music Surface says it is playing. If the browser blocked audio, tell them to tap Reproducir.`;
 
 const RECALL_GUIDANCE = `Recall (past interactions with ELISE — history.* tools):
 - Recall is what was said in earlier conversations. Knowledge is the user's documents. Memory is saved preferences. Don't mix them: "what did we talk about…" is Recall; "what does the document say…" is Knowledge.
