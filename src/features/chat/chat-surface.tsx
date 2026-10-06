@@ -15,6 +15,7 @@ import { ContextIndicator, type ContextOption } from "@/features/contexts/contex
 import { SpaceGlyph } from "@/features/knowledge/appearance";
 import { duckMusic, receiveMusic } from "@/features/music/controller";
 import { useMusic } from "@/features/music/music-view";
+import { receiveTimers } from "@/features/time/time-view";
 import { useLiveVoice } from "@/features/voice/use-live-voice";
 import { useVoice } from "@/features/voice/use-voice";
 import type { DockCaption } from "@/features/workspace/canvas/dock";
@@ -185,6 +186,13 @@ export function ChatSurface({
           e.outcome.display?.kind === "music"
         )
           void receiveMusic(e.outcome.display);
+        // Native Time (ADR-045): a new or changed timer shows on every view at once.
+        if (
+          e.type === "tool_finished" &&
+          e.outcome.status === "succeeded" &&
+          (e.outcome.display?.kind === "timer" || e.outcome.display?.kind === "timers")
+        )
+          receiveTimers(e.outcome.display);
       }),
     [subscribe],
   );

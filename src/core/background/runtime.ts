@@ -16,10 +16,14 @@ export type BackgroundJob =
       type: "recall.index";
       payload: { workspaceId: string; conversationId?: string; sessionId?: string };
     }
-  | { type: "recall.backfill"; payload: { workspaceId: string } };
+  | { type: "recall.backfill"; payload: { workspaceId: string } }
+  /** A timer's end (ADR-045): runs at endsAt and applies only if the timer is still at `version`. */
+  | { type: "time.complete"; payload: { workspaceId: string; timerId: string; version: number } };
 
 export interface BackgroundRuntime {
   /** Same idempotency key → the runtime starts at most one execution. */
-  enqueue(job: BackgroundJob & { idempotencyKey: string }): Promise<{ runtimeJobId: string }>;
+  enqueue(
+    job: BackgroundJob & { idempotencyKey: string; runAt?: Date },
+  ): Promise<{ runtimeJobId: string }>;
   cancel(runtimeJobId: string): Promise<void>;
 }

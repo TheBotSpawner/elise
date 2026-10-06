@@ -5,6 +5,7 @@ import {
   ListChecks,
   Repeat,
   StickyNote,
+  Timer,
   Wallet,
   Zap,
   type LucideIcon,
@@ -26,6 +27,7 @@ const MODULES: { key: CapabilityKey; icon: LucideIcon; href: string }[] = [
   { key: "finance", icon: Wallet, href: "/my-elise/finance" },
   { key: "shortcuts", icon: Zap, href: "/my-elise/shortcuts" },
   { key: "methods", icon: BookOpenCheck, href: "/my-elise/methods" },
+  { key: "time", icon: Timer, href: "/my-elise/time" },
 ];
 
 /** ELISE Native modules, grouped so the primary navigation stays small. */

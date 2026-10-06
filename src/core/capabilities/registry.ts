@@ -341,6 +341,14 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       transfer: WRITE,
     },
   },
+  // Native Time (ADR-045): the user's own timers, Pomodoros and stopwatches. Starting, pausing,
+  // extending or cancelling one is a low-risk, reversible write: automatic, recorded, audited.
+  time: {
+    key: "time",
+    status: "available",
+    internal: true,
+    operations: { start: WRITE, list: READ, control: WRITE, addTime: WRITE, now: READ },
+  },
   // Universal Recall: the user's past interactions, read-only (ADR-012).
   history: {
     key: "history",

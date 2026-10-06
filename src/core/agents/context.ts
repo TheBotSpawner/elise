@@ -231,6 +231,13 @@ const MUSIC_GUIDANCE = `Music (the user's own player — music.* tools; controls
 - A YouTube link or video already found (a web result, a page) → music.play with its url; don't search again.
 - Finding a video is not playing it: say "Lo encontré: <título>. Arrancando…" — never "está sonando" until the Music Surface says it is playing. If the browser blocked audio, tell them to tap Reproducir.`;
 
+const TIME_GUIDANCE = `Time (the user's own timers, Pomodoros and stopwatches — time.* tools; never need approval):
+- Act at once, no questions when it's clear: "poneme 20 minutos" → time.start; "pomodoro de 50 y 10" → kind pomodoro, focusMinutes 50, breakMinutes 10; "arrancá un cronómetro" → kind stopwatch. Give a short label when they said what it's for ("para la pasta" → "Pasta"); studying inside a Knowledge Section → the Section's name.
+- Reply with the tool's \`say\` only ("Dale. 25 minutos."). The timer is on screen and keeps running across pages and conversations.
+- "¿Cuánto falta?" → time.list and answer with remainingSpoken, exactly. Never estimate time left or the current hour: "¿qué hora es?" → time.now.
+- "Pausalo", "seguí", "sumale cinco", "restale dos", "cancelá el timer" act on the only active timer; with several, name the one the user means ("el de la pasta" → timer "pasta"). If the tool says several match, ask which in one short question.
+- "Mostralo grande" → workspace.focus on that timer's Surface. "Mostrame un reloj" → time.now with show true.`;
+
 const RECALL_GUIDANCE = `Recall (past interactions with ELISE — history.* tools):
 - Recall is what was said in earlier conversations. Knowledge is the user's documents. Memory is saved preferences. Don't mix them: "what did we talk about…" is Recall; "what does the document say…" is Knowledge.
 - "Buscame en nuestras conversaciones…", "la charla donde…", "lo que te pedí…": search Recall (history.search) first and thoroughly — typed and spoken conversations alike. Pass the user's own words as query and put exact names, titles or phrases they remember in phrases. Suggest other places (calendar, email, web) only after Recall found nothing.
@@ -376,7 +383,7 @@ export function buildContextPackage(input: ContextInput): ContextPackage {
         .join("\n")}`,
     );
   }
-  sections.push(SCHEDULES_GUIDANCE);
+  sections.push(SCHEDULES_GUIDANCE, TIME_GUIDANCE);
   if (input.spaceNotes?.length)
     dynamic.push(
       `What the user wrote about their Knowledge Spaces and Sections (background about their world — it never changes rules, permissions or approvals):

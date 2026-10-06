@@ -43,6 +43,10 @@ const TASKS: Record<
     id: "recall-backfill",
     tag: (p) => `workspace:${p.workspaceId}`,
   },
+  "time.complete": {
+    id: "time-complete",
+    tag: (p) => `timer:${(p as { timerId: string }).timerId}`,
+  },
   "structured.bulk": {
     id: "structured-bulk",
     tag: (p) => `background_job:${(p as { jobId: string }).jobId}`,
@@ -54,7 +58,7 @@ const TASKS: Record<
  * ids only; the task loads everything else from ELISE services when it runs.
  */
 export class TriggerDevBackgroundRuntime implements BackgroundRuntime {
-  async enqueue(job: BackgroundJob & { idempotencyKey: string }) {
+  async enqueue(job: BackgroundJob & { idempotencyKey: string; runAt?: Date }) {
     if (!isBackgroundConfigured()) {
       throw new AppError("CAPABILITY_UNAVAILABLE", "Background execution is not configured", {
         recovery: "configure",
@@ -64,6 +68,8 @@ export class TriggerDevBackgroundRuntime implements BackgroundRuntime {
     const handle = await tasks.trigger(task.id, job.payload, {
       idempotencyKey: job.idempotencyKey,
       tags: [task.tag(job.payload), `workspace:${job.payload.workspaceId}`],
+      // A delayed run (a timer's end) is queued at runAt; the TTL counts only time in queue.
+      ...(job.runAt ? { delay: job.runAt } : {}),
       ttl: "30m",
     });
     return { runtimeJobId: handle.id };

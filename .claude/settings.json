@@ -3,7 +3,8 @@
     "allow": [
       "Bash(node -e ' *)",
       "Bash(npx prettier *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(node -p \"require\\('@trigger.dev/sdk/package.json'\\).version\")"
     ]
   }
 }

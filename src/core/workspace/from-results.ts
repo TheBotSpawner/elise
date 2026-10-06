@@ -720,6 +720,20 @@ export function surfacesFromOutcome(
           ...(d.music.notice ? { state: "attention" as const } : {}),
         }),
       );
+    case "timer":
+      return one(timerSurface(d.timer, opts));
+    case "timers":
+      return d.timers
+        .map((t) => timerSurface(t, opts))
+        .filter((s): s is SurfaceDraft => s !== null);
+    case "clock":
+      return one(
+        draft("clock", d.clock.timezone, d.clock, opts, {
+          title: d.clock.place ?? (opts.locale === "es" ? "Reloj" : "Clock"),
+          source: { capability: "time", label: null },
+          ref: null,
+        }),
+      );
     case "weather": {
       const w = d.weather;
       // One forecast per interaction: asking again (another day, another city) updates it.
@@ -823,6 +837,23 @@ export function surfacesFromOutcome(
   }
 }
 
+/**
+ * One Surface per timer (keyed by its id): every change updates it in place. A cancelled
+ * timer's Surface says so briefly and leaves (ADR-045).
+ */
+function timerSurface(t: SurfacePayloads["timer"], opts: PresentOptions): SurfaceDraft | null {
+  const es = opts.locale === "es";
+  const kind = { timer: "Timer", pomodoro: "Pomodoro", stopwatch: es ? "Cronómetro" : "Stopwatch" }[
+    t.kind
+  ];
+  return draft("timer", t.id, t, opts, {
+    title: t.label ?? kind,
+    source: { capability: "time", label: null },
+    ref: null,
+    ...(t.state === "cancelled" ? { transient: true } : {}),
+  });
+}
+
 /** Ops that present these Surfaces, in order. */
 export function presentOps(drafts: SurfaceDraft[], at: string): WorkspaceOp[] {
   return drafts.map((surface) => ({ op: "present", surface, at }));
@@ -890,6 +921,7 @@ const INTENT_BY_CAPABILITY: Record<string, IntentKind> = {
   location: "planning",
   weather: "planning",
   music: "general",
+  time: "general",
   study: "study",
   work: "work_brief",
   planning: "planning",

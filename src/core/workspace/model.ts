@@ -41,6 +41,8 @@ export const SURFACE_TYPES = [
   "place",
   "weather",
   "music",
+  "timer",
+  "clock",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
@@ -286,7 +288,10 @@ const TRANSIENT_INTENTS: ReadonlySet<IntentKind> = new Set(["settings"]);
 const sticky = (s: Surface) =>
   (s.type === "approval" && s.state === "attention") ||
   // Music that is playing stays while the conversation moves on (ADR-042 §H).
-  (s.type === "music" && Boolean((s.payload as { playing?: boolean } | null)?.playing));
+  (s.type === "music" && Boolean((s.payload as { playing?: boolean } | null)?.playing)) ||
+  // A running or paused timer stays on the Canvas while the conversation moves on (ADR-045).
+  (s.type === "timer" &&
+    ["running", "paused"].includes((s.payload as { state?: string } | null)?.state ?? ""));
 /** What stays when the context moves on: pending approvals and pinned Surfaces. */
 const kept = (s: Surface) => sticky(s) || Boolean(s.pinned);
 

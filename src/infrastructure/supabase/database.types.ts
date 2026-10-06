@@ -1207,6 +1207,30 @@ export type MethodUseRow = {
   created_at: Ts;
 };
 
+export type TimerRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  kind: "timer" | "pomodoro" | "stopwatch";
+  label: string | null;
+  state: "running" | "paused" | "completed" | "cancelled";
+  duration_ms: number;
+  started_at: Ts | null;
+  ends_at: Ts | null;
+  remaining_ms: number | null;
+  elapsed_ms: number;
+  laps: number[];
+  pomodoro: Json | null;
+  version: number;
+  completed_at: Ts | null;
+  created_from_conversation_id: string | null;
+  created_from_session_id: string | null;
+  created_from_schedule_id: string | null;
+  created_from_space_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -1242,6 +1266,7 @@ export type Database = {
         MethodRow,
         "workspace_id" | "name" | "description" | "instructions" | "created_by_user_id"
       >;
+      timers: Table<TimerRow, "workspace_id" | "user_id" | "kind" | "state">;
       method_versions: Table<MethodVersionRow, "workspace_id" | "method_id" | "version">;
       method_references: Table<
         MethodReferenceRow,

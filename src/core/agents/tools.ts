@@ -45,6 +45,7 @@ import type { ScheduleInput } from "../schedules/schedule";
 import type { ShortcutStore } from "../shortcuts/model";
 import type { MethodStore } from "../skills/model";
 import type { StudyPort } from "../study/model";
+import type { TimerStore } from "../timers/model";
 import type { BriefPort } from "../tools/planning";
 import type { WakeStatus } from "../voice/session";
 import type { WeatherCapability } from "../weather/model";
@@ -53,6 +54,7 @@ import type { SurfaceDraft } from "../workspace/model";
 import type { MusicPayload } from "../workspace/music";
 import type { WorkspacePort } from "../workspace/port";
 import type { SurfacePayloads } from "../workspace/registry";
+import type { ClockPayload, TimerPayload } from "../workspace/time";
 
 export type ActionOrigin = "ai" | "user_ui" | "schedule" | "system";
 
@@ -135,6 +137,8 @@ export interface CapabilityProviders {
   methods: MethodStore;
   /** Music playback through the user's music provider (ADR-042). */
   music: MusicProvider;
+  /** The user's own timers, Pomodoros and stopwatches (ADR-045). */
+  time: TimerStore;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -291,6 +295,10 @@ export type ToolDisplay =
         }[];
       }[];
     }
+  /** Native Time (ADR-045): one timer, the active ones, or a clock to show. */
+  | { kind: "timer"; timer: TimerPayload }
+  | { kind: "timers"; timers: TimerPayload[] }
+  | { kind: "clock"; clock: ClockPayload }
   /** ELISE changed its own appearance: the UI applies it at once. */
   | {
       kind: "appearance";

@@ -27,6 +27,8 @@ export const CORE_GROUPS: ReadonlySet<string> = new Set([
   "tasks",
   // Two small tools; "¿cómo va a estar esta semana?" names no keyword and must never fall to web.
   "weather",
+  // "¿Cuánto falta?", "pausalo", "¿qué hora es?" name no keyword; five small tools.
+  "time",
 ]);
 
 /** A message about places or travel (the browser also refreshes the device location for it). */
@@ -98,6 +100,8 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   place: "location",
   weather: "weather",
   music: "music",
+  timer: "time",
+  clock: "time",
 };
 
 export interface ToolSelection {

@@ -35,6 +35,7 @@ import { SHORTCUT_TOOLS } from "@/core/tools/shortcuts";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { STUDY_TOOLS } from "@/core/tools/study";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { TIME_TOOLS } from "@/core/tools/time";
 import { WEATHER_TOOLS } from "@/core/tools/weather";
 import { WEB_TOOLS } from "@/core/tools/web";
 import { WORKSPACE_TOOLS } from "@/core/tools/workspace";
@@ -258,6 +259,7 @@ export function makePorts(
       ...SHORTCUT_TOOLS,
       ...METHOD_TOOLS,
       ...MUSIC_TOOLS,
+      ...TIME_TOOLS,
     ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>

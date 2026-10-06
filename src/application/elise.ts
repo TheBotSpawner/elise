@@ -38,6 +38,7 @@ import { SHORTCUT_TOOLS } from "@/core/tools/shortcuts";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { STUDY_TOOLS } from "@/core/tools/study";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { TIME_TOOLS } from "@/core/tools/time";
 import { WEATHER_TOOLS } from "@/core/tools/weather";
 import { WEB_TOOLS } from "@/core/tools/web";
 import { WORKSPACE_TOOLS } from "@/core/tools/workspace";
@@ -90,6 +91,7 @@ import { settingsStore } from "./settings-service";
 import { shortcutStore } from "./shortcuts-service";
 import { startStructuredBulk } from "./structured-bulk";
 import { studyStore } from "./study-service";
+import { timerStore } from "./time-service";
 import { weatherCapability } from "./weather-service";
 import { webCapability } from "./web-service";
 
@@ -120,6 +122,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...SHORTCUT_TOOLS,
   ...METHOD_TOOLS,
   ...MUSIC_TOOLS,
+  ...TIME_TOOLS,
 );
 
 /**
@@ -408,6 +411,10 @@ function providerFactory(
         return new YouTubeMusicProvider(key);
       }
       throw unsupported("music", binding);
+    },
+    // The user's own timers (ADR-045): personal, through RLS.
+    time() {
+      return timerStore(auth);
     },
     // The Morning Brief service builds on this module; loaded lazily to keep imports acyclic.
     briefs() {

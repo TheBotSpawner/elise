@@ -20,11 +20,13 @@ import {
   type WorkspaceState,
 } from "./model";
 import { musicPayload } from "./music";
+import { clockPayload, timerFromPayload, timerPayload, type TimerPayload } from "./time";
 import { visualizationSpec, type VisualizationSpec } from "./visualization";
 import { weatherPayload, type WeatherPayload } from "./weather";
 import { TASK_STATUSES } from "../capabilities/tasks";
 import { CONTEXT_KINDS, LINK_TYPES } from "../contexts/model";
 import { toLocalDateTime } from "../time";
+import { clockText, currentPhase, elapsedMs, remainingMs } from "../timers/model";
 
 /**
  * Surface registry (ADR-013), in the spirit of the capability registry: each type declares its
@@ -575,6 +577,10 @@ export const PAYLOADS = {
   weather: weatherPayload,
   /** What is playing now, one per interaction (ADR-042). */
   music: musicPayload,
+  /** One of the user's timers, Pomodoros or stopwatches — a view over it (ADR-045). */
+  timer: timerPayload,
+  /** A live clock, here or in another time zone (ADR-045). */
+  clock: clockPayload,
   /** Any other tool result, rendered by its existing card. */
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
 } satisfies Record<SurfaceType, z.ZodType>;
@@ -1052,6 +1058,21 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
         .filter(Boolean)
         .join(" "),
   },
+  timer: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    // What the user is doing right now: above ambient music, below the work itself.
+    priority: 74,
+    actions: () => [expand],
+    describe: describeTimer,
+  },
+  clock: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 50,
+    actions: () => [expand],
+    describe: (p) => `Clock ${p.place ? q(p.place) + " " : ""}(${p.timezone})`,
+  },
   result: {
     sizes: ["small", "medium", "large"],
     size: "medium",
@@ -1082,6 +1103,18 @@ function describeMap(p: MapPayload): string {
         `${i + 1}) ${q(x.name)}${x.distanceMeters != null ? ` ${x.distanceMeters} m` : ""}${x.rating ? ` ★${x.rating}` : ""} (place ${x.id})`,
     )
     .join("; ")}`;
+}
+
+/** A timer as the model can talk about it (time left from its timestamps, as of now). */
+function describeTimer(p: TimerPayload): string {
+  const t = timerFromPayload(p);
+  const now = new Date();
+  const phase = currentPhase(t);
+  const time =
+    t.kind === "stopwatch"
+      ? `${clockText(elapsedMs(t, now), false)} elapsed`
+      : `${clockText(remainingMs(t, now))} left`;
+  return `${t.kind} ${t.label ? q(t.label) + " " : ""}[${t.state}] ${time}${phase ? ` · ${phase.phase} ${phase.cycle}/${t.pomodoro!.cycles}` : ""} (timer ${t.id}; ask time.list for the exact time left)`;
 }
 
 /** The forecast as the model can talk about it: place, now, and each day or hour. */

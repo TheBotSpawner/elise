@@ -32,6 +32,8 @@ import {
   Map as MapIcon,
   CloudSun,
   MapPin,
+  Timer as TimerIcon,
+  AlarmClock,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -45,6 +47,7 @@ import type { SurfacePayloads } from "@/core/workspace/registry";
 import { ApprovalCard, type ApprovalPhase } from "@/features/chat/approval-card";
 import { DisplayCard } from "@/features/chat/result-cards";
 import { MusicSurfaceBody } from "@/features/music/music-view";
+import { ClockSurfaceBody, TimerSurfaceBody } from "@/features/time/time-view";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -97,6 +100,8 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   map: MapIcon,
   weather: CloudSun,
   music: Music,
+  timer: TimerIcon,
+  clock: AlarmClock,
   place: MapPin,
   result: Sparkles,
 };
@@ -956,6 +961,20 @@ export function SurfaceBody({
       return (
         <MusicSurfaceBody
           p={surface.payload as SurfacePayloads["music"]}
+          size={size ?? (large ? "large" : "medium")}
+        />
+      );
+    case "timer":
+      return (
+        <TimerSurfaceBody
+          p={surface.payload as SurfacePayloads["timer"]}
+          size={size ?? (large ? "large" : "medium")}
+        />
+      );
+    case "clock":
+      return (
+        <ClockSurfaceBody
+          p={surface.payload as SurfacePayloads["clock"]}
           size={size ?? (large ? "large" : "medium")}
         />
       );
