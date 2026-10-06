@@ -19,6 +19,7 @@ const BY_PREFIX: Record<string, ActivityKey> = {
   briefs: "planning",
   shortcuts: "shortcuts",
   methods: "methods",
+  music: "music",
   voice: "settings",
   ui: "ui",
   settings: "settings",

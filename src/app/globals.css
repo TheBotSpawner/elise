@@ -406,6 +406,43 @@
     color 240ms linear !important;
 }
 
+/* Music (ADR-042): a decorative playback indicator — never derived from the audio. Bars breathe
+   while playing and settle when paused; reduced motion leaves them still (rule below). */
+.elise-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+.elise-eq > span {
+  width: 2px;
+  height: 30%;
+  border-radius: 1px;
+  background: currentColor;
+  transition: height 400ms ease-out;
+}
+.elise-eq[data-playing="true"] > span {
+  animation: elise-eq 1.1s ease-in-out infinite;
+}
+.elise-eq[data-playing="true"] > span:nth-child(2) {
+  animation-delay: -0.35s;
+}
+.elise-eq[data-playing="true"] > span:nth-child(3) {
+  animation-delay: -0.7s;
+}
+.elise-eq[data-playing="true"] > span:nth-child(4) {
+  animation-delay: -0.2s;
+}
+@keyframes elise-eq {
+  0%,
+  100% {
+    height: 25%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

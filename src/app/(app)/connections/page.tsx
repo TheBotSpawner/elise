@@ -11,10 +11,10 @@ import { getT } from "@/lib/i18n/server";
 /** What ELISE can access, per account. The user stays in control (docs/product/04 §13-15). */
 export default async function ConnectionsPage() {
   const [auth, { t }] = await Promise.all([requireAuthContext(), getT()]);
-  const [{ connections, googleAvailable, notionAvailable }, sources] = await Promise.all([
-    listConnections(auth),
-    listStructuredSources(auth).catch(() => []),
-  ]);
+  const [
+    { connections, googleAvailable, notionAvailable, spotifyAvailable, youtubeAvailable },
+    sources,
+  ] = await Promise.all([listConnections(auth), listStructuredSources(auth).catch(() => [])]);
 
   return (
     <PageContainer>
@@ -24,6 +24,8 @@ export default async function ConnectionsPage() {
           connections={connections}
           googleAvailable={googleAvailable}
           notionAvailable={notionAvailable}
+          spotifyAvailable={spotifyAvailable}
+          youtubeAvailable={youtubeAvailable}
         />
       </Suspense>
       <StructuredSourcesSection

@@ -14,6 +14,8 @@ import {
   setDefaultConnection,
   startGoogleConnection,
   startNotionConnection,
+  startSpotifyConnection,
+  enableYouTubeMusic,
 } from "@/application/connections-service";
 import { toPublicError, type PublicError } from "@/core/errors";
 
@@ -110,4 +112,29 @@ export async function setDefaultAction(id: string, cap: string) {
 
 export async function disconnectAction(id: string) {
   return run(async () => disconnectConnection(await requireAuthContext(), z.uuid().parse(id)));
+}
+
+/** Starts Spotify's consent (ADR-042). */
+export async function connectSpotify(form?: FormData): Promise<void> {
+  const auth = await requireAuthContext();
+  const returnPath = safeReturnPath(form?.get("returnTo"));
+  let url: string;
+  try {
+    url = await startSpotifyConnection(auth, await origin(), returnPath);
+  } catch (error) {
+    redirect(`${returnPath}?error=${toPublicError(error).code}`);
+  }
+  redirect(url);
+}
+
+/** Turns on YouTube for Music (no account: server search + the official embedded player). */
+export async function enableYouTubeAction(): Promise<void> {
+  const auth = await requireAuthContext();
+  try {
+    await enableYouTubeMusic(auth);
+  } catch (error) {
+    redirect(`/connections?error=${toPublicError(error).code}`);
+  }
+  revalidatePath("/connections");
+  redirect("/connections?provider=youtube");
 }

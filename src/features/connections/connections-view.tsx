@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Plus, Star } from "lucide-react";
+import { ChevronDown, Plus, Star, Music as MusicIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
@@ -30,6 +30,8 @@ import {
   renameConnectionAction,
   setDefaultAction,
   connectNotion,
+  connectSpotify,
+  enableYouTubeAction,
   toggleCapabilityAction,
   type ConnectionActionResult,
 } from "./actions";
@@ -155,7 +157,11 @@ export function ConnectionsView({
   connections,
   googleAvailable,
   notionAvailable,
+  spotifyAvailable = false,
+  youtubeAvailable = false,
 }: {
+  spotifyAvailable?: boolean;
+  youtubeAvailable?: boolean;
   connections: ConnectionView[];
   googleAvailable: boolean;
   notionAvailable: boolean;
@@ -183,7 +189,9 @@ export function ConnectionsView({
       toast.success(
         params.get("provider") === "notion"
           ? t.connections.connectedNotionToast
-          : t.connections.connectedToast,
+          : params.get("provider") === "spotify"
+            ? t.connections.connectedSpotifyToast
+            : t.connections.connectedToast,
       );
     }
     if (missing) {
@@ -199,6 +207,8 @@ export function ConnectionsView({
   const elise = connections.filter((c) => c.providerKey === "elise_native");
   const google = connections.filter((c) => c.providerKey === "google");
   const notion = connections.filter((c) => c.providerKey === "notion");
+  const spotify = connections.filter((c) => c.providerKey === "spotify");
+  const youtube = connections.filter((c) => c.providerKey === "youtube");
 
   return (
     <div className="flex flex-col gap-10">
@@ -301,7 +311,115 @@ export function ConnectionsView({
           </p>
         )}
       </section>
+
+      {/* Music (ADR-042): providers of one canonical capability. */}
+      <section className="flex flex-col gap-3">
+        <div>
+          <h2 className="type-label text-faint">{t.connections.musicTitle}</h2>
+          <p className="mt-1 max-w-2xl text-[13.5px] text-muted">{t.connections.musicBody}</p>
+        </div>
+        {spotify.map((c) => (
+          <MusicConnectionCard
+            key={c.id}
+            connection={c}
+            name="Spotify"
+            detail={t.connections.musicCapabilities}
+            reconnect={spotifyAvailable ? connectSpotify : null}
+          />
+        ))}
+        {!spotify.length &&
+          (spotifyAvailable ? (
+            <form
+              action={connectSpotify}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-5"
+            >
+              <span className="flex items-center gap-3">
+                <MusicIcon className="size-7 text-accent" aria-hidden />
+                <span className="text-[13.5px] text-muted">{t.connections.spotifyHint}</span>
+              </span>
+              <Button type="submit">{t.connections.connectSpotify}</Button>
+            </form>
+          ) : (
+            <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[13.5px] text-muted">
+              {t.connections.spotifyNotConfigured}
+            </p>
+          ))}
+        {youtube.map((c) => (
+          <MusicConnectionCard
+            key={c.id}
+            connection={c}
+            name="YouTube"
+            detail={t.connections.youtubeCapabilities}
+            reconnect={null}
+          />
+        ))}
+        {!youtube.length &&
+          (youtubeAvailable ? (
+            <form
+              action={enableYouTubeAction}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-5"
+            >
+              <span className="flex items-center gap-3">
+                <MusicIcon className="size-7 text-accent" aria-hidden />
+                <span className="text-[13.5px] text-muted">{t.connections.youtubeHint}</span>
+              </span>
+              <Button type="submit" variant="secondary">
+                {t.connections.enableYouTube}
+              </Button>
+            </form>
+          ) : (
+            <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[13.5px] text-muted">
+              {t.connections.youtubeNotConfigured}
+            </p>
+          ))}
+        <p className="px-1 text-[12.5px] text-faint">Deezer · {t.connections.deezerUnavailable}</p>
+      </section>
     </div>
+  );
+}
+
+function MusicConnectionCard({
+  connection: c,
+  name,
+  detail,
+  reconnect,
+}: {
+  connection: ConnectionView;
+  name: string;
+  detail: string;
+  reconnect: ((form?: FormData) => Promise<void>) | null;
+}) {
+  const { t } = useI18n();
+  const healthy = c.health === "connected";
+  return (
+    <article
+      className={cn(
+        "flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-surface px-5 py-4",
+        healthy ? "border-border" : "border-approval-line bg-approval-bg",
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <MusicIcon className="size-7 shrink-0 text-accent" aria-hidden />
+        <div className="min-w-0">
+          <p className="truncate font-medium">{name}</p>
+          {c.accountLabel && <p className="truncate text-[13.5px] text-muted">{c.accountLabel}</p>}
+          <p className="text-[12.5px] text-faint">
+            {healthy ? detail : t.connections.healthBody[c.health]}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <HealthPill health={c.health} />
+        {!healthy && reconnect && (
+          <form action={reconnect}>
+            <Button type="submit" size="sm">
+              {t.connections.reconnectSpotify}
+            </Button>
+          </form>
+        )}
+        <DisconnectButton connection={c} />
+      </div>
+    </article>
   );
 }
 
@@ -673,7 +791,9 @@ function DisconnectButton({ connection: c }: { connection: ConnectionView }) {
   const consequences =
     c.providerKey === "notion"
       ? t.connections.disconnectNotionConsequences
-      : t.connections.disconnectGoogleConsequences;
+      : c.providerKey === "spotify" || c.providerKey === "youtube"
+        ? t.connections.disconnectMusicConsequences
+        : t.connections.disconnectGoogleConsequences;
   return (
     <>
       <Button

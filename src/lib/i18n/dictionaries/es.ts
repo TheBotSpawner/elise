@@ -160,6 +160,7 @@ export const es: Dictionary = {
     study: "Estudio",
     shortcuts: "Atajos",
     methods: "Métodos",
+    music: "Música",
   },
   providers: {
     elise_native: "ELISE",
@@ -298,6 +299,7 @@ export const es: Dictionary = {
         planning: "Planificando tu día",
         shortcuts: "Ejecutando tu atajo",
         methods: "Siguiendo tu método",
+        music: "Poniendo música",
         other: "Trabajando",
       },
       done: {
@@ -321,6 +323,7 @@ export const es: Dictionary = {
         planning: "Planificación",
         shortcuts: "Atajo",
         methods: "Método",
+        music: "Música",
         other: "Listo",
       },
       unavailable: (label: string) => `${label} no disponible`,
@@ -655,6 +658,26 @@ export const es: Dictionary = {
     },
   },
   connections: {
+    musicTitle: "Música",
+    musicBody:
+      "ELISE pone y controla música con tu proveedor: buscar, reproducir, pasar, volumen y dispositivos. No comparte ni compra nada.",
+    spotifyHint: "Tu cuenta de Spotify. Para controlar la reproducción hace falta Spotify Premium.",
+    connectSpotify: "Conectar Spotify",
+    reconnectSpotify: "Reconectar",
+    spotifyNotConfigured:
+      "Spotify todavía no está configurado en este servidor (SPOTIFY_CLIENT_ID / SECRET).",
+    youtubeHint: "Búsqueda y el reproductor oficial de YouTube, en pantalla. No necesita cuenta.",
+    enableYouTube: "Activar YouTube",
+    youtubeNotConfigured: "YouTube todavía no está configurado en este servidor (YOUTUBE_API_KEY).",
+    deezerUnavailable:
+      "Deezer no está aceptando nuevas apps de desarrolladores; ELISE lo va a sumar cuando su API lo permita.",
+    musicCapabilities: "Buscar · reproducir · pasar · volumen · dispositivos",
+    youtubeCapabilities: "Buscar · reproducir en pantalla · pasar en la cola de ELISE · volumen",
+    connectedSpotifyToast: "Spotify conectado",
+    disconnectMusicConsequences: [
+      "ELISE deja de controlar la música con esta cuenta.",
+      "No se cambia ni se borra nada en el proveedor.",
+    ],
     emptyIntro:
       "Vos elegís a qué accede ELISE. Conectá una cuenta y marcá exactamente qué puede usar — lo podés cambiar o quitar cuando quieras.",
     health: {
@@ -1983,6 +2006,7 @@ export const es: Dictionary = {
       map: "Mapa",
       place: "Lugar",
       weather: "Clima",
+      music: "Música",
       result: "Resultado",
     },
     states: {
@@ -2301,6 +2325,33 @@ export const es: Dictionary = {
     historyItem: "Conversación por voz",
     deleteConfirm: (title: string) =>
       `¿Eliminar «${title}»? Se borran su transcripción y lo que ELISE recuerda de ella.`,
+  },
+  /** Música (ADR-042). */
+  music: {
+    title: "Música",
+    nothing: "No suena nada",
+    play: "Reproducir",
+    pause: "Pausar",
+    next: "Siguiente",
+    previous: "Anterior",
+    volume: "Volumen",
+    device: "Dispositivo",
+    devices: "Escuchar en",
+    thisBrowser: "ELISE (este navegador)",
+    open: (provider: string) => `Abrir en ${provider}`,
+    on: (device: string) => `En ${device}`,
+    from: (context: string) => `De ${context}`,
+    results: "Resultados",
+    queue: "A continuación",
+    tapToStart:
+      "Tocá play para empezar: el navegador necesita un toque antes de reproducir sonido.",
+    embeddedNote: "YouTube se reproduce acá, en pantalla; si salís de esta página, se detiene.",
+    backToCanvas: "Ir a la música",
+    playing: "Sonando",
+    paused: "En pausa",
+    duck: "Bajar la música mientras ELISE habla",
+    duckHint:
+      "Solo donde el dispositivo deja ajustar el volumen con precisión; después vuelve a como estaba.",
   },
   methods: {
     title: "Métodos",

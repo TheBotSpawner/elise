@@ -1,5 +1,6 @@
 import "server-only";
 
+import { serverEnv } from "@/config/server-env";
 import type { CapabilityKey } from "@/core/capabilities/types";
 import { AppError } from "@/core/errors";
 import { connectionHealth, type ConnectionHealth } from "@/core/providers/health";
@@ -31,6 +32,14 @@ import {
   isNotionConfigured,
   notionOAuthConfig,
 } from "@/infrastructure/providers/notion/oauth";
+import { SpotifyTokenProvider } from "@/infrastructure/providers/spotify/music";
+import {
+  buildSpotifyAuthorizationUrl,
+  exchangeSpotifyCode,
+  fetchSpotifyProfile,
+  isSpotifyConfigured,
+  spotifyOAuthConfig,
+} from "@/infrastructure/providers/spotify/oauth";
 import { rateLimit } from "@/infrastructure/rate-limit";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 
@@ -400,9 +409,13 @@ export interface ConnectionView {
   capabilities: { key: CapabilityKey; enabled: boolean; granted: boolean; isDefault: boolean }[];
 }
 
-export async function listConnections(
-  auth: AuthContext,
-): Promise<{ connections: ConnectionView[]; googleAvailable: boolean; notionAvailable: boolean }> {
+export async function listConnections(auth: AuthContext): Promise<{
+  connections: ConnectionView[];
+  googleAvailable: boolean;
+  notionAvailable: boolean;
+  spotifyAvailable: boolean;
+  youtubeAvailable: boolean;
+}> {
   const [conns, caps, bindings] = await Promise.all([
     auth.db
       .from("provider_connections")
@@ -424,6 +437,8 @@ export async function listConnections(
   const available: Partial<Record<string, boolean>> = {
     google: isGoogleConfigured(),
     notion: isNotionConfigured(),
+    spotify: isSpotifyConfigured(),
+    youtube: isYouTubeConfigured(),
   };
   const connections = (conns.data ?? []).map((c) => {
     const capabilities = (caps.data ?? [])
@@ -460,6 +475,8 @@ export async function listConnections(
     connections,
     googleAvailable: available.google ?? false,
     notionAvailable: available.notion ?? false,
+    spotifyAvailable: available.spotify ?? false,
+    youtubeAvailable: available.youtube ?? false,
   };
 }
 
@@ -556,8 +573,8 @@ export async function disconnectConnection(auth: AuthContext, connectionId: stri
   const ref = { connectionId, workspaceId: auth.workspaceId };
   const vault = new SupabaseCredentialVault(createAdminClient(), connection.provider_key);
   const credential = await vault.read(ref).catch(() => null);
-  // Notion has no token revocation endpoint: deleting the credential ends ELISE's access here,
-  // and the user can remove the integration in Notion's settings.
+  // Notion and Spotify have no token revocation endpoint: deleting the credential ends ELISE's
+  // access here, and the user can remove the app in the provider's settings.
   const revoked =
     credential && connection.provider_key === "google"
       ? await revokeToken(credential.refreshToken ?? credential.accessToken)
@@ -766,4 +783,250 @@ export async function completeNotionConnection(
     provider: "notion",
   });
   return connectionId;
+}
+
+// ── Music (ADR-042) ──────────────────────────────────────────────────────────
+
+/** Starts Spotify's consent (authorization code + PKCE; the secret stays on the server). */
+export async function startSpotifyConnection(
+  auth: AuthContext,
+  origin: string,
+  returnPath?: string | null,
+): Promise<string> {
+  rateLimit(`oauth.start:${auth.userId}`, 10, 60_000);
+  const config = spotifyOAuthConfig(origin);
+  const { state, hash } = createState();
+  const pkce = createPkce();
+  const { error } = await auth.db.from("oauth_states").insert({
+    state_hash: hash,
+    workspace_id: auth.workspaceId,
+    user_id: auth.userId,
+    provider_key: "spotify",
+    capabilities: ["music"],
+    return_path: safeReturnPath(returnPath),
+    code_verifier_ciphertext: encrypt(pkce.verifier, `oauth_state:${hash}`),
+  });
+  if (error)
+    throw new AppError("INTERNAL_ERROR", "Could not start the connection", { cause: error });
+  return buildSpotifyAuthorizationUrl(config, { state, codeChallenge: pkce.challenge });
+}
+
+/** Spotify's callback: one Spotify account per workspace; reconnecting the same one resumes it. */
+export async function completeSpotifyConnection(
+  auth: AuthContext,
+  params: {
+    code: string | null;
+    state: string | null;
+    error: string | null;
+    origin: string;
+    onReturnPath?: (path: ReturnPath) => void;
+  },
+): Promise<string> {
+  if (!params.state) throw new AppError("VALIDATION_ERROR", "Missing authorization state");
+  const stateHash = hashState(params.state);
+  const { data: pending } = await auth.db
+    .from("oauth_states")
+    .delete()
+    .eq("state_hash", stateHash)
+    .eq("user_id", auth.userId)
+    .eq("workspace_id", auth.workspaceId)
+    .select("*")
+    .maybeSingle();
+  validatePendingAuthorization(pending, {
+    userId: auth.userId,
+    workspaceId: auth.workspaceId,
+    providerKey: "spotify",
+    now: new Date(),
+  });
+  params.onReturnPath?.(safeReturnPath(pending!.return_path));
+  if (params.error || !params.code)
+    throw new AppError("PERMISSION_DENIED", "Spotify access was not granted", {
+      recovery: "retry",
+    });
+
+  const verifier = decrypt(pending!.code_verifier_ciphertext, `oauth_state:${stateHash}`);
+  const tokens = await exchangeSpotifyCode(
+    spotifyOAuthConfig(params.origin),
+    params.code,
+    verifier,
+  );
+  if (!tokens.refreshToken)
+    throw new AppError("PERMISSION_DENIED", "Spotify did not grant lasting access", {
+      recovery: "retry",
+    });
+  const profile = await fetchSpotifyProfile(tokens.accessToken);
+  const admin = createAdminClient();
+
+  const { data: current } = await auth.db
+    .from("provider_connections")
+    .select("id, external_account_id")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("provider_key", "spotify")
+    .neq("status", "disconnected")
+    .maybeSingle();
+  if (current && current.external_account_id !== profile.id)
+    throw new AppError(
+      "CONFLICT",
+      "Another Spotify account is already connected. Disconnect it first to use this one.",
+      { recovery: "review" },
+    );
+  const { data: same } = current
+    ? { data: current }
+    : await auth.db
+        .from("provider_connections")
+        .select("id, external_account_id")
+        .eq("workspace_id", auth.workspaceId)
+        .eq("provider_key", "spotify")
+        .eq("external_account_id", profile.id)
+        .maybeSingle();
+  const label = profile.name ?? "Spotify";
+  let connectionId = same?.id ?? null;
+  if (connectionId) {
+    await admin
+      .from("provider_connections")
+      .update({
+        status: "connected",
+        last_connected_at: new Date().toISOString(),
+        last_error_code: null,
+        disconnected_at: null,
+      })
+      .eq("id", connectionId)
+      .eq("workspace_id", auth.workspaceId);
+  } else {
+    const { data, error } = await admin
+      .from("provider_connections")
+      .insert({
+        workspace_id: auth.workspaceId,
+        provider_key: "spotify",
+        created_by_user_id: auth.userId,
+        external_account_id: profile.id,
+        display_name: await uniqueAlias(auth, "Spotify", `Spotify (${label})`),
+        account_label: label,
+        status: "connected",
+        auth_metadata: {},
+      })
+      .select("id")
+      .single();
+    if (error)
+      throw new AppError("INTERNAL_ERROR", "Could not save the connection", { cause: error });
+    connectionId = data.id;
+  }
+  await new SupabaseCredentialVault(admin, "spotify").write(
+    { connectionId, workspaceId: auth.workspaceId },
+    {
+      accessToken: tokens.accessToken,
+      accessTokenExpiresAt: tokens.expiresAt.toISOString(),
+      refreshToken: tokens.refreshToken,
+      scopes: tokens.scopes,
+    },
+  );
+  await auth.db.from("connection_capabilities").upsert(
+    {
+      workspace_id: auth.workspaceId,
+      connection_id: connectionId,
+      capability_key: "music",
+      enabled: true,
+      permission_level: "write",
+      authorized_scopes: tokens.scopes,
+    },
+    { onConflict: "connection_id,capability_key" },
+  );
+  await ensureBinding(auth, connectionId, "music");
+  await audit(auth, connectionId, same ? "connection.reauthorized" : "connection.created", {
+    provider: "spotify",
+  });
+  return connectionId;
+}
+
+export function isYouTubeConfigured(): boolean {
+  return Boolean(serverEnv().YOUTUBE_API_KEY);
+}
+
+/**
+ * YouTube needs no account: search uses ELISE's server key and playback the official embedded
+ * player. Turning it on records a connection so Music can resolve to it (and be disconnected).
+ */
+export async function enableYouTubeMusic(auth: AuthContext): Promise<string> {
+  if (!isYouTubeConfigured())
+    throw new AppError("SERVER_NOT_CONFIGURED", "YouTube is not configured on this server", {
+      recovery: "configure",
+    });
+  const admin = createAdminClient();
+  const external = `youtube:${auth.workspaceId}`;
+  const { data: previous } = await auth.db
+    .from("provider_connections")
+    .select("id")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("provider_key", "youtube")
+    .eq("external_account_id", external)
+    .maybeSingle();
+  let connectionId = previous?.id ?? null;
+  if (connectionId)
+    await admin
+      .from("provider_connections")
+      .update({ status: "connected", disconnected_at: null, last_error_code: null })
+      .eq("id", connectionId)
+      .eq("workspace_id", auth.workspaceId);
+  else {
+    const { data, error } = await admin
+      .from("provider_connections")
+      .insert({
+        workspace_id: auth.workspaceId,
+        provider_key: "youtube",
+        created_by_user_id: auth.userId,
+        external_account_id: external,
+        display_name: await uniqueAlias(auth, "YouTube", "YouTube (ELISE)"),
+        account_label: null,
+        status: "connected",
+        auth_metadata: {},
+      })
+      .select("id")
+      .single();
+    if (error)
+      throw new AppError("INTERNAL_ERROR", "Could not save the connection", { cause: error });
+    connectionId = data.id;
+  }
+  await auth.db.from("connection_capabilities").upsert(
+    {
+      workspace_id: auth.workspaceId,
+      connection_id: connectionId,
+      capability_key: "music",
+      enabled: true,
+      permission_level: "write",
+      authorized_scopes: ["youtube:search", "youtube:embedded_player"],
+    },
+    { onConflict: "connection_id,capability_key" },
+  );
+  await ensureBinding(auth, connectionId, "music");
+  await audit(auth, connectionId, previous ? "connection.reauthorized" : "connection.created", {
+    provider: "youtube",
+  });
+  return connectionId;
+}
+
+/**
+ * A short-lived Spotify access token for ELISE's own player in this page (the Web Playback SDK
+ * needs one in the browser). Never the refresh token; only the signed-in user's own connection.
+ */
+export async function spotifyPlayerToken(
+  auth: AuthContext,
+): Promise<{ token: string; expiresAt: string } | null> {
+  if (!isSpotifyConfigured()) return null;
+  const { data } = await auth.db
+    .from("provider_connections")
+    .select("id")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("provider_key", "spotify")
+    .eq("status", "connected")
+    .maybeSingle();
+  if (!data) return null;
+  const ref = { connectionId: data.id, workspaceId: auth.workspaceId };
+  const vault = new SupabaseCredentialVault(createAdminClient(), "spotify");
+  const token = await new SpotifyTokenProvider(ref, {
+    vault,
+    config: () => spotifyOAuthConfig(),
+    onReauthorizationRequired: async () => undefined,
+  }).accessToken();
+  const stored = await vault.read(ref);
+  return { token, expiresAt: stored?.accessTokenExpiresAt ?? new Date().toISOString() };
 }

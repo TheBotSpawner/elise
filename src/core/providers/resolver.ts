@@ -41,6 +41,9 @@ const PROVIDER_NAMES: Record<ProviderKey, string[]> = {
   google: ["google"],
   notion: ["notion"],
   web_search: ["web"],
+  spotify: ["spotify"],
+  youtube: ["youtube", "you tube"],
+  deezer: ["deezer"],
 };
 
 /**

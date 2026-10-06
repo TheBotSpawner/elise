@@ -78,6 +78,8 @@ export function useLiveVoice({
     finishNow: () => undefined,
     toggleMute: () => session.current?.toggleMute(),
     narrate: (text: string) => void session.current?.narrate(text),
+    /** GPT-Live's own echo cancellation and turn detection handle room audio. */
+    ambientChanged: () => undefined,
     installWake: async () => undefined,
     supported:
       typeof window === "undefined" ||

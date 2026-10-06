@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Music,
   CalendarDays,
   CloudSun,
   FileText,
@@ -43,6 +44,7 @@ const PROVENANCE: Record<string, LucideIcon> = {
   web_search: Globe,
   location: MapPin,
   weather: CloudSun,
+  music: Music,
   knowledge: FileText,
   history: History,
   tasks: ListChecks,

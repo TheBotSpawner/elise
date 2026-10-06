@@ -3,6 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import { serverEnv } from "@/config/server-env";
+import type { ClientPlayback } from "@/core/capabilities/music";
 import { AppError } from "@/core/errors";
 import {
   isCancellation,
@@ -78,6 +79,8 @@ export interface DelegationRequest {
   attachments?: string[];
   /** The user's position, when they share it (ADR-023/028); coarse, never stored. */
   here?: { lat: number; lng: number };
+  /** The page's embedded music player state (ADR-042). */
+  music?: ClientPlayback;
   requestId: string;
   receivedAt: number;
 }
@@ -126,6 +129,7 @@ export async function runDelegation(
     modality: "voice",
     ...(req.attachments?.length ? { attachments: req.attachments } : {}),
     ...(req.here ? { here: req.here } : {}),
+    ...(req.music ? { music: req.music } : {}),
     ...(req.conversationId ? { conversationId: req.conversationId } : {}),
     ...(req.sessionId && !req.conversationId ? { sessionId: req.sessionId } : {}),
     requestId: delegationRequest(req.delegationId),

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { MusicController } from "@/features/music/music-view";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 
 import { MobileHeader } from "./navigation/mobile-nav";
@@ -29,6 +30,8 @@ export function AppShell({
         <MobileHeader user={user} pendingApprovals={pendingApprovals} />
         <div className="flex min-w-0 flex-1 flex-col">{children}</div>
       </div>
+      {/* Music (ADR-042): one canonical player state for every page. */}
+      <MusicController />
     </OrbPresenceProvider>
   );
 }

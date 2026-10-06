@@ -23,6 +23,7 @@ import type {
 import type { Goal, GoalProgress, GoalsProvider } from "../capabilities/goals";
 import type { HabitProgress, HabitsProvider } from "../capabilities/habits";
 import type { ListsProvider, NativeList } from "../capabilities/lists";
+import type { ClientPlayback, MusicCommand, MusicProvider } from "../capabilities/music";
 import type { Note, NotesProvider } from "../capabilities/notes";
 import { getCapability } from "../capabilities/registry";
 import type { Accent, SettingsStore, Theme } from "../capabilities/settings";
@@ -49,6 +50,7 @@ import type { WakeStatus } from "../voice/session";
 import type { WeatherCapability } from "../weather/model";
 import type { WebCapability } from "../web/model";
 import type { SurfaceDraft } from "../workspace/model";
+import type { MusicPayload } from "../workspace/music";
 import type { WorkspacePort } from "../workspace/port";
 import type { SurfacePayloads } from "../workspace/registry";
 
@@ -90,6 +92,11 @@ export interface ToolContext {
   here?: LatLng | null;
   /** The user's message this turn, verbatim: searches keep the original wording (Recall). */
   userMessage?: string | null;
+  /**
+   * What this page's embedded music player is doing (ADR-042), as the browser reported it with
+   * the turn. Only embedded providers (YouTube) read it; never stored.
+   */
+  music?: ClientPlayback | null;
 }
 
 /** Capability → provider contract. Grows as capabilities are implemented. */
@@ -126,6 +133,8 @@ export interface CapabilityProviders {
   briefs: BriefPort;
   /** The workspace's Methods: how the user wants work done (ADR-040). */
   methods: MethodStore;
+  /** Music playback through the user's music provider (ADR-042). */
+  music: MusicProvider;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -379,6 +388,11 @@ export type ToolDisplay =
   | { kind: "map"; map: SurfacePayloads["map"] }
   | { kind: "place"; place: SurfacePayloads["place"] }
   | { kind: "weather"; weather: SurfacePayloads["weather"] }
+  /**
+   * Music playback (ADR-042): the canonical Music Surface's payload, and — for an embedded
+   * player the browser holds — what the page must do with it.
+   */
+  | { kind: "music"; music: MusicPayload; command?: MusicCommand }
   /** A Method ELISE used or changed (ADR-040): a subtle line with View / Undo. */
   | {
       kind: "method";

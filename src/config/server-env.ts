@@ -51,6 +51,12 @@ const serverEnvSchema = z.object({
   GOOGLE_MAPS_SERVER_API_KEY: z.string().min(1).optional(),
   /** Weather (ADR-038): Open-Meteo commercial key; without it, the free non-commercial API. */
   OPEN_METEO_API_KEY: z.string().min(1).optional(),
+  /** Music (ADR-042): a Spotify app (Web API + Web Playback SDK). Redirect defaults to the app URL. */
+  SPOTIFY_CLIENT_ID: z.string().min(1).optional(),
+  SPOTIFY_CLIENT_SECRET: z.string().min(1).optional(),
+  SPOTIFY_REDIRECT_URI: z.string().url().optional(),
+  /** YouTube Data API v3 key (search only; playback is the official embedded player). */
+  YOUTUBE_API_KEY: z.string().min(1).optional(),
   NOTION_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   NOTION_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),

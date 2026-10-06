@@ -9,6 +9,7 @@ import {
   type WorkspaceOp,
   type WorkspaceState,
 } from "./model";
+import { MUSIC_SURFACE_KEY } from "./music";
 import { draftDefaults, isValidPayload, type SurfacePayloads } from "./registry";
 import {
   financeBreakdownVisual,
@@ -709,6 +710,16 @@ export function surfacesFromOutcome(
           ref: { resource: "place", id: d.place.id },
         }),
       );
+    case "music":
+      // One music Surface per interaction: a new song, a pause or a search updates it.
+      return one(
+        draft("music", MUSIC_SURFACE_KEY, d.music, opts, {
+          title: d.music.item?.title ?? (opts.locale === "es" ? "Música" : "Music"),
+          source: { capability: "music", label: d.music.provider },
+          ref: null,
+          ...(d.music.notice ? { state: "attention" as const } : {}),
+        }),
+      );
     case "weather": {
       const w = d.weather;
       // One forecast per interaction: asking again (another day, another city) updates it.
@@ -878,6 +889,7 @@ const INTENT_BY_CAPABILITY: Record<string, IntentKind> = {
   web: "research",
   location: "planning",
   weather: "planning",
+  music: "general",
   study: "study",
   work: "work_brief",
   planning: "planning",

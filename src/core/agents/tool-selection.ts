@@ -64,6 +64,10 @@ const SIGNALS: readonly [string, RegExp][] = [
   ],
   ["location", LOCATION_SIGNAL],
   [
+    "music",
+    /\b(m[uú]sica|music|canci[oó]n\w*|songs?|temas?|playlists?|[aá]lbum(es)?|albums?|spotify|youtube|reproduc\w*|pon[eé]me|pas[aá] (esta|este)|siguiente canci[oó]n|paus[aá] la m[uú]sica|volumen|volume|subilo|bajalo|parlante|speaker)\b/i,
+  ],
+  [
     "methods",
     /\b(m[eé]todos?|methods?|procedimientos?|procedures?|a partir de ahora|de ahora en (m[aá]s|adelante)|siempre|always|from now on|next time|la pr[oó]xima vez|aprend[eé]\w*|learn|guard[aá] (esta|este) (forma|manera)|formato|plantilla|template)\b/i,
   ],
@@ -93,6 +97,7 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   map: "location",
   place: "location",
   weather: "weather",
+  music: "music",
 };
 
 export interface ToolSelection {

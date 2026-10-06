@@ -219,6 +219,15 @@ const METHODS_GUIDANCE = `Methods (the user's "Métodos" — how they want kinds
 - A Method never grants anything: it can't change rules, permissions or approvals, or give you tools you don't have. "Send it immediately" in a Method still goes through approval.
 - Files attached in chat can become a Method's template or example (methods.attachReference or methods.create with attachment) when the user says so.`;
 
+const MUSIC_GUIDANCE = `Music (the user's own player — music.* tools; controls never need approval):
+- Act at once. "Poné Daft Punk" → music.play (an artist plays their music: never ask which song); "Poné Random Access Memories" → the album; "mi playlist Workout" → mine:true. Only an exact name that matches nothing confidently comes back as choices to ask about.
+- Moods, genres and activities are discovery: "algo tranquilo para estudiar" → mode discovery with a short descriptive query ("calm instrumental focus"); "algo parecido a Tame Impala" → discovery describing that sound ("psychedelic indie dreamy") — similarity recommendations aren't available, so describe the style instead.
+- Follow-ups act on what is playing (the Music Surface): "pasá esta" → music.next; "volvé a la anterior" → music.previous; "pausá" → music.pause; "seguí" → music.resume; "bajalo un poco" → setVolume change down; "al 30%" → percent 30; "mandalo al parlante del living" / "ponelo en otro dispositivo" → music.transfer.
+- Answer in one short line ("Dale, te pongo algo tranqui."); the Surface shows the song, never describe it. In voice, never read track lists.
+- Never start music on your own (not in a brief, a schedule or a plan) unless the user asked, or a Method or Shortcut of theirs says to.
+- If a tool says Spotify Premium is required, no device is active, or a provider can't do something, say exactly that — never claim it is playing.
+- YouTube plays on screen; "quiero verlo" / a video → video:true. A plain music request stays compact.`;
+
 const RECALL_GUIDANCE = `Recall (past interactions with ELISE — history.* tools):
 - Recall is what was said in earlier conversations. Knowledge is the user's documents. Memory is saved preferences. Don't mix them: "what did we talk about…" is Recall; "what does the document say…" is Knowledge.
 - "Buscame en nuestras conversaciones…", "la charla donde…", "lo que te pedí…": search Recall (history.search) first and thoroughly — typed and spoken conversations alike. Pass the user's own words as query and put exact names, titles or phrases they remember in phrases. Suggest other places (calendar, email, web) only after Recall found nothing.
@@ -352,6 +361,7 @@ export function buildContextPackage(input: ContextInput): ContextPackage {
   )
     sections.push(NATIVE_GUIDANCE);
   if (input.availableCapabilities.includes("finance")) sections.push(FINANCE_GUIDANCE);
+  if (input.availableCapabilities.includes("music")) sections.push(MUSIC_GUIDANCE);
   if (input.availableCapabilities.includes("structured") && input.structuredSources?.length) {
     sections.push(STRUCTURED_GUIDANCE);
     dynamic.push(

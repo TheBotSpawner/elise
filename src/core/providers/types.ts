@@ -1,6 +1,7 @@
 import type { CapabilityKey } from "../capabilities/types";
 
-export type ProviderKey = "elise_native" | "google" | "notion" | "web_search";
+export type ProviderKey =
+  "elise_native" | "google" | "notion" | "web_search" | "spotify" | "youtube" | "deezer";
 
 export interface ProviderDefinition {
   key: ProviderKey;

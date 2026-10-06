@@ -1,5 +1,6 @@
 import "server-only";
 
+import { serverEnv } from "@/config/server-env";
 import type { AccountSummary } from "@/core/agents/context";
 import { executeToolCall, type ExecutorPorts } from "@/core/agents/executor";
 import {
@@ -28,6 +29,7 @@ import { LIST_TOOLS } from "@/core/tools/lists";
 import { LOCATION_TOOLS } from "@/core/tools/location";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { METHOD_TOOLS } from "@/core/tools/methods";
+import { MUSIC_TOOLS } from "@/core/tools/music";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { PLANNING_TOOLS } from "@/core/tools/planning";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
@@ -62,6 +64,12 @@ import { NotionClient } from "@/infrastructure/providers/notion/client";
 import { NotionHttp } from "@/infrastructure/providers/notion/http";
 import { NotionStructuredApi } from "@/infrastructure/providers/notion/structured";
 import { NotionStructuredProvider } from "@/infrastructure/providers/notion/structured-provider";
+import {
+  SpotifyMusicProvider,
+  SpotifyTokenProvider,
+} from "@/infrastructure/providers/spotify/music";
+import { spotifyOAuthConfig } from "@/infrastructure/providers/spotify/oauth";
+import { YouTubeMusicProvider } from "@/infrastructure/providers/youtube/music";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 import { SupabaseActionLog } from "@/infrastructure/supabase/repositories/action-log";
 import {
@@ -111,6 +119,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...PLANNING_TOOLS,
   ...SHORTCUT_TOOLS,
   ...METHOD_TOOLS,
+  ...MUSIC_TOOLS,
 );
 
 /**
@@ -376,6 +385,29 @@ function providerFactory(
     // The workspace's Methods (ADR-040): instructions only, never authority.
     methods() {
       return methodStore(auth);
+    },
+    // Music (ADR-042): the user's Spotify account, or YouTube's search + embedded player.
+    music(binding) {
+      if (binding.providerKey === "spotify") {
+        const ref = { connectionId: binding.connectionId, workspaceId: auth.workspaceId };
+        return new SpotifyMusicProvider(
+          new SpotifyTokenProvider(ref, {
+            vault: new SupabaseCredentialVault(createAdminClient(), "spotify"),
+            config: () => spotifyOAuthConfig(),
+            onReauthorizationRequired: (r, code) =>
+              markNeedsReauthorization(auth, r, code, "Spotify"),
+          }),
+        );
+      }
+      if (binding.providerKey === "youtube") {
+        const key = serverEnv().YOUTUBE_API_KEY;
+        if (!key)
+          throw new AppError("SERVER_NOT_CONFIGURED", "YouTube is not configured on this server", {
+            recovery: "configure",
+          });
+        return new YouTubeMusicProvider(key);
+      }
+      throw unsupported("music", binding);
     },
     // The Morning Brief service builds on this module; loaded lazily to keep imports acyclic.
     briefs() {

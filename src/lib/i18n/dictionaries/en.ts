@@ -158,6 +158,7 @@ export const en = {
     study: "Study",
     shortcuts: "Shortcuts",
     methods: "Methods",
+    music: "Music",
   },
   providers: {
     elise_native: "ELISE",
@@ -293,6 +294,7 @@ export const en = {
         planning: "Planning your day",
         shortcuts: "Running your shortcut",
         methods: "Following your method",
+        music: "Playing music",
         other: "Working",
       },
       done: {
@@ -316,6 +318,7 @@ export const en = {
         planning: "Planning",
         shortcuts: "Shortcut",
         methods: "Method",
+        music: "Music",
         other: "Done",
       },
       unavailable: (label: string) => `${label} unavailable`,
@@ -644,6 +647,25 @@ export const en = {
     },
   },
   connections: {
+    musicTitle: "Music",
+    musicBody:
+      "ELISE plays and controls music through your provider: search, play, skip, volume and devices. Nothing is shared or bought.",
+    spotifyHint: "Your Spotify account. Playback control requires Spotify Premium.",
+    connectSpotify: "Connect Spotify",
+    reconnectSpotify: "Reconnect",
+    spotifyNotConfigured: "Spotify isn't set up on this server yet (SPOTIFY_CLIENT_ID / SECRET).",
+    youtubeHint: "Search and the official YouTube player, on screen. No account needed.",
+    enableYouTube: "Turn on YouTube",
+    youtubeNotConfigured: "YouTube isn't set up on this server yet (YOUTUBE_API_KEY).",
+    deezerUnavailable:
+      "Deezer isn't accepting new developer apps right now; ELISE will add it when its API allows.",
+    musicCapabilities: "Search · play · skip · volume · devices",
+    youtubeCapabilities: "Search · play on screen · skip in ELISE's queue · volume",
+    connectedSpotifyToast: "Spotify connected",
+    disconnectMusicConsequences: [
+      "ELISE stops controlling music through this account.",
+      "Nothing in the provider is changed or deleted.",
+    ],
     emptyIntro:
       "You choose what ELISE can access. Connect an account and pick exactly what ELISE may use — you can change or remove it anytime.",
     health: {
@@ -1972,6 +1994,7 @@ export const en = {
       map: "Map",
       place: "Place",
       weather: "Weather",
+      music: "Music",
       result: "Result",
     },
     states: {
@@ -2293,6 +2316,31 @@ export const en = {
     historyItem: "Voice interaction",
     deleteConfirm: (title: string) =>
       `Delete “${title}”? Its transcript and what ELISE recalls from it are removed.`,
+  },
+  /** Music (ADR-042). */
+  music: {
+    title: "Music",
+    nothing: "Nothing playing",
+    play: "Play",
+    pause: "Pause",
+    next: "Next",
+    previous: "Previous",
+    volume: "Volume",
+    device: "Device",
+    devices: "Play on",
+    thisBrowser: "ELISE (this browser)",
+    open: (provider: string) => `Open in ${provider}`,
+    on: (device: string) => `On ${device}`,
+    from: (context: string) => `From ${context}`,
+    results: "Results",
+    queue: "Up next",
+    tapToStart: "Tap play to start: the browser needs a tap before it plays sound.",
+    embeddedNote: "YouTube plays here, on screen; leaving this page stops it.",
+    backToCanvas: "Go to the music",
+    playing: "Playing",
+    paused: "Paused",
+    duck: "Lower music while ELISE speaks",
+    duckHint: "Only where the device lets ELISE set its volume precisely; it goes back afterwards.",
   },
   methods: {
     title: "Methods",

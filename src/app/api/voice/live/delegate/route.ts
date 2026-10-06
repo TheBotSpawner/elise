@@ -5,6 +5,7 @@ import { getAuthContext } from "@/application/auth-context";
 import { runDelegation } from "@/application/live-voice-service";
 import { ATTACHMENT_LIMITS } from "@/core/attachments/model";
 import { AppError, toAppError, toPublicError } from "@/core/errors";
+import { playbackSchema } from "@/core/workspace/music";
 
 import { unauthorized, voiceError } from "../../errors";
 
@@ -23,6 +24,8 @@ const body = z
       .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) })
       .strict()
       .optional(),
+    /** The page's embedded music player state (ADR-042); never stored. */
+    music: playbackSchema.optional(),
   })
   .strict();
 

@@ -40,6 +40,7 @@ export const SURFACE_TYPES = [
   "map",
   "place",
   "weather",
+  "music",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
@@ -282,7 +283,10 @@ export const emptyWorkspace = (): WorkspaceState => ({
 const TRANSIENT_INTENTS: ReadonlySet<IntentKind> = new Set(["settings"]);
 
 /** A pending approval stays until it is decided, whatever else happens. */
-const sticky = (s: Surface) => s.type === "approval" && s.state === "attention";
+const sticky = (s: Surface) =>
+  (s.type === "approval" && s.state === "attention") ||
+  // Music that is playing stays while the conversation moves on (ADR-042 §H).
+  (s.type === "music" && Boolean((s.payload as { playing?: boolean } | null)?.playing));
 /** What stays when the context moves on: pending approvals and pinned Surfaces. */
 const kept = (s: Surface) => sticky(s) || Boolean(s.pinned);
 

@@ -26,6 +26,7 @@ import { LIST_TOOLS } from "@/core/tools/lists";
 import { LOCATION_TOOLS } from "@/core/tools/location";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { METHOD_TOOLS } from "@/core/tools/methods";
+import { MUSIC_TOOLS } from "@/core/tools/music";
 import { NOTE_TOOLS } from "@/core/tools/notes";
 import { PLANNING_TOOLS } from "@/core/tools/planning";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
@@ -256,6 +257,7 @@ export function makePorts(
       ...PLANNING_TOOLS,
       ...SHORTCUT_TOOLS,
       ...METHOD_TOOLS,
+      ...MUSIC_TOOLS,
     ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>

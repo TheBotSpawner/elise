@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Music,
   CalendarDays,
   Check,
   FileText,
@@ -43,6 +44,7 @@ import { isOpen } from "@/core/workspace/model";
 import type { SurfacePayloads } from "@/core/workspace/registry";
 import { ApprovalCard, type ApprovalPhase } from "@/features/chat/approval-card";
 import { DisplayCard } from "@/features/chat/result-cards";
+import { MusicSurfaceBody } from "@/features/music/music-view";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -94,6 +96,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   media: ImageIcon,
   map: MapIcon,
   weather: CloudSun,
+  music: Music,
   place: MapPin,
   result: Sparkles,
 };
@@ -947,6 +950,13 @@ export function SurfaceBody({
           p={surface.payload as SurfacePayloads["weather"]}
           size={size ?? (large ? "large" : "medium")}
           onPrompt={handlers.onPrompt}
+        />
+      );
+    case "music":
+      return (
+        <MusicSurfaceBody
+          p={surface.payload as SurfacePayloads["music"]}
+          size={size ?? (large ? "large" : "medium")}
         />
       );
     case "result": {

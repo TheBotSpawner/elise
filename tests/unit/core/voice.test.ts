@@ -1445,3 +1445,33 @@ describe("narration (ADR-041): ELISE speaks first, then the conversation goes on
     expect(player.spoken).toEqual(["Buen día."]);
   });
 });
+
+describe("music in the room (ADR-042 §K)", () => {
+  it("music starting while listening is re-measured, never heard as the user speaking", async () => {
+    const { controller, hear, sent } = setup();
+    await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    // Music starts (known application audio): the room is measured again with it.
+    controller.ambientChanged();
+    await hear(VOICE_TURN.calibrateMs + 4_000, 0.03);
+    expect(controller.state.phase).toBe("listening");
+    expect(sent).toHaveLength(0);
+    // The user speaking over the music is still a turn.
+    await hear(800, 0.3);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.03);
+    await settle();
+    expect(sent).toHaveLength(1);
+  });
+
+  it("does nothing outside listening (barge-in keeps working while ELISE speaks)", async () => {
+    const { controller, player, hear } = setup();
+    await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await controller.narrate("Buen día. Te pongo algo tranqui.");
+    controller.ambientChanged();
+    expect(controller.state.phase).toBe("speaking");
+    await hear(VOICE_TURN.barge.calibrateMs + 400, 0.03);
+    await hear(VOICE_TURN.barge.holdMs + 50, 0.3);
+    expect(player.stopped).toBeGreaterThan(0);
+  });
+});

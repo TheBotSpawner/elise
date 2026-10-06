@@ -13,6 +13,8 @@ import { threadUrl, type ThreadRef } from "@/core/interaction";
 import { WORKSPACE_LIMITS, type WorkspaceState } from "@/core/workspace/model";
 import { ContextIndicator, type ContextOption } from "@/features/contexts/context-indicator";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
+import { duckMusic, receiveMusic } from "@/features/music/controller";
+import { useMusic } from "@/features/music/music-view";
 import { useLiveVoice } from "@/features/voice/use-live-voice";
 import { useVoice } from "@/features/voice/use-voice";
 import type { DockCaption } from "@/features/workspace/canvas/dock";
@@ -173,6 +175,29 @@ export function ChatSurface({
     return asked === "legacy" || asked === "live" ? asked : (voice.runtime ?? "legacy");
   });
   const voiceSession = runtime === "live" ? liveVoice : legacyVoice;
+  // Music (ADR-042): results of music tools reach the page's one player state.
+  useEffect(
+    () =>
+      subscribe((e) => {
+        if (
+          e.type === "tool_finished" &&
+          e.outcome.status === "succeeded" &&
+          e.outcome.display?.kind === "music"
+        )
+          void receiveMusic(e.outcome.display);
+      }),
+    [subscribe],
+  );
+  // Music lowers while ELISE speaks and comes back after (where the volume can be set).
+  const speaking = voiceSession.state.phase === "speaking";
+  useEffect(() => void duckMusic(speaking), [speaking]);
+  // Music starting or stopping changes the room: voice re-measures it (never heard as speech).
+  const musicPlaying = Boolean(useMusic().payload?.playing);
+  const ambientRef = useRef(voiceSession.ambientChanged);
+  useEffect(() => {
+    ambientRef.current = voiceSession.ambientChanged;
+  });
+  useEffect(() => ambientRef.current(), [musicPlaying]);
   const voiceOn = voice.enabled && voiceSession.supported;
   const phase = voiceSession.state.phase;
   const last = messages.at(-1);

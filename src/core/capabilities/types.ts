@@ -24,7 +24,8 @@ export type CapabilityKey =
   | "shortcuts"
   | "voice"
   | "schedules"
-  | "methods";
+  | "methods"
+  | "music";
 
 /** docs/architecture/15-tools-actions-approvals.md §9 */
 export type OperationKind =

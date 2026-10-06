@@ -19,6 +19,7 @@ import {
   type SurfaceType,
   type WorkspaceState,
 } from "./model";
+import { musicPayload } from "./music";
 import { visualizationSpec, type VisualizationSpec } from "./visualization";
 import { weatherPayload, type WeatherPayload } from "./weather";
 import { TASK_STATUSES } from "../capabilities/tasks";
@@ -572,6 +573,8 @@ export const PAYLOADS = {
   place: placePayload,
   /** Current conditions, hours or days at one place (ADR-038). */
   weather: weatherPayload,
+  /** What is playing now, one per interaction (ADR-042). */
+  music: musicPayload,
   /** Any other tool result, rendered by its existing card. */
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
 } satisfies Record<SurfaceType, z.ZodType>;
@@ -1025,6 +1028,29 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     priority: 70,
     actions: (p) => (p.mode === "needs_location" ? [] : [expand]),
     describe: describeWeather,
+  },
+  music: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "small",
+    // Ambient: it accompanies the work, it doesn't lead it.
+    priority: 36,
+    actions: () => [expand],
+    describe: (p) =>
+      [
+        p.item
+          ? `${p.playing ? "Playing" : "Paused"} ${q(p.item.title)}${p.item.subtitle ? ` by ${p.item.subtitle}` : ""}`
+          : "Nothing playing",
+        p.context?.title ? `from ${q(p.context.title)}` : null,
+        p.device ? `on ${q(p.device.name)}` : null,
+        p.volume !== null ? `volume ${p.volume}%` : null,
+        `(${p.provider})`,
+        p.results?.length
+          ? `results: ${p.results.map((r) => `${q(r.title)} [${r.kind} ${r.ref}]`).join("; ")}`
+          : null,
+        p.devices?.length ? `devices: ${p.devices.map((d) => q(d.name)).join(", ")}` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
   },
   result: {
     sizes: ["small", "medium", "large"],

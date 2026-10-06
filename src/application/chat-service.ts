@@ -8,6 +8,7 @@ import { escalateAfter, MODEL_POLICY, routeTurn } from "@/core/agents/model-poli
 import { methodNote, recentMethodId, runElise, toolNotes } from "@/core/agents/runtime";
 import { selectTools, toolsInNotes } from "@/core/agents/tool-selection";
 import type { ToolContext } from "@/core/agents/tools";
+import type { ClientPlayback } from "@/core/capabilities/music";
 import { getOperation } from "@/core/capabilities/registry";
 import {
   activeContextOf,
@@ -89,6 +90,8 @@ export interface ChatTurnInput {
   voice?: VoiceTurnMeta;
   /** The position the user shared for this session (ADR-023): never stored or logged. */
   here?: LatLng;
+  /** The page's embedded music player state (ADR-042): never stored or logged. */
+  music?: ClientPlayback;
   /**
    * A GPT-Live delegation (ADR-026): the voice model already acknowledged; the reply is a
    * compact verified result, and false starts in the transcript are expected.
@@ -617,6 +620,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
               workspace,
               voiceWake: input.voice?.wake ?? null,
               here,
+              music: input.music ?? null,
               // Live: a context activated by a tool applies to the rest of the run.
               get context() {
                 const c = workspace.state().context;

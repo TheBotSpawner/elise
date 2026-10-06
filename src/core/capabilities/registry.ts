@@ -321,6 +321,26 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       removeReference: WRITE,
     },
   },
+  // Music (ADR-042): searching and reading playback are reads; playing, pausing, skipping,
+  // volume and moving playback are low-risk, reversible writes that never ask. They act on the
+  // user's own player only (nothing is shared, sent or bought).
+  music: {
+    key: "music",
+    status: "available",
+    operations: {
+      search: READ,
+      getPlayback: READ,
+      listDevices: READ,
+      play: WRITE,
+      pause: WRITE,
+      resume: WRITE,
+      next: WRITE,
+      previous: WRITE,
+      seek: WRITE,
+      setVolume: WRITE,
+      transfer: WRITE,
+    },
+  },
   // Universal Recall: the user's past interactions, read-only (ADR-012).
   history: {
     key: "history",

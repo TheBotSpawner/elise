@@ -931,6 +931,18 @@ export class VoiceController {
   }
 
   /**
+   * Known application audio (music, ADR-042 §K) started or stopped while listening: re-measure
+   * the room's noise floor with it, so music in the room is never taken for the user speaking.
+   * ELISE's own voice is handled by barge-in, which compares against what she is saying.
+   */
+  ambientChanged() {
+    if (this.state.phase !== "listening" || !this.mic || this.finishing) return;
+    this.trace("ambient_changed");
+    // Without a known floor the detector calibrates on what it hears first (the music too).
+    this.detector = new TurnDetector(VOICE_TURN);
+  }
+
+  /**
    * ELISE speaks first (ADR-041): a scheduled conversation's narration, said through the same
    * player as any reply — barge-in while she speaks, then listening (continuous) or asleep.
    * Called from a tap: browsers only start audio after a gesture.

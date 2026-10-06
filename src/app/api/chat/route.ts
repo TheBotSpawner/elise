@@ -5,6 +5,7 @@ import { getAuthContext } from "@/application/auth-context";
 import { startChatTurn } from "@/application/chat-service";
 import { ATTACHMENT_LIMITS } from "@/core/attachments/model";
 import { AppError, toAppError, toPublicError } from "@/core/errors";
+import { playbackSchema } from "@/core/workspace/music";
 import { logger } from "@/infrastructure/observability/logger";
 
 export const maxDuration = 60;
@@ -26,6 +27,8 @@ const bodySchema = z
       .object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) })
       .strict()
       .optional(),
+    /** What this page's embedded music player is doing (ADR-042); never stored. */
+    music: playbackSchema.optional(),
     voice: z
       .object({
         durationMs: z.number().int().min(0).max(120_000),
