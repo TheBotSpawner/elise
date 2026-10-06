@@ -745,6 +745,10 @@ export function surfacesFromOutcome(
           ref: null,
         }),
       );
+    // A brief is presented as its own Surfaces (calendar, tasks, email…) by the session that
+    // has it, never as one report-shaped Surface (ADR-041).
+    case "morning_brief":
+      return [];
     // A Method used or changed is a quiet line in the conversation, never a Surface (ADR-040 §N).
     case "method":
       return [];

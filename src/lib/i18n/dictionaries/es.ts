@@ -1121,6 +1121,9 @@ export const es: Dictionary = {
       "El procesamiento en segundo plano todavía no está configurado en este servidor, así que no se pueden leer documentos nuevos.",
   },
   schedules: {
+    /** A run is a conversation ELISE started (ADR-041). */
+    conversation: { listen: "Escuchar el resumen", tag: "Programado" },
+    openLatest: "Abrir el último",
     title: "Programados",
     subtitle: "Lo que ELISE prepara por su cuenta.",
     emptyTitle: "Todavía no hay nada programado",

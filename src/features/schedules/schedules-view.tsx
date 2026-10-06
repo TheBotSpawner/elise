@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import type { RunView, ScheduleView } from "@/application/schedules-service";
 import { EmptyState } from "@/components/shared/page";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { PRESETS, presetOf } from "@/core/schedules/presets";
 import type { ScheduleInput } from "@/core/schedules/schedule";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
@@ -179,7 +179,34 @@ function ScheduleCard({
   const { t, locale } = useI18n();
   const [pending, startTransition] = useTransition();
   const [history, setHistory] = useState<RunView[] | null>(null);
-  const running = s.lastRun !== null && ACTIVE_RUN.has(s.lastRun.status);
+  const router = useRouter();
+  const [starting, setStarting] = useState(false);
+  const running = starting || (s.lastRun !== null && ACTIVE_RUN.has(s.lastRun.status));
+
+  /**
+   * Run now (ADR-041 §K): the run is a conversation ELISE starts. Once it's ready, it opens on
+   * the Live Canvas, where the user keeps talking with it.
+   */
+  function runNow() {
+    startTransition(async () => {
+      const started = await runNowAction(s.id);
+      if (!started.ok) return void toast.error(errorText(t, started.error));
+      toast.success(t.schedules.started);
+      setStarting(true);
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => setTimeout(r, 2_000));
+        const runs = await historyAction(s.id);
+        const run = runs.ok ? runs.value.find((r) => r.id === started.value) : null;
+        if (!run || ACTIVE_RUN.has(run.status)) continue;
+        setStarting(false);
+        if (run.resultId) return router.push(`/schedules/results/${run.resultId}`);
+        router.refresh();
+        return;
+      }
+      setStarting(false);
+      router.refresh();
+    });
+  }
   const attention = s.lastRun?.warnings.find((w) => ATTENTION.has(w.code));
 
   function act<T>(fn: () => Promise<ScheduleActionResult<T>>, success?: string) {
@@ -239,11 +266,7 @@ function ScheduleCard({
             {t.schedules.cancelRun}
           </Button>
         ) : (
-          <Button
-            size="sm"
-            disabled={pending || !backgroundAvailable}
-            onClick={() => act(() => runNowAction(s.id), t.schedules.started)}
-          >
+          <Button size="sm" disabled={pending || !backgroundAvailable} onClick={runNow}>
             {t.schedules.runNow}
           </Button>
         )}
@@ -266,6 +289,14 @@ function ScheduleCard({
             {t.schedules.pause}
           </Button>
         ) : null}
+        {s.lastRun?.resultId && (
+          <Link
+            href={`/schedules/results/${s.lastRun.resultId}`}
+            className={buttonVariants({ size: "sm", variant: "secondary" })}
+          >
+            {t.schedules.openLatest}
+          </Link>
+        )}
         <Button size="sm" variant="ghost" disabled={pending} onClick={onEdit}>
           {t.schedules.edit}
         </Button>

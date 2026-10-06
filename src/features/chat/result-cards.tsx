@@ -11,7 +11,6 @@ import type { Task } from "@/core/capabilities/tasks";
 import { addDays, todayIn } from "@/core/time";
 import { agendaGroups, calendarItem, localRange } from "@/core/workspace/calendar";
 import { MethodLine } from "@/features/methods/method-line";
-import { BriefView } from "@/features/schedules/brief-view";
 import { ScheduleProposalCard } from "@/features/schedules/proposal-card";
 import { WeatherView } from "@/features/workspace/canvas/weather";
 import { useI18n } from "@/lib/i18n/client";
@@ -378,15 +377,8 @@ export function DisplayCard({
     case "schedule_proposal":
       return <ScheduleProposalCard display={display} rise={rise} />;
     case "morning_brief":
-      return (
-        <motion.section {...rise} aria-label={t.chat.resultLabel} className={CARD}>
-          <BriefView
-            brief={display.brief}
-            createdAt={`${display.brief.date}T12:00:00Z`}
-            unread={false}
-          />
-        </motion.section>
-      );
+      // A brief lives on the Canvas as its own Surfaces (ADR-041); the thread keeps the words.
+      return null;
     case "weather":
       return (
         <motion.section {...rise} aria-label={t.chat.resultLabel} className={CARD}>

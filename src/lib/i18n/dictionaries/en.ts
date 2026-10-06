@@ -1108,6 +1108,9 @@ export const en = {
       "Background processing isn't configured on this server yet, so new documents can't be read.",
   },
   schedules: {
+    /** A run is a conversation ELISE started (ADR-041). */
+    conversation: { listen: "Listen to the brief", tag: "Scheduled" },
+    openLatest: "Open latest",
     title: "Schedules",
     subtitle: "What ELISE prepares for you, on its own.",
     emptyTitle: "Nothing scheduled yet",

@@ -478,6 +478,27 @@ export class LiveVoiceSession {
     this.set(this.muted ? "muted" : "listening");
   }
 
+  /**
+   * ELISE speaks first (ADR-041): a scheduled conversation's narration. The session opens if it
+   * isn't (this is a tap), and the live voice says the script in its own voice; then it simply
+   * keeps listening, so the user can interrupt or follow up at once.
+   */
+  async narrate(text: string) {
+    const script = text.trim();
+    if (!script) return;
+    if (!this.pc) await this.start();
+    for (let i = 0; i < 160 && this.state.phase === "arming"; i++)
+      await new Promise((r) => setTimeout(r, 50));
+    if (this.channel?.readyState !== "open") return;
+    this.append(
+      "session.commentary.append",
+      null,
+      this.deps.locale === "es"
+        ? `Empezá vos: decí esto tal cual, sin agregar nada ni leer lo que está en pantalla: ${script}`
+        : `You speak first: say exactly this, adding nothing and not reading what's on screen: ${script}`,
+    );
+  }
+
   /** Stops ELISE's audio right now (a tap); GPT-Live keeps listening. */
   interrupt() {
     if (this.audio) this.audio.muted = true;

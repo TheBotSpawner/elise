@@ -29,6 +29,8 @@ export interface HistoryRow {
   summary: string | null;
   at: string;
   voice: boolean;
+  /** A conversation ELISE started for a scheduled run (ADR-041). */
+  scheduled?: boolean;
   spaceIds: string[];
   chips: Chip[];
   /** Its folder (primary link), or null for "Sin Espacio". */
@@ -71,6 +73,7 @@ export async function historyRows(
         summary: summaries.get(c.id)?.summary ?? null,
         at: c.lastMessageAt,
         voice: false,
+        scheduled: c.scheduled,
       };
     }),
     ...voice.map((v) => {

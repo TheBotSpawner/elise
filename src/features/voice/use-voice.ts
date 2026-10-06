@@ -153,6 +153,8 @@ export function useVoice({
     finishNow: () => controller.finishNow(),
     toggleMute: () => controller.toggleMute(),
     /** Downloads the on-device language pack (needs the user's tap). */
+    /** ELISE says this first (a scheduled conversation's narration, ADR-041). */
+    narrate: (text: string) => void controller.narrate(text),
     installWake: async () => {
       if (!wake) return;
       controller.setWakeStatus("installing");

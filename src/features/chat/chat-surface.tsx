@@ -1,5 +1,6 @@
 "use client";
 
+import { Volume2 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -71,7 +72,10 @@ export function ChatSurface({
   firstPrompts,
   gone = null,
   fresh = false,
+  narration = null,
 }: {
+  /** A scheduled conversation's opening (ADR-041): ELISE says it on "Listen". */
+  narration?: { text: string } | null;
   /** The tab's active interaction no longer exists (deleted, inaccessible): forget it. */
   gone?: string | null;
   /** Arrived from "Nueva conversación". */
@@ -325,6 +329,16 @@ export function ChatSurface({
 
   const notices = (
     <>
+      {narration && voiceSession.narrate && (
+        <button
+          type="button"
+          onClick={() => voiceSession.narrate(narration.text)}
+          className="inline-flex h-8 items-center gap-2 rounded-full border border-accent-line bg-[var(--menu-bg)] px-3 text-[13px] text-accent-text backdrop-blur hover:bg-accent-soft"
+        >
+          <Volume2 aria-hidden className="size-3.5" />
+          {t.schedules.conversation.listen}
+        </button>
+      )}
       {!online && (
         <span
           role="status"

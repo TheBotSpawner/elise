@@ -4,10 +4,11 @@
  */
 import type { ApprovalReason } from "@/core/agents/policy";
 import type { ToolDisplay } from "@/core/agents/tools";
+import type { BriefPresentItem } from "@/core/briefs/canvas";
 import type { PublicError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import type { DelegationResult } from "@/core/voice/live";
-import type { WorkspaceOp } from "@/core/workspace/model";
+import type { SurfaceDraft, WorkspaceOp } from "@/core/workspace/model";
 
 /** Tool outcome as the UI needs it (model-facing output stripped). */
 export type ClientToolOutcome =
@@ -75,4 +76,15 @@ export interface AssistantMessageMetadata {
   voiceApproval?: { approvalId: string; decision: "approved" | "rejected" };
   /** Said by GPT-Live on its own (conversation only, no backend work), ADR-026. */
   live?: boolean;
+  /**
+   * ELISE started this conversation for a scheduled run (ADR-041): which run, what it
+   * presented (to rebuild the Canvas once its working state expired) and what to say aloud.
+   */
+  scheduled?: {
+    scheduleId: string;
+    runId: string;
+    name: string;
+    spoken: string;
+    presentation: { items: BriefPresentItem[]; focus: SurfaceDraft | null };
+  };
 }

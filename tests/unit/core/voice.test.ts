@@ -1410,3 +1410,38 @@ describe("turn verdicts and latency stages (ADR-036)", () => {
     });
   });
 });
+
+describe("narration (ADR-041): ELISE speaks first, then the conversation goes on", () => {
+  it("speaks the scheduled conversation's script through the normal player, then listens", async () => {
+    const { controller, player, hear } = setup();
+    await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await controller.narrate("Buen día. Hoy no tenés reuniones. Te dejé todo en pantalla.");
+    expect(player.spoken.join(" ")).toContain("Hoy no tenés reuniones.");
+    expect(controller.state.phase).toBe("speaking");
+    player.finishPlaying();
+    // Continuous voice: the user can follow up at once, as after any reply.
+    expect(controller.state.phase).toBe("listening");
+  });
+
+  it("can be talked over like any reply", async () => {
+    const { controller, player, hear } = setup();
+    await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await controller.narrate("Buen día. Hay una propuesta pendiente y cinco respuestas esperando.");
+    expect(controller.state.phase).toBe("speaking");
+    // Her voice in the room first (echo is calibrated), then the user over it.
+    await hear(VOICE_TURN.barge.calibrateMs + 400, 0.03);
+    await hear(VOICE_TURN.barge.holdMs + 50, 0.3);
+    expect(player.stopped).toBeGreaterThan(0);
+    expect(["user_speaking", "interrupted"]).toContain(controller.state.phase);
+  });
+
+  it("speaks even when replies are text-only: listening was asked for explicitly", async () => {
+    const { controller, player, hear } = setup({ prefs: { speak: false } });
+    await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await controller.narrate("Buen día.");
+    expect(player.spoken).toEqual(["Buen día."]);
+  });
+});

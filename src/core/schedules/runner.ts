@@ -107,6 +107,8 @@ export interface RunResult {
   title: string;
   content: unknown;
   metadata?: Record<string, unknown>;
+  /** The conversation the run opened (ADR-041): where its result lives and is opened. */
+  conversationId?: string | null;
 }
 
 export type HandlerOutcome =
@@ -315,6 +317,7 @@ export async function executeRun(
     await ports.store.notify(run, schedule, {
       type: "schedule.result_ready",
       title: schedule.name,
+      // The result's stable link: it opens the run's conversation (or the legacy view).
       url: `/schedules/results/${resultId}`,
     });
   }

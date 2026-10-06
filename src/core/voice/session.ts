@@ -90,6 +90,8 @@ export type VoiceEvent =
   | { type: "online" }
   | { type: "wake_status"; status: WakeStatus }
   | { type: "tail"; on: boolean }
+  /** ELISE speaks first: a scheduled conversation's narration (ADR-041), like a reply. */
+  | { type: "narrate" }
   | { type: "end" };
 
 export const initialVoice: VoiceState = {
@@ -180,6 +182,10 @@ export function voiceReducer(state: VoiceState, event: VoiceEvent): VoiceState {
     case "transcription_failed":
       return state.phase === "finalizing_input"
         ? to("listening", { partial: "", problem: "transcription_failed" })
+        : state;
+    case "narrate":
+      return state.phase === "listening" || state.phase === "waiting_approval"
+        ? to("thinking", { partial: "", problem: null })
         : state;
     case "tool_started":
       return state.phase === "thinking" ? to("executing") : state;

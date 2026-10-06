@@ -194,6 +194,10 @@ export type ConversationRow = {
   status: "active" | "archived";
   last_message_at: Ts;
   active_context: Json;
+  /** "scheduled": a conversation ELISE started for a scheduled run (ADR-041). */
+  origin: "user" | "scheduled";
+  schedule_id: string | null;
+  schedule_run_id: string | null;
   created_at: Ts;
   updated_at: Ts;
   archived_at: Ts | null;
@@ -490,6 +494,8 @@ export type ScheduledResultRow = {
   artifact_reference: string | null;
   read_at: Ts | null;
   metadata: Json;
+  /** The run's conversation (ADR-041); null for results from before it. */
+  conversation_id: string | null;
   created_at: Ts;
 };
 

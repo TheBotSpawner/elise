@@ -1,4 +1,4 @@
-import { MessagesSquare, Mic, Search } from "lucide-react";
+import { CalendarClock, MessagesSquare, Mic, Search } from "lucide-react";
 import Link from "next/link";
 import { after } from "next/server";
 
@@ -283,6 +283,12 @@ function Recents({
                   {r.voice && (
                     <Mic className="size-3.5 shrink-0 text-faint" aria-label={t.voice.history} />
                   )}
+                  {r.scheduled && (
+                    <CalendarClock
+                      className="size-3.5 shrink-0 text-faint"
+                      aria-label={t.schedules.conversation.tag}
+                    />
+                  )}
                   <span className="truncate">
                     {r.title || (r.voice ? t.voice.historyItem : t.chat.untitled)}
                   </span>
@@ -334,6 +340,11 @@ function Row({
           <span className="flex items-center gap-1.5 text-sm">
             {r.voice && (
               <Mic className="size-3.5 shrink-0 text-faint" aria-label={t.voice.history} />
+            )}
+            {r.scheduled && (
+              <span className="shrink-0 rounded-full border border-border px-1.5 text-[10.5px] text-faint">
+                {t.schedules.conversation.tag}
+              </span>
             )}
             <span className="truncate">{title}</span>
           </span>

@@ -247,6 +247,7 @@ export class SupabaseScheduleStore implements ScheduleStore {
           title: result.title,
           content: json(result.content),
           metadata: json(result.metadata ?? {}),
+          conversation_id: result.conversationId ?? null,
         },
         { onConflict: "schedule_run_id" },
       )

@@ -10,6 +10,8 @@ export interface ConversationSummary {
   id: string;
   title: string | null;
   lastMessageAt: string;
+  /** ELISE started it for a scheduled run (ADR-041). */
+  scheduled: boolean;
 }
 
 export interface StoredChatMessage {
@@ -31,14 +33,19 @@ export async function listConversations(
 ): Promise<ConversationSummary[]> {
   const { data, error } = await auth.db
     .from("conversations")
-    .select("id, title, last_message_at")
+    .select("id, title, last_message_at, origin")
     .eq("workspace_id", auth.workspaceId)
     .eq("user_id", auth.userId)
     .is("archived_at", null)
     .order("last_message_at", { ascending: false })
     .limit(limit);
   if (error) throw new AppError("INTERNAL_ERROR", "Could not load conversations", { cause: error });
-  return data.map((c) => ({ id: c.id, title: c.title, lastMessageAt: c.last_message_at }));
+  return data.map((c) => ({
+    id: c.id,
+    title: c.title,
+    lastMessageAt: c.last_message_at,
+    scheduled: c.origin === "scheduled",
+  }));
 }
 
 /** Loads a conversation's messages; approval cards reflect their current (not historical) state. */

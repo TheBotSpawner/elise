@@ -62,6 +62,7 @@ import { syncDueSources } from "./knowledge-background";
 import { locationConfigured } from "./location-service";
 import { methodStore, methodsForTurn, recordMethodUse } from "./methods-service";
 import { queueRecallIndex, searchRecall } from "./recall-service";
+import { presentBriefing } from "./scheduled-conversation";
 import { enabledShortcuts, shortcutStore } from "./shortcuts-service";
 import { structuredSourcesForChat } from "./structured-service";
 import { studyStore } from "./study-service";
@@ -710,9 +711,20 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                     ? { tool: event.name, args: event.args as Record<string, unknown> }
                     : null;
                 // Every result ELISE fetched is presented by the application, never "drawn".
+                const brief =
+                  event.outcome.status === "succeeded" &&
+                  event.outcome.display?.kind === "morning_brief"
+                    ? event.outcome.display.present
+                    : undefined;
                 const surfaceIds = event.name.startsWith("ui.")
                   ? []
-                  : workspace.present(event.name, event.callId, event.outcome, query, change);
+                  : brief
+                    ? // "My brief now" opens the same Surfaces a scheduled brief does (ADR-041).
+                      [
+                        ...(brief.focus ? [brief.focus.id] : []),
+                        ...presentBriefing(workspace, brief).flatMap((t) => t.surfaceIds ?? []),
+                      ]
+                    : workspace.present(event.name, event.callId, event.outcome, query, change);
                 if (event.name === "meeting.prepare") logMeetingPrep(event.outcome, durationMs);
                 const done = event.outcome.status === "succeeded" ? event.outcome.display : null;
                 if (done?.kind === "method" && done.change === "used") {

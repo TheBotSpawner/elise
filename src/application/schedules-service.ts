@@ -289,12 +289,14 @@ export interface ResultView {
   readAt: string | null;
   brief: MorningBrief;
   scheduleId: string;
+  /** The run's conversation (ADR-041); null for results from before it. */
+  conversationId: string | null;
 }
 
 export async function getResult(auth: AuthContext, id: string): Promise<ResultView> {
   const { data } = await auth.db
     .from("scheduled_results")
-    .select("id, title, created_at, read_at, content, schedule_id")
+    .select("id, title, created_at, read_at, content, schedule_id, conversation_id")
     .eq("id", id)
     .eq("workspace_id", auth.workspaceId)
     .eq("user_id", auth.userId)
@@ -307,6 +309,7 @@ export async function getResult(auth: AuthContext, id: string): Promise<ResultVi
     readAt: data.read_at,
     brief: data.content as unknown as MorningBrief,
     scheduleId: data.schedule_id,
+    conversationId: data.conversation_id,
   };
 }
 

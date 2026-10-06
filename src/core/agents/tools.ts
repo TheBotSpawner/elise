@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { AIToolSpec } from "./ai-provider";
 import type { ToolCallOutcome } from "./executor";
+import type { BriefPresentItem } from "../briefs/canvas";
 import type { MorningBrief } from "../briefs/morning-brief";
 import type { CalendarEvent, CalendarInfo, CalendarProvider } from "../capabilities/calendar";
 import type {
@@ -47,6 +48,7 @@ import type { BriefPort } from "../tools/planning";
 import type { WakeStatus } from "../voice/session";
 import type { WeatherCapability } from "../weather/model";
 import type { WebCapability } from "../web/model";
+import type { SurfaceDraft } from "../workspace/model";
 import type { WorkspacePort } from "../workspace/port";
 import type { SurfacePayloads } from "../workspace/registry";
 
@@ -367,7 +369,12 @@ export type ToolDisplay =
   | { kind: "study_progress"; progress: SurfacePayloads["study_progress"] }
   | { kind: "study_summary"; summary: SurfacePayloads["study_summary"] }
   /** Continuous voice and Shortcuts (ADR-017). */
-  | { kind: "morning_brief"; brief: MorningBrief }
+  | {
+      kind: "morning_brief";
+      brief: MorningBrief;
+      /** Its Surfaces (ADR-041): presented through the canonical Canvas path. */
+      present?: { items: BriefPresentItem[]; focus: SurfaceDraft | null };
+    }
   | { kind: "shortcut"; shortcut: SurfacePayloads["shortcut"] }
   | { kind: "map"; map: SurfacePayloads["map"] }
   | { kind: "place"; place: SurfacePayloads["place"] }

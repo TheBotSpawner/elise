@@ -77,6 +77,7 @@ export function useLiveVoice({
     interrupt: () => session.current?.interrupt(),
     finishNow: () => undefined,
     toggleMute: () => session.current?.toggleMute(),
+    narrate: (text: string) => void session.current?.narrate(text),
     installWake: async () => undefined,
     supported:
       typeof window === "undefined" ||

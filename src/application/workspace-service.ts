@@ -312,6 +312,8 @@ export class WorkspaceSession implements WorkspacePort {
     outcome: ToolCallOutcome,
     query: SurfaceQuery | null = null,
     change: ResourceChange | null = null,
+    /** How prominent ELISE wants it (a scheduled brief ranks its Surfaces, ADR-041). */
+    priority?: number,
   ): string[] {
     const at = new Date().toISOString();
     // A change to something already shown updates it there instead of adding a duplicate.
@@ -384,6 +386,7 @@ export class WorkspaceSession implements WorkspacePort {
         ? { dataset: `${d.ref.resource}:${d.ref.id}` }
         : {}),
       ...(change ? { changedAt: at } : {}),
+      ...(priority !== undefined && d.type !== "approval" ? { priority } : {}),
       ...(d.type === "calendar" && query?.tool === "calendar.listEvents"
         ? calendarIdentity(d.payload as CalendarPayload, query)
         : {}),

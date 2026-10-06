@@ -341,8 +341,9 @@ export class VoiceController {
     await this.openMic();
   }
 
-  private ensurePlayer() {
-    if (!this.prefs.speak || this.player) return;
+  /** `always`: an explicit "listen" (narration) speaks even when replies are text-only. */
+  private ensurePlayer(always = false) {
+    if ((!this.prefs.speak && !always) || this.player) return;
     const p = this.deps.createPlayer();
     p.onStart = () => this.onAudioStart();
     p.onIdle = () => {
@@ -927,6 +928,53 @@ export class VoiceController {
     this.marks = { speechStart: 0 };
     this.lastActivity = this.now;
     this.startTicker();
+  }
+
+  /**
+   * ELISE speaks first (ADR-041): a scheduled conversation's narration, said through the same
+   * player as any reply — barge-in while she speaks, then listening (continuous) or asleep.
+   * Called from a tap: browsers only start audio after a gesture.
+   */
+  async narrate(text: string) {
+    const script = text.trim();
+    if (!script) return;
+    const phase = this.state.phase;
+    if (phase === "idle" || phase === "error" || phase === "sleeping") await this.start();
+    // The room is measured once (arming) before anything is said over the open mic.
+    for (let i = 0; i < 60 && this.state.phase === "arming"; i++)
+      await new Promise((r) => setTimeout(r, 50));
+    if (this.state.phase !== "listening" && this.state.phase !== "waiting_approval") return;
+    this.ensurePlayer(true);
+    if (!this.player) return;
+    this.mic?.discard();
+    this.t0 = this.now;
+    this.marks = {};
+    const turn: SpokenTurn = {
+      language: null,
+      chunker: new SentenceChunker(),
+      spokenChunker: null,
+      t0: this.t0,
+      marks: {},
+      textDone: false,
+      spokenChars: 0,
+      spoken: "",
+      capped: false,
+      awaitingApproval: false,
+      speech: { running: 0, started: false, resultQueued: false },
+      acked: true,
+      intent: null,
+      failed: false,
+      progressed: false,
+      text: "",
+      open: true,
+    };
+    this.turn = turn;
+    this.act({ type: "narrate" });
+    this.trace("narration_started", { chars: script.length });
+    for (const sentence of [...turn.chunker.push(`${script} `), ...turn.chunker.flush()])
+      this.say(turn, sentence, "conversational");
+    turn.textDone = true;
+    if (!this.player.speaking) this.complete();
   }
 
   /** Tap while ELISE speaks or thinks: stop her and listen; the reply so far stays on screen. */

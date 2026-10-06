@@ -3,6 +3,7 @@ import "server-only";
 import type { AIProvider } from "@/core/agents/ai-provider";
 import { executeToolCall, type ExecutorPorts, type ToolCallOutcome } from "@/core/agents/executor";
 import type { ToolContext } from "@/core/agents/tools";
+import { briefCanvas, focusSurface, spokenBrief, type BriefRead } from "@/core/briefs/canvas";
 import {
   assembleBrief,
   briefIssues,
@@ -26,6 +27,7 @@ import type { AuthContext } from "./auth-context";
 import { listContextProfiles, listEntities } from "./contexts-service";
 import { createExecutorPorts, toolContext } from "./elise";
 import { methodSpaces, methodStore, recordMethodUse } from "./methods-service";
+import { createScheduledConversation } from "./scheduled-conversation";
 import { studyFocus } from "./study-service";
 import { OPEN_LIMIT } from "./tasks-service";
 
@@ -40,8 +42,16 @@ export async function gatherBrief(
   ports: ExecutorPorts,
   ctx: ToolContext,
   config: MorningBriefConfig,
-): Promise<{ data: BriefData; approvalId: string | null; failed: number; attempted: number }> {
+): Promise<{
+  data: BriefData;
+  approvalId: string | null;
+  failed: number;
+  attempted: number;
+  /** Every read that answered, with its arguments: the Canvas presents and refreshes them. */
+  reads: BriefRead[];
+}> {
   const warnings: BriefWarning[] = [];
+  const reads: BriefRead[] = [];
   let approvalId: string | null = null;
   let failed = 0;
   let attempted = 0;
@@ -62,6 +72,13 @@ export async function gatherBrief(
       out = await run();
     }
     if (out.status === "succeeded") {
+      if (out.display)
+        reads.push({
+          block,
+          tool: name,
+          args: args as Record<string, unknown>,
+          display: out.display,
+        });
       const unavailable = (out.output as { unavailable?: { account: string; error: string }[] })
         ?.unavailable;
       for (const u of unavailable ?? [])
@@ -235,6 +252,7 @@ export async function gatherBrief(
     approvalId,
     failed,
     attempted,
+    reads,
   };
 }
 
@@ -263,7 +281,9 @@ async function briefContexts(auth: AuthContext): Promise<BriefData["contexts"] |
  * brief, with the user's own brief configuration when they have one. No written narrative —
  * the conversation (or the voice) gives the synthesis.
  */
-export async function briefNow(auth: AuthContext): Promise<MorningBrief> {
+export async function briefNow(
+  auth: AuthContext,
+): Promise<{ brief: MorningBrief; reads: BriefRead[] }> {
   const { data } = await auth.db
     .from("schedules")
     .select("configuration")
@@ -285,7 +305,7 @@ export async function briefNow(auth: AuthContext): Promise<MorningBrief> {
   if (contexts) gathered.data.contexts = contexts;
   const brief = assembleBrief(gathered.data);
   logBrief(auth, { origin: "interactive", scheduleId: null }, config, brief, gathered);
-  return brief;
+  return { brief, reads: gathered.reads };
 }
 
 /**
@@ -354,7 +374,7 @@ export function morningBriefHandler(deps: {
   authFor(workspaceId: string, userId: string): Promise<AuthContext>;
   ai(): AIProvider;
 }): ActionHandler {
-  return async ({ schedule, now }) => {
+  return async ({ schedule, run, now }) => {
     const config = morningBriefConfigSchema.parse(schedule.configuration ?? {});
     // A4: every run is one user in one workspace; never a generic service identity.
     if (!schedule.workspaceId || !schedule.ownerUserId)
@@ -427,6 +447,20 @@ export function morningBriefHandler(deps: {
       });
     }
     logBrief(auth, { origin: "schedule", scheduleId: schedule.id }, config, brief, gathered);
+    // The run is an ELISE-initiated conversation (ADR-041): its results become Surfaces of a
+    // normal Live Canvas, and its synthesis ELISE's first message.
+    const locale = auth.profile.locale;
+    const conversationId = await createScheduledConversation(auth, {
+      scheduleId: schedule.id,
+      runId: run.id,
+      title: `${schedule.name} — ${new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${brief.date}T12:00:00Z`))}`,
+      name: schedule.name,
+      spoken: spokenBrief(brief, locale),
+      presentation: {
+        items: briefCanvas(brief, gathered.reads),
+        focus: focusSurface(brief, locale, `intent:scheduled:${run.id}`),
+      },
+    });
     if (followed) {
       const parents = new Map((await methodSpaces(auth)).map((x) => [x.id, x.parentId]));
       await recordMethodUse(auth, {
@@ -446,6 +480,7 @@ export function morningBriefHandler(deps: {
         // The user's own name for it: "Morning Brief", "Weekly planning"…
         title: schedule.name,
         content: brief,
+        conversationId,
         metadata: {
           date: brief.date,
           scheduleName: schedule.name,
