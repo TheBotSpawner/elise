@@ -235,7 +235,7 @@ function Ring({
     <div
       className={cn(
         "relative mx-auto aspect-square",
-        big ? "w-[min(70vmin,520px)]" : "w-[min(100%,220px)]",
+        big ? "w-[min(70vmin,520px)]" : "w-[min(100%,280px)]",
       )}
     >
       <svg viewBox="0 0 100 100" className="absolute inset-0 size-full -rotate-90" aria-hidden>
@@ -252,12 +252,25 @@ function Ring({
           strokeDashoffset={c * (1 - progress)}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+      {/* A size container: the digits inside scale with the ring (see ringDigits). */}
+      <div
+        className="absolute inset-0 flex flex-col items-center justify-center gap-1"
+        style={{ containerType: "inline-size" }}
+      >
         {children}
       </div>
     </div>
   );
 }
+
+/**
+ * Digits always keep a margin inside the ring: a mono digit is ~0.6em wide, so n characters at
+ * 100/n % of the ring's width fill ~60% of it ("25:00" stops at 18%; "10:00:00" gets 12.5%).
+ */
+const ringDigits = (text: string) => `min(18cqw, ${(100 / text.length).toFixed(2)}cqw)`;
+
+/** The Focus view: as large as the screen allows, never wider than ~75% of it. */
+const focusDigits = (text: string) => `min(240px, 20vw, ${(120 / text.length).toFixed(2)}vw, 28vh)`;
 
 // ── The Timer Surface ────────────────────────────────────────────────────────
 
@@ -282,7 +295,10 @@ export function TimerSurfaceBody({ p: snapshot, size }: { p: TimerPayload; size:
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 py-4 text-center">
         <Eyebrow p={p} v={v} />
-        <p className="font-mono text-[clamp(72px,20vw,240px)] leading-none font-extralight tracking-tight tabular-nums">
+        <p
+          className="font-mono leading-none font-extralight tracking-tight tabular-nums"
+          style={{ fontSize: focusDigits(v.digits) }}
+        >
           {v.digits}
         </p>
         {!v.stopwatch && (
@@ -309,7 +325,12 @@ export function TimerSurfaceBody({ p: snapshot, size }: { p: TimerPayload; size:
         </p>
       ) : (
         <Ring progress={v.progress}>
-          <p className="font-mono text-[44px] leading-none font-light tabular-nums">{v.digits}</p>
+          <p
+            className="font-mono leading-none font-light tabular-nums"
+            style={{ fontSize: ringDigits(v.digits) }}
+          >
+            {v.digits}
+          </p>
           <p className="text-[12px] text-faint">{p.state === "running" ? t.remaining : ""}</p>
         </Ring>
       )}
