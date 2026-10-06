@@ -31,7 +31,8 @@ async function origin(): Promise<string> {
 async function run(fn: () => Promise<void>): Promise<ConnectionActionResult> {
   try {
     await fn();
-    revalidatePath("/connections");
+    // The Hub and every Provider Detail.
+    revalidatePath("/connections", "layout");
     return { ok: true };
   } catch (error) {
     return { ok: false, error: toPublicError(error) };

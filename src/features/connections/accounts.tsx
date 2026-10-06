@@ -1,8 +1,7 @@
 "use client";
 
-import { ChevronDown, Plus, Star, Music as MusicIcon } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
+import { ChevronDown, Plus, Star } from "lucide-react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { ConnectionView } from "@/application/connections-service";
@@ -20,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import type { ErrorCode } from "@/core/errors";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -30,11 +28,10 @@ import {
   renameConnectionAction,
   setDefaultAction,
   connectNotion,
-  connectSpotify,
-  enableYouTubeAction,
   toggleCapabilityAction,
   type ConnectionActionResult,
 } from "./actions";
+import { ProviderIcon } from "./provider-icon";
 
 const GOOGLE_CAPS = ["calendar", "tasks", "email", "knowledge", "finance"] as const;
 const CAP_LOGOS = {
@@ -104,10 +101,16 @@ function useExpanded(id: string, openOnce = false): [boolean, (open: boolean) =>
 }
 
 /**
+ * Account-level pieces of Connections (ADR-043): one account's card with its capabilities,
+ * alias, "use this account for", reconnect and disconnect. The Hub never renders these; a
+ * Provider Detail does, collapsed by default.
+ */
+
+/**
  * Connections that could receive new items for a capability. Connected sheets are read-only
  * for Finance, so they never compete for its default.
  */
-function selectableFor(connections: ConnectionView[], key: string) {
+export function selectableFor(connections: ConnectionView[], key: string) {
   return connections.filter(
     (c) =>
       c.status === "connected" &&
@@ -120,7 +123,7 @@ function selectableFor(connections: ConnectionView[], key: string) {
  * The default provider for a capability, as a compact star. Only rendered when the user has
  * more than one provider for it: with a single one the default is implicit.
  */
-function DefaultMark({
+export function DefaultMark({
   capability,
   isDefault,
   disabled,
@@ -153,232 +156,7 @@ function DefaultMark({
   );
 }
 
-export function ConnectionsView({
-  connections,
-  googleAvailable,
-  notionAvailable,
-  spotifyAvailable = false,
-  youtubeAvailable = false,
-}: {
-  spotifyAvailable?: boolean;
-  youtubeAvailable?: boolean;
-  connections: ConnectionView[];
-  googleAvailable: boolean;
-  notionAvailable: boolean;
-}) {
-  const { t } = useI18n();
-  const params = useSearchParams();
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  // Read once on first render: the URL is cleaned right after.
-  const [justConnected] = useState(() => params.get("connected"));
-  const multi = (key: string) => selectableFor(connections, key) > 1;
-  const makeDefault = (connectionId: string, key: ConnectionView["capabilities"][number]["key"]) =>
-    startTransition(async () => {
-      const result = await setDefaultAction(connectionId, key);
-      if (!result.ok) toast.error(t.errors.codes[result.error.code]);
-    });
-
-  // One-shot feedback after returning from Google, then clean the URL.
-  useEffect(() => {
-    const connected = params.get("connected");
-    const missing = params.get("missing");
-    const error = params.get("error") as ErrorCode | null;
-    if (!connected && !error) return;
-    if (connected) {
-      toast.success(
-        params.get("provider") === "notion"
-          ? t.connections.connectedNotionToast
-          : params.get("provider") === "spotify"
-            ? t.connections.connectedSpotifyToast
-            : t.connections.connectedToast,
-      );
-    }
-    if (missing) {
-      const names = missing
-        .split(",")
-        .map((c) => t.capabilities[c as keyof typeof t.capabilities] ?? c);
-      toast.warning(t.connections.missingToast(names.join(", ")));
-    }
-    if (error) toast.error(t.errors.codes[error] ?? t.errors.codes.INTERNAL_ERROR);
-    router.replace("/connections");
-  }, [params, router, t]);
-
-  const elise = connections.filter((c) => c.providerKey === "elise_native");
-  const google = connections.filter((c) => c.providerKey === "google");
-  const notion = connections.filter((c) => c.providerKey === "notion");
-  const spotify = connections.filter((c) => c.providerKey === "spotify");
-  const youtube = connections.filter((c) => c.providerKey === "youtube");
-
-  return (
-    <div className="flex flex-col gap-10">
-      {!google.length && !notion.length && (
-        <p className="rounded-2xl border border-accent-line bg-accent-soft px-5 py-4 text-[14px]">
-          {t.connections.emptyIntro}
-        </p>
-      )}
-      <section className="flex flex-col gap-3">
-        <h2 className="type-label text-faint">ELISE</h2>
-        {elise.map((c) => (
-          <div
-            key={c.id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-5 py-4"
-          >
-            <div>
-              <p className="flex items-center gap-2 font-medium">
-                <span
-                  aria-hidden
-                  className="size-2.5 rounded-full bg-accent shadow-[0_0_8px_var(--accent)]"
-                />
-                ELISE
-              </p>
-              <p className="text-[13.5px] text-muted">{t.connections.eliseBody}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {c.capabilities.map((cap) => (
-                <span
-                  key={cap.key}
-                  className={cn(
-                    "flex h-8 items-center gap-1 rounded-full border border-border text-[13px]",
-                    multi(cap.key) ? "pr-0.5 pl-3" : "px-3",
-                  )}
-                >
-                  {t.capabilities[cap.key]}
-                  {multi(cap.key) && (
-                    <DefaultMark
-                      capability={cap.key}
-                      isDefault={cap.isDefault}
-                      disabled={pending}
-                      onSelect={() => makeDefault(c.id, cap.key)}
-                    />
-                  )}
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="type-label text-faint">{t.connections.googleTitle}</h2>
-          <p className="mt-1 max-w-2xl text-[13.5px] text-muted">{t.connections.googleBody}</p>
-        </div>
-        {google.map((c) => (
-          <GoogleConnectionCard
-            key={c.id}
-            connection={c}
-            googleAvailable={googleAvailable}
-            multi={multi}
-            openOnce={c.id === justConnected}
-          />
-        ))}
-        {googleAvailable ? (
-          <ConnectGoogleAction
-            label={google.length ? t.connections.addGoogle : t.connections.connectGoogle}
-          />
-        ) : (
-          <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[13.5px] text-muted">
-            {t.connections.notConfigured}
-          </p>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="type-label text-faint">Notion</h2>
-          <p className="mt-1 max-w-2xl text-[13.5px] text-muted">{t.connections.notionBody}</p>
-        </div>
-        {notion.map((c) => (
-          <NotionConnectionCard key={c.id} connection={c} notionAvailable={notionAvailable} />
-        ))}
-        {notionAvailable ? (
-          <form
-            action={connectNotion}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-5"
-          >
-            <span className="flex items-center gap-3">
-              <NotionIcon size={32} />
-              <span className="text-[13.5px] text-muted">{t.connections.notionHint}</span>
-            </span>
-            <Button type="submit">
-              {notion.length ? t.connections.addNotion : t.connections.connectNotion}
-            </Button>
-          </form>
-        ) : (
-          <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[13.5px] text-muted">
-            {t.connections.notionNotConfigured}
-          </p>
-        )}
-      </section>
-
-      {/* Music (ADR-042): providers of one canonical capability. */}
-      <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="type-label text-faint">{t.connections.musicTitle}</h2>
-          <p className="mt-1 max-w-2xl text-[13.5px] text-muted">{t.connections.musicBody}</p>
-        </div>
-        {spotify.map((c) => (
-          <MusicConnectionCard
-            key={c.id}
-            connection={c}
-            name="Spotify"
-            detail={t.connections.musicCapabilities}
-            reconnect={spotifyAvailable ? connectSpotify : null}
-          />
-        ))}
-        {!spotify.length &&
-          (spotifyAvailable ? (
-            <form
-              action={connectSpotify}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-5"
-            >
-              <span className="flex items-center gap-3">
-                <MusicIcon className="size-7 text-accent" aria-hidden />
-                <span className="text-[13.5px] text-muted">{t.connections.spotifyHint}</span>
-              </span>
-              <Button type="submit">{t.connections.connectSpotify}</Button>
-            </form>
-          ) : (
-            <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[13.5px] text-muted">
-              {t.connections.spotifyNotConfigured}
-            </p>
-          ))}
-        {youtube.map((c) => (
-          <MusicConnectionCard
-            key={c.id}
-            connection={c}
-            name="YouTube"
-            detail={t.connections.youtubeCapabilities}
-            reconnect={null}
-          />
-        ))}
-        {!youtube.length &&
-          (youtubeAvailable ? (
-            <form
-              action={enableYouTubeAction}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-5"
-            >
-              <span className="flex items-center gap-3">
-                <MusicIcon className="size-7 text-accent" aria-hidden />
-                <span className="text-[13.5px] text-muted">{t.connections.youtubeHint}</span>
-              </span>
-              <Button type="submit" variant="secondary">
-                {t.connections.enableYouTube}
-              </Button>
-            </form>
-          ) : (
-            <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[13.5px] text-muted">
-              {t.connections.youtubeNotConfigured}
-            </p>
-          ))}
-        <p className="px-1 text-[12.5px] text-faint">Deezer · {t.connections.deezerUnavailable}</p>
-      </section>
-    </div>
-  );
-}
-
-function MusicConnectionCard({
+export function MusicConnectionCard({
   connection: c,
   name,
   detail,
@@ -399,7 +177,7 @@ function MusicConnectionCard({
       )}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <MusicIcon className="size-7 shrink-0 text-accent" aria-hidden />
+        <ProviderIcon id={c.providerKey} name={name} size={36} />
         <div className="min-w-0">
           <p className="truncate font-medium">{name}</p>
           {c.accountLabel && <p className="truncate text-[13.5px] text-muted">{c.accountLabel}</p>}
@@ -424,7 +202,7 @@ function MusicConnectionCard({
 }
 
 /** A compact action; the capability choice only appears, in a dialog, when asked for. */
-function ConnectGoogleAction({ label }: { label: string }) {
+export function ConnectGoogleAction({ label }: { label: string }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -505,7 +283,7 @@ function ConnectGoogleAction({ label }: { label: string }) {
   );
 }
 
-function GoogleConnectionCard({
+export function GoogleConnectionCard({
   connection: c,
   googleAvailable,
   multi,
@@ -723,7 +501,7 @@ function GoogleConnectionCard({
   );
 }
 
-function NotionConnectionCard({
+export function NotionConnectionCard({
   connection: c,
   notionAvailable,
 }: {
@@ -764,7 +542,7 @@ function NotionConnectionCard({
   );
 }
 
-function HealthPill({ health }: { health: ConnectionView["health"] }) {
+export function HealthPill({ health }: { health: ConnectionView["health"] }) {
   const { t } = useI18n();
   const ok = health === "connected";
   return (
@@ -784,7 +562,7 @@ function HealthPill({ health }: { health: ConnectionView["health"] }) {
 }
 
 /** Disconnect explains what happens first: what stops, what is removed, what stays. */
-function DisconnectButton({ connection: c }: { connection: ConnectionView }) {
+export function DisconnectButton({ connection: c }: { connection: ConnectionView }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();

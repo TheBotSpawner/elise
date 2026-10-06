@@ -1030,3 +1030,19 @@ export async function spotifyPlayerToken(
   const stored = await vault.read(ref);
   return { token, expiresAt: stored?.accessTokenExpiresAt ?? new Date().toISOString() };
 }
+
+/** Which providers this server can connect (the Hub shows the rest as not set up yet). */
+export function configuredProviders(list: {
+  googleAvailable: boolean;
+  notionAvailable: boolean;
+  spotifyAvailable: boolean;
+  youtubeAvailable: boolean;
+}): Record<string, boolean> {
+  return {
+    google: list.googleAvailable,
+    notion: list.notionAvailable,
+    spotify: list.spotifyAvailable,
+    youtube: list.youtubeAvailable,
+    elise_native: true,
+  };
+}

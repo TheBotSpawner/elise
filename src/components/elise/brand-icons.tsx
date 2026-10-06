@@ -131,3 +131,41 @@ export function NotionIcon({ size = 32, ...props }: Props) {
     </svg>
   );
 }
+
+export function SpotifyIcon({ size = 32, ...props }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden {...props}>
+      <circle cx="12" cy="12" r="11" fill="#1ED760" />
+      <path
+        fill="none"
+        stroke="#000"
+        strokeLinecap="round"
+        strokeWidth="1.9"
+        d="M6.6 9.4c3.7-1.1 7.6-.8 10.9 1"
+      />
+      <path
+        fill="none"
+        stroke="#000"
+        strokeLinecap="round"
+        strokeWidth="1.6"
+        d="M7.2 12.6c3-.8 6-.5 8.6.9"
+      />
+      <path
+        fill="none"
+        stroke="#000"
+        strokeLinecap="round"
+        strokeWidth="1.3"
+        d="M7.8 15.5c2.4-.6 4.6-.4 6.6.7"
+      />
+    </svg>
+  );
+}
+
+export function YouTubeIcon({ size = 32, ...props }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden {...props}>
+      <rect x="1" y="4.5" width="22" height="15" rx="4.5" fill="#FF0000" />
+      <path fill="#fff" d="M10 8.7v6.6l5.6-3.3z" />
+    </svg>
+  );
+}
