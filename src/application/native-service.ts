@@ -148,8 +148,16 @@ export async function seedStarterLists(auth: AuthContext): Promise<boolean> {
     source: "system",
   });
   if (error) return false; // already seeded (23505) or not allowed: nothing to do
-  const provider = lists(auth);
-  const existing = await provider.list();
+  // Its own queries on purpose (not the provider's): Next memoizes identical GETs within a
+  // render, and the page reads the lists through the provider right after seeding — a shared
+  // query would hand it the pre-seed result.
+  const { data: existing } = await auth.db
+    .from("lists")
+    .select("*")
+    .eq("workspace_id", auth.workspaceId)
+    .is("archived_at", null)
+    .order("name");
+  if (!existing) return false;
   // Someone who already organizes their own lists doesn't get suggestions on top.
   if (existing.length >= 3) return true;
   const has = (match: readonly string[]) =>
@@ -157,12 +165,21 @@ export async function seedStarterLists(auth: AuthContext): Promise<boolean> {
       const n = l.name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
       return match.some((m) => n.includes(m));
     });
+  let position = Math.max(0, ...existing.map((l) => l.position ?? 0));
   for (const starter of STARTER_LISTS) {
     if (has(starter.match)) continue;
-    await provider.create(
-      { name: auth.profile.locale === "en" ? starter.en : starter.es, icon: starter.icon },
-      "system",
-    );
+    position += 1024;
+    const base = {
+      workspace_id: auth.workspaceId,
+      name: auth.profile.locale === "en" ? starter.en : starter.es,
+      source: "system" as const,
+      created_by_user_id: auth.userId,
+    };
+    const { error: failed } = await auth.db
+      .from("lists")
+      .insert({ ...base, position, icon: starter.icon });
+    // Before migration 038 there is no position/icon: the list is still created.
+    if (failed) await auth.db.from("lists").insert(base);
   }
   return true;
 }

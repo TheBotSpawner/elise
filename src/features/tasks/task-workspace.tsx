@@ -119,7 +119,7 @@ const SORT = "elise.tasks.sort";
 
 export function TaskWorkspace({
   overview,
-  selection,
+  selection: fromUrl,
   workspaceId,
   timezone,
 }: {
@@ -148,6 +148,14 @@ export function TaskWorkspace({
   const refresh = useCallback(() => startTransition(() => router.refresh()), [router]);
   useRefreshWhenStale(overview.fetchedAt, refresh);
 
+  // Views switch instantly on the client (open tasks are all loaded); the URL follows. A new
+  // server selection (Back, a link) wins.
+  const [selection, setSelection] = useState(fromUrl);
+  const [urlKey, setUrlKey] = useState(selectionQuery(fromUrl));
+  if (selectionQuery(fromUrl) !== urlKey) {
+    setUrlKey(selectionQuery(fromUrl));
+    setSelection(fromUrl);
+  }
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<TaskFilters>({});
   const sort = usePref(SORT, "manual") as SortKey;
@@ -183,7 +191,12 @@ export function TaskWorkspace({
   const go = (sel: Selection) => {
     setNavOpen(false);
     setSearch("");
-    startTransition(() => router.replace(`${pathname}${selectionQuery(sel)}`, { scroll: false }));
+    setSelection(sel);
+    const href = `${pathname}${selectionQuery(sel)}`;
+    // Completed history loads only when asked for (ADR-009): that view needs the server.
+    if (sel.kind === "view" && sel.view === "completed" && !overview.completed)
+      startTransition(() => router.replace(href, { scroll: false }));
+    else window.history.replaceState(null, "", href);
   };
 
   /** One write: optimistic first, provider truth after (a failure restores the row). */

@@ -304,12 +304,16 @@ export function ListsWorkspace({
             className="h-9 pl-8 text-[13.5px]"
           />
         </label>
-        {lists.length > 3 && (
+        {/* Mobile shows one list at a time: the switcher is there from two lists on. */}
+        {lists.length > 1 && (
           <Select
             aria-label={w.jumpTo}
             value=""
             onChange={(e) => e.target.value && reveal(e.target.value)}
-            className="h-9 w-auto max-w-[14rem] py-0 text-[13px]"
+            className={cn(
+              "h-9 w-auto max-w-[14rem] py-0 text-[13px]",
+              lists.length <= 3 && "md:hidden",
+            )}
           >
             <option value="">{w.jumpTo}</option>
             {lists.map((l) => (
