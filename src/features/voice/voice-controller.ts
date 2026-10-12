@@ -1,4 +1,12 @@
 import type { VoiceTurnMeta } from "@/core/interaction";
+import {
+  DeliverySession,
+  deliveryCommand,
+  PcmDeliveryDetector,
+  type UtteranceDelivery,
+  type VoiceDelivery,
+  type VoiceDeliveryDetector,
+} from "@/core/voice/delivery";
 import type { WakeEngine } from "@/core/voice/device";
 import type { VoiceLanguage } from "@/core/voice/providers";
 import {
@@ -53,6 +61,8 @@ export interface MicPort {
   close(): void;
   rms(): number;
   level(): number;
+  /** Raw input for the delivery detector (ADR-049); analyzed at once, never kept. */
+  pcm?(): { samples: Float32Array; sampleRate: number } | null;
   readonly recording: boolean;
 }
 
@@ -68,6 +78,8 @@ export interface PlayerPort {
    * provisional transcript is ready by the time the turn ends (ADR-036). Preparation only.
    */
   prepare?(text: string, language: VoiceLanguage | null): void;
+  /** How she speaks from the next request on, and her own playback gain (ADR-049). */
+  setDelivery?(mode: VoiceDelivery): void;
   readonly speaking: boolean;
   onStart: (() => void) | null;
   onIdle: (() => void) | null;
@@ -124,7 +136,12 @@ export type VoiceMarks = Partial<
     /** How the turn's end was decided: 1 complete phrase, 2 unfinished, 0 no verdict. */
     | "endVerdict"
     /** 1: this turn continued one that was cut too early (its text was carried over). */
-    | "continuation",
+    | "continuation"
+    /** ADR-049: 0 normal, 1 quiet, 2 whisper; confidence bucket 0–10; 1 explicit; analysis ms. */
+    | "deliveryMode"
+    | "deliveryConfidence"
+    | "deliveryExplicit"
+    | "deliveryAnalysisMs",
     number
   >
 >;
@@ -136,6 +153,8 @@ export interface VoicePrefs {
   wakeEnabled: boolean;
   wakePhrase: WakePhrase;
   language: "es" | "en";
+  /** Match the user's speaking volume (ADR-049); off: normal unless asked. Default on. */
+  adaptiveDelivery?: boolean;
 }
 
 export interface VoiceDeps {
@@ -154,7 +173,9 @@ export interface VoiceDeps {
   /** Cancels the chat request in flight (a turn cut too early is replaced by the whole one). */
   cancel?: () => void;
   /** Synthesizes the acknowledgement lines ahead for this voice (fire and forget). */
-  warmAcknowledgements?: (language: "es" | "en") => void;
+  warmAcknowledgements?: (language: "es" | "en", delivery?: VoiceDelivery) => void;
+  /** How the user is speaking, from their audio (ADR-049). Default: the PCM detector. */
+  createDeliveryDetector?: () => VoiceDeliveryDetector;
   micProblem?: (error: unknown) => "permission_denied" | "no_microphone" | "not_supported";
   wake?: WakeEngine | null;
   online?: () => boolean;
@@ -256,6 +277,11 @@ export class VoiceController {
   /** A turn cut too early: its words lead the next utterance (premature-close recovery). */
   private carry: string | null = null;
   private tailUntil = 0;
+  /** ADR-049: this utterance's delivery evidence, and the session's delivery (hysteresis). */
+  private deliveryDetector: VoiceDeliveryDetector;
+  private delivery: DeliverySession;
+  /** Deliveries whose acknowledgements were already synthesized ahead this session. */
+  private warmedDeliveries = new Set<VoiceDelivery>(["normal"]);
 
   constructor(
     private deps: VoiceDeps,
@@ -268,6 +294,8 @@ export class VoiceController {
       continuous: prefs.continuous,
       wake: prefs.wakeEnabled ? "ready" : "off",
     };
+    this.deliveryDetector = deps.createDeliveryDetector?.() ?? new PcmDeliveryDetector();
+    this.delivery = new DeliverySession(prefs.adaptiveDelivery ?? true);
   }
 
   /** The send function changes identity with React renders. */
@@ -278,6 +306,9 @@ export class VoiceController {
   /** Preferences changed (Settings, or ELISE changed her wake phrase). */
   setPrefs(prefs: Partial<VoicePrefs>) {
     this.prefs = { ...this.prefs, ...prefs };
+    this.delivery.setAdaptive(this.prefs.adaptiveDelivery ?? true);
+    this.player?.setDelivery?.(this.delivery.current(this.now));
+    this.state = { ...this.state, delivery: this.delivery.current(this.now) };
     this.state = {
       ...this.state,
       speak: this.prefs.speak,
@@ -399,6 +430,7 @@ export class VoiceController {
     // A new utterance: any speculative transcript of an earlier one is stale.
     this.voiceVersion++;
     this.detector = new TurnDetector(VOICE_TURN, { floor: this.floor });
+    this.deliveryDetector.reset();
     this.bargeTurn = false;
     this.finishing = false;
     this.t0 = this.now;
@@ -428,6 +460,10 @@ export class VoiceController {
     const now = this.now;
     const mic = this.mic;
     if (!mic) return;
+    // A softer delivery ends on its own when its window runs out (the indicator goes with it) —
+    // only while ELISE listens: a reply never changes voice halfway through.
+    if (this.state.phase === "listening" && this.state.delivery !== this.delivery.current(now))
+      this.applyDelivery();
     if (this.state.phase === "speaking" && this.barge && this.player) {
       if (this.barge.frame(mic.rms(), this.player.rms(), now)) this.bargeIn();
       return;
@@ -445,6 +481,11 @@ export class VoiceController {
     if (!isHearing(this.state) || !this.detector || this.finishing) return;
     const signal = this.detector.frame(mic.rms(), now);
     if (this.detector.noiseFloor) this.floor = this.detector.noiseFloor;
+    // How they speak is measured while they speak: ready the moment the turn ends (ADR-049).
+    if (this.state.phase === "user_speaking") {
+      const frame = mic.pcm?.();
+      if (frame) this.deliveryDetector.frame(frame.samples, frame.sampleRate, this.floor);
+    }
     switch (signal) {
       case "speech_start":
         this.trace("speech_start", { sinceListen: Math.round(now - this.t0), floor: this.floor });
@@ -475,6 +516,7 @@ export class VoiceController {
           this.capture++;
           this.voiceVersion++;
           this.detector = new TurnDetector(VOICE_TURN, { floor: this.floor });
+          this.deliveryDetector.reset();
         }
         break;
     }
@@ -521,6 +563,9 @@ export class VoiceController {
     const lang = language ?? this.prefs.language;
     const line = pickAcknowledgement(intent, lang, this.ackHistory);
     this.preparedAck = { version, intent, line };
+    // Prepared in the delivery this turn is heading for, so a whispered turn gets a whispered
+    // acknowledgement at once (if the final verdict differs, the line is fetched again).
+    this.player.setDelivery?.(this.previewDelivery(text));
     this.player.prepare(line, language);
     this.trace("ack_prepared", { intent });
   }
@@ -631,6 +676,7 @@ export class VoiceController {
       open: !this.superseded,
     };
     this.superseded = false;
+    this.decideDelivery(text);
     // A plain lookup is clear from the words alone: acknowledge now, while the request goes out,
     // instead of after the model picks its tool (ADR-034). Never for actions.
     const predicted = predictIntent(text);
@@ -651,6 +697,56 @@ export class VoiceController {
       modality: "voice",
       voice: { durationMs, language, wake: this.state.wake },
     });
+  }
+
+  // ── Delivery (ADR-049) ─────────────────────────────────────────────────────
+
+  /** What this turn would decide, without committing (for the acknowledgement prepared early). */
+  private previewDelivery(text: string): VoiceDelivery {
+    const asked = deliveryCommand(text);
+    if (asked) return asked;
+    return this.delivery
+      .clone()
+      .observe(this.deliveryDetector.analyze(this.delivery.baselineLevel), this.now);
+  }
+
+  /**
+   * The turn ended: how ELISE answers. An explicit request ("susurrame", "hablá normal") wins;
+   * otherwise the evidence gathered while the user spoke. Applied before the acknowledgement,
+   * so the very first thing she says already matches.
+   */
+  private decideDelivery(text: string) {
+    const started = performance.now();
+    const asked = deliveryCommand(text);
+    const heard: UtteranceDelivery | null = asked
+      ? null
+      : this.deliveryDetector.analyze(this.delivery.baselineLevel);
+    const mode = asked
+      ? this.delivery.command(asked, this.now)
+      : this.delivery.observe(heard, this.now);
+    const m = this.turn?.marks ?? this.marks;
+    m.deliveryMode = mode === "whisper" ? 2 : mode === "quiet" ? 1 : 0;
+    m.deliveryConfidence = asked ? 10 : Math.round((heard?.confidence ?? 0) * 10);
+    m.deliveryExplicit = asked ? 1 : 0;
+    m.deliveryAnalysisMs = Math.round(performance.now() - started);
+    this.trace("delivery", {
+      mode,
+      source: this.delivery.source ?? "none",
+      heard: heard?.mode ?? null,
+      confidence: m.deliveryConfidence,
+      analysisMs: m.deliveryAnalysisMs,
+    });
+    this.applyDelivery();
+  }
+
+  private applyDelivery() {
+    const mode = this.delivery.current(this.now);
+    this.player?.setDelivery?.(mode);
+    if (mode !== "normal" && this.prefs.speak && !this.warmedDeliveries.has(mode)) {
+      this.warmedDeliveries.add(mode);
+      this.deps.warmAcknowledgements?.(this.prefs.language, mode);
+    }
+    this.act({ type: "delivery", mode });
   }
 
   // ── The reply ──────────────────────────────────────────────────────────────
@@ -836,6 +932,8 @@ export class VoiceController {
     this.barge = null;
     this.deps.onTimings?.(turn.marks);
     this.lastActivity = this.now;
+    // The quiet window counts from the end of her reply, not from when the user spoke.
+    this.delivery.extend(this.now);
     this.act({ type: "reply_done", awaitingApproval: turn.awaitingApproval });
     if (this.state.phase === "sleeping") this.afterSleep();
     else this.listen();
@@ -1133,6 +1231,9 @@ export class VoiceController {
     this.player?.stop();
     this.turn = null;
     this.barge = null;
+    // Per session only: the next one starts normal, with no baseline.
+    this.delivery = new DeliverySession(this.prefs.adaptiveDelivery ?? true);
+    this.player?.setDelivery?.("normal");
     this.act({ type: "end" });
   }
 

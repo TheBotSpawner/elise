@@ -44,7 +44,9 @@ export class Microphone {
     if (!Microphone.supported()) throw new MicError("not_supported");
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        // The browser's echo cancellation keeps ELISE's own voice out of the input.
+        // The browser's echo cancellation keeps ELISE's own voice out of the input. AGC stays on
+        // (STT quality): it evens out loudness, so the delivery detector (ADR-049) decides a
+        // whisper from voicing, never from volume alone.
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
     } catch (error) {
@@ -104,6 +106,16 @@ export class Microphone {
     let sum = 0;
     for (const v of this.samples) sum += v * v;
     return Math.sqrt(sum / this.samples.length);
+  }
+
+  /**
+   * The latest ~43 ms of raw input, for the delivery detector (ADR-049). The buffer is reused
+   * every tick and analyzed at once: no audio is kept or sent for this.
+   */
+  pcm(): { samples: Float32Array; sampleRate: number } | null {
+    if (!this.analyser || !this.stream || !this.ctx) return null;
+    this.analyser.getFloatTimeDomainData(this.samples);
+    return { samples: this.samples, sampleRate: this.ctx.sampleRate };
   }
 
   /** The level shown by the Orb (0..1). */

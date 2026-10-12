@@ -1,6 +1,7 @@
 import "server-only";
 
 import { AppError } from "@/core/errors";
+import type { VoiceDelivery } from "@/core/voice/delivery";
 import {
   VOICES,
   type SpeechInputProvider,
@@ -136,6 +137,16 @@ const STYLE: Record<VoiceLanguage, string> = {
   en: "Speak naturally, warm and clear, at a conversational pace. Understated, never theatrical.",
 };
 
+/** Trusted delivery (ADR-049): chosen by the voice runtime, never by the model's text. */
+const DELIVERY_STYLE: Record<VoiceDelivery, Record<VoiceLanguage, string>> = {
+  normal: { es: "", en: "" },
+  quiet: { es: " Hablá suave y en voz baja.", en: " Speak softly, in a low voice." },
+  whisper: {
+    es: " Susurrá: voz muy baja y aireada, discreta.",
+    en: " Whisper: very soft, breathy and discreet.",
+  },
+};
+
 export class OpenAISpeechOutput implements SpeechOutputProvider {
   readonly id = "openai";
   readonly format = { encoding: "pcm_s16le", sampleRate: 24_000 } as const;
@@ -158,7 +169,7 @@ export class OpenAISpeechOutput implements SpeechOutputProvider {
         voice: (VOICES as readonly string[]).includes(request.voice) ? request.voice : VOICES[0],
         input: request.text,
         response_format: "pcm",
-        instructions: STYLE[request.language],
+        instructions: `${STYLE[request.language]}${DELIVERY_STYLE[request.delivery ?? "normal"][request.language]}`,
       }),
       signal,
     });

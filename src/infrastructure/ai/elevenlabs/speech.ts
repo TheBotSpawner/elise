@@ -1,6 +1,7 @@
 import "server-only";
 
 import { AppError } from "@/core/errors";
+import type { VoiceDelivery } from "@/core/voice/delivery";
 import type { SpeechOutputProvider, SynthesisRequest, VoiceLanguage } from "@/core/voice/providers";
 import { recordUsage } from "@/infrastructure/observability/usage";
 
@@ -37,6 +38,26 @@ export interface ElevenUsage {
   characters: number;
   /** Request (or socket open) → first audio byte. */
   firstAudioMs: number | null;
+}
+
+/**
+ * Trusted delivery directives (ADR-049), added by ELISE's voice runtime AFTER sanitizing, so the
+ * model can never make ELISE whisper, laugh or shout by writing a tag. Audio tags only work on
+ * v3/v4 models; older models would read the tag aloud, so they get playback gain only. Every
+ * segment carries its own tag: each request is synthesized independently.
+ * Verified against the ElevenLabs docs (2026-10-12: `[whispering]` / `[whispers]` are v4
+ * delivery tags, placed before the text). The exact wording is to be chosen by listening with
+ * the ELISE voice (pending: the account's quota was exhausted when this was built).
+ */
+export const DELIVERY_TAGS: Record<VoiceDelivery, string> = {
+  normal: "",
+  quiet: "[softly]",
+  whisper: "[whispering]",
+};
+
+export function withDelivery(text: string, delivery: VoiceDelivery | undefined, model: string) {
+  const tag = isDialogueModel(model) ? DELIVERY_TAGS[delivery ?? "normal"] : "";
+  return tag ? `${tag} ${text}` : text;
 }
 
 /** Strips anything the model wrote in provider control syntax ([laughs], <break/>…). */
@@ -76,7 +97,12 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
     if (!text) throw new AppError("VALIDATION_ERROR", "Nothing to say");
     const voice = this.voiceFor(request.voice);
     return isDialogueModel(this.model)
-      ? this.dialogue(text, voice, request.language, signal)
+      ? this.dialogue(
+          withDelivery(text, request.delivery, this.model),
+          voice,
+          request.language,
+          signal,
+        )
       : this.http(text, voice, request, signal);
   }
 

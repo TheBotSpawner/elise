@@ -1,5 +1,6 @@
 "use client";
 
+import { playbackGain, type VoiceDelivery } from "@/core/voice/delivery";
 import type { VoiceLanguage } from "@/core/voice/providers";
 
 /**
@@ -9,6 +10,9 @@ import type { VoiceLanguage } from "@/core/voice/providers";
  * text said just before it, so the provider can continue the same intonation. The level is the
  * real output amplitude. `stop()` cuts at once and every late chunk of what was cut is dropped
  * (each reply has its own generation: audio from an older one is never scheduled).
+ * Delivery (ADR-049): every segment request carries the current delivery (the server adds the
+ * trusted provider directive to each one), and ELISE's own playback gain follows it — never
+ * the device volume. The level (barge-in) is measured after that gain: what actually plays.
  */
 
 /** Per line: whether it may still be said, and a hook when its synthesis starts (telemetry). */
@@ -44,6 +48,8 @@ interface Flight {
 export class SpeechPlayer {
   private ctx: AudioContext;
   private analyser: AnalyserNode;
+  private gain: GainNode;
+  private delivery: VoiceDelivery = "normal";
   private queue: Item[] = [];
   private sources = new Set<AudioBufferSourceNode>();
   private flights = new Set<AbortController>();
@@ -71,7 +77,15 @@ export class SpeechPlayer {
     this.ctx = new AudioContext();
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 1024;
+    this.gain = this.ctx.createGain();
+    this.gain.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
+  }
+
+  /** How ELISE speaks from now on: vocal delivery of the next requests, and playback gain. */
+  setDelivery(mode: VoiceDelivery) {
+    this.delivery = mode;
+    this.gain.gain.setTargetAtTime(playbackGain(mode), this.ctx.currentTime, 0.05);
   }
 
   get speaking(): boolean {
@@ -85,7 +99,7 @@ export class SpeechPlayer {
   }
 
   prepare(text: string, language: VoiceLanguage | null) {
-    const key = `${language ?? ""}|${text}`;
+    const key = `${language ?? ""}|${this.delivery}|${text}`;
     if (this.prepared.has(key)) return;
     if (this.prepared.size >= 8) this.prepared.clear(); // bounded: a few acknowledgements
     this.prepared.set(
@@ -109,7 +123,12 @@ export class SpeechPlayer {
     return fetch("/api/voice/speak", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, language, ...(previous ? { previous } : {}) }),
+      body: JSON.stringify({
+        text,
+        language,
+        ...(previous ? { previous } : {}),
+        ...(this.delivery !== "normal" ? { delivery: this.delivery } : {}),
+      }),
       signal,
     });
   }
@@ -132,7 +151,7 @@ export class SpeechPlayer {
     this.flights.add(controller);
     const previous = this.said;
     this.said = item.text;
-    const key = `${item.language ?? ""}|${item.text}`;
+    const key = `${item.language ?? ""}|${this.delivery}|${item.text}`;
     const ready = this.prepared.get(key);
     this.prepared.delete(key);
     const live = () => this.fetchSpeech(item.text, item.language, previous, controller.signal);
@@ -270,7 +289,7 @@ export class SpeechPlayer {
     for (let i = 0; i < pcm.length; i++) channel[i] = pcm[i]! / 32768;
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.analyser);
+    source.connect(this.gain);
     const earliest = this.ctx.currentTime + 0.04;
     // The audio ran dry before this arrived: that silence is what the listener heard as a cut.
     const gapMs =

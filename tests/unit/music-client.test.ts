@@ -115,6 +115,15 @@ describe("ducking while ELISE speaks", () => {
     expect(musicStore.get().ducked).toBeNull();
   });
 
+  it("ducks harder while ELISE whispers (ADR-049), then restores exactly what it was", async () => {
+    musicStore.setPayload(payload());
+    await duckMusic(true, "whisper");
+    expect(actions.musicAction).toHaveBeenLastCalledWith("setVolume", { percent: 12 });
+    await duckMusic(false, "whisper");
+    expect(actions.musicAction).toHaveBeenLastCalledWith("setVolume", { percent: 80 });
+    expect(musicStore.get().ducked).toBeNull();
+  });
+
   it("never fakes it: a device without volume control is left alone", async () => {
     musicStore.setPayload(payload({ device: { ...payload().device!, supportsVolume: false } }));
     await duckMusic(true);

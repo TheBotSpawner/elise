@@ -2335,6 +2335,7 @@ export const en = {
     asleepWake: (phrase: string) => `Asleep — say “${phrase}” or tap`,
     micOn: "The microphone is on for ELISE",
     micOff: "The microphone is off",
+    delivery: { quiet: "Quiet voice", whisper: "Whisper" },
     phases: {
       idle: "",
       arming: "Opening the microphone…",
@@ -2372,6 +2373,9 @@ export const en = {
       voice: "Voice",
       continuous: "Continuous conversation",
       continuousHint: "After each reply ELISE keeps listening, and sleeps after 30 s of silence.",
+      adaptive: "Match my speaking volume",
+      adaptiveHint:
+        "When you speak quietly or whisper, ELISE lowers her voice to match. You can also ask: “whisper”, “speak normally”. Saved on this device.",
       bargeIn: "Interrupt by speaking",
       bargeInHint:
         "Talk over ELISE to stop her. The microphone stays on while she speaks; headphones work best.",

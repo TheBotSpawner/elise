@@ -9,9 +9,11 @@ import type { SpeechOutputProvider, SynthesisRequest } from "@/core/voice/provid
 import { formatForSpeech, numberWords } from "@/core/voice/speech-format";
 import { SEGMENT, SentenceChunker } from "@/core/voice/speech-text";
 import {
+  DELIVERY_TAGS,
   ElevenLabsSpeechOutput,
   isDialogueModel,
   sanitizeForProvider,
+  withDelivery,
 } from "@/infrastructure/ai/elevenlabs/speech";
 import { FailoverSpeechOutput } from "@/infrastructure/ai/failover-speech";
 
@@ -185,6 +187,50 @@ describe("ElevenLabs adapter", () => {
     expect(FakeSocket.last.closed).toBe(true);
     expect(isDialogueModel("eleven_v4_turbo")).toBe(true);
     expect(isDialogueModel("eleven_flash_v2_5")).toBe(false);
+  });
+
+  it("trusted delivery (ADR-049): the runtime's whisper tag survives, the model's tags never do — on every segment", async () => {
+    const texts: string[] = [];
+    vi.stubGlobal(
+      "WebSocket",
+      class {
+        onopen: (() => void) | null = null;
+        onmessage: ((e: { data: string }) => void) | null = null;
+        onclose: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        constructor() {
+          queueMicrotask(() => this.onopen?.());
+        }
+        send(data: string) {
+          const m = JSON.parse(data) as { inputs?: { text: string }[]; flush?: boolean };
+          if (m.inputs) texts.push(m.inputs[0]!.text);
+          if (m.flush)
+            queueMicrotask(() => {
+              this.onmessage?.({ data: JSON.stringify({ audio: "AQI=" }) });
+              this.onmessage?.({ data: JSON.stringify({ is_final: true }) });
+            });
+        }
+        close() {}
+      },
+    );
+    const p = new ElevenLabsSpeechOutput("k", "eleven_v4_turbo", voices, settings);
+    const say = (text: string, delivery?: SynthesisRequest["delivery"]) =>
+      p
+        .synthesize({ text, language: "es", voice: "elise", ...(delivery ? { delivery } : {}) })
+        .then((s) => new Response(s).arrayBuffer());
+    await say("Sí, mañana tenés una reunión.", "whisper");
+    await say("[shouts] Después [laughs] el almuerzo.", "whisper");
+    await say("[whispering] Hola.");
+    await say("Te hablo bajito.", "quiet");
+    expect(texts).toEqual([
+      `${DELIVERY_TAGS.whisper} Sí, mañana tenés una reunión.`,
+      `${DELIVERY_TAGS.whisper} Después el almuerzo.`,
+      // A tag the model wrote is stripped even when it asks for a whisper.
+      "Hola.",
+      `${DELIVERY_TAGS.quiet} Te hablo bajito.`,
+    ]);
+    // Models without audio tags would read the tag aloud: they get playback gain only.
+    expect(withDelivery("Hola.", "whisper", "eleven_flash_v2_5")).toBe("Hola.");
   });
 
   it("a refused request is a typed error (never the provider's text)", async () => {

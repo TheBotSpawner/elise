@@ -265,6 +265,12 @@ export function Dock({
               <SendIcon />
             </button>
           )}
+          {/* ADR-049: how ELISE is speaking — subtle, gone when she's back to normal. */}
+          {session && voice.state.delivery !== "normal" && (
+            <span className="rounded-full border border-accent-line px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] text-accent-text uppercase">
+              {t.voice.delivery[voice.state.delivery]}
+            </span>
+          )}
           {voice && <MicButton state={voice.state} handlers={voice.handlers} />}
           {!voice && !typingMode && (
             <span className="grid size-11 place-items-center text-faint">

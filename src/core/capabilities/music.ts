@@ -1,3 +1,5 @@
+import { DUCK_FACTOR, type VoiceDelivery } from "@/core/voice/delivery";
+
 import type { MusicRequest, RankedCandidate } from "./music-match";
 
 /**
@@ -266,9 +268,14 @@ const TYPE_WORDS: Partial<Record<MusicDevice["type"], string[]>> = {
 
 /**
  * Ducking (ADR-042 §J): the volume to use while ELISE speaks, and what to restore after.
- * Null when the device can't be set precisely — then nothing is ducked (never faked).
+ * Null when the device can't be set precisely — then nothing is ducked (never faked). When ELISE
+ * whispers (ADR-049) the music goes lower still, so she never has to raise her voice over it.
  */
-export function duckedVolume(current: number | null, supportsVolume: boolean): number | null {
+export function duckedVolume(
+  current: number | null,
+  supportsVolume: boolean,
+  delivery: VoiceDelivery = "normal",
+): number | null {
   if (!supportsVolume || current === null || current <= 15) return null;
-  return Math.max(10, Math.round(current * 0.35));
+  return Math.max(delivery === "normal" ? 10 : 5, Math.round(current * DUCK_FACTOR[delivery]));
 }

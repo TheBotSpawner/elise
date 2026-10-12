@@ -43,6 +43,7 @@ export function useVoice({
     wakeEnabled: p.wakeEnabled,
     wakePhrase: p.wakePhrase,
     language,
+    adaptiveDelivery: adaptiveDeliveryEnabled(),
   });
   const [wake] = useState(() =>
     typeof window !== "undefined" && WebSpeechWakeEngine.supported()
@@ -70,11 +71,11 @@ export function useVoice({
           wake,
           online: () => navigator.onLine,
           trace: voiceTrace(),
-          warmAcknowledgements: (language) =>
+          warmAcknowledgements: (language, delivery) =>
             void fetch("/api/voice/speak/warm", {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ language }),
+              body: JSON.stringify({ language, ...(delivery ? { delivery } : {}) }),
             }).catch(() => undefined),
         },
         toPrefs(prefs),
@@ -165,6 +166,28 @@ export function useVoice({
     },
     supported: typeof window === "undefined" || Microphone.supported(),
   };
+}
+
+// ── Adaptive voice volume (ADR-049): a per-device preference, like music ducking ──────────
+
+const ADAPTIVE_PREF = "elise.voice.adaptive";
+
+/** "Match my speaking volume": on unless turned off on this device. */
+export function adaptiveDeliveryEnabled(): boolean {
+  try {
+    return typeof window === "undefined" || window.localStorage.getItem(ADAPTIVE_PREF) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function setAdaptiveDeliveryEnabled(on: boolean) {
+  try {
+    window.localStorage.setItem(ADAPTIVE_PREF, on ? "1" : "0");
+  } catch {
+    // Storage unavailable: the default (on) stays.
+  }
+  window.dispatchEvent(new CustomEvent(VOICE_PREFS_EVENT, { detail: { adaptiveDelivery: on } }));
 }
 
 /** Uploads one utterance and follows the transcript as it is recognized. */

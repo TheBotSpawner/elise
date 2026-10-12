@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { VoicePreferences } from "@/application/auth-context";
@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import type { WakeAvailability } from "@/core/voice/device";
 import { VOICES, type VoiceChoice } from "@/core/voice/providers";
 import { WAKE_LABELS, WAKE_PHRASES, type WakePhrase } from "@/core/voice/wake";
+import { adaptiveDeliveryEnabled, setAdaptiveDeliveryEnabled } from "@/features/voice/use-voice";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { WebSpeechWakeEngine } from "@/features/voice/wake-engine";
 import { useI18n } from "@/lib/i18n/client";
@@ -38,6 +39,8 @@ export function VoiceSettings({
   const { t, locale } = useI18n();
   const s = t.voice.settings;
   const [prefs, setPrefs] = useState(initial);
+  // ADR-049: a per-device preference (browser storage; on until turned off here).
+  const adaptive = useSyncExternalStore(onVoicePrefs, adaptiveDeliveryEnabled, () => true);
   const [, startTransition] = useTransition();
   const lang: "es" | "en" = prefs.language === "auto" ? locale : prefs.language;
   const [wake, setWake] = useState<WakeAvailability | "installing" | "checking">("checking");
@@ -145,6 +148,14 @@ export function VoiceSettings({
             onCheckedChange={(bargeIn) => change({ bargeIn })}
           />
         </Row>
+        <Row label={s.adaptive} hint={s.adaptiveHint}>
+          <Switch
+            checked={adaptive}
+            disabled={!prefs.enabled || !prefs.speak}
+            aria-label={s.adaptive}
+            onCheckedChange={setAdaptiveDeliveryEnabled}
+          />
+        </Row>
         {/* Offered only where this browser can detect it on the device (ADR-017 §7). */}
         {wakeAllowed && wake !== "unavailable" && (
           <Row label={s.wake} hint={s.wakeHint}>
@@ -244,6 +255,11 @@ export function VoiceSettings({
       </div>
     </Card>
   );
+}
+
+function onVoicePrefs(change: () => void) {
+  window.addEventListener(VOICE_PREFS_EVENT, change);
+  return () => window.removeEventListener(VOICE_PREFS_EVENT, change);
 }
 
 function Row({

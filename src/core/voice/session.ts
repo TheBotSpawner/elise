@@ -1,3 +1,5 @@
+import type { VoiceDelivery } from "./delivery";
+
 /**
  * The voice session (ADR-014, ADR-017): one canonical, pure state machine shared by the
  * controller, the UI and the tests. Every component derives what it shows — and whether the
@@ -64,6 +66,8 @@ export interface VoiceState {
   wake: WakeStatus;
   /** Just after a turn ended, still listening for its continuation (thinking/executing only). */
   tail: boolean;
+  /** HOW ELISE speaks (ADR-049) — independent of the phase: "speaking" can be whispered. */
+  delivery: VoiceDelivery;
 }
 
 export type VoiceEvent =
@@ -88,6 +92,7 @@ export type VoiceEvent =
   | { type: "wake" }
   | { type: "offline" }
   | { type: "online" }
+  | { type: "delivery"; mode: VoiceDelivery }
   | { type: "wake_status"; status: WakeStatus }
   | { type: "tail"; on: boolean }
   /** ELISE speaks first: a scheduled conversation's narration (ADR-041), like a reply. */
@@ -105,6 +110,7 @@ export const initialVoice: VoiceState = {
   sleep: null,
   wake: "off",
   tail: false,
+  delivery: "normal",
 };
 
 const MAX_MISSES = 2;
@@ -230,6 +236,8 @@ export function voiceReducer(state: VoiceState, event: VoiceEvent): VoiceState {
         : state;
     case "wake_status":
       return { ...state, wake: event.status };
+    case "delivery":
+      return state.delivery === event.mode ? state : { ...state, delivery: event.mode };
     case "tail":
       return {
         ...state,

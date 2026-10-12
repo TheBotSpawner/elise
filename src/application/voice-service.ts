@@ -2,6 +2,7 @@ import "server-only";
 
 import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
+import type { VoiceDelivery } from "@/core/voice/delivery";
 import { ELEVEN_PROFILES, OPENAI_PROFILES, PREVIEW_TEXT } from "@/core/voice/profiles";
 import { VOICE_LIMITS, type VoiceChoice, type VoiceLanguage } from "@/core/voice/providers";
 import { formatForSpeech } from "@/core/voice/speech-format";
@@ -117,6 +118,7 @@ export async function synthesizeSentence(
   text: string,
   language: VoiceLanguage | null,
   previous?: string,
+  delivery: VoiceDelivery = "normal",
 ): Promise<{ stream: ReadableStream<Uint8Array>; sampleRate: number }> {
   if (!auth.profile.voice.enabled || !auth.profile.voice.speak)
     throw new AppError("PERMISSION_DENIED", "Spoken replies are turned off in Settings", {
@@ -131,7 +133,7 @@ export async function synthesizeSentence(
   // The acknowledgements (ADR-028) are a few fixed lines: synthesized once per instance and
   // voice, then served from memory, so "Lo busco." plays while the work starts, not ~2 s later.
   const fixed = ACKNOWLEDGEMENT_LINES.has(spoken);
-  const key = ackKey(provider, auth.profile.voice.voice, lang, spoken);
+  const key = ackKey(provider, auth.profile.voice.voice, lang, spoken, delivery);
   const cached = fixed ? ackAudio.get(key) : undefined;
   if (cached)
     return {
@@ -151,6 +153,8 @@ export async function synthesizeSentence(
         language: lang,
         voice: auth.profile.voice.voice,
         ...(previous ? { previousText: formatForSpeech(previous, lang) } : {}),
+        // Trusted, from the voice runtime (ADR-049): applied by the provider after sanitizing.
+        ...(delivery !== "normal" ? { delivery } : {}),
       },
       AbortSignal.timeout(SPEAK_TIMEOUT_MS),
     ),
@@ -169,17 +173,26 @@ export async function synthesizeSentence(
  * instance doesn't hold yet (ADR-034): the first "Reviso tu agenda." then plays from memory.
  * Fixed, non-personal text; sequential and bounded. Returns how many were synthesized.
  */
-export async function warmAcknowledgements(auth: AuthContext, language: VoiceLanguage) {
+export async function warmAcknowledgements(
+  auth: AuthContext,
+  language: VoiceLanguage,
+  delivery: VoiceDelivery = "normal",
+) {
   if (!auth.profile.voice.enabled || !auth.profile.voice.speak) return 0;
   const provider = getSpeechOutputProvider();
   let made = 0;
   for (const line of acknowledgements(language).map((l) => formatForSpeech(l, language))) {
-    const key = ackKey(provider, auth.profile.voice.voice, language, line);
+    const key = ackKey(provider, auth.profile.voice.voice, language, line, delivery);
     if (ackAudio.has(key)) continue;
     const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
     const stream = await withUsageScope(scope, () =>
       provider.synthesize(
-        { text: line, language, voice: auth.profile.voice.voice },
+        {
+          text: line,
+          language,
+          voice: auth.profile.voice.voice,
+          ...(delivery !== "normal" ? { delivery } : {}),
+        },
         AbortSignal.timeout(SPEAK_TIMEOUT_MS),
       ),
     ).catch(() => null);
@@ -200,8 +213,9 @@ const ackAudio = new Map<string, Uint8Array>();
 
 /**
  * Bump to drop every cached acknowledgement (new lines' wording, a formatting change). The
- * provider, its model, the voice and the language are part of the key, so changing any of
- * them never plays audio made for another (ADR-036).
+ * provider, its model, the voice, the language and the delivery are part of the key, so changing
+ * any of them never plays audio made for another (ADR-036, ADR-049: a whispered "Lo busco." is
+ * never served for a normal one).
  */
 const ACK_CACHE_VERSION = 2;
 export const ackKey = (
@@ -209,7 +223,9 @@ export const ackKey = (
   voice: string,
   language: string,
   line: string,
-) => `${ACK_CACHE_VERSION}|${provider.id}|${provider.model}|${voice}|${language}|${line}`;
+  delivery: VoiceDelivery = "normal",
+) =>
+  `${ACK_CACHE_VERSION}|${provider.id}|${provider.model}|${voice}|${language}|${delivery}|${line}`;
 
 /**
  * What Settings shows about spoken replies (ADR-030): which provider speaks and the curated
@@ -279,6 +295,14 @@ export const VOICE_TIMINGS = [
   "avgSegmentChars",
   "maxGapMs",
   "firstAudioMs",
+  /**
+   * Adaptive delivery (ADR-049), aggregates only: mode (0 normal, 1 quiet, 2 whisper), a
+   * confidence bucket (0–10), 1 when asked for explicitly, and the post-turn analysis time.
+   */
+  "deliveryMode",
+  "deliveryConfidence",
+  "deliveryExplicit",
+  "deliveryAnalysisMs",
 ] as const;
 
 /**

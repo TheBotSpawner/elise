@@ -10,6 +10,7 @@ import { SpeechPlayer } from "@/features/voice/speech-player";
  */
 
 const started: number[] = [];
+const gains: number[] = [];
 class FakeContext {
   currentTime = 0;
   destination = {};
@@ -34,7 +35,10 @@ class FakeContext {
     return {};
   }
   createGain() {
-    return {};
+    return {
+      connect() {},
+      gain: { setTargetAtTime: (v: number) => gains.push(v) },
+    };
   }
   async resume() {}
   async close() {}
@@ -60,10 +64,11 @@ const flushAsync = async () => {
 };
 
 describe("speech player", () => {
-  const calls: { body: { text: string; previous?: string } }[] = [];
+  const calls: { body: { text: string; previous?: string; delivery?: string } }[] = [];
   let responses: ReturnType<typeof controlled>[] = [];
   beforeEach(() => {
     started.length = 0;
+    gains.length = 0;
     calls.length = 0;
     responses = [];
     vi.stubGlobal("AudioContext", FakeContext);
@@ -105,6 +110,55 @@ describe("speech player", () => {
     p.speak("Lo busco.", "es", { valid: () => false });
     await flushAsync();
     expect(calls).toHaveLength(0);
+  });
+
+  it("whisper delivery rides on every segment and lowers ELISE's own gain (ADR-049)", async () => {
+    const p = new SpeechPlayer();
+    p.setDelivery("whisper");
+    p.speak("Sí, mañana tenés una reunión a las diez.", "es");
+    p.speak("Después tenés el almuerzo con Laura.", "es");
+    await flushAsync();
+    expect(calls.map((c) => c.body.delivery)).toEqual(["whisper", "whisper"]);
+    // Prosody continuity is kept alongside it.
+    expect(calls[1]!.body.previous).toBe("Sí, mañana tenés una reunión a las diez.");
+    // The text itself carries no tag: the trusted directive is added on the server.
+    expect(calls.every((c) => !c.body.text.includes("["))).toBe(true);
+    expect(gains.at(-1)).toBeGreaterThanOrEqual(0.3);
+    expect(gains.at(-1)).toBeLessThanOrEqual(0.5);
+    p.setDelivery("normal");
+    expect(gains.at(-1)).toBe(1);
+  });
+
+  it("normal delivery sends no delivery field", async () => {
+    const p = new SpeechPlayer();
+    p.speak("Hola.", "es");
+    await flushAsync();
+    expect(calls[0]!.body.delivery).toBeUndefined();
+  });
+
+  it("a line prepared in one delivery is never played for another", async () => {
+    const p = new SpeechPlayer();
+    p.prepare("Lo busco.", "es");
+    expect(calls[0]!.body.delivery).toBeUndefined();
+    p.setDelivery("whisper");
+    p.speak("Lo busco.", "es");
+    await flushAsync();
+    // The normal copy isn't reused: the whispered one is requested.
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.body.delivery).toBe("whisper");
+  });
+
+  it("a barge-in while whispering cuts exactly like normal speech", async () => {
+    const p = new SpeechPlayer();
+    p.setDelivery("whisper");
+    p.speak("Una respuesta susurrada que se interrumpe.", "es");
+    await flushAsync();
+    p.stop();
+    responses[0]!.push(new Uint8Array(24_000));
+    responses[0]!.push(null);
+    await flushAsync();
+    expect(started).toHaveLength(0);
+    expect(p.speaking).toBe(false);
   });
 
   it("segments are scheduled back to back and report their size and gap", async () => {

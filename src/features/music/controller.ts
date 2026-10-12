@@ -2,6 +2,7 @@
 
 import type { ToolDisplay } from "@/core/agents/tools";
 import { duckedVolume, type MusicCommand } from "@/core/capabilities/music";
+import type { VoiceDelivery } from "@/core/voice/delivery";
 
 import { musicAction } from "./actions";
 import { setSpotifyLocalVolume, spotifyLocalVolume, startSpotifyPlayer } from "./spotify-player";
@@ -154,19 +155,19 @@ let ducking: Promise<void> = Promise.resolve();
  * where the volume can be set precisely (the embedded player, ELISE's own Spotify device, or a
  * remote device that supports volume); otherwise nothing is done — never faked.
  */
-export function duckMusic(on: boolean) {
-  ducking = ducking.then(() => applyDuck(on)).catch(() => undefined);
+export function duckMusic(on: boolean, delivery: VoiceDelivery = "normal") {
+  ducking = ducking.then(() => applyDuck(on, delivery)).catch(() => undefined);
   return ducking;
 }
 
-async function applyDuck(on: boolean) {
+async function applyDuck(on: boolean, delivery: VoiceDelivery) {
   const s = musicStore.get();
   const p = s.payload;
   if (on) {
     if (s.ducked || !p?.playing || !duckingEnabled()) return;
     if (p.provider === "youtube") {
       const v = youTubeVolume();
-      const target = duckedVolume(v, true);
+      const target = duckedVolume(v, true, delivery);
       if (target === null || v === null) return;
       setYouTubeVolume(target);
       musicStore.set({ ducked: { restore: v } });
@@ -174,13 +175,13 @@ async function applyDuck(on: boolean) {
     }
     if (p.provider === "spotify" && s.browserDevice && p.device?.id === s.browserDevice) {
       const v = await spotifyLocalVolume();
-      const target = duckedVolume(v, true);
+      const target = duckedVolume(v, true, delivery);
       if (target === null || v === null) return;
       await setSpotifyLocalVolume(target);
       musicStore.set({ ducked: { restore: v } });
       return;
     }
-    const target = duckedVolume(p.volume, Boolean(p.device?.supportsVolume));
+    const target = duckedVolume(p.volume, Boolean(p.device?.supportsVolume), delivery);
     if (target === null || p.volume === null) return;
     musicStore.set({ ducked: { restore: p.volume } });
     await musicAction("setVolume", { percent: target });

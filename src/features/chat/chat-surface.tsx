@@ -196,9 +196,11 @@ export function ChatSurface({
       }),
     [subscribe],
   );
-  // Music lowers while ELISE speaks and comes back after (where the volume can be set).
+  // Music lowers while ELISE speaks and comes back after (where the volume can be set) — lower
+  // still while she whispers (ADR-049).
   const speaking = voiceSession.state.phase === "speaking";
-  useEffect(() => void duckMusic(speaking), [speaking]);
+  const delivery = voiceSession.state.delivery;
+  useEffect(() => void duckMusic(speaking, delivery), [speaking, delivery]);
   // Music starting or stopping changes the room: voice re-measures it (never heard as speech).
   const musicPlaying = Boolean(useMusic().payload?.playing);
   const ambientRef = useRef(voiceSession.ambientChanged);

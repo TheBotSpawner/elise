@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getAuthContext } from "@/application/auth-context";
 import { synthesizeSentence } from "@/application/voice-service";
 import { AppError } from "@/core/errors";
+import { VOICE_DELIVERIES } from "@/core/voice/delivery";
 
 import { unauthorized, voiceError } from "../errors";
 
@@ -15,6 +16,8 @@ const body = z
     language: z.enum(["es", "en"]).nullable(),
     /** The segment said just before, so the voice continues its intonation (ADR-030). */
     previous: z.string().trim().max(1200).optional(),
+    /** How to say it, decided by the voice runtime from the user's audio (ADR-049). */
+    delivery: z.enum(VOICE_DELIVERIES).optional(),
   })
   .strict();
 
@@ -30,6 +33,7 @@ export async function POST(request: NextRequest) {
       parsed.data.text,
       parsed.data.language,
       parsed.data.previous,
+      parsed.data.delivery,
     );
     return new Response(stream, {
       headers: {

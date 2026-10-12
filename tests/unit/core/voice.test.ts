@@ -5,6 +5,7 @@ import { voiceStages } from "@/application/voice-service";
 import { WorkspaceSession } from "@/application/workspace-service";
 import { buildContextPackage } from "@/core/agents/context";
 import { groupRecall } from "@/core/recall/model";
+import { DELIVERY, type UtteranceDelivery } from "@/core/voice/delivery";
 import type { WakeEngine } from "@/core/voice/device";
 import {
   initialVoice,
@@ -232,6 +233,9 @@ class FakeMic implements MicPort {
   level() {
     return 0.4;
   }
+  pcm() {
+    return { samples: new Float32Array(16), sampleRate: 48_000 };
+  }
 }
 
 class FakePlayer implements PlayerPort {
@@ -244,7 +248,13 @@ class FakePlayer implements PlayerPort {
   onStart: (() => void) | null = null;
   onIdle: (() => void) | null = null;
   onError: (() => void) | null = null;
+  /** Delivery changes and lines, in order (ADR-049). */
+  log: string[] = [];
+  setDelivery(mode: string) {
+    this.log.push(`delivery:${mode}`);
+  }
   speak(text: string, _language?: unknown, options: SpeakOptions = {}) {
+    this.log.push(`speak:${text}`);
     this.lines.push({ text, options });
     this.spoken.push(text);
     if (!this.speaking) {
@@ -309,6 +319,8 @@ function setup(
     micError?: Error;
     prefs?: Partial<VoicePrefs>;
     wake?: boolean;
+    /** What the delivery detector concludes for every turn (ADR-049). */
+    heard?: UtteranceDelivery | null;
   } = {},
 ) {
   const mic = new FakeMic(opts.micError ?? null);
@@ -327,6 +339,19 @@ function setup(
   let tick: (() => void) | null = null;
   const timers: { at: number; fn: () => void }[] = [];
   const warmed: string[] = [];
+  const detector = {
+    frames: 0,
+    heard: opts.heard ?? null,
+    frame() {
+      this.frames++;
+    },
+    analyze() {
+      return this.frames ? this.heard : null;
+    },
+    reset() {
+      this.frames = 0;
+    },
+  };
   const cancels: number[] = [];
   const controller = new VoiceController(
     {
@@ -347,7 +372,9 @@ function setup(
       wake,
       online: () => true,
       later: (ms, fn) => void timers.push({ at: now + ms, fn }),
-      warmAcknowledgements: (language) => void warmed.push(language),
+      warmAcknowledgements: (language, delivery) =>
+        void warmed.push(delivery ? `${language}:${delivery}` : language),
+      createDeliveryDetector: () => detector,
       cancel: () => void cancels.push(now),
     },
     { ...PREFS, ...opts.prefs },
@@ -387,6 +414,7 @@ function setup(
     wait,
     warmed,
     cancels,
+    detector,
   };
 }
 
@@ -1473,5 +1501,131 @@ describe("music in the room (ADR-042 §K)", () => {
     await hear(VOICE_TURN.barge.calibrateMs + 400, 0.03);
     await hear(VOICE_TURN.barge.holdMs + 50, 0.3);
     expect(player.stopped).toBeGreaterThan(0);
+  });
+});
+
+describe("adaptive voice delivery in the controller (ADR-049)", () => {
+  const whisper: UtteranceDelivery = { mode: "whisper", confidence: 0.85, level: 0.01 };
+
+  it("measures while the user speaks, and the first acknowledgement is already whispered", async () => {
+    const { controller, player, detector, say, warmed } = setup({
+      transcripts: ["Mostrame mi calendario de la semana que viene."],
+      heard: whisper,
+    });
+    await controller.start();
+    await say();
+    expect(detector.frames).toBeGreaterThan(0);
+    expect(controller.state.delivery).toBe("whisper");
+    const firstSpeech = player.log.findIndex((l) => l.startsWith("speak:"));
+    const lastDeliveryBefore = player.log
+      .slice(0, firstSpeech)
+      .filter((l) => l.startsWith("delivery:"))
+      .at(-1);
+    expect(firstSpeech).toBeGreaterThan(-1);
+    expect(lastDeliveryBefore).toBe("delivery:whisper");
+    // Whispered acknowledgements are synthesized ahead once, for the rest of the session.
+    expect(warmed).toContain("es:whisper");
+    controller.onStream({ type: "conversation" });
+    controller.onStream({ type: "text", delta: "Mañana tenés una reunión a las diez. " });
+    controller.onStream({ type: "finished", failed: false });
+    expect(player.log.filter((l) => l.startsWith("delivery:")).at(-1)).toBe("delivery:whisper");
+  });
+
+  it("reports aggregates only: mode, confidence bucket, source and analysis time", async () => {
+    const { controller, player, timings, say } = setup({ heard: whisper });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "conversation" });
+    controller.onStream({ type: "text", delta: "Listo. " });
+    controller.onStream({ type: "finished", failed: false });
+    player.finishPlaying();
+    const t = timings.at(-1)!;
+    expect(t).toMatchObject({ deliveryMode: 2, deliveryConfidence: 9, deliveryExplicit: 0 });
+    expect(t.deliveryAnalysisMs).toBeLessThan(50);
+    expect(Object.values(t).every((v) => typeof v === "number")).toBe(true);
+  });
+
+  it("'susurrame' whispers even when the audio sounded normal; 'hablá normal' comes back", async () => {
+    const { controller, say } = setup({
+      transcripts: ["Susurrame, estoy en la biblioteca", "Ya podés hablar normal"],
+      heard: { mode: "normal", confidence: 0.95, level: 0.05 },
+    });
+    await controller.start();
+    await say();
+    expect(controller.state.delivery).toBe("whisper");
+    controller.onStream({ type: "finished", failed: false });
+    await say();
+    expect(controller.state.delivery).toBe("normal");
+  });
+
+  it("adaptive off: ELISE keeps her normal voice unless asked", async () => {
+    const { controller, say } = setup({
+      transcripts: ["¿Qué tengo mañana?", "Susurrame"],
+      heard: whisper,
+      prefs: { adaptiveDelivery: false },
+    });
+    await controller.start();
+    await say();
+    expect(controller.state.delivery).toBe("normal");
+    controller.onStream({ type: "finished", failed: false });
+    await say();
+    expect(controller.state.delivery).toBe("whisper");
+  });
+
+  it("an automatic whisper ends by itself after the hold window; the indicator goes with it", async () => {
+    const { controller, player, say, hear } = setup({ heard: whisper });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "finished", failed: false });
+    player.finishPlaying();
+    expect(controller.state.delivery).toBe("whisper");
+    await hear(DELIVERY.holdMs, 0.002);
+    expect(controller.state.delivery).toBe("normal");
+    expect(player.log.at(-1)).toBe("delivery:normal");
+  });
+
+  it("a barge-in while whispering interrupts exactly like normal speech", async () => {
+    const { controller, player, say, hear } = setup({ heard: whisper });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "conversation" });
+    controller.onStream({
+      type: "text",
+      delta: "Mañana tenés tres reuniones, la primera a las diez. ",
+    });
+    expect(controller.state.phase).toBe("speaking");
+    await hear(VOICE_TURN.barge.calibrateMs, 0.002);
+    await hear(VOICE_TURN.barge.holdMs + 200, 0.3);
+    expect(player.stopped).toBeGreaterThan(0);
+    expect(controller.state.phase).not.toBe("speaking");
+  });
+
+  it("a new session starts normal (nothing about the user's voice is kept)", async () => {
+    const { controller, say } = setup({ heard: whisper });
+    await controller.start();
+    await say();
+    expect(controller.state.delivery).toBe("whisper");
+    controller.end();
+    expect(controller.state.delivery).toBe("normal");
+  });
+});
+
+describe("adaptive delivery never changes voice halfway through a reply (ADR-049)", () => {
+  it("a reply longer than the hold window stays whispered to the end; the window restarts after it", async () => {
+    const { controller, player, say, hear } = setup({
+      heard: { mode: "whisper", confidence: 0.85, level: 0.01 },
+    });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "conversation" });
+    controller.onStream({ type: "text", delta: "Encontré algunas noticias de esta semana. " });
+    await hear(DELIVERY.holdMs + 5_000, 0.002); // she is still speaking
+    controller.onStream({ type: "text", delta: "Te dejé las más recientes en pantalla. " });
+    controller.onStream({ type: "finished", failed: false });
+    expect(player.log).not.toContain("delivery:normal");
+    expect(controller.state.delivery).toBe("whisper");
+    player.finishPlaying();
+    await hear(DELIVERY.holdMs - 1_000, 0.002);
+    expect(controller.state.delivery).toBe("whisper");
   });
 });

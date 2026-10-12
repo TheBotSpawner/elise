@@ -1,3 +1,5 @@
+import type { VoiceDelivery } from "./delivery";
+
 /**
  * Speech providers (ADR-014): the capabilities ELISE needs from speech, not a vendor's SDK.
  * Voice is an interface into the same runtime — these only turn audio into a user turn and a
@@ -41,6 +43,11 @@ export interface SynthesisRequest {
   voice: string;
   /** What was said just before in the same reply: providers that can, continue its prosody. */
   previousText?: string;
+  /**
+   * How to say it (ADR-049), decided by ELISE's voice runtime — never by the model. Providers
+   * apply it in their own trusted syntax after sanitizing the text; absent means normal.
+   */
+  delivery?: VoiceDelivery;
 }
 
 export interface SpeechOutputProvider {

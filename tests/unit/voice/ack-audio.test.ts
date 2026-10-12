@@ -82,4 +82,20 @@ describe("warming the acknowledgements (ADR-034)", () => {
     expect(synthesize).toHaveBeenCalledTimes(1);
     providerId = "openai";
   });
+
+  it("is per delivery (ADR-049): a whispered acknowledgement is never the normal one", async () => {
+    const who = user();
+    await warmAcknowledgements(who, "es");
+    synthesize.mockClear();
+    await bytes(
+      (await synthesizeSentence(who, "Reviso tu agenda.", "es", undefined, "whisper")).stream,
+    );
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect((synthesize.mock.calls[0] as unknown[])[0]).toMatchObject({ delivery: "whisper" });
+    await new Promise((r) => setTimeout(r, 0));
+    // Warming the whisper lines skips the one already cached.
+    const made = await warmAcknowledgements(who, "es", "whisper");
+    expect(made).toBe(acknowledgements("es").length - 1);
+    expect((synthesize.mock.calls.at(-1) as unknown[])[0]).toMatchObject({ delivery: "whisper" });
+  });
 });

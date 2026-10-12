@@ -2345,6 +2345,7 @@ export const es: Dictionary = {
     asleepWake: (phrase: string) => `En reposo — decí “${phrase}” o tocá`,
     micOn: "El micrófono está encendido para ELISE",
     micOff: "El micrófono está apagado",
+    delivery: { quiet: "Voz baja", whisper: "Susurro" },
     phases: {
       idle: "",
       arming: "Abriendo el micrófono…",
@@ -2383,6 +2384,9 @@ export const es: Dictionary = {
       continuous: "Conversación continua",
       continuousHint:
         "Después de cada respuesta ELISE sigue escuchando, y entra en reposo tras 30 s de silencio.",
+      adaptive: "Adaptar mi volumen de voz",
+      adaptiveHint:
+        "Si hablás bajito o susurrás, ELISE baja la voz y te responde igual. También podés pedírselo: “susurrame”, “hablá normal”. Se guarda en este dispositivo.",
       bargeIn: "Interrumpir hablando",
       bargeInHint:
         "Hablale encima a ELISE para que se detenga. El micrófono sigue encendido mientras habla; con auriculares funciona mejor.",
