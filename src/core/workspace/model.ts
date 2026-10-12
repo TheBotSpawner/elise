@@ -43,6 +43,8 @@ export const SURFACE_TYPES = [
   "music",
   "timer",
   "clock",
+  /** A native List (ADR-051), one Surface per list: `list:<id>` is updated, never duplicated. */
+  "checklist",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
@@ -92,6 +94,7 @@ export const ACTION_IDS = [
   "create_context",
   "save_shortcut",
   "expand",
+  "uncheck",
 ] as const;
 export type ActionId = (typeof ACTION_IDS)[number];
 
@@ -117,6 +120,7 @@ export interface SurfaceRef {
     | "web_page"
     | "context_profile"
     | "study_session"
+    | "list"
     | "place";
   id: string;
 }

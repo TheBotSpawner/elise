@@ -4,6 +4,7 @@ import {
   Music,
   CalendarDays,
   Check,
+  ChevronRight,
   FileText,
   History,
   Link2,
@@ -103,6 +104,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   timer: TimerIcon,
   clock: AlarmClock,
   place: MapPin,
+  checklist: ListChecks,
   result: Sparkles,
 };
 
@@ -614,6 +616,83 @@ function TaskRow({
   );
 }
 
+/** A native List as on My Elise → Lists: active first, completed collapsed below (ADR-051). */
+function ChecklistBody({
+  surface,
+  p,
+  handlers,
+}: {
+  surface: Surface;
+  p: SurfacePayloads["checklist"];
+  handlers: SurfaceHandlers;
+}) {
+  const { t } = useI18n();
+  const w = t.native.lists.ws;
+  const [showDone, setShowDone] = useState(false);
+  const active = p.items.filter((i) => !i.checked);
+  const done = p.items.filter((i) => i.checked);
+  const row = (i: (typeof p.items)[number]) => {
+    const pending = handlers.pending === `${surface.id}:${i.id}`;
+    return (
+      <li key={i.id} className="flex items-start gap-2.5 py-1">
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={i.checked}
+          aria-label={i.checked ? w.uncheck(i.content) : w.check(i.content)}
+          disabled={pending || handlers.pending !== null || handlers.busy}
+          onClick={() => handlers.onAction(surface, i.checked ? "uncheck" : "complete", i.id)}
+          className={cn(
+            "mt-0.5 grid size-[17px] shrink-0 place-items-center rounded-full border transition-colors",
+            i.checked
+              ? "border-accent bg-accent text-accent-fg"
+              : "border-border-strong hover:border-accent",
+            pending && "animate-pulse",
+          )}
+        >
+          {i.checked && <Check className="size-3" strokeWidth={3} aria-hidden />}
+        </button>
+        <span className="min-w-0 flex-1">
+          <span className={cn("block text-[14px]", i.checked && "text-faint line-through")}>
+            {i.content}
+          </span>
+          {(i.notes || i.labels?.length) && (
+            <span className="block truncate text-[12px] text-faint">
+              {[i.notes, ...(i.labels ?? [])].filter(Boolean).join(" · ")}
+            </span>
+          )}
+        </span>
+      </li>
+    );
+  };
+  return (
+    <div>
+      {active.length === 0 && done.length === 0 ? (
+        <p className="text-[13px] text-faint">{w.emptyList}</p>
+      ) : (
+        <ul className="flex flex-col">{active.map(row)}</ul>
+      )}
+      {done.length > 0 && (
+        <div className="mt-1 border-t border-border pt-1">
+          <button
+            type="button"
+            aria-expanded={showDone}
+            onClick={() => setShowDone((v) => !v)}
+            className="flex items-center gap-1 py-1 text-[12.5px] text-muted hover:text-fg"
+          >
+            <ChevronRight
+              className={cn("size-3.5 transition-transform", showDone && "rotate-90")}
+              aria-hidden
+            />
+            {w.done(done.length)}
+          </button>
+          {showDone && <ul className="flex flex-col">{done.map(row)}</ul>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TaskListBody({
   surface,
   p,
@@ -840,6 +919,14 @@ export function SurfaceBody({
         </ul>
       );
     }
+    case "checklist":
+      return (
+        <ChecklistBody
+          surface={surface}
+          p={surface.payload as SurfacePayloads["checklist"]}
+          handlers={handlers}
+        />
+      );
     case "person":
       return <PersonBody p={p} timezone={timezone} />;
     case "links":

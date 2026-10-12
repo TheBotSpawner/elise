@@ -10,7 +10,7 @@ import {
   type Habit,
   type HabitProgress,
 } from "@/core/capabilities/habits";
-import type { NativeList } from "@/core/capabilities/lists";
+import { STARTER_LISTS, type NativeList } from "@/core/capabilities/lists";
 import type { Note } from "@/core/capabilities/notes";
 import { AppError } from "@/core/errors";
 import { addDays, todayIn } from "@/core/time";
@@ -119,12 +119,57 @@ export async function goalsOverview(auth: AuthContext) {
   };
 }
 
+const lists = (auth: AuthContext) => new EliseListsProvider(auth.db, auth.workspaceId, auth.userId);
+
 export async function listsOverview(auth: AuthContext) {
-  return new EliseListsProvider(auth.db, auth.workspaceId, auth.userId).list();
+  return lists(auth).list();
 }
 
-export async function listDetail(auth: AuthContext, id: string): Promise<NativeList | null> {
-  return new EliseListsProvider(auth.db, auth.workspaceId, auth.userId).get(id);
+/** The Lists workspace's one read: every list with its items, in column order (ADR-051). */
+export async function listsWorkspace(auth: AuthContext): Promise<NativeList[]> {
+  await seedStarterLists(auth).catch(() => false); // never blocks the page
+  return lists(auth).all();
+}
+
+const STARTERS_KEY = "lists.starters_seeded";
+
+/**
+ * The starter Lists (🛍️ Compras, 🛩️ Viaje) are created ONCE per user and workspace, then they are
+ * ordinary lists: renamed, reordered or deleted like any other, never recreated. The marker is
+ * claimed first (unique per workspace/user/key), so concurrent loads can't seed twice, and a
+ * starter is skipped when the user already has an equivalent list.
+ */
+export async function seedStarterLists(auth: AuthContext): Promise<boolean> {
+  const { error } = await auth.db.from("user_preferences").insert({
+    workspace_id: auth.workspaceId,
+    user_id: auth.userId,
+    key: STARTERS_KEY,
+    value_json: { at: new Date().toISOString() },
+    source: "system",
+  });
+  if (error) return false; // already seeded (23505) or not allowed: nothing to do
+  const provider = lists(auth);
+  const existing = await provider.list();
+  // Someone who already organizes their own lists doesn't get suggestions on top.
+  if (existing.length >= 3) return true;
+  const has = (match: readonly string[]) =>
+    existing.some((l) => {
+      const n = l.name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+      return match.some((m) => n.includes(m));
+    });
+  for (const starter of STARTER_LISTS) {
+    if (has(starter.match)) continue;
+    await provider.create(
+      { name: auth.profile.locale === "en" ? starter.en : starter.es, icon: starter.icon },
+      "system",
+    );
+  }
+  return true;
+}
+
+/** Column order on the Lists workspace (a UI gesture; ELISE can reorder items, not columns). */
+export async function reorderLists(auth: AuthContext, listIds: string[]) {
+  return lists(auth).reorderLists(listIds);
 }
 
 /** Ordering is a UI gesture with no chat equivalent; it only rewrites positions of one list. */

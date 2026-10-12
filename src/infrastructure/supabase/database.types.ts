@@ -294,6 +294,8 @@ export type LabelAssignmentRow = {
   label_id: string;
   task_id: string | null;
   enrichment_id: string | null;
+  /** ADR-051 (migration 038). */
+  list_item_id?: string | null;
   created_at: Ts;
 };
 
@@ -608,6 +610,10 @@ export type ListRow = {
   created_at: Ts;
   updated_at: Ts;
   archived_at: Ts | null;
+  /** ADR-051 (migration 038). Optional in reads so a database without it still works. */
+  position?: number | null;
+  icon?: string | null;
+  item_sort?: "manual" | "alpha" | "recent";
 };
 
 export type ListItemRow = {
@@ -622,6 +628,8 @@ export type ListItemRow = {
   created_at: Ts;
   updated_at: Ts;
   archived_at: Ts | null;
+  /** ADR-051 (migration 038). */
+  checked_at?: Ts | null;
 };
 
 export type NoteRow = {

@@ -130,6 +130,11 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       checkItem: WRITE,
       uncheckItem: WRITE,
       removeItem: WRITE,
+      update: WRITE,
+      moveItem: WRITE,
+      // Checked items are soft-removed (recoverable), so no approval prompt.
+      clearChecked: WRITE,
+      duplicate: WRITE,
       archive: ARCHIVE,
     },
   },

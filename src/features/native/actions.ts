@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { commitImport, previewImport, type ImportKind } from "@/application/native-import";
-import { nativeAction, reorderList } from "@/application/native-service";
+import { nativeAction, reorderList, reorderLists } from "@/application/native-service";
 import type { ToolDisplay } from "@/core/agents/tools";
 import { toPublicError, type PublicError } from "@/core/errors";
 
@@ -44,6 +44,14 @@ export async function reorderListAction(listId: string, itemIds: string[]) {
       z.uuid().parse(listId),
       z.array(z.uuid()).max(500).parse(itemIds),
     );
+    return undefined;
+  });
+}
+
+/** Column order of the Lists workspace (ADR-051). */
+export async function reorderListsAction(listIds: string[]) {
+  return run(async () => {
+    await reorderLists(await requireAuthContext(), z.array(z.uuid()).max(500).parse(listIds));
     return undefined;
   });
 }

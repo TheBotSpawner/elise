@@ -1,21 +1,7 @@
-import { notFound } from "next/navigation";
-import { z } from "zod";
+import { redirect } from "next/navigation";
 
-import { requireAuthContext } from "@/application/auth-context";
-import { listDetail } from "@/application/native-service";
-import { PageContainer, PageHeader } from "@/components/shared/page";
-import { ListDetail } from "@/features/native/lists-view";
-
+/** A list opens as its column on the Lists workspace (ADR-051); old links keep working. */
 export default async function ListPage({ params }: PageProps<"/my-elise/lists/[id]">) {
   const { id } = await params;
-  if (!z.uuid().safeParse(id).success) notFound();
-  const auth = await requireAuthContext();
-  const list = await listDetail(auth, id);
-  if (!list) notFound();
-  return (
-    <PageContainer>
-      <PageHeader title={list.name} />
-      <ListDetail list={list} workspaceId={auth.workspaceId} />
-    </PageContainer>
-  );
+  redirect(`/my-elise/lists?focus=${encodeURIComponent(id)}`);
 }

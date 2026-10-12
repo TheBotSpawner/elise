@@ -385,6 +385,17 @@ export class WorkspaceSession implements WorkspacePort {
       ...(!query && d.ref && d.type !== "approval"
         ? { dataset: `${d.ref.resource}:${d.ref.id}` }
         : {}),
+      // A List Surface always re-reads its own list (ADR-051), whichever tool showed it, so a
+      // change from the Lists page or another turn updates it instead of leaving it stale.
+      ...(d.type === "checklist"
+        ? {
+            query: {
+              tool: "lists.get",
+              args: { list: (d.payload as SurfacePayloads["checklist"]).listId },
+            },
+            dataset: `list:${(d.payload as SurfacePayloads["checklist"]).listId}`,
+          }
+        : {}),
       ...(change ? { changedAt: at } : {}),
       ...(priority !== undefined && d.type !== "approval" ? { priority } : {}),
       ...(d.type === "calendar" && query?.tool === "calendar.listEvents"

@@ -8,8 +8,11 @@ import {
   itemRefInput,
   listRefInput,
   matchItems,
+  moveItemInput,
   renameListInput,
+  splitItems,
   updateItemInput,
+  updateListInput,
   type NativeList,
 } from "../capabilities/lists";
 
@@ -21,12 +24,24 @@ async function resolve(env: ToolRunEnv, ref: string): Promise<NativeList> {
   return pickOne(await provider(env).find(ref), ref, "list", (l) => l.name);
 }
 
+/** A list item as the model sees it: text, plus description/labels only when present. */
+const itemForModel = (i: NativeList["items"][number]) =>
+  i.notes || i.labels?.length
+    ? {
+        item: i.content,
+        ...(i.notes ? { description: i.notes } : {}),
+        ...(i.labels?.length ? { labels: i.labels } : {}),
+      }
+    : i.content;
+
 function forModel(list: NativeList) {
+  const { active, done } = splitItems(list);
   return {
     listId: list.id,
     name: list.name,
-    open: list.items.filter((i) => !i.checked).map((i) => i.content),
-    checked: list.items.filter((i) => i.checked).map((i) => i.content),
+    ...(list.icon ? { icon: list.icon } : {}),
+    open: active.map(itemForModel),
+    checked: done.map(itemForModel),
   };
 }
 
@@ -40,7 +55,8 @@ export const listListsTool: ToolDefinition = {
   name: "lists.list",
   capability: "lists",
   operation: "list",
-  description: "The user's lists (shopping, packing, ideas…) with how many items are still open.",
+  description:
+    "The user's Lists (checklists: shopping, packing, ideas…) with how many items are still open. Lists are not tasks: no dates or priorities.",
   input: z.object({}).strict(),
   async describe() {
     return { summary: "List lists" };
@@ -48,7 +64,14 @@ export const listListsTool: ToolDefinition = {
   async run(_raw, env) {
     const lists = await provider(env).list();
     return {
-      output: { lists: lists.map((l) => ({ name: l.name, open: l.open, total: l.total })) },
+      output: {
+        lists: lists.map((l) => ({
+          name: l.name,
+          ...(l.icon ? { icon: l.icon } : {}),
+          open: l.open,
+          total: l.total,
+        })),
+      },
     };
   },
 };
@@ -58,7 +81,7 @@ export const getListTool: ToolDefinition = {
   capability: "lists",
   operation: "get",
   description:
-    "\"What's still missing from my Japan packing list?\": the list's open and checked items, current.",
+    '"¿Qué me falta comprar?", "mostrame lo que ya compré", "mostrame mi lista de viaje": the list\'s open and checked items, current, shown as the list on screen.',
   input: listRefInput,
   async describe() {
     return { summary: "Open list" };
@@ -82,7 +105,7 @@ export const createListTool: ToolDefinition = {
     const l = createListInput.parse(raw);
     return show(
       await provider(env).create(
-        { name: l.name, description: l.description ?? null, items: l.items },
+        { name: l.name, description: l.description ?? null, icon: l.icon ?? null, items: l.items },
         sourceOf(env.ctx),
       ),
       {
@@ -112,7 +135,7 @@ export const addItemTool: ToolDefinition = {
   capability: "lists",
   operation: "addItem",
   description:
-    'Add one or more items to a list ("add eggs and coffee to the shopping list" → ["eggs", "coffee"]).',
+    'Add one or more items to a list in ONE call ("agregá leche, café y arroz a compras" → items ["leche", "café", "arroz"]). An item may carry a description: {content, notes}. The list name can be loose ("compras" → "Lista de Compras").',
   input: addItemsInput,
   async describe(raw) {
     return { summary: `Add to “${addItemsInput.parse(raw).list}”` };
@@ -121,7 +144,9 @@ export const addItemTool: ToolDefinition = {
     const a = addItemsInput.parse(raw);
     const list = await resolve(env, a.list);
     await provider(env).addItems(list.id, a.items, sourceOf(env.ctx));
-    return show((await provider(env).get(list.id))!, { added: a.items });
+    return show((await provider(env).get(list.id))!, {
+      added: a.items.map((i) => (typeof i === "string" ? i : i.content)),
+    });
   },
 };
 
@@ -156,7 +181,8 @@ export const updateItemTool: ToolDefinition = {
   name: "lists.updateItem",
   capability: "lists",
   operation: "updateItem",
-  description: "Edit an item's text or notes.",
+  description:
+    'Edit an item: its text, its description (notes), or its labels (addLabels/removeLabels, e.g. "ponele la etiqueta farmacia").',
   input: updateItemInput,
   async describe(raw) {
     return { summary: `Edit “${updateItemInput.parse(raw).item}”` };
@@ -164,7 +190,12 @@ export const updateItemTool: ToolDefinition = {
   async run(raw, env) {
     const u = updateItemInput.parse(raw);
     const { list, item: it } = await item(env, u.list, u.item);
-    await provider(env).updateItem(it.id, { content: u.content, notes: u.notes });
+    await provider(env).updateItem(it.id, {
+      content: u.content,
+      notes: u.notes,
+      addLabels: u.addLabels,
+      removeLabels: u.removeLabels,
+    });
     return show((await provider(env).get(list.id))!);
   },
 };
@@ -186,11 +217,85 @@ export const removeItemTool: ToolDefinition = {
   },
 };
 
+export const updateListTool: ToolDefinition = {
+  name: "lists.update",
+  capability: "lists",
+  operation: "update",
+  description: "Change a list's name, description, emoji icon, or how its items are sorted.",
+  input: updateListInput,
+  async describe(raw) {
+    return { summary: `Edit list “${updateListInput.parse(raw).list}”` };
+  },
+  async run(raw, env) {
+    const u = updateListInput.parse(raw);
+    const list = await resolve(env, u.list);
+    return show(
+      await provider(env).update(list.id, {
+        name: u.name,
+        description: u.description,
+        icon: u.icon,
+        itemSort: u.sort,
+      }),
+    );
+  },
+};
+
+export const moveItemTool: ToolDefinition = {
+  name: "lists.moveItem",
+  capability: "lists",
+  operation: "moveItem",
+  description:
+    'Move an item to another list ("mové adaptador de compras a viaje"). It keeps its description and labels.',
+  input: moveItemInput,
+  async describe(raw) {
+    const m = moveItemInput.parse(raw);
+    return { summary: `Move “${m.item}” to “${m.to}”` };
+  },
+  async run(raw, env) {
+    const m = moveItemInput.parse(raw);
+    const { item: it } = await item(env, m.list, m.item);
+    const to = await resolve(env, m.to);
+    await provider(env).moveItem(it.id, to.id);
+    return show((await provider(env).get(to.id))!, { moved: it.content });
+  },
+};
+
+export const clearCheckedTool: ToolDefinition = {
+  name: "lists.clearChecked",
+  capability: "lists",
+  operation: "clearChecked",
+  description: 'Remove the checked items of a list ("borrá los completados de compras").',
+  input: listRefInput,
+  async describe(raw) {
+    return { summary: `Clear checked items of “${listRefInput.parse(raw).list}”` };
+  },
+  async run(raw, env) {
+    const list = await resolve(env, listRefInput.parse(raw).list);
+    const removed = await provider(env).clearChecked(list.id);
+    return show((await provider(env).get(list.id))!, { removed });
+  },
+};
+
+export const duplicateListTool: ToolDefinition = {
+  name: "lists.duplicate",
+  capability: "lists",
+  operation: "duplicate",
+  description: "Copy a list (its items start unchecked), e.g. to reuse a packing list.",
+  input: listRefInput,
+  async describe(raw) {
+    return { summary: `Duplicate list “${listRefInput.parse(raw).list}”` };
+  },
+  async run(raw, env) {
+    const list = await resolve(env, listRefInput.parse(raw).list);
+    return show(await provider(env).duplicate(list.id, sourceOf(env.ctx)), { created: true });
+  },
+};
+
 export const archiveListTool: ToolDefinition = {
   name: "lists.archive",
   capability: "lists",
   operation: "archive",
-  description: "Archive a whole list. Needs the user's approval.",
+  description: "Delete a whole list and its items. Needs the user's approval.",
   input: listRefInput,
   async describe(raw, env) {
     const list = await resolve(env, listRefInput.parse(raw).list);
@@ -216,5 +321,9 @@ export const LIST_TOOLS = [
   uncheckItemTool,
   updateItemTool,
   removeItemTool,
+  updateListTool,
+  moveItemTool,
+  clearCheckedTool,
+  duplicateListTool,
   archiveListTool,
 ];

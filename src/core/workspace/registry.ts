@@ -585,6 +585,24 @@ export const PAYLOADS = {
   /** A live clock, here or in another time zone (ADR-045). */
   clock: clockPayload,
   /** Any other tool result, rendered by its existing card. */
+  checklist: z.object({
+    listId: text(100),
+    name: text(120),
+    icon: text(16).nullable(),
+    items: z
+      .array(
+        z.object({
+          id: text(100),
+          content: text(500),
+          checked: z.boolean(),
+          notes: text(1000).nullable(),
+          labels: z.array(text(60)).max(10).optional(),
+        }),
+      )
+      .max(60),
+    open: z.number().int(),
+    total: z.number().int(),
+  }),
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
 } satisfies Record<SurfaceType, z.ZodType>;
 
@@ -1075,6 +1093,30 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     priority: 50,
     actions: () => [expand],
     describe: (p) => `Clock ${p.place ? q(p.place) + " " : ""}(${p.timezone})`,
+  },
+  checklist: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 55,
+    actions: (p) => [
+      { id: "complete", kind: "tool" },
+      { id: "uncheck", kind: "tool" },
+      ...link("open", `/my-elise/lists?focus=${p.listId}`),
+      expand,
+    ],
+    describe: (p) =>
+      `list ${q(p.name)} (list ${p.listId}): ${p.items
+        .map((i) => `${q(i.content)}${i.checked ? " [checked]" : ""} (item ${i.id})`)
+        .join("; ")}`,
+    tool: (p, action, itemId) => {
+      const item = p.items.find((i) => i.id === itemId);
+      if (!item) return null;
+      if (action === "complete" && !item.checked)
+        return { name: "lists.checkItem", args: { list: p.listId, item: item.id } };
+      if (action === "uncheck" && item.checked)
+        return { name: "lists.uncheckItem", args: { list: p.listId, item: item.id } };
+      return null;
+    },
   },
   result: {
     sizes: ["small", "medium", "large"],

@@ -13,12 +13,17 @@ import {
 } from "@/core/capabilities/habits";
 import {
   matchItems,
+  matchLists,
+  sortItems,
+  splitItems,
+  STARTER_LISTS,
   type ListItem,
   type ListsProvider,
   type NativeList,
 } from "@/core/capabilities/lists";
 import { noteKnowledgePlan } from "@/core/capabilities/notes";
 import { buildPreview, suggestMapping } from "@/core/native/import";
+import { surfacesFromOutcome } from "@/core/workspace/from-results";
 
 import { binding, makeCtx, makePorts, NATIVE_BINDING } from "../../fixtures/core-fakes";
 
@@ -303,19 +308,22 @@ class MemoryLists implements ListsProvider {
       open: l.items.filter((i) => !i.checked).length,
     }));
   }
+  addCalls = 0;
+  async all() {
+    return this.lists;
+  }
   async find(ref: string) {
-    return this.lists.filter(
-      (l) => l.id === ref || l.name.toLowerCase().includes(ref.toLowerCase()),
-    );
+    return matchLists(this.lists, ref);
   }
   async get(id: string) {
     return this.lists.find((l) => l.id === id) ?? null;
   }
-  async create(l: { name: string; items?: string[] }) {
+  async create(l: { name: string; icon?: string | null; items?: string[] }) {
     const list: NativeList = {
       id: crypto.randomUUID(),
       name: l.name,
       description: null,
+      icon: l.icon ?? null,
       items: [],
       updatedAt: "",
     };
@@ -328,25 +336,80 @@ class MemoryLists implements ListsProvider {
     l.name = name;
     return l;
   }
-  async archive(id: string) {
-    return (await this.get(id))!;
+  async update(
+    id: string,
+    p: Partial<Pick<NativeList, "name" | "description" | "icon" | "itemSort">>,
+  ) {
+    const l = (await this.get(id))!;
+    Object.assign(l, Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)));
+    return l;
   }
-  async addItems(listId: string, items: string[]) {
+  async archive(id: string) {
+    const l = (await this.get(id))!;
+    this.lists = this.lists.filter((x) => x.id !== id);
+    return l;
+  }
+  async duplicate(id: string) {
+    const l = (await this.get(id))!;
+    const copy = await this.create({ name: `${l.name} (copia)`, icon: l.icon });
+    await this.addItems(
+      copy.id,
+      l.items.map((i) => ({ content: i.content, notes: i.notes })),
+    );
+    return copy;
+  }
+  async reorderLists(ids: string[]) {
+    this.lists.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  }
+  async moveItem(itemId: string, toListId: string) {
+    const from = this.lists.find((l) => l.items.some((i) => i.id === itemId))!;
+    const item = from.items.find((i) => i.id === itemId)!;
+    from.items = from.items.filter((i) => i.id !== itemId);
+    const to = (await this.get(toListId))!;
+    Object.assign(item, { listId: toListId, position: to.items.length });
+    to.items.push(item);
+    return item;
+  }
+  async clearChecked(listId: string) {
+    const l = (await this.get(listId))!;
+    const n = l.items.filter((i) => i.checked).length;
+    l.items = l.items.filter((i) => !i.checked);
+    return n;
+  }
+  async addItems(listId: string, items: (string | { content: string; notes?: string | null })[]) {
+    this.addCalls++;
     const list = (await this.get(listId))!;
-    const added = items.map((content, i): ListItem => ({
+    const added = items.map((it, i): ListItem => ({
       id: crypto.randomUUID(),
       listId,
-      content,
+      content: typeof it === "string" ? it : it.content,
       checked: false,
       position: list.items.length + i,
-      notes: null,
+      notes: typeof it === "string" ? null : (it.notes ?? null),
+      labels: [],
     }));
     list.items.push(...added);
     return added;
   }
-  async updateItem(itemId: string, p: { checked?: boolean; content?: string }) {
+  async updateItem(
+    itemId: string,
+    p: {
+      checked?: boolean;
+      content?: string;
+      notes?: string | null;
+      addLabels?: string[];
+      removeLabels?: string[];
+    },
+  ) {
     const item = this.lists.flatMap((l) => l.items).find((i) => i.id === itemId)!;
-    Object.assign(item, Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)));
+    const { addLabels, removeLabels, ...rest } = p;
+    Object.assign(
+      item,
+      Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)),
+    );
+    item.labels = [...(item.labels ?? []), ...(addLabels ?? [])].filter(
+      (l) => !removeLabels?.includes(l),
+    );
     return item;
   }
   async removeItem(itemId: string) {
@@ -462,6 +525,96 @@ describe("native tools", () => {
     });
   });
 
+  it("lists (ADR-051): a loose name resolves, several items go in ONE call, check → completed", async () => {
+    const { ports, lists } = nativePorts();
+    const ctx = makeCtx();
+    await executeToolCall(ports, ctx, {
+      name: "lists.create",
+      args: { name: "Lista de Compras", icon: "🛍️" },
+    });
+    await executeToolCall(ports, ctx, {
+      name: "lists.create",
+      args: { name: "Lista de Viaje", icon: "🛩️" },
+    });
+    lists.addCalls = 0;
+    await executeToolCall(ports, ctx, {
+      name: "lists.addItem",
+      args: {
+        list: "la lista del viaje",
+        items: ["pasaporte", "cargador", "protector solar", "anteojos"],
+      },
+    });
+    expect(lists.addCalls).toBe(1);
+    await executeToolCall(ports, ctx, {
+      name: "lists.checkItem",
+      args: { list: "viaje", item: "pasaporte" },
+    });
+    await executeToolCall(ports, ctx, {
+      name: "lists.updateItem",
+      args: {
+        list: "viaje",
+        item: "cargador",
+        notes: "llevar también adaptador europeo",
+        addLabels: ["Importante"],
+      },
+    });
+    const moved = await executeToolCall(ports, ctx, {
+      name: "lists.moveItem",
+      args: { list: "viaje", item: "protector solar", to: "compras" },
+    });
+    expect(moved.status).toBe("succeeded");
+    const travel = await executeToolCall(ports, ctx, {
+      name: "lists.get",
+      args: { list: "viaje" },
+    });
+    expect(travel).toMatchObject({
+      output: {
+        list: {
+          icon: "🛩️",
+          open: [
+            {
+              item: "cargador",
+              description: "llevar también adaptador europeo",
+              labels: ["Importante"],
+            },
+            "anteojos",
+          ],
+          checked: ["pasaporte"],
+        },
+      },
+    });
+    const shopping = await executeToolCall(ports, ctx, {
+      name: "lists.get",
+      args: { list: "compras" },
+    });
+    expect(shopping).toMatchObject({ output: { list: { open: ["protector solar"] } } });
+    const cleared = await executeToolCall(ports, ctx, {
+      name: "lists.clearChecked",
+      args: { list: "viaje" },
+    });
+    expect(cleared).toMatchObject({ output: { removed: 1, list: { checked: [] } } });
+  });
+
+  it("lists show as ONE Surface per list, updated in place (list:<id>)", async () => {
+    const { ports } = nativePorts();
+    const ctx = makeCtx();
+    const a = await executeToolCall(ports, ctx, {
+      name: "lists.create",
+      args: { name: "Viaje", items: ["pasaporte"] },
+    });
+    const b = await executeToolCall(ports, ctx, {
+      name: "lists.addItem",
+      args: { list: "viaje", items: ["cargador"] },
+    });
+    const sa = surfacesFromOutcome("lists.create", a as never, { key: "x" });
+    const sb = surfacesFromOutcome("lists.addItem", b as never, { key: "y" });
+    expect(sa[0]?.type).toBe("checklist");
+    expect(sa[0]?.id).toBe(sb[0]?.id);
+    expect(
+      (sb[0]?.payload as { items: { content: string }[] }).items.map((i) => i.content),
+    ).toEqual(["pasaporte", "cargador"]);
+  });
+
   it("archiving asks for approval when ELISE proposes it, not for check-ins", async () => {
     const { ports } = nativePorts();
     const ctx = makeCtx();
@@ -490,5 +643,64 @@ describe("native tools", () => {
       items: [{ id: "i", listId: "l", content: "Café", checked: false, position: 1, notes: null }],
     };
     expect(matchItems(list, "cafe")).toHaveLength(1);
+  });
+});
+
+describe("Lists are checklists, not tasks (ADR-051)", () => {
+  const item = (content: string, extra: Partial<ListItem> = {}): ListItem => ({
+    id: content,
+    listId: "l",
+    content,
+    checked: false,
+    position: 0,
+    notes: null,
+    ...extra,
+  });
+  const lists = [
+    { id: "1", name: "🛍️ Lista de Compras" },
+    { id: "2", name: "🛩️ Lista de Viaje" },
+    { id: "3", name: "Películas" },
+  ];
+
+  it("resolves obvious names without asking", () => {
+    expect(matchLists(lists, "compras").map((l) => l.id)).toEqual(["1"]);
+    expect(matchLists(lists, "la lista del viaje").map((l) => l.id)).toEqual(["2"]);
+    expect(matchLists(lists, "mi lista de compras").map((l) => l.id)).toEqual(["1"]);
+    expect(matchLists(lists, "peliculas").map((l) => l.id)).toEqual(["3"]);
+    expect(matchLists(lists, "2").map((l) => l.id)).toEqual(["2"]);
+    expect(matchLists([...lists, { id: "4", name: "Compras del mes" }], "compras")).toHaveLength(2);
+  });
+
+  it("active items above, completed below (most recently checked first); sort is presentation", () => {
+    const list = {
+      id: "l",
+      name: "Compras",
+      description: null,
+      updatedAt: "",
+      itemSort: "alpha" as const,
+      items: [
+        item("leche", { position: 1 }),
+        item("arroz", { position: 2, checked: true, checkedAt: "2026-10-01" }),
+        item("café", { position: 3 }),
+        item("pan", { position: 4, checked: true, checkedAt: "2026-10-05" }),
+      ],
+    };
+    const { active, done } = splitItems(list);
+    expect(active.map((i) => i.content)).toEqual(["café", "leche"]);
+    expect(done.map((i) => i.content)).toEqual(["pan", "arroz"]);
+    expect(sortItems(list.items, "manual").map((i) => i.content)).toEqual([
+      "leche",
+      "arroz",
+      "café",
+      "pan",
+    ]);
+    expect(list.items[0]!.position).toBe(1);
+  });
+
+  it("starter lists are the two suggested ones, with icons", () => {
+    expect(STARTER_LISTS.map((s) => `${s.icon} ${s.es}`)).toEqual([
+      "🛍️ Lista de Compras",
+      "🛩️ Lista de Viaje",
+    ]);
   });
 });

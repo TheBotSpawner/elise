@@ -23,6 +23,7 @@ import {
 import type { KnowledgeEvidence, ToolDisplay } from "../agents/tools";
 import type { CalendarEvent } from "../capabilities/calendar";
 import type { EmailMessage } from "../capabilities/email";
+import { splitItems } from "../capabilities/lists";
 import type { Task } from "../capabilities/tasks";
 import { analysisVisuals } from "../structured/analysis";
 import { todayIn } from "../time";
@@ -520,6 +521,37 @@ export function surfacesFromOutcome(
     }
     case "task_list":
       return one(taskListSurface(d.tasks, opts));
+    case "native_list": {
+      // Keyed by the list: every change to it updates this Surface, never a second window.
+      const { active, done } = splitItems(d.list);
+      const items = [...active, ...done].slice(0, 60).map((i) => ({
+        id: i.id,
+        content: clip(i.content, 500),
+        checked: i.checked,
+        notes: i.notes ? clip(i.notes, 1000) : null,
+        ...(i.labels?.length ? { labels: i.labels.slice(0, 10).map((l) => clip(l, 60)) } : {}),
+      }));
+      return one(
+        draft(
+          "checklist",
+          d.list.id,
+          {
+            listId: d.list.id,
+            name: clip(d.list.name, 120),
+            icon: d.list.icon ? clip(d.list.icon, 16) : null,
+            items,
+            open: active.length,
+            total: d.list.items.length,
+          },
+          opts,
+          {
+            title: d.list.name,
+            source: { capability: "lists", label: null },
+            ref: { resource: "list", id: d.list.id },
+          },
+        ),
+      );
+    }
     case "task":
       return one(
         draft("task", d.task.id, { task: taskItem(d.task), change: d.change }, opts, {

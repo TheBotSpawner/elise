@@ -115,7 +115,7 @@ export function ListCard({ display, rise }: { display: D<"native_list">; rise: M
     <motion.section {...rise} aria-label={list.name} className={CARD}>
       <Header
         label={`${t.native.lists.title} · ${t.native.lists.remaining(open, list.items.length)}`}
-        href={`/my-elise/lists/${list.id}`}
+        href={`/my-elise/lists?focus=${list.id}`}
       />
       <p className="text-base font-medium">{list.name}</p>
       <ul className="flex flex-col gap-1 text-[14px]">
