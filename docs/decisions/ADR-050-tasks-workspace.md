@@ -134,6 +134,20 @@ The page is up to 1560 px wide.
 - **Freshness** is unchanged (ADR-046): a live read on open and on a stale focus, Realtime for
   native data, and the "Actualizado …" line.
 
+## Real-browser validation (2026-10-12)
+
+`e2e/workspaces-validation.spec.ts` ran in real Chrome against the production database, before
+migration 037, on a throwaway account.
+
+- Today is the default view.
+- Quick add, N, title and description in the detail, optimistic complete (44 ms to leave the
+  view), and the task then appearing in Completadas all worked.
+- Inbox, Próximo, Vencidas, Completadas and Todas all switch views. Search by description works.
+- No horizontal overflow at 1600, 1280, 820 or 390 px. No console errors.
+- Tasks opened in 1.7 s.
+- **Found and fixed:** a view change waited for a server render. Views now switch on the client
+  (the URL follows), and only Completadas, which is loaded on demand, goes to the server.
+
 ## Not done / pending
 
 - **Migration 037 must be applied** (`npx supabase db push`) before native subtasks, labels and

@@ -133,6 +133,22 @@ A new `checklist` Surface keyed by the list id:
 
 Unchanged. Lists are passive and never appear as due work.
 
+## Real-browser validation (2026-10-12)
+
+The same spec, in real Chrome, before migrations 037 and 038:
+
+- The starter lists appear.
+- 8 items were added with Enter in 460 ms, with focus kept.
+- Checking 3 items sent them to "Completados (3)". A description ("El de coco") was saved and
+  shown.
+- Search filtered the board in place. A new list appeared as a column.
+- Everything persisted across a reload.
+- No page-level horizontal overflow at 1600, 1280, 820 or 390 px. No console errors.
+- **Found and fixed:** Next memoizes identical GET requests within one render. The seeding read
+  the lists with the same query the page used, so the page showed the pre-seed result (no
+  lists). Seeding now uses its own queries.
+- Mobile shows the list switcher from two lists.
+
 ## Not done / pending
 
 - **Migration 038** must be applied after 037 (`npx supabase db push`). Until then: creation
