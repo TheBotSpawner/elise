@@ -73,6 +73,48 @@ export function averageAmount(values: string[]): string {
   return fromUnits(sum / BigInt(values.length));
 }
 
+const RATE_SCALE = 8;
+const RATE_FACTOR = 10n ** BigInt(RATE_SCALE);
+const RATE = /^\d{1,12}(\.\d{1,20})?$/;
+
+/** An exchange rate ("1450.2") as an integer with 8 decimals; null when it isn't one. */
+export function rateUnits(rate: string): bigint | null {
+  if (!RATE.test(rate)) return null;
+  const [int, frac = ""] = rate.split(".");
+  const units =
+    BigInt(int!) * RATE_FACTOR + BigInt(frac.slice(0, RATE_SCALE).padEnd(RATE_SCALE, "0"));
+  return units > 0n ? units : null;
+}
+
+/** Integer division rounded half away from zero. */
+function divRound(n: bigint, d: bigint): bigint {
+  const q = n / d;
+  const r = n % d;
+  const twice = (r < 0n ? -r : r) * 2n;
+  return twice >= (d < 0n ? -d : d) ? q + (n < 0n !== d < 0n ? -1n : 1n) : q;
+}
+
+/** amount × rate, exact to the stored scale (no floats). */
+export function multiplyByRate(amount: string, rate: string): string {
+  const r = rateUnits(rate);
+  if (r === null) throw new Error(`Not a rate: ${rate}`);
+  return fromUnits(divRound(toUnits(amount) * r, RATE_FACTOR));
+}
+
+/** amount ÷ rate (an inverse pair: USD→ARS used for ARS→USD), exact to the stored scale. */
+export function divideByRate(amount: string, rate: string): string {
+  const r = rateUnits(rate);
+  if (r === null) throw new Error(`Not a rate: ${rate}`);
+  return fromUnits(divRound(toUnits(amount) * RATE_FACTOR, r));
+}
+
+/** Share of a whole in tenths of a percent (integer math), e.g. 823 → 82.3%. */
+export function shareTenths(part: string, whole: string): number {
+  const w = toUnits(whole);
+  if (w <= 0n) return 0;
+  return Number(divRound(toUnits(part) * 1000n, w));
+}
+
 /** ISO 4217-shaped code. The list of real currencies is open (users hold what they hold). */
 export function isCurrencyCode(value: string): boolean {
   return /^[A-Z]{3}$/.test(value);

@@ -184,6 +184,14 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       createCategory: WRITE,
       archiveTransaction: ARCHIVE,
       undoImport: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
+      // ADR-052. Reports and budgets read; Books, budgets and rates are bookkeeping settings.
+      listBooks: READ,
+      getBudgets: READ,
+      createReport: READ,
+      saveBook: WRITE,
+      setBudget: WRITE,
+      setRate: WRITE,
+      restoreTransaction: WRITE,
     },
   },
   // Mapped external databases (Notion today). Small writes follow the usual policy; archiving

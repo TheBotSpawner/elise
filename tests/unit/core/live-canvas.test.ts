@@ -247,18 +247,14 @@ describe("visualization specs", () => {
       insights: [],
     } as unknown as FinanceSummary;
     const visuals = financeSummaryVisuals(summary, "es");
-    expect(visuals.map((v) => v.role)).toEqual(["kpi", "categories", "change", "largest"]);
+    // Standard charts only (ADR-052): no diverging "change" chart.
+    expect(visuals.map((v) => v.role)).toEqual(["kpi", "categories", "largest"]);
     expect(visuals[0]!.spec).toMatchObject({
       type: "kpi",
       value: 2851,
       previous: 3240,
       goodWhen: "down",
       title: "Gastado",
-    });
-    const change = visuals[2]!.spec;
-    expect(change.type === "diverging" && change.rows[0]).toEqual({
-      label: "Restaurants",
-      value: -238,
     });
     for (const v of visuals) expect(visualizationSpec.safeParse(v.spec).success).toBe(true);
 
@@ -268,12 +264,7 @@ describe("visualization specs", () => {
       { status: "succeeded", display: { kind: "finance_summary", summary } },
       { key: "call", locale: "en" },
     );
-    expect(drafts.map((d) => d.type)).toEqual([
-      "visualization",
-      "visualization",
-      "visualization",
-      "visualization",
-    ]);
+    expect(drafts.map((d) => d.type)).toEqual(["visualization", "visualization", "visualization"]);
     expect(drafts[0]!.priority).toBeGreaterThan(drafts[1]!.priority);
     const none = { ...summary, current: { ...summary.current, totals: [] } } as FinanceSummary;
     expect(

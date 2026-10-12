@@ -25,7 +25,10 @@ import {
 } from "./email-cards";
 import {
   FinanceBreakdownCard,
+  FinanceBooksCard,
+  FinanceBudgetsCard,
   FinanceListCard,
+  FinanceReportCard,
   FinanceSummaryCard,
   FinanceTransactionCard,
   FinanceTransactionsCard,
@@ -359,6 +362,12 @@ export function DisplayCard({
     case "finance_accounts":
     case "finance_categories":
       return <FinanceListCard display={display} rise={rise} />;
+    case "finance_books":
+      return <FinanceBooksCard display={display} rise={rise} />;
+    case "finance_budgets":
+      return <FinanceBudgetsCard display={display} rise={rise} />;
+    case "finance_report":
+      return <FinanceReportCard display={display} rise={rise} />;
     case "structured_records":
       return <StructuredRecordsCard display={display} rise={rise} />;
     case "structured_record":

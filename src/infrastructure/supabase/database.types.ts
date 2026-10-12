@@ -806,6 +806,50 @@ export type FinanceAccountRow = {
   created_at: Ts;
   updated_at: Ts;
   archived_at: Ts | null;
+  /** ADR-052 (migration 039). Optional in reads so a database without it still works. */
+  default_book_id?: string | null;
+};
+
+export type FinanceBookRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  book_type: "personal" | "business" | "other";
+  icon: string | null;
+  description: string | null;
+  reporting_currency: string | null;
+  is_default: boolean;
+  status: "active" | "archived";
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type FinanceBudgetRow = {
+  id: string;
+  workspace_id: string;
+  book_id: string | null;
+  category_id: string;
+  subcategory: string | null;
+  period: "monthly";
+  currency: string;
+  amount: string;
+  status: "active" | "archived";
+  created_at: Ts;
+  updated_at: Ts;
+  archived_at: Ts | null;
+};
+
+export type FinanceFxRateRow = {
+  id: string;
+  workspace_id: string;
+  from_currency: string;
+  to_currency: string;
+  rate: string;
+  effective_date: string;
+  note: string | null;
+  created_at: Ts;
+  updated_at: Ts;
 };
 
 export type FinanceCategoryRow = {
@@ -819,13 +863,15 @@ export type FinanceCategoryRow = {
   created_at: Ts;
   updated_at: Ts;
   archived_at: Ts | null;
+  /** ADR-052: empty = every Book. */
+  book_ids?: string[];
 };
 
 /** `amount` is numeric: always read as text (`amount::text`) and written as a decimal string. */
 export type FinanceTransactionRow = {
   id: string;
   workspace_id: string;
-  transaction_type: "income" | "expense";
+  transaction_type: "income" | "expense" | "transfer";
   amount: string;
   currency: string;
   transaction_date: string;
@@ -848,6 +894,10 @@ export type FinanceTransactionRow = {
   created_at: Ts;
   updated_at: Ts;
   archived_at: Ts | null;
+  /** ADR-052 (migration 039). */
+  book_id?: string | null;
+  to_account_id?: string | null;
+  receipt?: string | null;
 };
 
 export type ImportRow = {
@@ -915,6 +965,8 @@ export type FinanceSourceRow = {
   created_at: Ts;
   updated_at: Ts;
   archived_at: Ts | null;
+  /** ADR-052: the Book a connected sheet's rows belong to. */
+  book_id?: string | null;
 };
 
 export type FinanceSourceRowRow = {
@@ -923,7 +975,7 @@ export type FinanceSourceRowRow = {
   source_id: string;
   row_key: string;
   row_number: number;
-  transaction_type: "income" | "expense";
+  transaction_type: "income" | "expense" | "transfer";
   amount: string;
   currency: string;
   transaction_date: string;
@@ -1500,6 +1552,15 @@ export type Database = {
         "workspace_id" | "database_id" | "data_source_id" | "name" | "schema_fingerprint"
       >;
       finance_accounts: Table<FinanceAccountRow, "workspace_id" | "name">;
+      finance_books: Table<FinanceBookRow, "workspace_id" | "name">;
+      finance_budgets: Table<
+        FinanceBudgetRow,
+        "workspace_id" | "category_id" | "currency" | "amount"
+      >;
+      finance_fx_rates: Table<
+        FinanceFxRateRow,
+        "workspace_id" | "from_currency" | "to_currency" | "rate" | "effective_date"
+      >;
       finance_categories: Table<FinanceCategoryRow, "workspace_id" | "name">;
       finance_transactions: Table<
         FinanceTransactionRow,

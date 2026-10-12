@@ -456,8 +456,10 @@ export async function runFinanceImport(workspaceId: string, importId: string): P
     await db.from("import_rows").delete().eq("workspace_id", workspaceId).eq("import_id", importId);
 
     const stored = imp.mapping_config as StoredMapping;
-    const mapping = financeMappingSchema.parse(stored);
-    const { rows } = await loadRows(await workspaceContext(workspaceId), imp, stored.sheet);
+    // `sheet` is stored beside the mapping, not part of it (the schema is strict).
+    const { sheet, ...storedMapping } = stored;
+    const mapping = financeMappingSchema.parse(storedMapping);
+    const { rows } = await loadRows(await workspaceContext(workspaceId), imp, sheet);
     const results = normalizeAll(rows, mapping);
     const span = dateSpan(rows, mapping);
     const existing = span
@@ -490,8 +492,21 @@ export async function runFinanceImport(workspaceId: string, importId: string): P
         importRows.push({ row: r.row, status: "duplicate", normalized: r.tx, errors: null });
         continue;
       }
-      const categoryId = r.tx.category ? await catalog.category(r.tx.category, r.tx.type) : null;
+      // What the file doesn't say, ELISE's history may: the same counterparty or description
+      // was classified before (deterministic; shown in the preview, never invented).
+      const learned = r.tx.category && r.tx.book ? null : catalog.learned(r.tx);
+      const categoryId = r.tx.category
+        ? await catalog.category(r.tx.category, r.tx.type)
+        : (learned?.category_id ?? null);
       const accountId = r.tx.account ? await catalog.account(r.tx.account) : null;
+      const bookId = catalog.v2
+        ? r.tx.book
+          ? await catalog.book(r.tx.book)
+          : (mapping.defaultBookId ??
+            learned?.book_id ??
+            catalog.accountBook(accountId) ??
+            catalog.defaultBook)
+        : undefined;
       importRows.push({
         row: r.row,
         status: "imported",
@@ -509,7 +524,7 @@ export async function runFinanceImport(workspaceId: string, importId: string): P
         counterparty: r.tx.counterparty,
         account_id: accountId,
         category_id: categoryId,
-        subcategory: r.tx.subcategory,
+        subcategory: r.tx.subcategory ?? learned?.subcategory ?? null,
         payment_method: r.tx.paymentMethod ?? (accountId ? null : r.tx.account),
         project: r.tx.project,
         status: r.tx.status,
@@ -520,6 +535,7 @@ export async function runFinanceImport(workspaceId: string, importId: string): P
         external_reference: r.tx.reference,
         fingerprint: fp(r.tx),
         created_by_user_id: userId,
+        ...(catalog.v2 ? { book_id: bookId ?? null, receipt: r.tx.reference } : {}),
       });
     }
 
@@ -610,28 +626,80 @@ export async function runFinanceImport(workspaceId: string, importId: string): P
       .update({ status: "failed", error_code: code })
       .eq("id", importId)
       .eq("workspace_id", workspaceId);
-    logger.warn("finance.import.failed", { import_id: importId, code });
+    const cause = (error as { cause?: { code?: string; message?: string } }).cause;
+    logger.warn("finance.import.failed", {
+      import_id: importId,
+      code,
+      // The database error class (e.g. 23514 check, 23505 unique), never row values.
+      ...(cause?.code ? { db_code: cause.code } : {}),
+    });
     throw error;
   }
 }
 
 /** Categories and accounts by name, created (source "import") when the file names new ones. */
 async function loadCatalog(db: ReturnType<typeof createAdminClient>, workspaceId: string) {
-  const [{ data: cats }, { data: accts }] = await Promise.all([
+  const [{ data: cats }, { data: accts }, books, history] = await Promise.all([
     db
       .from("finance_categories")
       .select("id, name, category_type")
       .eq("workspace_id", workspaceId)
       .is("archived_at", null),
+    db.from("finance_accounts").select("*").eq("workspace_id", workspaceId).is("archived_at", null),
     db
-      .from("finance_accounts")
-      .select("id, name")
+      .from("finance_books")
+      .select("id, name, is_default")
       .eq("workspace_id", workspaceId)
       .is("archived_at", null),
+    db
+      .from("finance_transactions")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .is("archived_at", null)
+      .not("category_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(3000),
   ]);
   const categories: CatalogRow[] = cats ?? [];
-  const accounts: CatalogRow[] = accts ?? [];
+  const accounts: (CatalogRow & { default_book_id?: string | null })[] = accts ?? [];
+  // Books exist from migration 039 on; before it, imports simply carry no Book.
+  const v2 = !books.error;
+  const bookRows: { id: string; name: string; is_default: boolean }[] = books.data ?? [];
+  // Learned classification: the latest classified record per counterparty/description.
+  const learnedBy = new Map<
+    string,
+    { category_id: string | null; subcategory: string | null; book_id: string | null }
+  >();
+  for (const t of history.data ?? []) {
+    const key = norm(t.counterparty || t.description || "");
+    if (key && !learnedBy.has(key))
+      learnedBy.set(key, {
+        category_id: t.category_id,
+        subcategory: t.subcategory,
+        book_id: t.book_id ?? null,
+      });
+  }
   return {
+    v2,
+    defaultBook: bookRows.find((b) => b.is_default)?.id ?? null,
+    accountBook(accountId: string | null) {
+      return accounts.find((a) => a.id === accountId)?.default_book_id ?? null;
+    },
+    learned(tx: { counterparty: string | null; description: string | null }) {
+      return learnedBy.get(norm(tx.counterparty || tx.description || "")) ?? null;
+    },
+    async book(name: string) {
+      const hit = bookRows.find((b) => norm(b.name) === norm(name));
+      if (hit) return hit.id;
+      const { data, error } = await db
+        .from("finance_books")
+        .insert({ workspace_id: workspaceId, name, book_type: "other" })
+        .select("id, name, is_default")
+        .single();
+      if (error) throw new AppError("INTERNAL_ERROR", "Could not create a Book", { cause: error });
+      bookRows.push(data);
+      return data.id;
+    },
     async category(name: string, type: TransactionType) {
       const hit = categories.find(
         (c) =>
@@ -640,7 +708,12 @@ async function loadCatalog(db: ReturnType<typeof createAdminClient>, workspaceId
       if (hit) return hit.id;
       const { data, error } = await db
         .from("finance_categories")
-        .insert({ workspace_id: workspaceId, name, category_type: type, source: "import" })
+        .insert({
+          workspace_id: workspaceId,
+          name,
+          category_type: type === "transfer" ? "both" : type,
+          source: "import",
+        })
         .select("id, name, category_type")
         .single();
       if (error)

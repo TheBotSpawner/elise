@@ -3,9 +3,20 @@ import { z } from "zod";
 import { pickOne, sourceOf } from "./native-common";
 import type { ToolDefinition, ToolRunEnv, ToolRunResult } from "../agents/tools";
 import {
+  budgetUsage,
+  budgetsInput,
   comparisonPeriod,
   computeBreakdown,
   computeTotals,
+  convertTotals,
+  DEFAULT_REPORT_SECTIONS,
+  reportInput,
+  saveBookInput,
+  setBudgetInput,
+  setRateInput,
+  UNCLASSIFIED,
+  type ConvertedTotals,
+  type FinanceBook,
   createAccountInput,
   createCategoryInput,
   updateAccountInput,
@@ -33,7 +44,9 @@ import {
   type TransactionType,
 } from "../capabilities/finance";
 import { AppError } from "../errors";
-import { formatMoney } from "../finance/money";
+import { addAmounts, formatMoney } from "../finance/money";
+import { buildFinanceReport } from "../finance/report";
+import { resolvePeriod } from "../periods";
 import { parseExternalRef } from "../providers/refs";
 import { todayIn } from "../time";
 
@@ -88,6 +101,10 @@ const txForModel = (t: FinanceTransaction) => ({
   account: t.account ?? t.paymentMethod,
   project: t.project,
   status: t.status,
+  ...(t.book ? { book: t.book } : t.bookId === null ? { book: "Sin clasificar" } : {}),
+  ...(t.subcategory ? { subcategory: t.subcategory } : {}),
+  ...(t.type === "transfer" ? { toAccount: t.toAccount } : {}),
+  ...(t.receipt ? { receipt: t.receipt } : {}),
   source: t.provenance.source,
   ...(t.readOnly ? { readOnly: true } : {}),
 });
@@ -118,6 +135,14 @@ function showSummary(summary: FinanceSummary): ToolRunResult<unknown> {
         .slice(0, 5)
         .map((c) => ({ category: c.key, currency: c.currency, total: c.total })),
       largest: summary.current.largest.slice(0, 5),
+      ...(summary.converted
+        ? {
+            converted: summary.converted,
+            conversionNote:
+              "Converted at the user's dated rates (each transaction at the rate on/before its date). Say which rates were used; never add currencies yourself.",
+          }
+        : {}),
+      ...(summary.current.transfers ? { transfersNotCounted: summary.current.transfers } : {}),
       insights: summary.insights,
       transactions: summary.current.count,
       excluded: summary.current.excluded,
@@ -148,15 +173,16 @@ export const getSummaryTool: ToolDefinition = {
     const filter = filterOf(input, period);
     const p = provider(env);
     const fetchFilter = { ...filter, statuses: undefined };
-    const [current, previous, sources] = await Promise.all([
+    const [current, previous, sources, rates] = await Promise.all([
       p.transactions(fetchFilter, MAX_ROWS),
       comparison
         ? p.transactions({ ...fetchFilter, from: comparison.from, to: comparison.to }, MAX_ROWS)
         : null,
       p.sources(),
+      input.reportingCurrency ? (p.listRates?.() ?? Promise.resolve([])) : Promise.resolve([]),
     ]);
-    return showSummary(
-      finalizeSummary({
+    return showSummary({
+      ...finalizeSummary({
         period,
         comparison,
         current: computeTotals(current.rows, filter),
@@ -167,14 +193,41 @@ export const getSummaryTool: ToolDefinition = {
         sources: relevantSources(sources, filter.source),
         truncated: current.truncated || Boolean(previous?.truncated),
       }),
-    );
+      converted: input.reportingCurrency
+        ? convertTotals(current.rows, filter, input.reportingCurrency, rates)
+        : null,
+    });
   },
   merge(results) {
-    return showSummary(
-      mergeSummaries(results.map((r) => (r.result.display as { summary: FinanceSummary }).summary)),
-    );
+    const summaries = results.map((r) => (r.result.display as { summary: FinanceSummary }).summary);
+    return showSummary({
+      ...mergeSummaries(summaries),
+      converted: mergeConverted(summaries.map((s) => s.converted ?? null)),
+    });
   },
 };
+
+/** Converted totals of several sources (same target currency): summed, rates unioned. */
+function mergeConverted(parts: (ConvertedTotals | null)[]): ConvertedTotals | null {
+  const present = parts.filter((p): p is ConvertedTotals => p !== null);
+  if (!present.length) return null;
+  const unconverted = new Map<string, number>();
+  for (const p of present)
+    for (const u of p.unconverted)
+      unconverted.set(u.currency, (unconverted.get(u.currency) ?? 0) + u.count);
+  return {
+    currency: present[0]!.currency,
+    income: addAmounts(...present.map((p) => p.income)),
+    expense: addAmounts(...present.map((p) => p.expense)),
+    net: addAmounts(...present.map((p) => p.net)),
+    ratesUsed: [
+      ...new Map(
+        present.flatMap((p) => p.ratesUsed).map((r) => [`${r.from}|${r.to}|${r.date}`, r]),
+      ).values(),
+    ],
+    unconverted: [...unconverted.entries()].map(([currency, count]) => ({ currency, count })),
+  };
+}
 
 function relevantSources(sources: Awaited<ReturnType<FinanceProvider["sources"]>>, named?: string) {
   return sources.filter((s) =>
@@ -387,8 +440,24 @@ function resolveCategory(
   name: string,
   type: TransactionType,
 ): FinanceCategory[] {
-  const compatible = categories.filter((c) => c.type === type || c.type === "both");
+  const compatible = categories.filter(
+    (c) => type === "transfer" || c.type === type || c.type === "both",
+  );
   return findByName(compatible, name, (c) => c.name);
+}
+
+/** A Book by name ("Firbot", "personal"); several or none → the model asks, never guesses. */
+async function resolveBook(p: FinanceProvider, name: string): Promise<FinanceBook> {
+  const books = (await p.listBooks?.()) ?? [];
+  const matches = findByName(books, name, (b) => b.name);
+  if (matches.length === 1) return matches[0]!;
+  throw new AppError(
+    "VALIDATION_ERROR",
+    matches.length
+      ? `Several Books match "${name}": ${matches.map((b) => b.name).join(", ")}. Ask which one.`
+      : `There's no Book called "${name}". Books: ${books.map((b) => b.name).join(", ") || "none"}. Ask the user (or create it with finance.saveBook if they want).`,
+    { recovery: "review" },
+  );
 }
 
 async function currencyFor(
@@ -424,13 +493,24 @@ async function resolveNames(
     categoryInferred?: boolean;
     account?: string | null;
     paymentMethod?: string | null;
+    book?: string | null;
+    toAccount?: string | null;
   },
   env: ToolRunEnv,
   needCurrency: boolean,
+  creating = false,
 ): Promise<Resolved> {
   const notes: string[] = [];
   const patch: TransactionPatch = {};
   let account: FinanceAccount | null = null;
+  if (input.toAccount) {
+    patch.toAccountId = pickOne(
+      findByName(await p.listAccounts(), input.toAccount, (a) => a.name),
+      input.toAccount,
+      "account",
+      (a) => a.name,
+    ).id;
+  } else if (input.toAccount === null) patch.toAccountId = null;
   if (input.account) {
     const matches = findByName(await p.listAccounts(), input.account, (a) => a.name);
     if (matches.length === 1) {
@@ -461,7 +541,11 @@ async function resolveNames(
     } else {
       // The user named it: create it instead of losing it.
       const created = await p.createCategory(
-        { name: input.category, type: input.type, parentId: null },
+        {
+          name: input.category,
+          type: input.type === "transfer" ? "both" : input.type,
+          parentId: null,
+        },
         sourceOf(env.ctx),
       );
       patch.categoryId = created.id;
@@ -471,6 +555,17 @@ async function resolveNames(
 
   if (needCurrency || input.currency)
     patch.currency = await currencyFor(p, input.currency, account);
+
+  // Ámbito: what the user said, else the account's default, else the default Book.
+  if (input.book === null) patch.bookId = null;
+  else if (input.book) patch.bookId = (await resolveBook(p, input.book)).id;
+  else if (creating && p.listBooks) {
+    const books = await p.listBooks();
+    patch.bookId =
+      (account?.defaultBookId && books.some((b) => b.id === account!.defaultBookId)
+        ? account.defaultBookId
+        : books.find((b) => b.isDefault)?.id) ?? null;
+  }
   return { patch, notes };
 }
 
@@ -497,7 +592,7 @@ export const createTransactionTool: ToolDefinition = {
   capability: "finance",
   operation: "createTransaction",
   description:
-    'Record an expense or income: "Gasté 25 dólares en OpenAI" → expense, 25, USD, counterparty OpenAI, category Software (categoryInferred). Omit currency if the user did not give it; ELISE uses the account or default currency, or tells you to ask. Amount uses "." for decimals ("$48.000" → "48000").',
+    'Record an expense, income or internal transfer (bookkeeping only: no money moves). "Gasté 42 lucas en Meta Ads con la tarjeta de Firbot" → expense, 42000, book Firbot, counterparty Meta, category Publicidad, subcategory Meta Ads, account "tarjeta de Firbot" (categoryInferred). "lucas" = thousands. Omit currency/book when not said: ELISE uses the account or default, or tells you to ask. Transfers need account and toAccount. Amount uses "." for decimals ("$48.000" → "48000").',
   input: createTransactionInput,
   async describe(raw, env) {
     const c = createTransactionInput.parse(raw);
@@ -509,7 +604,13 @@ export const createTransactionTool: ToolDefinition = {
   async run(raw, env) {
     const c = createTransactionInput.parse(raw);
     const p = writable(env);
-    const { patch, notes } = await resolveNames(p, c, env, true);
+    const { patch, notes } = await resolveNames(p, c, env, true, true);
+    if (c.type === "transfer" && (!patch.accountId || !patch.toAccountId))
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "A transfer needs both accounts (from and to): ask which ones.",
+        { recovery: "review" },
+      );
     const t = await p.createTransaction(
       {
         type: c.type,
@@ -525,6 +626,9 @@ export const createTransactionTool: ToolDefinition = {
         project: c.project ?? null,
         status: c.status ?? "completed",
         notes: c.notes ?? null,
+        bookId: patch.bookId ?? null,
+        toAccountId: patch.toAccountId ?? null,
+        receipt: c.receipt ?? null,
       },
       sourceOf(env.ctx),
     );
@@ -577,6 +681,8 @@ export const updateTransactionTool: ToolDefinition = {
         category: u.category,
         account: u.account,
         paymentMethod: u.paymentMethod,
+        book: u.book,
+        toAccount: u.toAccount,
       },
       env,
       false,
@@ -592,6 +698,7 @@ export const updateTransactionTool: ToolDefinition = {
       ...(u.project !== undefined ? { project: u.project } : {}),
       ...(u.status ? { status: u.status } : {}),
       ...(u.notes !== undefined ? { notes: u.notes } : {}),
+      ...(u.receipt !== undefined ? { receipt: u.receipt } : {}),
     });
     return showTransaction(t, "updated", notes);
   },
@@ -696,6 +803,11 @@ export const updateAccountTool: ToolDefinition = {
       currency: u.currency,
       archived: u.archived,
     });
+    if (u.book !== undefined) {
+      const bookId = u.book === null ? null : (await resolveBook(p, u.book)).id;
+      await nativeFeature(p.updateAccountBook?.bind(p))(account.id, bookId);
+      updated.defaultBookId = bookId;
+    }
     return {
       output: {
         updated: true,
@@ -741,6 +853,313 @@ export const createCategoryTool: ToolDefinition = {
   },
 };
 
+// ── ADR-052: Books, budgets, rates, reports, undo ────────────────────────────
+
+function nativeFeature<T>(fn: T | undefined): T {
+  if (!fn)
+    throw new AppError("CAPABILITY_UNAVAILABLE", "Only ELISE Finance has this", {
+      recovery: "review",
+    });
+  return fn;
+}
+
+const bookForModel = (b: FinanceBook) => ({
+  name: b.name,
+  type: b.type,
+  ...(b.isDefault ? { default: true } : {}),
+  ...(b.reportingCurrency ? { reportingCurrency: b.reportingCurrency } : {}),
+});
+
+export const listBooksTool: ToolDefinition = {
+  name: "finance.listBooks",
+  capability: "finance",
+  operation: "listBooks",
+  description:
+    'The user\'s Ámbitos (Books): who money belongs to — "Personal", "Firbot"… Not categories. Use their names in `book`.',
+  input: z.object({}).strict(),
+  route: nativeOnly,
+  async describe() {
+    return { summary: "List Books" };
+  },
+  async run(_raw, env) {
+    const books = await nativeFeature(provider(env).listBooks?.bind(provider(env)))();
+    return {
+      output: { books: books.map(bookForModel) },
+      display: { kind: "finance_books", books },
+    };
+  },
+};
+
+export const saveBookTool: ToolDefinition = {
+  name: "finance.saveBook",
+  capability: "finance",
+  operation: "saveBook",
+  description:
+    'Create or change an Ámbito ("creá un ámbito para mi empresa Firbot" → name Firbot, type business). Pass `book` to change an existing one.',
+  input: saveBookInput,
+  route: nativeOnly,
+  async describe(raw) {
+    const b = saveBookInput.parse(raw);
+    return { summary: b.book ? `Update Book “${b.book}”` : `Create Book “${b.name ?? ""}”` };
+  },
+  async run(raw, env) {
+    const b = saveBookInput.parse(raw);
+    const p = writable(env);
+    const existingBook = b.book ? await resolveBook(p, b.book) : null;
+    if (!existingBook && !b.name)
+      throw new AppError("VALIDATION_ERROR", "A new Book needs a name", { recovery: "review" });
+    const saved = await nativeFeature(p.saveBook?.bind(p))({
+      ...(existingBook ? { id: existingBook.id } : {}),
+      ...(b.name !== undefined ? { name: b.name } : {}),
+      ...(b.type !== undefined ? { type: b.type } : {}),
+      ...(b.icon !== undefined ? { icon: b.icon } : {}),
+      ...(b.description !== undefined ? { description: b.description } : {}),
+      ...(b.reportingCurrency !== undefined ? { reportingCurrency: b.reportingCurrency } : {}),
+      ...(b.isDefault !== undefined ? { isDefault: b.isDefault } : {}),
+      ...(b.archived !== undefined ? { archived: b.archived } : {}),
+    });
+    return {
+      output: { saved: bookForModel(saved) },
+      display: { kind: "finance_books", books: [saved] },
+      target: { type: "finance_book", id: saved.id },
+    };
+  },
+};
+
+export const budgetsTool: ToolDefinition = {
+  name: "finance.getBudgets",
+  capability: "finance",
+  operation: "getBudgets",
+  description:
+    '"¿Cómo voy con publicidad?", "¿qué presupuestos estoy por pasar?": monthly budgets with spent, remaining and percent — computed by ELISE (80% = close, 100% = over).',
+  input: budgetsInput,
+  route: nativeOnly,
+  async describe() {
+    return { summary: "Budgets" };
+  },
+  async run(raw, env) {
+    const input = budgetsInput.parse(raw);
+    const p = provider(env);
+    const month = input.month ?? today(env).slice(0, 7);
+    const from = `${month}-01`;
+    const to = resolvePeriod("this_month", from).to;
+    const bookId = input.book ? (await resolveBook(p, input.book)).id : null;
+    const [budgets, page] = await Promise.all([
+      nativeFeature(p.listBudgets?.bind(p))(),
+      p.transactions({ from, to, type: "expense" }, MAX_ROWS),
+    ]);
+    const usages = budgets
+      .filter((b) => !bookId || b.bookId === bookId)
+      .map((b) => budgetUsage(b, page.rows))
+      .filter((u) => !input.onlyAtRisk || u.state !== "ok")
+      .sort((a, b) => b.percentTenths - a.percentTenths);
+    return {
+      output: {
+        month,
+        budgets: usages.map((u) => ({
+          category: u.category,
+          ...(u.subcategory ? { subcategory: u.subcategory } : {}),
+          ...(u.book ? { book: u.book } : {}),
+          currency: u.currency,
+          budget: u.amount,
+          spent: u.spent,
+          remaining: u.remaining,
+          percent: u.percentTenths / 10,
+          state: u.state,
+          ...(u.otherCurrencies ? { otherCurrencyExpensesNotCounted: u.otherCurrencies } : {}),
+          ...(u.pending ? { pendingNotCounted: u.pending } : {}),
+        })),
+      },
+      display: { kind: "finance_budgets", month, budgets: usages },
+    };
+  },
+};
+
+export const setBudgetTool: ToolDefinition = {
+  name: "finance.setBudget",
+  capability: "finance",
+  operation: "setBudget",
+  description:
+    '"Poneme un presupuesto de 200 lucas por mes en restaurantes", "subí herramientas a 180 mil": a monthly spending guide per Book and category (creates or updates it). archived removes it.',
+  input: setBudgetInput,
+  route: nativeOnly,
+  async describe(raw) {
+    const b = setBudgetInput.parse(raw);
+    return { summary: `Budget ${b.category}: ${b.amount}${b.currency ? ` ${b.currency}` : ""}` };
+  },
+  async run(raw, env) {
+    const b = setBudgetInput.parse(raw);
+    const p = writable(env);
+    const categories = await p.listCategories();
+    const category = pickOne(
+      resolveCategory(categories, b.category, "expense"),
+      b.category,
+      "category",
+      (c) => c.name,
+    );
+    const books = (await p.listBooks?.()) ?? [];
+    const bookId = b.book
+      ? (await resolveBook(p, b.book)).id
+      : (books.find((x) => x.isDefault)?.id ?? null);
+    const currency = await currencyFor(p, b.currency, null);
+    const saved = await nativeFeature(p.saveBudget?.bind(p))({
+      bookId,
+      categoryId: category.id,
+      subcategory: b.subcategory ?? null,
+      currency,
+      amount: b.amount,
+      ...(b.archived ? { archived: true } : {}),
+    });
+    const month = today(env).slice(0, 7);
+    const page = await p.transactions(
+      { from: `${month}-01`, to: resolvePeriod("this_month", `${month}-01`).to, type: "expense" },
+      MAX_ROWS,
+    );
+    const usage = budgetUsage(saved, page.rows);
+    return {
+      output: {
+        [b.archived ? "removed" : "saved"]: {
+          category: saved.category,
+          book: saved.book,
+          currency,
+          amount: saved.amount,
+          spentThisMonth: usage.spent,
+          percent: usage.percentTenths / 10,
+        },
+      },
+      display: { kind: "finance_budgets", month, budgets: b.archived ? [] : [usage] },
+      target: { type: "finance_budget", id: saved.id },
+    };
+  },
+};
+
+export const setRateTool: ToolDefinition = {
+  name: "finance.setRate",
+  capability: "finance",
+  operation: "setRate",
+  description:
+    'Save an exchange rate the user gives ("el dólar está a 1450") for reports in one currency. Dated: past records keep the rate of their own date.',
+  input: setRateInput,
+  route: nativeOnly,
+  async describe(raw) {
+    const r = setRateInput.parse(raw);
+    return { summary: `1 ${r.from} = ${r.rate} ${r.to}` };
+  },
+  async run(raw, env) {
+    const r = setRateInput.parse(raw);
+    const p = writable(env);
+    const saved = await nativeFeature(p.saveRate?.bind(p))({
+      from: r.from,
+      to: r.to,
+      rate: r.rate,
+      date: r.date ?? today(env),
+    });
+    return { output: { saved } };
+  },
+};
+
+export const reportTool: ToolDefinition = {
+  name: "finance.createReport",
+  capability: "finance",
+  operation: "createReport",
+  description:
+    '"Preparame un reporte de gastos de Firbot de septiembre", "un PDF sin listar cada transacción": prepares the financial report (same filters as everything else) and returns its preview and PDF links. Numbers come from ELISE, never from you.',
+  input: reportInput,
+  route: nativeOnly,
+  async describe() {
+    return { summary: "Financial report" };
+  },
+  async run(raw, env) {
+    const input = reportInput.parse(raw);
+    const p = provider(env);
+    const period = periodOf(input, today(env));
+    const filter = { ...filterOf(input, period), ...period };
+    const [page, budgets, rates, sources] = await Promise.all([
+      p.transactions({ ...filter, statuses: undefined }, MAX_ROWS),
+      p.listBudgets?.() ?? Promise.resolve([]),
+      input.reportingCurrency ? (p.listRates?.() ?? Promise.resolve([])) : Promise.resolve([]),
+      p.sources(),
+    ]);
+    const report = buildFinanceReport({
+      rows: page.rows,
+      filter,
+      sections: input.sections ?? DEFAULT_REPORT_SECTIONS,
+      book: input.book ?? null,
+      budgets,
+      rates,
+      reportingCurrency: input.reportingCurrency ?? null,
+      sources: relevantSources(sources, filter.source),
+      truncated: page.truncated,
+    });
+    const query = reportQuery(input, period);
+    return {
+      output: {
+        period,
+        ...(input.book ? { book: input.book } : {}),
+        totals: report.totals,
+        ...(report.converted ? { converted: report.converted } : {}),
+        transactions: report.transactions.length,
+        sections: report.sections,
+        previewUrl: `/my-elise/finance/reports?${query}`,
+        pdfUrl: `/api/finance/report?${query}`,
+        note: "Point the user to the PDF link; the numbers above are exactly what it contains.",
+      },
+      display: {
+        kind: "finance_report",
+        report,
+        previewUrl: `/my-elise/finance/reports?${query}`,
+        pdfUrl: `/api/finance/report?${query}`,
+      },
+    };
+  },
+};
+
+/** The report's filters as a URL query (same definition for preview, PDF and chat). */
+export function reportQuery(
+  input: ReturnType<typeof reportInput.parse>,
+  period: { from: string; to: string },
+): string {
+  const q = new URLSearchParams({ from: period.from, to: period.to });
+  const add = (k: string, v: string | undefined) => v && q.set(k, v);
+  add("book", input.book);
+  add("type", input.type);
+  add("category", input.category);
+  add("subcategory", input.subcategory);
+  add("account", input.account);
+  add("counterparty", input.counterparty);
+  add("project", input.project);
+  add("currency", input.currency?.join(","));
+  add("status", input.status?.join(","));
+  add("rc", input.reportingCurrency);
+  if (input.sections) q.set("sections", input.sections.join(","));
+  return q.toString();
+}
+
+const restoreInput = z.object({ transaction: transactionRef }).strict();
+
+export const restoreTransactionTool: ToolDefinition = {
+  name: "finance.restoreTransaction",
+  capability: "finance",
+  operation: "restoreTransaction",
+  description: "Undo deleting a transaction (brings it back exactly as it was).",
+  input: restoreInput,
+  route: nativeOnly,
+  async describe() {
+    return { summary: "Restore transaction" };
+  },
+  async run(raw, env) {
+    const p = writable(env) as FinanceProvider & {
+      restoreTransaction?: (id: string) => Promise<FinanceTransaction>;
+    };
+    const t = await nativeFeature(p.restoreTransaction?.bind(p))(
+      restoreInput.parse(raw).transaction,
+    );
+    return showTransaction(t, "updated", ["Restored."]);
+  },
+};
+
+export { UNCLASSIFIED };
+
 export const FINANCE_TOOLS = [
   getSummaryTool,
   queryTool,
@@ -755,4 +1174,11 @@ export const FINANCE_TOOLS = [
   createAccountTool,
   updateAccountTool,
   createCategoryTool,
+  listBooksTool,
+  saveBookTool,
+  budgetsTool,
+  setBudgetTool,
+  setRateTool,
+  reportTool,
+  restoreTransactionTool,
 ];

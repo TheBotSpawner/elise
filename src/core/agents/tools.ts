@@ -13,7 +13,9 @@ import type {
   FollowUp,
 } from "../capabilities/email";
 import type {
+  BudgetUsage,
   FinanceAccount,
+  FinanceBook,
   FinanceBreakdown,
   FinanceCategory,
   FinanceProvider,
@@ -36,6 +38,7 @@ import type {
 import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { ContextKind, ContextStore } from "../contexts/model";
+import type { FinanceReport } from "../finance/report";
 import type { KnowledgeManager } from "../knowledge/admin";
 import type { KnowledgeReader } from "../knowledge/model";
 import type { LatLng, LocationCapability } from "../location/model";
@@ -234,6 +237,10 @@ export type ToolDisplay =
     }
   | { kind: "finance_accounts"; accounts: FinanceAccount[] }
   | { kind: "finance_categories"; categories: FinanceCategory[] }
+  /** ADR-052: Ámbitos, budget use (computed by ELISE) and a prepared report. */
+  | { kind: "finance_books"; books: FinanceBook[] }
+  | { kind: "finance_budgets"; month: string; budgets: BudgetUsage[] }
+  | { kind: "finance_report"; report: FinanceReport; previewUrl: string; pdfUrl: string }
   /** Past interactions found by Recall (surface-ready, not UI-coupled). */
   | { kind: "recall_results"; query: string; results: RecallResult[] }
   /** Web evidence (ADR-015): what was found and read, with provenance and dates. */

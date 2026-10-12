@@ -954,6 +954,81 @@ describe("finance", () => {
     ).rejects.toThrow(/duplicate key/);
   });
 
+  it("keeps Books, budgets and rates in their workspace (ADR-052)", async () => {
+    const book = (
+      await as<{ id: string }>(
+        alice,
+        "insert into public.finance_books (workspace_id, name, book_type, is_default) values ($1, 'Firbot', 'business', true) returning id",
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    // One default Book per workspace.
+    await expect(
+      as(
+        alice,
+        "insert into public.finance_books (workspace_id, name, is_default) values ($1, 'Personal', true)",
+        [alice.workspaceId],
+      ),
+    ).rejects.toThrow(/duplicate key/);
+    expect((await as(bob, "select id from public.finance_books")).rows).toHaveLength(0);
+    // Bob can't file his transactions, accounts or budgets under Alice's Book.
+    await expect(
+      as(
+        bob,
+        `insert into public.finance_transactions (workspace_id, transaction_type, amount, currency, transaction_date, book_id, fingerprint)
+         values ($1, 'expense', 1, 'ARS', '2026-09-29', $2, 'fp-b')`,
+        [bob.workspaceId, book],
+      ),
+    ).rejects.toThrow(/same workspace/);
+    await expect(
+      as(
+        bob,
+        "insert into public.finance_accounts (workspace_id, name, default_book_id) values ($1, 'Visa', $2)",
+        [bob.workspaceId, book],
+      ),
+    ).rejects.toThrow(/same workspace/);
+    // Alice's transfer between her own accounts, in her Book.
+    const [from, to] = (
+      await as<{ id: string }>(
+        alice,
+        "insert into public.finance_accounts (workspace_id, name, default_book_id) values ($1, 'Kiwibank', $2), ($1, 'Wise', $2) returning id",
+        [alice.workspaceId, book],
+      )
+    ).rows.map((r) => r.id);
+    await as(
+      alice,
+      `insert into public.finance_transactions (workspace_id, transaction_type, amount, currency, transaction_date, account_id, to_account_id, book_id, fingerprint)
+       values ($1, 'transfer', 500, 'NZD', '2026-09-29', $2, $3, $4, 'fp-t')`,
+      [alice.workspaceId, from, to, book],
+    );
+    const category = (
+      await as<{ id: string }>(
+        alice,
+        "insert into public.finance_categories (workspace_id, name, category_type) values ($1, 'Publicidad', 'expense') returning id",
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    await as(
+      alice,
+      "insert into public.finance_budgets (workspace_id, book_id, category_id, currency, amount) values ($1, $2, $3, 'ARS', 200000)",
+      [alice.workspaceId, book, category],
+    );
+    await expect(
+      as(
+        bob,
+        "insert into public.finance_budgets (workspace_id, category_id, currency, amount) values ($1, $2, 'ARS', 1)",
+        [bob.workspaceId, category],
+      ),
+    ).rejects.toThrow(/same workspace/);
+    await as(
+      alice,
+      "insert into public.finance_fx_rates (workspace_id, from_currency, to_currency, rate, effective_date) values ($1, 'USD', 'ARS', 1450.5, '2026-09-01')",
+      [alice.workspaceId],
+    );
+    expect((await as(bob, "select id from public.finance_fx_rates")).rows).toHaveLength(0);
+    expect((await as(bob, "select id from public.finance_budgets")).rows).toHaveLength(0);
+  });
+
   it("lets members read connected-sheet rows and import rows, but only ELISE's server write them", async () => {
     const conn = (
       await db.query<{ id: string }>(

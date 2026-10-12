@@ -102,3 +102,16 @@ export function comparisonPeriod(p: Period, mode: "previous" | "last_year"): Per
   const length = daysBetween(p.from, p.to) + 1;
   return { from: addDays(p.from, -length), to: addDays(p.from, -1) };
 }
+
+/** ‹ / › navigation: the same span one step back or forward (whole months stay whole months). */
+export function shiftPeriod(p: Period, dir: -1 | 1): Period {
+  if (dir === -1) return comparisonPeriod(p, "previous");
+  const [fy, fm, fd] = p.from.split("-").map(Number) as [number, number, number];
+  const [ty, tm, td] = p.to.split("-").map(Number) as [number, number, number];
+  if (fd === 1 && td === lastDay(ty, tm)) {
+    const months = (ty - fy) * 12 + (tm - fm) + 1;
+    return { from: monthPeriod(ty, tm + 1).from, to: monthPeriod(ty, tm + months).to };
+  }
+  const length = daysBetween(p.from, p.to) + 1;
+  return { from: addDays(p.to, 1), to: addDays(p.to, length) };
+}

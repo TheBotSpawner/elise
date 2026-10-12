@@ -12,6 +12,7 @@ import {
 import { MUSIC_SURFACE_KEY } from "./music";
 import { draftDefaults, isValidPayload, type SurfacePayloads } from "./registry";
 import {
+  budgetsVisual,
   financeBreakdownVisual,
   financeSummaryVisuals,
   goalPace,
@@ -835,6 +836,14 @@ export function surfacesFromOutcome(
       );
     case "finance_breakdown":
       return visualsOr([financeBreakdownVisual(d.breakdown, opts.locale)], d, opts, capability);
+    case "finance_budgets":
+      // One budgets Surface: "subí herramientas a 180 mil" updates it instead of adding cards.
+      return visualsOr(
+        [budgetsVisual(d.budgets, opts.locale)],
+        d,
+        { ...opts, key: "finance-budgets" },
+        capability,
+      );
     case "habits":
       return isEmptyResult(d)
         ? []

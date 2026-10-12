@@ -24,7 +24,12 @@ export function usePeriodLabel() {
   return (p: Period) => {
     const from = new Date(`${p.from}T00:00:00Z`);
     const to = new Date(`${p.to}T00:00:00Z`);
-    return p.from === p.to ? day.format(from) : day.formatRange(from, to);
+    // Node's ICU separates ranges with thin spaces, browsers with plain ones: normalize so the
+    // server render and hydration agree.
+    return (p.from === p.to ? day.format(from) : day.formatRange(from, to)).replace(
+      /[\u2009\u202f]/g,
+      " ",
+    );
   };
 }
 

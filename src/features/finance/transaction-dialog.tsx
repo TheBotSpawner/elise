@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Select } from "@/components/ui/input";
 import type {
   FinanceAccount,
+  FinanceBook,
   FinanceCategory,
   FinanceTransaction,
   TransactionType,
@@ -34,8 +35,9 @@ function typedAmount(amount: string, locale: "es" | "en") {
 }
 
 /**
- * Quick add (and edit): type, amount, currency, description and date first; category, account,
- * who, project and notes behind "More details". Saves through the Finance tools, like Chat.
+ * Quick add (and edit): type, amount, currency, date and Book first; category, account, who,
+ * project, receipt and notes behind "More details". Transfers ask for both accounts and never
+ * count as income or expense. Saves through the Finance tools, like Chat.
  */
 export function TransactionDialog({
   open,
@@ -43,6 +45,8 @@ export function TransactionDialog({
   transaction,
   accounts,
   categories,
+  books = [],
+  defaultBook = null,
   defaultCurrency,
   today,
 }: {
@@ -52,6 +56,9 @@ export function TransactionDialog({
   transaction?: FinanceTransaction | null;
   accounts: FinanceAccount[];
   categories: FinanceCategory[];
+  books?: FinanceBook[];
+  /** The Book name preselected for new records (the one being viewed), else the default. */
+  defaultBook?: string | null;
   defaultCurrency: string | null;
   today: string;
 }) {
@@ -71,6 +78,12 @@ export function TransactionDialog({
     project: transaction?.project ?? "",
     notes: transaction?.notes ?? "",
     status: transaction?.status ?? "completed",
+    book: transaction
+      ? (transaction.book ?? "")
+      : (defaultBook ?? books.find((b) => b.isDefault)?.name ?? ""),
+    toAccount: transaction?.toAccount ?? "",
+    subcategory: transaction?.subcategory ?? "",
+    receipt: transaction?.receipt ?? "",
   });
   const [v, setV] = useState(initial);
   const [more, setMore] = useState(false);
@@ -89,6 +102,8 @@ export function TransactionDialog({
           transaction?.account ||
           transaction?.counterparty ||
           transaction?.project ||
+          transaction?.subcategory ||
+          transaction?.receipt ||
           transaction?.notes,
         ),
       );
@@ -98,7 +113,8 @@ export function TransactionDialog({
   }
   const set = <K extends keyof typeof v>(k: K, value: (typeof v)[K]) =>
     setV((s) => ({ ...s, [k]: value }));
-  const compatible = categories.filter((c) => c.type === v.type || c.type === "both");
+  const transfer = v.type === "transfer";
+  const compatible = categories.filter((c) => transfer || c.type === v.type || c.type === "both");
   const currencies = [
     ...new Set(
       [
@@ -116,6 +132,10 @@ export function TransactionDialog({
       setError(t.finance.invalidAmount);
       return;
     }
+    if (transfer && (!v.account || !v.toAccount || v.account === v.toAccount)) {
+      setError(t.finance.ws.toAccount);
+      return;
+    }
     setError(null);
     const fields = {
       type: v.type,
@@ -123,11 +143,15 @@ export function TransactionDialog({
       currency: v.currency,
       date: v.date,
       description: v.description.trim() || undefined,
-      category: v.category || undefined,
+      category: (!transfer && v.category) || undefined,
       account: v.account || undefined,
       counterparty: v.counterparty.trim() || undefined,
       project: v.project.trim() || undefined,
       notes: v.notes.trim() || undefined,
+      subcategory: v.subcategory.trim() || undefined,
+      receipt: v.receipt.trim() || undefined,
+      toAccount: (transfer && v.toAccount) || undefined,
+      book: v.book || undefined,
     };
     startTransition(async () => {
       const r = editing
@@ -140,9 +164,17 @@ export function TransactionDialog({
             counterparty: fields.counterparty ?? null,
             project: fields.project ?? null,
             notes: fields.notes ?? null,
+            subcategory: fields.subcategory ?? null,
+            receipt: fields.receipt ?? null,
+            toAccount: fields.toAccount ?? null,
+            ...(books.length ? { book: fields.book ?? null } : {}),
             status: v.status,
           })
-        : await financeToolAction("finance.createTransaction", fields, key);
+        : await financeToolAction(
+            "finance.createTransaction",
+            { ...fields, status: v.status === "pending" ? "pending" : "completed" },
+            key,
+          );
       if (!r.ok) {
         setError(errorText(t, r.error));
         return;
@@ -170,9 +202,9 @@ export function TransactionDialog({
         <div
           role="radiogroup"
           aria-label={t.finance.types.expense}
-          className="grid grid-cols-2 gap-1 rounded-full bg-surface-2 p-1"
+          className="grid grid-cols-3 gap-1 rounded-full bg-surface-2 p-1"
         >
-          {(["expense", "income"] as const).map((type) => (
+          {(["expense", "income", "transfer"] as const).map((type) => (
             <button
               key={type}
               type="button"
@@ -245,6 +277,66 @@ export function TransactionDialog({
           </div>
         </div>
 
+        <div className="grid gap-3 sm:grid-cols-2">
+          {books.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tx-book">{t.finance.ws.book}</Label>
+              <Select id="tx-book" value={v.book} onChange={(e) => set("book", e.target.value)}>
+                <option value="">{t.finance.ws.unclassified}</option>
+                {books.map((b) => (
+                  <option key={b.id} value={b.name}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="tx-status">{t.finance.status}</Label>
+            <Select
+              id="tx-status"
+              value={v.status}
+              onChange={(e) => set("status", e.target.value as typeof v.status)}
+            >
+              {(editing
+                ? (["completed", "pending", "cancelled"] as const)
+                : (["completed", "pending"] as const)
+              ).map((st) => (
+                <option key={st} value={st}>
+                  {t.finance.statuses[st]}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        {transfer && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(
+              [
+                ["account", t.finance.ws.fromAccount],
+                ["toAccount", t.finance.ws.toAccount],
+              ] as const
+            ).map(([k, label]) => (
+              <div key={k} className="flex flex-col gap-1.5">
+                <Label htmlFor={`tx-${k}`}>{label}</Label>
+                <Select
+                  id={`tx-${k}`}
+                  required
+                  value={v[k]}
+                  onChange={(e) => set(k, e.target.value)}
+                >
+                  <option value="">—</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.name}>
+                      {a.currency ? `${a.name} · ${a.currency}` : a.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ))}
+          </div>
+        )}
+
         <button
           type="button"
           onClick={() => setMore(!more)}
@@ -260,36 +352,52 @@ export function TransactionDialog({
         {more && (
           <div className="flex flex-col gap-3">
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="tx-category">{t.finance.category}</Label>
-                <Select
-                  id="tx-category"
-                  value={v.category}
-                  onChange={(e) => set("category", e.target.value)}
-                >
-                  <option value="">{t.finance.noCategory}</option>
-                  {compatible.map((c) => (
-                    <option key={c.id} value={c.name}>
-                      {c.parent ? `${c.parent} › ${c.name}` : c.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="tx-account">{t.finance.account}</Label>
-                <Select
-                  id="tx-account"
-                  value={v.account}
-                  onChange={(e) => set("account", e.target.value)}
-                >
-                  <option value="">{t.finance.noAccount}</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.name}>
-                      {a.currency ? `${a.name} · ${a.currency}` : a.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
+              {!transfer && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="tx-category">{t.finance.category}</Label>
+                  <Select
+                    id="tx-category"
+                    value={v.category}
+                    onChange={(e) => set("category", e.target.value)}
+                  >
+                    <option value="">{t.finance.noCategory}</option>
+                    {compatible.map((c) => (
+                      <option key={c.id} value={c.name}>
+                        {c.parent ? `${c.parent} › ${c.name}` : c.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
+              {!transfer && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="tx-subcategory">{t.finance.ws.subcategory}</Label>
+                  <Input
+                    id="tx-subcategory"
+                    value={v.subcategory}
+                    maxLength={80}
+                    placeholder="ChatGPT, Meta Ads…"
+                    onChange={(e) => set("subcategory", e.target.value)}
+                  />
+                </div>
+              )}
+              {!transfer && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="tx-account">{t.finance.account}</Label>
+                  <Select
+                    id="tx-account"
+                    value={v.account}
+                    onChange={(e) => set("account", e.target.value)}
+                  >
+                    <option value="">{t.finance.noAccount}</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.name}>
+                        {a.currency ? `${a.name} · ${a.currency}` : a.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="tx-who">{t.finance.counterparty}</Label>
                 <Input
@@ -311,22 +419,16 @@ export function TransactionDialog({
                 />
               </div>
             </div>
-            {editing && (
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="tx-status">{t.finance.status}</Label>
-                <Select
-                  id="tx-status"
-                  value={v.status}
-                  onChange={(e) => set("status", e.target.value as typeof v.status)}
-                >
-                  {(["completed", "pending", "cancelled"] as const).map((s) => (
-                    <option key={s} value={s}>
-                      {t.finance.statuses[s]}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            )}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tx-receipt">{t.finance.ws.receipt}</Label>
+              <Input
+                id="tx-receipt"
+                value={v.receipt}
+                maxLength={500}
+                placeholder={t.finance.ws.receiptPlaceholder}
+                onChange={(e) => set("receipt", e.target.value)}
+              />
+            </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-notes">{t.finance.notes}</Label>
               <textarea

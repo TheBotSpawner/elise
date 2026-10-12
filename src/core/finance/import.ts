@@ -9,6 +9,7 @@ import {
   type NumberFormat,
 } from "./money";
 import {
+  cleanCategoryName,
   fingerprint,
   norm,
   normalizeStatus,
@@ -45,6 +46,7 @@ export const FINANCE_FIELDS = [
   "status",
   "notes",
   "reference",
+  "book",
 ] as const;
 export type FinanceField = (typeof FINANCE_FIELDS)[number];
 
@@ -145,6 +147,8 @@ const SYNONYMS: Record<FinanceField, string[]> = {
     "factura",
     "invoice",
   ],
+  // ADR-052: who the row belongs to (Personal, Firbot…), when the file says it.
+  book: ["ambito", "ámbito", "book", "libro", "unidad"],
 };
 
 export const financeMappingSchema = z
@@ -165,6 +169,8 @@ export const financeMappingSchema = z
     headerRow: z.number().int().min(0).max(50).default(0),
     /** Import rows ELISE flags as probable duplicates anyway. */
     includeDuplicates: z.boolean().default(false),
+    /** ADR-052: the Book rows belong to when the file doesn't say (else account/default Book). */
+    defaultBookId: z.uuid().nullable().default(null),
   })
   .strict();
 export type FinanceMapping = z.infer<typeof financeMappingSchema>;
@@ -273,6 +279,7 @@ export interface NormalizedTransaction {
   status: TransactionStatus;
   notes: string | null;
   reference: string | null;
+  book: string | null;
   fingerprint: string;
 }
 
@@ -364,7 +371,8 @@ export function normalizeRow(cells: Cell[], mapping: FinanceMapping, row: number
     date: date!,
     description: clip(col("description"), 300),
     counterparty: clip(col("counterparty"), 200),
-    category: clip(col("category"), 80),
+    // "Gastos - Herramientas" → "Herramientas": the prefix repeats the type (ADR-052).
+    category: clip(cleanCategoryName(col("category") ?? ""), 80),
     subcategory: clip(col("subcategory"), 80),
     account: clip(col("account"), 80),
     paymentMethod: clip(col("paymentMethod"), 80),
@@ -372,6 +380,7 @@ export function normalizeRow(cells: Cell[], mapping: FinanceMapping, row: number
     status: status!,
     notes: clip(col("notes"), 2000),
     reference: clip(col("reference"), 200),
+    book: clip(col("book"), 60),
   };
   return { row, ok: true, tx: { ...tx, fingerprint: fingerprint(tx) } };
 }
@@ -433,6 +442,7 @@ export function buildFinancePreview(
 
   const byCurrency = new Map<string, { i: bigint; e: bigint; ic: number; ec: number }>();
   for (const r of importing) {
+    if (r.tx.type === "transfer") continue; // moves money between accounts: neither side
     const c = byCurrency.get(r.tx.currency) ?? { i: 0n, e: 0n, ic: 0, ec: 0 };
     if (r.tx.type === "income") {
       c.i += toUnits(r.tx.amount);

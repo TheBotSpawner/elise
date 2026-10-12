@@ -300,3 +300,133 @@ export function FinanceListCard({
     </motion.section>
   );
 }
+
+export function FinanceBooksCard({
+  display,
+  rise,
+}: {
+  display: D<"finance_books">;
+  rise: MotionProps;
+}) {
+  const { t } = useI18n();
+  if (!display.books.length) return null;
+  return (
+    <motion.section {...rise} aria-label={t.finance.title} className={CARD}>
+      <Header label={t.finance.ws.books} />
+      <ul className="flex flex-wrap gap-1.5">
+        {display.books.map((b) => (
+          <li key={b.id}>
+            <Link
+              href={`/my-elise/finance?book=${b.id}`}
+              className="rounded-full bg-surface-2 px-3 py-1 text-[13px] text-muted hover:text-fg"
+            >
+              {b.name}
+              {b.isDefault ? " ✓" : ""}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </motion.section>
+  );
+}
+
+/** Spent / budget per category, flagged at 80% and over 100% (numbers from ELISE). */
+export function FinanceBudgetsCard({
+  display,
+  rise,
+}: {
+  display: D<"finance_budgets">;
+  rise: MotionProps;
+}) {
+  const { t } = useI18n();
+  const money = useMoney();
+  if (!display.budgets.length) return null;
+  return (
+    <motion.section {...rise} aria-label={t.finance.title} className={CARD}>
+      <Link
+        href="/my-elise/finance?tab=budgets"
+        className="type-label text-faint hover:text-accent-text"
+      >
+        {t.finance.ws.tabs.budgets} · {display.month}
+      </Link>
+      <ul className="flex flex-col gap-2.5">
+        {display.budgets.map((u) => (
+          <li key={u.id} className="flex flex-col gap-1 text-[13.5px]">
+            <span className="flex justify-between gap-3">
+              <span className="truncate">
+                {[u.category, u.subcategory, u.book].filter(Boolean).join(" · ")}
+              </span>
+              <span
+                className={cn(
+                  "shrink-0 font-mono text-[12.5px]",
+                  u.state === "over"
+                    ? "text-danger-text"
+                    : u.state === "warning"
+                      ? "text-approval-text"
+                      : "text-muted",
+                )}
+              >
+                {money(u.spent, u.currency)} / {money(u.amount, u.currency)} ·{" "}
+                {(u.percentTenths / 10).toFixed(0)}%
+              </span>
+            </span>
+            <span className="h-1.5 overflow-hidden rounded-full bg-surface-2" aria-hidden>
+              <span
+                className={cn(
+                  "block h-full rounded-full",
+                  u.state === "over"
+                    ? "bg-danger"
+                    : u.state === "warning"
+                      ? "bg-approval"
+                      : "bg-accent",
+                )}
+                style={{ width: `${Math.min(100, u.percentTenths / 10)}%` }}
+              />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </motion.section>
+  );
+}
+
+/** The report's headline per currency plus its preview and PDF links. */
+export function FinanceReportCard({
+  display,
+  rise,
+}: {
+  display: D<"finance_report">;
+  rise: MotionProps;
+}) {
+  const { t } = useI18n();
+  const period = usePeriodLabel();
+  const r = display.report;
+  return (
+    <motion.section {...rise} aria-label={t.finance.reports.title} className={CARD}>
+      <Header label={t.finance.reports.title} />
+      <p className="text-[14px] text-muted">
+        {period(r.period)} · {r.book ?? t.finance.reports.allBooks}
+      </p>
+      {r.totals.length > 0 ? (
+        <CurrencyTotals totals={r.totals} />
+      ) : (
+        <p className="text-[13.5px] text-muted">{t.finance.reports.noTransactions}</p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <a
+          href={display.pdfUrl}
+          download
+          className="rounded-full bg-fg px-3.5 py-1.5 text-[13px] text-bg hover:opacity-90"
+        >
+          {t.finance.reports.download}
+        </a>
+        <Link
+          href={display.previewUrl}
+          className="rounded-full bg-surface-2 px-3.5 py-1.5 text-[13px] text-muted hover:text-fg"
+        >
+          {t.finance.reports.configure}
+        </Link>
+      </div>
+    </motion.section>
+  );
+}

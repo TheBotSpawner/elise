@@ -1,12 +1,15 @@
 import { z } from "zod";
 
 import type {
+  BudgetUsage,
   CurrencyTotals,
   FinanceBreakdown,
   FinanceSourceInfo,
   FinanceSummary,
+  TrendSeries,
 } from "../capabilities/finance";
 import type { HabitProgress } from "../capabilities/habits";
+import { formatMoney } from "../finance/money";
 
 /**
  * Visualization specs (ADR-021): typed, validated chart templates. ELISE may choose a template
@@ -518,6 +521,10 @@ const TEXT = {
     onTrack: "On track",
     streak: (n: number, unit: "days" | "weeks") => `${n} ${unit} in a row`,
     goals: "Goals",
+    budgets: "Budgets",
+    over: "Over budget",
+    near: "Close to the limit",
+    incomeVsExpense: "Income vs expenses",
     spending: "Spending",
     by: (g: string) => `Spending by ${g.replace("_", " ")}`,
   },
@@ -540,9 +547,13 @@ const TEXT = {
     streak: (n: number, unit: "days" | "weeks") =>
       `${n} ${unit === "days" ? "días" : "semanas"} seguidos`,
     goals: "Objetivos",
+    budgets: "Presupuestos",
+    over: "Excedido",
+    near: "Cerca del límite",
+    incomeVsExpense: "Ingresos vs. gastos",
     spending: "Gastos",
     by: (g: string) =>
-      `Gastos por ${({ month: "mes", week: "semana", day: "día", category: "categoría", account: "cuenta", counterparty: "comercio", project: "proyecto", payment_method: "medio de pago", source: "fuente", type: "tipo", currency: "moneda" } as Record<string, string>)[g] ?? g}`,
+      `Gastos por ${({ month: "mes", week: "semana", day: "día", category: "categoría", subcategory: "subcategoría", book: "ámbito", account: "cuenta", counterparty: "comercio", project: "proyecto", payment_method: "medio de pago", source: "fuente", type: "tipo", currency: "moneda" } as Record<string, string>)[g] ?? g}`,
   },
 } as const;
 export const vizText = (locale: VizLocale = "en") => TEXT[locale];
@@ -634,36 +645,6 @@ export function financeSummaryVisuals(
       },
     });
   }
-  if (s.previous) {
-    const before = new Map(
-      s.previous.byCategory
-        .filter((g) => g.type === "expense" && g.currency === currency)
-        .map((g) => [g.key, num(g.total)]),
-    );
-    const keys = new Set([...expenses.map((g) => g.key), ...before.keys()]);
-    const rows = [...keys]
-      .map((key) => {
-        const now = num(expenses.find((g) => g.key === key)?.total ?? "0");
-        return { label: key.slice(0, 60) || "—", value: round(now - (before.get(key) ?? 0)) };
-      })
-      .filter((r) => r.value !== 0)
-      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-      .slice(0, 8);
-    if (rows.length >= 2)
-      out.push({
-        role: "change",
-        spec: {
-          type: "diverging",
-          title: labels.change,
-          format: fmt,
-          rows,
-          highlight: [rows[0]!.label],
-          negativeLabel: labels.less,
-          positiveLabel: labels.more,
-          ...(source ? { source } : {}),
-        },
-      });
-  }
   const largest = s.current.largest.filter((t) => t.currency === currency && t.type === "expense");
   if (largest.length)
     out.push({
@@ -726,6 +707,87 @@ export function financeBreakdownVisual(
   return {
     role: "breakdown",
     spec: { type: "hbar", title, format: fmt, rows, highlight: [rows[0]!.label] },
+  };
+}
+
+/** Budgets as progress bars: spent / limit, flagged at 80% and over 100% (ADR-052). */
+export function budgetsVisual(
+  usages: BudgetUsage[],
+  locale: VizLocale = "en",
+): BuiltVisualization | null {
+  if (!usages.length) return null;
+  const t = vizText(locale);
+  const loc = locale === "es" ? "es-AR" : "en-US";
+  const rows = [...usages]
+    .sort((a, b) => b.percentTenths - a.percentTenths)
+    .slice(0, 10)
+    .map((u) => ({
+      label: [u.category, u.subcategory, u.book].filter(Boolean).join(" · ").slice(0, 60),
+      value: Math.min(1, u.percentTenths / 1000),
+      state:
+        `${(u.percentTenths / 10).toFixed(0)}% · ${formatMoney(u.spent, u.currency, loc)} / ${formatMoney(u.amount, u.currency, loc)}`.slice(
+          0,
+          60,
+        ),
+      flag: u.state !== "ok",
+    }));
+  const over = usages.filter((u) => u.state === "over").length;
+  const near = usages.filter((u) => u.state === "warning").length;
+  return {
+    role: "budgets",
+    spec: {
+      type: "progress",
+      title: t.budgets,
+      format: { kind: "percent" },
+      rows,
+      ...(over || near
+        ? {
+            insight: [over ? `${t.over}: ${over}` : "", near ? `${t.near}: ${near}` : ""]
+              .filter(Boolean)
+              .join(" · "),
+          }
+        : {}),
+    },
+  };
+}
+
+/** Income vs expenses per period, one currency: grouped bars (a line past 24 points). */
+export function financeTrendVisual(
+  series: TrendSeries,
+  locale: VizLocale = "en",
+): BuiltVisualization | null {
+  if (series.keys.length < 2) return null;
+  const t = vizText(locale);
+  const x = series.keys.map((k) => (series.granularity === "month" ? k : k.slice(5)));
+  const income = series.income.map((v) => round(num(v)));
+  const expense = series.expense.map((v) => round(num(v)));
+  const fmt = { kind: "currency" as const, currency: series.currency };
+  if (x.length > 24)
+    return {
+      role: "trend",
+      spec: {
+        type: "line",
+        title: t.incomeVsExpense,
+        format: fmt,
+        x: x.slice(-62),
+        series: [
+          { name: t.income, values: income.slice(-62) },
+          { name: t.spent, values: expense.slice(-62) },
+        ],
+      },
+    };
+  return {
+    role: "trend",
+    spec: {
+      type: "bar",
+      title: t.incomeVsExpense,
+      format: fmt,
+      x,
+      series: [
+        { name: t.income, values: income },
+        { name: t.spent, values: expense },
+      ],
+    },
   };
 }
 

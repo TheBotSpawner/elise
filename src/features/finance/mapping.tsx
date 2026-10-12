@@ -30,6 +30,7 @@ const EXTRA: FinanceField[] = [
   "paymentMethod",
   "notes",
   "reference",
+  "book",
 ];
 
 /** Field → column, plus how to read amounts, dates, missing currencies and types. */

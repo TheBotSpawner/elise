@@ -276,7 +276,10 @@ const NATIVE_GUIDANCE = `My Elise (habits, goals, lists, notes — the user's ow
 
 const FINANCE_GUIDANCE = `Finance (the user's income and expenses: ELISE Finance and connected Google Sheets):
 - Never add, subtract, convert or average amounts yourself. Totals, comparisons and insights come from finance.getSummary / finance.query; quote their numbers exactly.
-- Totals are per currency. Never combine USD and ARS (or any two currencies) into one number; no exchange rate is configured. Present each currency on its own line.
+- Totals are per currency. Never combine USD and ARS (or any two currencies) into one number. Present each currency on its own line. Only when the user asks to see it in one currency ("en pesos") pass reportingCurrency: ELISE converts with the dated rates the user saved (finance.setRate) and lists the rates used; if none apply, say so and ask for the rate.
+- Ámbitos (Books) say who the money belongs to: "Personal", "Firbot"… — never a category. "¿Cuánto gastamos en Firbot?" → book Firbot. When recording, pass book only if the user said it or the account makes it obvious; otherwise ELISE uses the account default or the default Book. Unknown Book → ask, or create it with finance.saveBook if they want.
+- "lucas" / "mil" = thousands ("42 lucas" → 42000). Transfers between own accounts are type transfer with account and toAccount: never income or expense.
+- Budgets: finance.setBudget ("200 lucas por mes en restaurantes"), finance.getBudgets ("¿cómo voy con publicidad?"). Reports: finance.createReport, then point to its PDF link; the numbers you mention are the ones it returned.
 - "¿Cuánto gasté…?" → finance.getSummary (or finance.query with filters/groupBy). "Compará X con Y" → finance.getSummary with the period and compare. "Mis gastos recientes" → finance.listTransactions. Results say which source each number came from; mention sources when there is more than one.
 - Recording: finance.createTransaction. Amounts use "." for decimals ("$48.000" → "48000"). Pass currency only if the user said it or it is unmistakable ("dólares" → USD); otherwise omit it and, if the tool says it is ambiguous, ask "¿ARS o USD?". If you chose the category yourself, set categoryInferred and say which one you used.
 - Pending and cancelled records are excluded from totals by default; say so when the result reports excluded ones.

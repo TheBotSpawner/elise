@@ -30,6 +30,7 @@
     "motion": "^13.4.4",
     "next": "16.3.6",
     "openai": "^7.23.0",
+    "pdf-lib": "^1.17.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-hook-form": "^7.89.0",
