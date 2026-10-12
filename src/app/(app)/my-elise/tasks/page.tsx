@@ -2,32 +2,34 @@ import type { Metadata } from "next";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { tasksOverview } from "@/application/tasks-service";
-import { PageContainer, PageHeader } from "@/components/shared/page";
-import type { TaskView } from "@/core/capabilities/tasks";
-import { TaskBoard } from "@/features/tasks/task-board";
+import { PageHeader } from "@/components/shared/page";
+import { TaskWorkspace } from "@/features/tasks/task-workspace";
+import { parseSelection } from "@/features/tasks/views";
 import { getT } from "@/lib/i18n/server";
 
 export const metadata: Metadata = { title: "Tasks" };
 
-const VIEWS: TaskView[] = ["open", "today", "overdue", "completed"];
+const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
 
 export default async function TasksPage({ searchParams }: PageProps<"/my-elise/tasks">) {
   const [auth, { t }, params] = await Promise.all([requireAuthContext(), getT(), searchParams]);
-  const requested = typeof params.view === "string" ? params.view : "open";
-  const view = (VIEWS as string[]).includes(requested) ? (requested as TaskView) : "open";
-  const source = typeof params.source === "string" ? params.source : null;
-  // Completed tasks load only when asked for: actionable work comes first.
-  const overview = await tasksOverview(auth, { includeCompleted: view === "completed" });
+  // Older links (Home's "N vencidas" → ?view=overdue, ?view=open) keep working.
+  const view = one(params.view) === "open" ? "all" : one(params.view);
+  const selection = parseSelection({ view, list: one(params.list), label: one(params.label) });
+  // Every enabled account is read live on open (ADR-046); completed history only when asked for.
+  const overview = await tasksOverview(auth, {
+    includeCompleted: selection.kind === "view" && selection.view === "completed",
+  });
   return (
-    <PageContainer>
+    // Wide: Tasks uses the screen for navigation, the list and details (ADR-050).
+    <div className="mx-auto w-full max-w-[1560px] px-4 pt-6 pb-16 md:px-8 md:pt-8">
       <PageHeader title={t.tasks.title} subtitle={t.tasks.subtitle} />
-      <TaskBoard
+      <TaskWorkspace
         overview={overview}
-        view={view}
-        source={overview.sources.some((s) => s.connectionId === source) ? source : null}
+        selection={selection}
         workspaceId={auth.workspaceId}
         timezone={auth.profile.timezone}
       />
-    </PageContainer>
+    </div>
   );
 }

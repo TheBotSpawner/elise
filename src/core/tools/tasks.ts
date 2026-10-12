@@ -5,6 +5,7 @@ import {
   listTaskListsInput,
   listTasksInput,
   taskIdInput,
+  taskLabelsInput,
   toTaskQuery,
   updateTaskInput,
   type Task,
@@ -25,6 +26,8 @@ function forModel(task: Task) {
     source: task.provenance.source,
     ...(task.provenance.listName ? { list: task.provenance.listName } : {}),
     ...(task.description ? { description: task.description } : {}),
+    ...(task.parentId ? { parentId: task.parentId } : {}),
+    ...(task.labels?.length ? { labels: task.labels } : {}),
   };
 }
 
@@ -80,7 +83,7 @@ export const listTasksTool: ToolDefinition = {
   capability: "tasks",
   operation: "list",
   description:
-    "List the user's tasks across their connected task accounts (ELISE and others). Use to answer questions about pending/overdue/today's tasks or to find a task's id before updating, completing or deleting it (use `search` with a few words of the title).",
+    "List the user's tasks across their connected task accounts (ELISE and others). Use to answer questions about pending/overdue/today's tasks or to find a task's id before updating, completing or deleting it (`search` matches title, description, labels, list and account). Filters combine: priority (high = P1), label, due.",
   input: listTasksInput,
   async describe() {
     return { summary: "List tasks" };
@@ -135,7 +138,7 @@ export const createTaskTool: ToolDefinition = {
   capability: "tasks",
   operation: "create",
   description:
-    'Create a task. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user\'s timezone. Only set priority/category when the user implies them. Set `destination` only when the user says which account ("Personal", "Acme"), and `list` when they name a list ("my Acme Clients list" → destination "Acme", list "Clients"). If the tool says a list is ambiguous or missing, ask.',
+    'Create a task. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user\'s timezone; tasks have no time of day. Only set priority/category when the user implies them. `parentTaskId` makes it a subtask; `labels` adds ELISE labels. Set `destination` only when the user says which account ("Personal", "Acme"), and `list` when they name a list ("my Acme Clients list" → destination "Acme", list "Clients"). If the tool says a list is ambiguous or missing, ask.',
   input: createTaskInput,
   route: routeList,
   async describe(input, env) {
@@ -161,7 +164,7 @@ export const updateTaskTool: ToolDefinition = {
   capability: "tasks",
   operation: "update",
   description:
-    "Edit an existing task (title, description, notes, status pending/in_progress/cancelled, priority, category, dueDate). Pass null to clear a field. Use tasks.complete to mark it done.",
+    "Edit an existing task (title, description, notes, status pending/in_progress/cancelled, priority, category, dueDate, list of the same account, addLabels/removeLabels). Pass null to clear a field. Use tasks.complete to mark it done. Priority and labels on a Google task are kept by ELISE (Google has neither); say so only if asked.",
   input: updateTaskInput,
   route: routeTask,
   async describe(input, env) {
@@ -278,7 +281,29 @@ export const createTaskListTool: ToolDefinition = {
   },
 };
 
+export const taskLabelsTool: ToolDefinition = {
+  name: "tasks.labels",
+  capability: "tasks",
+  operation: "labels",
+  description:
+    'List, create, rename or delete the user\'s ELISE task labels ("Trabajo", "Esperando"). To label a task use tasks.update addLabels/removeLabels instead.',
+  input: taskLabelsInput,
+  route: () => ({ providerKey: "elise_native" as const }),
+  async describe(input) {
+    const { action, name } = taskLabelsInput.parse(input);
+    return { summary: action === "list" ? "List task labels" : `${action} label “${name ?? ""}”` };
+  },
+  async run(input, env) {
+    const p = provider(env);
+    if (!p.manageLabels)
+      throw new AppError("CAPABILITY_UNAVAILABLE", "Labels aren't available here");
+    const labels = await p.manageLabels(taskLabelsInput.parse(input));
+    return { output: { labels } };
+  },
+};
+
 export const TASK_TOOLS = [
+  taskLabelsTool,
   listTasksTool,
   listTaskListsTool,
   createTaskListTool,

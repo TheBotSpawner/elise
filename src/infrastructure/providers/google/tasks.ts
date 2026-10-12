@@ -37,6 +37,10 @@ export interface GTask {
   deleted?: boolean;
   hidden?: boolean;
   webViewLink?: string;
+  /** The parent task (Google subtasks), in the same list. */
+  parent?: string;
+  /** Google's own order among siblings (lexicographic). */
+  position?: string;
 }
 
 // ── Normalization ────────────────────────────────────────────────────────────
@@ -46,11 +50,14 @@ export function normalizeTask(task: GTask, list: GTaskList, conn: GoogleConnecti
   return {
     id: makeExternalRef(conn.connectionId, "task", list.id, task.id),
     title: task.title?.trim() || "(untitled)",
-    description: null,
-    notes: task.notes ?? null,
+    // Google's Notes ARE the description (ADR-050): one field, read and written there.
+    description: task.notes ?? null,
+    notes: null,
     status: task.status === "completed" ? "completed" : "pending",
     priority: null,
     category: null,
+    parentId: task.parent ? makeExternalRef(conn.connectionId, "task", list.id, task.parent) : null,
+    ...(task.position ? { position: task.position } : {}),
     dueDate: task.due ? task.due.slice(0, 10) : null,
     completedAt: task.status === "completed" ? (task.completed ?? updated) : null,
     // Google does not expose creation time; `updated` is the closest stable signal.
@@ -180,7 +187,12 @@ export class GoogleTasksProvider implements TaskProvider {
         if (query.status === "open" && t.status === "completed") return false;
         if (query.status === "completed" && t.status !== "completed") return false;
         if (query.noDueDate && t.dueDate) return false;
-        if (search && !t.title.toLowerCase().includes(search)) return false;
+        if (
+          search &&
+          !t.title.toLowerCase().includes(search) &&
+          !(t.description ?? "").toLowerCase().includes(search)
+        )
+          return false;
         return true;
       })
       .sort((a, b) =>
@@ -203,11 +215,13 @@ export class GoogleTasksProvider implements TaskProvider {
   async create(input: CreateTaskInput): Promise<Task> {
     if (input.priority) throw unsupported("priorities");
     if (input.category) throw unsupported("categories");
-    const listId = input.list ? await this.resolveList(input.list) : "@default";
+    // A Google subtask lives in its parent's list, created with Google's own parent link.
+    const [parentList, parentId] = input.parentTaskId ? this.parse(input.parentTaskId, "task") : [];
+    const listId = parentList ?? (input.list ? await this.resolveList(input.list) : "@default");
     const notes = [input.description, input.notes].filter(Boolean).join("\n\n") || undefined;
     const created = await this.http.request<GTask>(
       "POST",
-      `${API}/lists/${encodeURIComponent(listId)}/tasks`,
+      `${API}/lists/${encodeURIComponent(listId)}/tasks${parentId ? `?parent=${encodeURIComponent(parentId)}` : ""}`,
       {
         title: input.title,
         notes,
@@ -241,19 +255,38 @@ export class GoogleTasksProvider implements TaskProvider {
   }
 
   async update(input: UpdateTaskInput): Promise<Task> {
-    if (input.list) throw unsupported("moving tasks between lists");
     if (input.priority) throw unsupported("priorities");
     if (input.category) throw unsupported("categories");
     if (input.status === "in_progress" || input.status === "cancelled")
       throw unsupported(`the "${input.status}" status`);
+    // Moving lists is Google's own move (same account); then the other fields on the new list.
+    const taskId = input.list ? await this.move(input.taskId, input.list) : input.taskId;
     const body: Record<string, unknown> = {};
     if (input.title !== undefined) body.title = input.title;
-    if (input.notes !== undefined || input.description !== undefined) {
-      body.notes = [input.description, input.notes].filter(Boolean).join("\n\n") || null;
-    }
+    // The description is Google's Notes: one field, never a duplicate.
+    if (input.description !== undefined) body.notes = input.description || null;
+    else if (input.notes !== undefined) body.notes = input.notes || null;
     if (input.dueDate !== undefined) body.due = input.dueDate ? toGoogleDue(input.dueDate) : null;
     if (input.status === "pending") Object.assign(body, { status: "needsAction", completed: null });
-    return this.patch(input.taskId, body);
+    if (!Object.keys(body).length) {
+      const current = await this.get(taskId);
+      if (!current)
+        throw new AppError("NOT_FOUND", "That task no longer exists", { recovery: "review" });
+      return current;
+    }
+    return this.patch(taskId, body);
+  }
+
+  /** Google Tasks' own move to another list of this account; returns the task's new ref. */
+  private async move(taskRef: string, listRef: string): Promise<string> {
+    const [fromList, id] = this.parse(taskRef, "task");
+    const toList = await this.resolveList(listRef);
+    if (toList === fromList) return taskRef;
+    const moved = await this.http.request<GTask>(
+      "POST",
+      `${this.taskUrl(fromList!, id!)}/move?destinationTasklist=${encodeURIComponent(toList)}`,
+    );
+    return makeExternalRef(this.conn.connectionId, "task", toList, moved?.id ?? id!);
   }
 
   complete(taskId: string): Promise<Task> {

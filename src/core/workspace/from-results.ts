@@ -179,6 +179,8 @@ export function taskItem(t: Task): SurfacePayloads["task_list"]["items"][number]
     priority: t.priority,
     source: clip(t.provenance.source, 200),
     listName: t.provenance.listName ? clip(t.provenance.listName, 200) : null,
+    ...(t.labels?.length ? { labels: t.labels.slice(0, 10).map((l) => clip(l, 60)) } : {}),
+    ...(t.parentId ? { subtask: true } : {}),
   };
 }
 

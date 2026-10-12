@@ -264,6 +264,37 @@ export type TaskRow = {
   created_at: Ts;
   updated_at: Ts;
   archived_at: Ts | null;
+  /** ADR-050 (migration 037). Optional in reads so a database without it still works. */
+  parent_task_id?: string | null;
+};
+
+export type LabelRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type TaskEnrichmentRow = {
+  id: string;
+  workspace_id: string;
+  provider_key: string;
+  connection_id: string;
+  provider_list_id: string;
+  provider_task_id: string;
+  priority: "low" | "medium" | "high" | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type LabelAssignmentRow = {
+  id: string;
+  workspace_id: string;
+  label_id: string;
+  task_id: string | null;
+  enrichment_id: string | null;
+  created_at: Ts;
 };
 
 export type ActionRow = {
@@ -1330,6 +1361,12 @@ export type Database = {
       ai_runs: Table<AiRunRow, "workspace_id" | "user_id" | "ai_provider" | "model_key">;
       task_lists: Table<TaskListRow, "workspace_id" | "name">;
       tasks: Table<TaskRow, "workspace_id" | "title">;
+      labels: Table<LabelRow, "workspace_id" | "name">;
+      task_enrichments: Table<
+        TaskEnrichmentRow,
+        "workspace_id" | "provider_key" | "connection_id" | "provider_list_id" | "provider_task_id"
+      >;
+      label_assignments: Table<LabelAssignmentRow, "workspace_id" | "label_id">;
       actions: Table<
         ActionRow,
         | "workspace_id"

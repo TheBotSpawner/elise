@@ -1,6 +1,6 @@
 import "server-only";
 
-import { taskCounts, type Task, type TaskList } from "@/core/capabilities/tasks";
+import { taskCounts, type Task, type TaskLabel, type TaskList } from "@/core/capabilities/tasks";
 import { todayIn } from "@/core/time";
 
 import type { AuthContext } from "./auth-context";
@@ -49,6 +49,8 @@ export interface TasksOverview {
   open: Task[];
   completed: Task[] | null;
   lists: TaskList[];
+  /** ELISE labels (ADR-050), with open-task counts. */
+  labels: TaskLabel[];
   sources: TaskSource[];
   counts: ReturnType<typeof taskCounts>;
   today: string;
@@ -61,10 +63,11 @@ export async function tasksOverview(
   auth: AuthContext,
   options: { includeCompleted: boolean },
 ): Promise<TasksOverview> {
-  const [open, completed, lists] = await Promise.all([
+  const [open, completed, lists, labels] = await Promise.all([
     openTasks(auth),
     options.includeCompleted ? listTasks(auth, "completed", COMPLETED_LIMIT) : null,
     run(auth, "tasks.listLists", {}),
+    run(auth, "tasks.labels", { action: "list" }).catch(() => null),
   ]);
   const allLists = lists.display?.kind === "task_lists" ? lists.display.lists : [];
   const sources = new Map<string, TaskSource>();
@@ -85,6 +88,7 @@ export async function tasksOverview(
     open: open.tasks,
     completed: completed?.tasks ?? null,
     lists: allLists,
+    labels: (labels?.output as { labels?: TaskLabel[] } | null)?.labels ?? [],
     sources: ordered,
     counts: open.counts,
     today: open.today,
@@ -95,7 +99,7 @@ export async function tasksOverview(
 
 export async function mutateTask(
   auth: AuthContext,
-  operation: "create" | "update" | "complete" | "reopen" | "delete" | "createList",
+  operation: "create" | "update" | "complete" | "reopen" | "delete" | "createList" | "labels",
   args: unknown,
   idempotencyKey?: string,
 ): Promise<Task | null> {

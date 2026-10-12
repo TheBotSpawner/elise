@@ -219,7 +219,10 @@ describe("Google Tasks", () => {
     );
     expect(t).toMatchObject({
       title: "Review",
-      notes: "n",
+      // Google's Notes are the description (ADR-050): one field, no duplicate.
+      description: "n",
+      notes: null,
+      parentId: null,
       status: "pending",
       dueDate: "2026-10-01",
       priority: null,
@@ -231,6 +234,65 @@ describe("Google Tasks", () => {
       },
     });
     expect(t.id).toBe(makeExternalRef(CONN.connectionId, "task", "L1", "t1"));
+  });
+
+  it("maps Google's real subtasks and order (ADR-050)", () => {
+    const sub = normalizeTask(
+      { id: "c1", title: "Child", parent: "p1", position: "00000000000000000001" },
+      { id: "L1", title: "My Tasks" },
+      CONN,
+    );
+    expect(sub.parentId).toBe(makeExternalRef(CONN.connectionId, "task", "L1", "p1"));
+    expect(sub.position).toBe("00000000000000000001");
+  });
+
+  it("creates a subtask with Google's own parent link, in the parent's list", async () => {
+    const { http, calls } = fakeGoogle({
+      [`GET ${TASKS}/users/@me/lists`]: () => ({
+        items: [{ id: "L1" }, { id: "L2", title: "Work" }],
+      }),
+      [`POST ${TASKS}/lists/L2/tasks`]: (c) => ({ id: "c9", parent: "p1", ...(c.body as object) }),
+    });
+    const parent = makeExternalRef(CONN.connectionId, "task", "L2", "p1");
+    const task = await new GoogleTasksProvider(CONN, http).create({
+      title: "Draft",
+      parentTaskId: parent,
+    });
+    expect(calls.find((c) => c.method === "POST")!.url).toBe(`${TASKS}/lists/L2/tasks?parent=p1`);
+    expect(task.parentId).toBe(parent);
+  });
+
+  it("writes the description to Google's Notes and moves between lists with Google's move", async () => {
+    const { http, calls } = fakeGoogle({
+      [`GET ${TASKS}/users/@me/lists`]: () => ({
+        items: [{ id: "L1" }, { id: "L2", title: "Work" }],
+      }),
+      [`POST ${TASKS}/lists/L1/tasks/t1/move`]: () => ({ id: "t1" }),
+      [`PATCH ${TASKS}/lists/L2/tasks/t1`]: (c) => ({
+        id: "t1",
+        title: "x",
+        ...(c.body as object),
+      }),
+    });
+    const task = await new GoogleTasksProvider(CONN, http).update({
+      taskId: makeExternalRef(CONN.connectionId, "task", "L1", "t1"),
+      description: "Llamar antes",
+      list: "Work",
+    });
+    expect(calls.find((c) => c.url.includes("/move"))!.url).toContain("destinationTasklist=L2");
+    expect(calls.find((c) => c.method === "PATCH")!.body).toEqual({ notes: "Llamar antes" });
+    expect(task.description).toBe("Llamar antes");
+    expect(task.provenance.listName).toBe("Work");
+  });
+
+  it("never pretends Google keeps a priority (the enrichment layer does)", async () => {
+    const { http } = fakeGoogle({});
+    await expect(
+      new GoogleTasksProvider(CONN, http).update({
+        taskId: makeExternalRef(CONN.connectionId, "task", "L1", "t1"),
+        priority: "high",
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
 
   it("creates in the default list and maps due dates", async () => {

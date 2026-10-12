@@ -17,8 +17,18 @@ export interface Task {
   description: string | null;
   notes: string | null;
   status: TaskStatus;
+  /**
+   * Priority (shown P1 high · P2 medium · P3 low). For providers without priorities (Google) it
+   * is ELISE's own enrichment, never written to the provider (ADR-050).
+   */
   priority: TaskPriority | null;
   category: string | null;
+  /** The parent task's id (same account and list) when this is a subtask. */
+  parentId?: string | null;
+  /** ELISE labels, by name. For provider tasks they live in ELISE's enrichment (ADR-050). */
+  labels?: string[];
+  /** The provider's own order within its list/parent (Google `position`), when it has one. */
+  position?: string;
   /** Calendar date in the user's timezone. */
   dueDate: string | null;
   completedAt: string | null;
@@ -37,6 +47,50 @@ export interface Task {
     url?: string;
   };
 }
+
+/**
+ * What each provider can do (ADR-050). The UI and the tools derive actions from this instead of
+ * checking provider names. "elise" = ELISE keeps it as enrichment; the provider never sees it.
+ */
+export interface TaskCapabilities {
+  priority: "provider" | "elise";
+  labels: "provider" | "elise";
+  subtasks: boolean;
+  moveBetweenLists: boolean;
+  /** No provider today keeps a due time: dates are day-level everywhere. */
+  dueTime: boolean;
+  statuses: readonly TaskStatus[];
+}
+
+export const TASK_CAPABILITIES: Record<string, TaskCapabilities> = {
+  elise_native: {
+    priority: "provider",
+    labels: "provider",
+    subtasks: true,
+    moveBetweenLists: true,
+    dueTime: false,
+    statuses: TASK_STATUSES,
+  },
+  google: {
+    priority: "elise",
+    labels: "elise",
+    subtasks: true,
+    moveBetweenLists: true,
+    dueTime: false,
+    statuses: ["pending", "completed"],
+  },
+};
+
+/** Unknown providers get the most conservative set. */
+export const taskCapabilities = (providerKey: string): TaskCapabilities =>
+  TASK_CAPABILITIES[providerKey] ?? {
+    priority: "elise",
+    labels: "elise",
+    subtasks: false,
+    moveBetweenLists: false,
+    dueTime: false,
+    statuses: ["pending", "completed"],
+  };
 
 export interface TaskList {
   /**
@@ -85,6 +139,9 @@ export const isPlaceholderTitle = (title: string) =>
 
 const optionalText = (max: number) => z.string().trim().max(max).optional();
 
+export const labelName = z.string().trim().min(1).max(60);
+const labelNames = z.array(labelName).max(20);
+
 export const createTaskInput = z
   .object({
     title: z
@@ -104,6 +161,12 @@ export const createTaskInput = z
     priority: z.enum(TASK_PRIORITIES).optional(),
     category: optionalText(80),
     dueDate: isoDate.optional(),
+    parentTaskId: taskId
+      .optional()
+      .describe(
+        "Create it as a subtask of this task (its id from tasks.list); it joins the parent's list.",
+      ),
+    labels: labelNames.optional().describe("ELISE labels by name; new names are created."),
     list: z
       .string()
       .trim()
@@ -136,6 +199,8 @@ export const updateTaskInput = z
       .max(600)
       .optional()
       .describe("Move to another list of the same account (id or name)."),
+    addLabels: labelNames.optional().describe("Labels to add, by name (created if new)."),
+    removeLabels: labelNames.optional(),
   })
   .strict();
 
@@ -148,10 +213,21 @@ export const listTasksInput = z
     status: z.enum(["open", "completed", "all"]).default("open"),
     due: z.enum(["any", "today", "overdue", "this_week", "no_date"]).default("any"),
     search: z.string().trim().min(1).max(200).optional(),
+    priority: z.enum(TASK_PRIORITIES).optional().describe("Only this priority (high = P1)."),
+    label: labelName.optional().describe("Only tasks with this ELISE label."),
     limit: z.number().int().min(1).max(500).default(20),
     destination: destinationField,
   })
   .strict();
+
+export const taskLabelsInput = z
+  .object({
+    action: z.enum(["list", "create", "rename", "delete"]),
+    name: labelName.optional(),
+    newName: labelName.optional(),
+  })
+  .strict();
+export type TaskLabelsInput = z.infer<typeof taskLabelsInput>;
 
 export type CreateTaskInput = z.infer<typeof createTaskInput>;
 export type UpdateTaskInput = z.infer<typeof updateTaskInput>;
@@ -164,6 +240,9 @@ export interface TaskQuery {
   dueTo?: string;
   noDueDate?: boolean;
   search?: string;
+  /** Applied after enrichment (ELISE priority/labels on provider tasks), never by the provider. */
+  priority?: TaskPriority;
+  label?: string;
   limit: number;
 }
 
@@ -173,7 +252,13 @@ export function toTaskQuery(
   now: Date = new Date(),
 ): TaskQuery {
   const today = todayIn(timezone, now);
-  const base = { status: input.status, search: input.search, limit: input.limit };
+  const base = {
+    status: input.status,
+    search: input.search,
+    limit: input.limit,
+    ...(input.priority ? { priority: input.priority } : {}),
+    ...(input.label ? { label: input.label } : {}),
+  };
   switch (input.due) {
     case "today":
       return { ...base, dueFrom: today, dueTo: today };
@@ -237,6 +322,19 @@ export function matchTaskLists<T extends { id: string; name: string }>(
   return lists.filter((l) => normName(l.name).includes(wanted));
 }
 
+/** Search over what a person would remember: title, description/notes, labels, list, account. */
+export function matchesTaskSearch(task: Task, search: string): boolean {
+  const q = normName(search);
+  return [
+    task.title,
+    task.description,
+    task.notes,
+    task.provenance.listName,
+    task.provenance.source,
+    ...(task.labels ?? []),
+  ].some((v) => v && normName(v).includes(q));
+}
+
 export interface TaskWriteMeta {
   userId: string;
   source: "user_ui" | "ai" | "schedule" | "import" | "system";
@@ -255,4 +353,11 @@ export interface TaskProvider {
   reopen(taskId: string): Promise<Task>;
   /** Soft delete where the provider supports it. */
   archive(taskId: string): Promise<Task>;
+  /** The workspace's ELISE labels (ADR-050), with how many open tasks carry each. */
+  manageLabels?(input: TaskLabelsInput): Promise<TaskLabel[]>;
+}
+
+export interface TaskLabel {
+  name: string;
+  count: number;
 }

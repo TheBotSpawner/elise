@@ -14,8 +14,9 @@ import type { ServerSupabase } from "@/infrastructure/supabase/server";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const COLUMNS =
-  "id, workspace_id, task_list_id, title, description, notes, status, priority, category, due_date, completed_at, created_by_user_id, source, metadata, created_at, updated_at, archived_at";
+// Every column: `parent_task_id` (ADR-050, migration 037) is read when the database has it, and a
+// database that doesn't yet still lists tasks (no subtasks) instead of failing.
+const COLUMNS = "*";
 
 /**
  * ELISE Tasks: the Native provider for the Tasks capability. Supabase is the source of truth.
@@ -129,11 +130,18 @@ export class EliseTasksProvider implements TaskProvider {
   }
 
   async create(input: CreateTaskInput, meta: TaskWriteMeta): Promise<Task> {
-    const list = await this.resolveList(input.list);
+    // A subtask joins its parent's list; the parent must be a task of this workspace.
+    const parent = input.parentTaskId ? await this.get(input.parentTaskId) : null;
+    if (input.parentTaskId && !parent)
+      throw new AppError("NOT_FOUND", "The parent task doesn't exist", { recovery: "review" });
+    const list = parent
+      ? ((await this.lists()).find((l) => l.id === parent.provenance.listId) ?? null)
+      : await this.resolveList(input.list);
     const { data, error } = await this.db
       .from("tasks")
       .insert({
         workspace_id: this.workspaceId,
+        ...(parent ? { parent_task_id: parent.id } : {}),
         task_list_id: list?.id ?? null,
         title: input.title,
         description: input.description ?? null,
@@ -207,6 +215,7 @@ export class EliseTasksProvider implements TaskProvider {
       status: row.status,
       priority: row.priority,
       category: row.category,
+      parentId: row.parent_task_id ?? null,
       dueDate: row.due_date,
       completedAt: row.completed_at,
       createdAt: row.created_at,

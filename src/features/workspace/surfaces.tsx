@@ -606,6 +606,8 @@ function TaskRow({
         <span className="block truncate text-[12px] text-faint">
           {task.listName ?? task.source}
           {task.dueDate ? ` · ${f.date(task.dueDate)}` : ""}
+          {task.priority === "high" ? " · P1" : ""}
+          {task.labels?.length ? ` · ${task.labels.join(", ")}` : ""}
         </span>
       </span>
     </li>

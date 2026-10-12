@@ -11,6 +11,7 @@ import {
   type ProviderFactory,
   type ToolContext,
 } from "@/core/agents/tools";
+import type { TaskProvider } from "@/core/capabilities/tasks";
 import type { CapabilityKey } from "@/core/capabilities/types";
 import { AppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
@@ -70,6 +71,10 @@ import {
   SpotifyTokenProvider,
 } from "@/infrastructure/providers/spotify/music";
 import { spotifyOAuthConfig } from "@/infrastructure/providers/spotify/oauth";
+import {
+  EnrichedTaskProvider,
+  TaskEnrichmentStore,
+} from "@/infrastructure/providers/task-enrichment";
 import { YouTubeMusicProvider } from "@/infrastructure/providers/youtube/music";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 import { SupabaseActionLog } from "@/infrastructure/supabase/repositories/action-log";
@@ -233,6 +238,7 @@ function providerFactory(
     }
     return http;
   };
+  let taskEnrichment: TaskEnrichmentStore | undefined;
   let knowledge:
     (SupabaseKnowledgeReader & KnowledgeManager & ReturnType<typeof liveKnowledge>) | undefined;
 
@@ -240,13 +246,23 @@ function providerFactory(
     [K in ImplementedCapability]: (binding: CapabilityBinding) => CapabilityProviders[K];
   } = {
     tasks(binding) {
+      // ELISE's labels and priority ride on top of every provider (ADR-050), never copied in.
+      const enrich = (inner: TaskProvider) =>
+        new EnrichedTaskProvider(
+          inner,
+          (taskEnrichment ??= new TaskEnrichmentStore(auth.db, auth.workspaceId)),
+          binding.providerKey,
+          binding.connectionId,
+        );
       if (binding.providerKey === "elise_native") {
-        return new EliseTasksProvider(auth.db, auth.workspaceId, binding.connectionId);
+        return enrich(new EliseTasksProvider(auth.db, auth.workspaceId, binding.connectionId));
       }
       if (binding.providerKey === "google") {
-        return new GoogleTasksProvider(
-          { connectionId: binding.connectionId, label: binding.label },
-          googleHttp(binding.connectionId),
+        return enrich(
+          new GoogleTasksProvider(
+            { connectionId: binding.connectionId, label: binding.label },
+            googleHttp(binding.connectionId),
+          ),
         );
       }
       throw unsupported("tasks", binding);

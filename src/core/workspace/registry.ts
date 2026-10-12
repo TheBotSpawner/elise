@@ -84,6 +84,9 @@ const taskItem = z.object({
   priority: text(20).nullable(),
   source: text(200),
   listName: text(200).nullable(),
+  /** ADR-050: the same task semantics as the Tasks workspace (optional: older Surfaces lack them). */
+  labels: z.array(text(60)).max(10).optional(),
+  subtask: z.boolean().optional(),
 });
 
 const passage = z.object({
