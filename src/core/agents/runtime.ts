@@ -135,10 +135,23 @@ export async function* runElise(run: RunInput): AsyncGenerator<RuntimeEvent> {
         toolCalls: 0,
       };
 
+      // The last allowed step answers with what the turn already has (ADR-048): no tools, so a
+      // long chain of reads ends in an answer — never in "too many steps" after the data came in.
+      const last = turn === limits.maxModelTurns - 1 && traces.length > 0;
+      if (last) {
+        items.push({
+          type: "message",
+          role: "developer",
+          content:
+            "This is the last step of this request: answer the user now from the tool results above, without calling tools. If something they asked couldn't be read, say exactly what.",
+        });
+        timing.toolsExposed = 0;
+      }
+
       for await (const event of run.ai.streamTurn({
         instructions: run.instructions,
         input: items,
-        tools: specs,
+        tools: last ? [] : specs,
         tier,
         ...(reasoning ? { reasoning } : {}),
         signal: run.signal,

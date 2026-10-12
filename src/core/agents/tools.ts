@@ -44,6 +44,7 @@ import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
 import type { ShortcutStore } from "../shortcuts/model";
 import type { MethodStore } from "../skills/model";
+import type { StructuredAnalysis } from "../structured/analysis";
 import type { StudyPort } from "../study/model";
 import type { TimerStore } from "../timers/model";
 import type { BriefPort } from "../tools/planning";
@@ -331,6 +332,8 @@ export type ToolDisplay =
     }
   /** Structured records from a mapped source (the source stays authoritative). */
   | { kind: "structured_sources"; sources: StructuredSource[] }
+  /** A deterministic analysis of a whole database (ADR-048): one analytical object on screen. */
+  | { kind: "structured_analysis"; analysis: StructuredAnalysis }
   | {
       kind: "structured_records";
       source: StructuredSourceRef;

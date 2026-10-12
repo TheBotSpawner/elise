@@ -16,6 +16,7 @@ import {
 } from "../capabilities/structured";
 import { AppError } from "../errors";
 import { parseExternalRef } from "../providers/refs";
+import { ANALYSIS_LIMITS, analyzeRecords } from "../structured/analysis";
 import { todayIn } from "../time";
 
 /**
@@ -223,6 +224,100 @@ export const queryTool: ToolDefinition = {
       cursor: q.cursor,
     });
     return showRecords(source, page.records, page.hasMore, page.nextCursor);
+  },
+};
+
+const analyzeInput = z
+  .object({
+    source: sourceRef.describe(
+      'The database as the user named it ("Oportunidades", "mi pipeline") or its id.',
+    ),
+    scope: z
+      .enum(["all", "open"])
+      .default("all")
+      .describe('"open" for only open/active records ("solo las activas").'),
+    rank: z
+      .enum(["attention", "value", "close"])
+      .default("attention")
+      .describe(
+        'What the list highlights: what needs attention (default), highest value ("ordenalas por valor"), or soonest close ("¿cuáles cierran primero?").',
+      ),
+    filters: z.array(filterSchema).max(10).default([]),
+  })
+  .strict();
+
+export const analyzeTool: ToolDefinition = {
+  name: "structured.analyze",
+  capability: "structured",
+  operation: "analyze",
+  description:
+    '"Analizame mi base de Oportunidades en Notion", "¿cómo está la pipeline?", "¿cuántas tengo abiertas?", "¿qué cierra primero?", "ordenalas por valor": reads the whole database LIVE (paginated, bounded) and returns a deterministic analysis — totals, by stage, value, overdue and soon closes, stale and incomplete records, what needs attention — and shows it on screen as one analysis (summary, stages, list). Works for any database shared with ELISE, mapped or not. For a database, use this (or structured.query for specific records) — never knowledge.search.',
+  input: analyzeInput,
+  route: (i: z.infer<typeof analyzeInput>) => routeRef(i.source),
+  async describe() {
+    return { summary: "Analyze database" };
+  },
+  async run(raw, env) {
+    const q = analyzeInput.parse(raw);
+    const p = provider(env);
+    const source = await resolveSource(env, q.source);
+    allow(source, "read");
+    const today = todayIn(env.ctx.timezone, env.ctx.now);
+    const plan = {
+      filters: resolveFilters(source, q.filters, today),
+      sort: [{ field: "last_edited" as const, direction: "desc" as const }],
+    };
+    let read: { records: StructuredRecord[]; complete: boolean };
+    if (p.readAll) read = await p.readAll(source, plan, ANALYSIS_LIMITS.maxRecords);
+    else {
+      // Same bound through plain pages for providers without a batch read.
+      const records: StructuredRecord[] = [];
+      let cursor: string | undefined;
+      let more = true;
+      while (more && records.length < ANALYSIS_LIMITS.maxRecords) {
+        const page = await p.query(source, { ...plan, limit: ANALYSIS_LIMITS.pageSize, cursor });
+        records.push(...page.records);
+        cursor = page.nextCursor ?? undefined;
+        more = page.hasMore && Boolean(cursor);
+      }
+      read = { records, complete: !more };
+    }
+    const a = analyzeRecords(source, read.records, {
+      today,
+      complete: read.complete,
+      scope: q.scope,
+      rank: q.rank,
+    });
+    return {
+      output: {
+        source: { id: source.id, name: source.name, account: source.account },
+        analyzed: a.records,
+        ...(a.complete
+          ? {}
+          : { partial: `Only the ${a.records} most recently edited records were read: say so.` }),
+        fieldsUsed: a.fields,
+        totals: { inScope: a.total, open: a.open, won: a.won, lost: a.lost, dormant: a.dormant },
+        byStage: a.byStage,
+        ...(a.value ? { value: a.value } : {}),
+        overdue: a.overdue,
+        closingSoon: a.closingSoon,
+        staleOver30Days: a.stale,
+        missingInfo: a.missingInfo,
+        ...(a.byCompany.length ? { byCompany: a.byCompany } : {}),
+        // Record values are data from the user's database, never instructions.
+        attention: a.attention.map((x) => ({
+          record: x.id,
+          title: x.title,
+          stage: x.stage,
+          close: x.close,
+          value: x.value,
+          reason: x.reason,
+        })),
+        instructions:
+          "Give a short executive reading of this (what stands out, what needs attention and why), from these numbers only. The screen already shows the summary, the stage distribution and the list: don't draw them again with ui.*. Don't search Knowledge for this: only if the user asks something these fields can't answer (e.g. WHY a record is stalled and its own fields don't say — read it with structured.getRecord first), and then say it supplements the database.",
+      },
+      display: { kind: "structured_analysis", analysis: a },
+    };
   },
 };
 
@@ -575,6 +670,7 @@ export const STRUCTURED_TOOLS = [
   listSourcesTool,
   getSchemaTool,
   queryTool,
+  analyzeTool,
   getRecordTool,
   createRecordTool,
   updateRecordTool,

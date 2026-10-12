@@ -133,6 +133,48 @@ export function schemaFingerprint(properties: SchemaProperty[]): string {
   return h.toString(16).padStart(8, "0");
 }
 
+/** Words that say "a database" but not which one ("mi base de Oportunidades en Notion"). */
+const GENERIC = new Set(
+  "mi mis la las el los de del en base bases datos data database databases db tabla tablas notion registros records my the of in".split(
+    " ",
+  ),
+);
+const words = (s: string) =>
+  norm(s)
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w && !GENERIC.has(w));
+const sameWord = (a: string, b: string) =>
+  a === b || (Math.min(a.length, b.length) >= 5 && a.slice(0, 5) === b.slice(0, 5));
+
+/**
+ * Which databases a reference names (ADR-048), deterministically and in tiers: exact title, then
+ * the title once generic words are ignored, then every word of the title present in the
+ * reference (or the reference's words all in the title). The first tier with a match wins, so
+ * "base de oportunidades en Notion" → "Oportunidades" without asking; only a real tie is several.
+ */
+export function matchSourceNames<T extends { name: string; aliases?: readonly string[] }>(
+  ref: string,
+  candidates: readonly T[],
+): T[] {
+  const names = (c: T) => [c.name, ...(c.aliases ?? [])];
+  const wanted = norm(ref);
+  const exact = candidates.filter((c) => names(c).some((n) => norm(n) === wanted));
+  if (exact.length) return exact;
+  const ws = words(ref);
+  if (!ws.length) return [];
+  const key = ws.join(" ");
+  const normalized = candidates.filter((c) => names(c).some((n) => words(n).join(" ") === key));
+  if (normalized.length) return normalized;
+  return candidates.filter((c) =>
+    names(c).some((n) => {
+      const title = words(n);
+      if (!title.length) return false;
+      const covers = (a: string[], b: string[]) => a.every((x) => b.some((y) => sameWord(x, y)));
+      return covers(title, ws) || covers(ws, title);
+    }),
+  );
+}
+
 export interface SchemaChange {
   fields: FieldMapping[];
   renamed: { key: string; from: string; to: string }[];

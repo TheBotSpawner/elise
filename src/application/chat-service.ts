@@ -34,6 +34,7 @@ import { bindVoiceApproval } from "@/core/voice/approval";
 import { SpokenSplitter } from "@/core/voice/speech-text";
 import { approvalDecidedOps, intentForTool } from "@/core/workspace/from-results";
 import { changeOf } from "@/core/workspace/lifecycle";
+import { beforePresenting, overBudget, type TurnPresentation } from "@/core/workspace/presentation";
 import { describeWorkspace } from "@/core/workspace/registry";
 import { getAIProvider } from "@/infrastructure/ai";
 import { trackEvent } from "@/infrastructure/observability/analytics";
@@ -538,6 +539,8 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
         >();
         const methodNotes: string[] = [];
         const stepStarted = new Map<string, number>();
+        /** What this turn put on the Canvas, by tool (presentation discipline, ADR-048). */
+        const presented: TurnPresentation[] = [];
         const started = Date.now();
         let finalText = "";
         let failure: ReturnType<typeof toPublicError> | null = null;
@@ -725,7 +728,21 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                   event.outcome.display?.kind === "morning_brief"
                     ? event.outcome.display.present
                     : undefined;
-                const surfaceIds = event.name.startsWith("ui.")
+                // Tool call ≠ Surface (ADR-048): plumbing stays off the Canvas, repeated searches
+                // replace their earlier result, an analysis replaces this turn's document
+                // searches, and a turn adds at most a few Surfaces. Approvals always show.
+                const policed =
+                  !event.name.startsWith("ui.") &&
+                  !brief &&
+                  event.outcome.status !== "approval_required";
+                const plan = policed ? beforePresenting(event.name, presented) : null;
+                const at = new Date().toISOString();
+                if (plan?.dismiss.length) {
+                  workspace.apply(plan.dismiss.map((id) => ({ op: "dismiss" as const, id, at })));
+                  for (const p of presented)
+                    p.ids = p.ids.filter((id) => !plan.dismiss.includes(id));
+                }
+                let surfaceIds = event.name.startsWith("ui.")
                   ? []
                   : brief
                     ? // "My brief now" opens the same Surfaces a scheduled brief does (ADR-041).
@@ -733,7 +750,26 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                         ...(brief.focus ? [brief.focus.id] : []),
                         ...presentBriefing(workspace, brief).flatMap((t) => t.surfaceIds ?? []),
                       ]
-                    : workspace.present(event.name, event.callId, event.outcome, query, change);
+                    : plan && !plan.present
+                      ? []
+                      : workspace.present(event.name, event.callId, event.outcome, query, change);
+                if (policed) {
+                  const extra = overBudget(
+                    presented.flatMap((p) => p.ids),
+                    surfaceIds,
+                  );
+                  if (extra.length) {
+                    workspace.apply(extra.map((id) => ({ op: "dismiss" as const, id, at })));
+                    surfaceIds = surfaceIds.filter((id) => !extra.includes(id));
+                  }
+                  presented.push({ tool: event.name, ids: surfaceIds });
+                  logger.info("workspace.presentation", {
+                    tool: event.name,
+                    presented: surfaceIds.length,
+                    replaced: plan?.dismiss.length ?? 0,
+                    over_budget: extra.length,
+                  });
+                }
                 if (event.name === "meeting.prepare") logMeetingPrep(event.outcome, durationMs);
                 const done = event.outcome.status === "succeeded" ? event.outcome.display : null;
                 if (done?.kind === "method" && done.change === "used") {
@@ -774,6 +810,17 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                 });
                 break;
               case "error":
+                {
+                  // A failed turn doesn't leave its retrieval rounds on screen as filler (ADR-048):
+                  // the searches it showed are withdrawn; what it read for real stays.
+                  const filler = presented
+                    .filter((p) => p.tool === "knowledge.search" || p.tool === "history.search")
+                    .flatMap((p) => p.ids);
+                  if (filler.length) {
+                    const at = new Date().toISOString();
+                    workspace.apply(filler.map((id) => ({ op: "dismiss" as const, id, at })));
+                  }
+                }
                 finalText = finishSpoken(event.text);
                 failure = event.error;
                 await persistAssistant(finalText, {

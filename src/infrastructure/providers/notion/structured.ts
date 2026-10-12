@@ -391,6 +391,38 @@ export function writeProperties(values: Record<string, RecordValue>, fields: Fie
 export class NotionStructuredApi {
   constructor(private readonly http: NotionHttp) {}
 
+  get stats() {
+    return this.http.stats;
+  }
+
+  /**
+   * Every data source shared with ELISE (ADR-048): names and ids only, for resolving "mi base de
+   * Oportunidades". A few pages of 100; the caller caches it.
+   */
+  async listDataSources(): Promise<NotionDataSource[]> {
+    const out: NotionDataSource[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 3; page++) {
+      const res = await this.http.request<{
+        results: NotionDataSource[];
+        next_cursor: string | null;
+      }>(
+        "POST",
+        "/search",
+        {
+          filter: { property: "object", value: "data_source" },
+          page_size: 100,
+          ...(cursor ? { start_cursor: cursor } : {}),
+        },
+        true,
+      );
+      out.push(...res.results.filter((r) => r.object === "data_source" && !r.in_trash));
+      cursor = res.next_cursor ?? undefined;
+      if (!cursor) break;
+    }
+    return out;
+  }
+
   /** Databases' data sources the user shared with ELISE (search sees only shared ones). */
   async searchDataSources(query: string): Promise<NotionDataSource[]> {
     const res = await this.http.request<{ results: NotionDataSource[] }>(

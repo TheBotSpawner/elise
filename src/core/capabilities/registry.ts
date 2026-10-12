@@ -188,6 +188,7 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       listSources: READ,
       getSchema: READ,
       query: READ,
+      analyze: READ,
       getRecord: READ,
       createRecord: WRITE,
       updateRecord: WRITE,

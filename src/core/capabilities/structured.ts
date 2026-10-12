@@ -163,6 +163,15 @@ export interface StructuredProvider {
   /** By reference, or by name/context ("projects"): matches, so the caller can ask. */
   findSources(ref: string): Promise<StructuredSource[]>;
   query(source: StructuredSource, plan: QueryPlan): Promise<QueryPage>;
+  /**
+   * The records an analysis needs, paginated in batches by the provider and bounded by `max`
+   * (ADR-048): never one request per record. `complete` is false when the source has more.
+   */
+  readAll?(
+    source: StructuredSource,
+    plan: Omit<QueryPlan, "limit" | "cursor">,
+    max: number,
+  ): Promise<{ records: StructuredRecord[]; complete: boolean }>;
   getRecord(ref: string): Promise<StructuredRecord | null>;
   createRecord(
     source: StructuredSource,

@@ -79,6 +79,21 @@ const SIGNALS: readonly [string, RegExp][] = [
   ],
 ];
 
+/**
+ * The user names a database, not documents (ADR-048): "mi base de Oportunidades en Notion",
+ * "la database de Proyectos", "mi CRM", "los registros de…". Then the structured source is the
+ * answer's source; Knowledge search isn't offered up front (still loadable with tools.more for
+ * an intentional supplement). Pages and documents ("la página de Notion que dice…") are Knowledge.
+ */
+const DATABASE_WORDS =
+  /\b(bases? de datos|databases?|crm|tablas?|registros?|records?|filas|rows|pipeline|embudo|base de (?!conocimiento)\p{L}+|base \p{L}+ (en|de) notion)\b/iu;
+const DOCUMENT_WORDS =
+  /\b(p[aá]ginas?|pages?|documentos?|documents?|docs?|plantillas?|templates?|qu[eé] dice|what does .* say|escribimos|wrote|apuntes?|pdf)\b/i;
+
+export function explicitStructured(message: string): boolean {
+  return DATABASE_WORDS.test(message) && !DOCUMENT_WORDS.test(message);
+}
+
 /** Visible Surfaces keep their capability's tools at hand ("open the second email"). */
 const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   calendar: "calendar",
@@ -134,11 +149,16 @@ export function selectTools(
     if (signals.contextKind === "subject") groups.add("study");
     else groups.add("email");
   }
+  // An explicit database request goes to the database (ADR-048): structured tools in, document
+  // search out of the first pass — it can be loaded on purpose, never cascaded into by default.
+  const structured = explicitStructured(signals.message);
+  if (structured) groups.add("structured");
+  const held = (t: AnyToolDefinition) => structured && t.name === "knowledge.search";
   // Core groups first, in registry order, then the rest in registry order: the stable part of
   // the list stays a stable prefix for prompt caching.
-  const core = all.filter((t) => CORE_GROUPS.has(groupOf(t)));
+  const core = all.filter((t) => CORE_GROUPS.has(groupOf(t)) && !held(t));
   const extra = all.filter((t) => !CORE_GROUPS.has(groupOf(t)) && groups.has(groupOf(t)));
-  const rest = all.filter((t) => !groups.has(groupOf(t)));
+  const rest = all.filter((t) => !groups.has(groupOf(t)) || held(t));
   return { tools: [...core, ...extra], rest, groups: [...groups] };
 }
 

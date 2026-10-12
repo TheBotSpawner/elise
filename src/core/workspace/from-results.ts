@@ -24,6 +24,7 @@ import type { KnowledgeEvidence, ToolDisplay } from "../agents/tools";
 import type { CalendarEvent } from "../capabilities/calendar";
 import type { EmailMessage } from "../capabilities/email";
 import type { Task } from "../capabilities/tasks";
+import { analysisVisuals } from "../structured/analysis";
 import { todayIn } from "../time";
 
 /**
@@ -789,6 +790,15 @@ export function surfacesFromOutcome(
       );
     case "finance_summary":
       return visualsOr(financeSummaryVisuals(d.summary, opts.locale), d, opts, capability);
+    case "structured_analysis":
+      // One analytical object per database (ADR-048): stable ids, so a follow-up ("solo las
+      // activas", "ordenalas por valor") replaces these Surfaces instead of adding cards.
+      return visualsOr(
+        analysisVisuals(d.analysis, opts.locale),
+        d,
+        { ...opts, key: `structured-analysis:${d.analysis.source.id}` },
+        capability,
+      );
     case "finance_breakdown":
       return visualsOr([financeBreakdownVisual(d.breakdown, opts.locale)], d, opts, capability);
     case "habits":
