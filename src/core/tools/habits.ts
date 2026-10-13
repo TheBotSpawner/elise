@@ -15,7 +15,15 @@ import {
   type HabitProgress,
 } from "../capabilities/habits";
 import { AppError } from "../errors";
-import { todayIn } from "../time";
+import {
+  buildHabitStatsReport,
+  entriesWindow,
+  habitRange,
+  suggestHabitIcon,
+  type HabitView,
+} from "../habits/analytics";
+import { PERIODS, resolvePeriod } from "../periods";
+import { addDays, isIsoDate, todayIn } from "../time";
 
 function provider(env: ToolRunEnv) {
   return env.providers.get("habits", env.binding);
@@ -26,6 +34,16 @@ async function resolve(env: ToolRunEnv, ref: string): Promise<Habit> {
 }
 
 const today = (env: ToolRunEnv) => todayIn(env.ctx.timezone, env.ctx.now);
+
+/** Pauses with an end date resume on that local day (ADR-053), before anything is read. */
+export async function resumeDuePauses(env: ToolRunEnv): Promise<void> {
+  const p = provider(env);
+  const day = today(env);
+  const paused = (await p.list({ includeInactive: true })).filter(
+    (h) => !h.active && h.pausedUntil && h.pausedUntil <= day,
+  );
+  for (const h of paused) await p.update(h.id, { active: true });
+}
 
 /** Progress computed in code for these habits (current week, today, streak). */
 export async function progressFor(env: ToolRunEnv, habits: Habit[]): Promise<HabitProgress[]> {
@@ -74,6 +92,7 @@ export const listHabitsTool: ToolDefinition = {
     return { summary: "List habits" };
   },
   async run(_input, env) {
+    await resumeDuePauses(env);
     return result(env, await provider(env).list({ includeInactive: false }));
   },
 };
@@ -90,6 +109,7 @@ export const getProgressTool: ToolDefinition = {
   },
   async run(raw, env) {
     const q = progressInput.parse(raw);
+    await resumeDuePauses(env);
     const habits = q.habit
       ? [await resolve(env, q.habit)]
       : await provider(env).list({ includeInactive: false });
@@ -141,6 +161,8 @@ export const createHabitTool: ToolDefinition = {
         unit: h.unit ?? null,
         preferredDays: h.preferredDays ?? [],
         startDate: h.startDate ?? today(env),
+        // The model's emoji, else a deterministic one from the name; the user can change it.
+        icon: h.icon ?? suggestHabitIcon(h.name),
       },
       sourceOf(env.ctx),
     );
@@ -171,6 +193,7 @@ export const updateHabitTool: ToolDefinition = {
       target: u.target,
       unit: u.unit,
       preferredDays: u.preferredDays,
+      icon: u.icon,
     });
     return {
       ...(await result(env, [updated], { updated: true })),
@@ -205,7 +228,8 @@ export const checkInTool: ToolDefinition = {
           date,
           // Done/not-done habits log one unit; measured habits log what the user said.
           value: c.value ?? (habit.unit ? habit.target : 1),
-          mode: c.value === undefined ? "set" : c.mode,
+          // A past day without an explicit mode is a correction of that day (ADR-053).
+          mode: c.value === undefined ? "set" : (c.mode ?? (date === today(env) ? "add" : "set")),
           status: c.status,
           notes: c.notes ?? null,
         },
@@ -216,25 +240,48 @@ export const checkInTool: ToolDefinition = {
 };
 
 const pauseInput = habitRefInput
-  .extend({ resume: z.boolean().default(false).describe("true to resume a paused habit.") })
+  .extend({
+    resume: z.boolean().default(false).describe("true to resume a paused habit."),
+    days: z
+      .number()
+      .int()
+      .min(1)
+      .max(366)
+      .optional()
+      .describe('"por dos semanas" → 14. ELISE resumes it then.'),
+    until: z
+      .string()
+      .refine(isIsoDate, "Expected YYYY-MM-DD")
+      .optional()
+      .describe("Resume on this local date."),
+  })
   .strict();
 
 export const pauseHabitTool: ToolDefinition = {
   name: "habits.pause",
   capability: "habits",
   operation: "pause",
-  description: "Pause a habit (kept with its history; no longer tracked), or resume it.",
+  description:
+    "Pause a habit (kept with its history; no targets while paused), optionally for N days, or resume it.",
   input: pauseInput,
   async describe(raw) {
     const p = pauseInput.parse(raw);
     return { summary: `${p.resume ? "Resume" : "Pause"} habit “${p.habit}”` };
   },
   async run(raw, env) {
-    const { habit: ref, resume } = pauseInput.parse(raw);
+    const { habit: ref, resume, days, until } = pauseInput.parse(raw);
     const habit = await resolve(env, ref);
-    const updated = await provider(env).update(habit.id, { active: resume });
+    const end = resume ? null : (until ?? (days ? addDays(today(env), days) : null));
+    const updated = await provider(env).update(habit.id, {
+      active: resume,
+      ...(resume ? {} : { pausedUntil: end }),
+    });
     return {
-      output: { habit: updated.name, active: updated.active },
+      output: {
+        habit: updated.name,
+        active: updated.active,
+        ...(end ? { resumesOn: end } : {}),
+      },
       target: { type: "habit", id: habit.id },
     };
   },
@@ -258,7 +305,152 @@ export const archiveHabitTool: ToolDefinition = {
   },
 };
 
+export const restoreHabitTool: ToolDefinition = {
+  name: "habits.restore",
+  capability: "habits",
+  operation: "restore",
+  description: "Bring an archived habit back to active tracking (its history is intact).",
+  input: habitRefInput,
+  async describe(raw) {
+    return { summary: `Restore habit “${habitRefInput.parse(raw).habit}”` };
+  },
+  async run(raw, env) {
+    const ref = habitRefInput.parse(raw).habit;
+    const p = provider(env);
+    const archived = await p.list({ includeInactive: true, archived: true });
+    const habit = pickOne(
+      archived.filter((h) => h.id === ref || h.name.toLowerCase().includes(ref.toLowerCase())),
+      ref,
+      "habit",
+      (h) => h.name,
+    );
+    if (!p.unarchive) throw new AppError("CAPABILITY_UNAVAILABLE", "Not supported here");
+    const restored = await p.unarchive(habit.id);
+    return { ...(await result(env, [restored])), target: { type: "habit", id: habit.id } };
+  },
+};
+
+export const deleteHabitTool: ToolDefinition = {
+  name: "habits.delete",
+  capability: "habits",
+  operation: "delete",
+  description:
+    "Delete a habit and ALL its history for good. Only when the user explicitly says delete/borrar (archive keeps history). Needs approval.",
+  input: habitRefInput,
+  async describe(raw, env) {
+    const habit = await resolve(env, habitRefInput.parse(raw).habit);
+    return {
+      summary: `Delete habit “${habit.name}” and its history`,
+      target: { type: "habit", id: habit.id },
+    };
+  },
+  async run(raw, env) {
+    const habit = await resolve(env, habitRefInput.parse(raw).habit);
+    const p = provider(env);
+    if (!p.remove) throw new AppError("CAPABILITY_UNAVAILABLE", "Not supported here");
+    await p.remove(habit.id);
+    return { output: { deleted: habit.name }, target: { type: "habit", id: habit.id } };
+  },
+};
+
+const statsInput = z
+  .object({
+    habit: z.string().trim().min(1).max(200).optional().describe("Omit for all active habits."),
+    view: z
+      .enum(["week", "month", "year"])
+      .optional()
+      .describe("This week (default), this month, this year."),
+    period: z
+      .enum(PERIODS)
+      .optional()
+      .describe(
+        'Any calendar period: "el último trimestre" → last_quarter, "el mes pasado" → last_month.',
+      ),
+    from: z.string().refine(isIsoDate).optional(),
+    to: z.string().refine(isIsoDate).optional(),
+  })
+  .strict();
+
+const pct = (n: number | null) => (n === null ? null : `${Math.round(n * 100)}%`);
+
+export const habitStatsTool: ToolDefinition = {
+  name: "habits.getStats",
+  capability: "habits",
+  operation: "getStats",
+  description:
+    '"¿Cómo vengo con mis hábitos este mes?", "¿cuál estoy cumpliendo menos?", "estadísticas de Workout del último trimestre": completion %, done/target, streaks, trend, comparison with the previous period and weekdays most missed — all computed by ELISE. Quote these numbers; never compute them.',
+  input: statsInput,
+  async describe() {
+    return { summary: "Habit statistics" };
+  },
+  async run(raw, env) {
+    const q = statsInput.parse(raw);
+    await resumeDuePauses(env);
+    const day = today(env);
+    const p = provider(env);
+    const habits = q.habit
+      ? [await resolve(env, q.habit)]
+      : await p.list({ includeInactive: false });
+    const view: HabitView = q.from || q.period ? "custom" : (q.view ?? "week");
+    const custom = q.from
+      ? { from: q.from, to: q.to ?? day }
+      : q.period
+        ? resolvePeriod(q.period, day)
+        : undefined;
+    const range = habitRange(view, day, custom);
+    const window = entriesWindow(range, day);
+    // One habit: its whole history, for the longest streak.
+    const from = q.habit ? [habits[0]!.startDate, window.from].sort()[0]! : window.from;
+    const entries = await p.entries(
+      habits.map((h) => h.id),
+      from,
+      window.to,
+    );
+    const report = buildHabitStatsReport(habits, entries, range, day, {
+      fullHistory: Boolean(q.habit),
+    });
+    const best = report.overall.bestStreak;
+    return {
+      output: {
+        range: { from: range.from, to: range.to },
+        overall: {
+          completion: pct(report.overall.rate),
+          previousPeriod: pct(report.overall.previousRate),
+          ...(report.overall.delta !== null ? { changePoints: report.overall.delta } : {}),
+          activeHabits: report.overall.active,
+          ...(best ? { bestStreak: `${best.name}: ${best.count} ${best.unit}` } : {}),
+        },
+        habits: report.habits.map((h) => ({
+          name: h.name,
+          done: `${h.done} / ${h.goal}${h.unit ? ` ${h.unit}` : ""}`,
+          completion: pct(h.rate),
+          previousPeriod: pct(h.previousRate),
+          streak: `${h.streak.count} ${h.streak.unit}`,
+          ...(h.longest ? { longestStreak: `${h.longest.count} ${h.longest.unit}` } : {}),
+          ...(h.quantity
+            ? {
+                total: `${h.quantity.total} ${h.unit}`,
+                averagePerActiveDay: h.quantity.perActiveDay,
+              }
+            : {}),
+          ...(h.attainment !== null ? { targetAttainment: pct(h.attainment) } : {}),
+        })),
+        mostMissedWeekdays: report.weekdays
+          .filter((w) => w.missed > 0)
+          .sort((a, b) => b.missed / b.expected - a.missed / a.expected)
+          .slice(0, 2)
+          .map((w) => ({ weekday: w.weekday, missed: `${w.missed} / ${w.expected}` })),
+        note: "Completion counts days up to today only. Explain; don't recompute.",
+      },
+      display: { kind: "habit_stats" as const, report },
+    };
+  },
+};
+
 export const HABIT_TOOLS = [
+  habitStatsTool,
+  restoreHabitTool,
+  deleteHabitTool,
   listHabitsTool,
   getProgressTool,
   createHabitTool,

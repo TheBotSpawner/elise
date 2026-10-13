@@ -38,6 +38,9 @@ const habit = (over: Partial<Habit> = {}): Habit => ({
   active: true,
   startDate: "2026-01-01",
   createdAt: "",
+  icon: null,
+  pausedUntil: null,
+  archived: false,
   ...over,
 });
 const entry = (date: string, value = 1, over: Partial<HabitEntry> = {}): HabitEntry => ({
@@ -251,8 +254,8 @@ describe("Morning Brief with habits and goals", () => {
 class MemoryHabits implements HabitsProvider {
   habits: Habit[] = [];
   stored: HabitEntry[] = [];
-  async list() {
-    return this.habits.filter((h) => h.active);
+  async list(opts?: { includeInactive?: boolean }) {
+    return this.habits.filter((h) => opts?.includeInactive || h.active);
   }
   async find(ref: string) {
     return this.habits.filter(
@@ -701,6 +704,102 @@ describe("Lists are checklists, not tasks (ADR-051)", () => {
     expect(STARTER_LISTS.map((s) => `${s.icon} ${s.es}`)).toEqual([
       "🛍️ Lista de Compras",
       "🛩️ Lista de Viaje",
+    ]);
+  });
+});
+
+describe("habits v2 tools (ADR-053)", () => {
+  it("getStats: deterministic completion, comparison and streaks for a range", async () => {
+    const { ports, habits } = nativePorts();
+    const ctx = makeCtx({ now: new Date("2026-10-15T15:00:00Z") });
+    await executeToolCall(ports, ctx, {
+      name: "habits.create",
+      args: { name: "Leer", frequency: "daily", target: 30, unit: "minutos" },
+    });
+    const id = habits.habits[0]!.id;
+    expect(habits.habits[0]!.icon).toBe("📚");
+    for (const [date, value] of [
+      ["2026-10-12", 30],
+      ["2026-10-13", 20],
+      ["2026-10-14", 30],
+    ] as const)
+      await executeToolCall(ports, ctx, {
+        name: "habits.checkIn",
+        args: { habit: id, date, value, mode: "set" },
+      });
+    const out = await executeToolCall(ports, ctx, {
+      name: "habits.getStats",
+      args: { habit: "leer" },
+    });
+    expect(out).toMatchObject({
+      status: "succeeded",
+      output: {
+        habits: [
+          {
+            name: "Leer",
+            done: "2 / 7 minutos",
+            completion: "50%",
+            total: "80 minutos",
+            // (1 + 2/3 + 1 + 0) / 4 days so far (today included).
+            targetAttainment: "67%",
+          },
+        ],
+      },
+      display: { kind: "habit_stats" },
+    });
+  });
+
+  it("pauses for N days and resumes on that local day", async () => {
+    const { ports, habits } = nativePorts();
+    await executeToolCall(ports, makeCtx({ now: new Date("2026-10-12T15:00:00Z") }), {
+      name: "habits.create",
+      args: { name: "Wake up early", frequency: "daily" },
+    });
+    const ui = makeCtx({ origin: "user_ui", now: new Date("2026-10-12T15:00:00Z") });
+    const paused = await executeToolCall(ports, ui, {
+      name: "habits.pause",
+      args: { habit: "wake", days: 14 },
+    });
+    expect(paused).toMatchObject({ output: { active: false, resumesOn: "2026-10-26" } });
+    habits.habits[0]!.pausedUntil = "2026-10-26";
+    await executeToolCall(ports, makeCtx({ now: new Date("2026-10-26T15:00:00Z") }), {
+      name: "habits.list",
+      args: {},
+    });
+    expect(habits.habits[0]!.active).toBe(true);
+  });
+
+  it("deleting asks for approval when ELISE proposes it", async () => {
+    const { ports } = nativePorts();
+    await executeToolCall(ports, makeCtx(), {
+      name: "habits.create",
+      args: { name: "Gym", frequency: "weekly", target: 3 },
+    });
+    const out = await executeToolCall(ports, makeCtx(), {
+      name: "habits.delete",
+      args: { habit: "gym" },
+    });
+    expect(out.status).toBe("approval_required");
+  });
+});
+
+describe("check-in mode default (ADR-053)", () => {
+  it("a past day without a mode is set; today accumulates", async () => {
+    const { ports, habits } = nativePorts();
+    const ctx = makeCtx({ now: new Date("2026-10-15T15:00:00Z") });
+    await executeToolCall(ports, ctx, {
+      name: "habits.create",
+      args: { name: "Leer", frequency: "daily", target: 30, unit: "minutos" },
+    });
+    const call = (args: Record<string, unknown>) =>
+      executeToolCall(ports, ctx, { name: "habits.checkIn", args: { habit: "leer", ...args } });
+    await call({ daysAgo: 1, value: 25 });
+    await call({ daysAgo: 1, value: 20 });
+    await call({ value: 10 });
+    await call({ value: 15 });
+    expect(habits.stored.map((e) => [e.date, e.value]).sort()).toEqual([
+      ["2026-10-14", 20],
+      ["2026-10-15", 25],
     ]);
   });
 });

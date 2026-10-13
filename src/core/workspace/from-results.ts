@@ -17,6 +17,7 @@ import {
   financeSummaryVisuals,
   goalPace,
   goalsVisual,
+  habitStatsVisuals,
   habitsVisual,
   type BuiltVisualization,
   type VizLocale,
@@ -405,6 +406,7 @@ const VIZ_PRIORITY: Record<string, number> = {
   kpi: 76,
   breakdown: 66,
   habits: 66,
+  trend: 58,
   goals: 64,
   categories: 62,
   change: 60,
@@ -844,6 +846,19 @@ export function surfacesFromOutcome(
         { ...opts, key: "finance-budgets" },
         capability,
       );
+    case "habit_stats": {
+      // One Surface per habit (or all) and range: a check-in refreshes it in place (ADR-053).
+      const r = d.report;
+      const who = r.habits.length === 1 ? r.habits[0]!.habitId : "all";
+      return r.habits.length
+        ? visualsOr(
+            habitStatsVisuals(r, r.today, opts.locale),
+            d,
+            { ...opts, key: `habit:${who}:${r.range.view}:${r.range.from}` },
+            capability,
+          )
+        : [];
+    }
     case "habits":
       return isEmptyResult(d)
         ? []

@@ -5,7 +5,13 @@ import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { commitImport, previewImport, type ImportKind } from "@/application/native-import";
-import { nativeAction, reorderList, reorderLists } from "@/application/native-service";
+import {
+  habitHistory,
+  habitsCsv,
+  nativeAction,
+  reorderList,
+  reorderLists,
+} from "@/application/native-service";
 import type { ToolDisplay } from "@/core/agents/tools";
 import { toPublicError, type PublicError } from "@/core/errors";
 
@@ -80,4 +86,39 @@ export async function commitImportAction(
       listName ? z.string().trim().min(1).max(120).parse(listName) : undefined,
     ),
   );
+}
+
+// ── Habits workspace (ADR-053) ───────────────────────────────────────────────
+
+/**
+ * A day check-in from the Habits grid: the same tool as Chat, but without revalidating the
+ * page — the grid already shows the change optimistically, so nothing else is re-read.
+ */
+export async function habitCheckInAction(args: unknown): Promise<NativeResult> {
+  try {
+    return {
+      ok: true,
+      value: await nativeAction(await requireAuthContext(), "habits.checkIn", args),
+    };
+  } catch (error) {
+    return { ok: false, error: toPublicError(error) };
+  }
+}
+
+/** One habit's full history, for its detail (longest streak, recent history). */
+/** Reads: no revalidation (nothing changed). */
+async function read<T>(fn: () => Promise<T>): Promise<NativeResult<T>> {
+  try {
+    return { ok: true, value: await fn() };
+  } catch (error) {
+    return { ok: false, error: toPublicError(error) };
+  }
+}
+
+export async function habitHistoryAction(habitId: string) {
+  return read(async () => habitHistory(await requireAuthContext(), z.uuid().parse(habitId)));
+}
+
+export async function habitsCsvAction() {
+  return read(async () => habitsCsv(await requireAuthContext()));
 }

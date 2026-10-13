@@ -31,6 +31,11 @@ export interface Habit {
   active: boolean;
   startDate: string;
   createdAt: string;
+  /** ADR-053: an emoji (validated), or null. Stored in the habit's metadata. */
+  icon: string | null;
+  /** ADR-053: a pause with an end; ELISE resumes the habit on that local date. */
+  pausedUntil: string | null;
+  archived: boolean;
 }
 
 export interface HabitEntry {
@@ -52,15 +57,23 @@ export interface NewHabit {
   unit?: string | null;
   preferredDays?: number[];
   startDate: string;
+  icon?: string | null;
 }
 
 export interface HabitsProvider {
-  list(opts: { includeInactive: boolean }): Promise<Habit[]>;
+  list(opts: { includeInactive: boolean; archived?: boolean }): Promise<Habit[]>;
   /** By id, or by (case-insensitive) name; several matches are returned for disambiguation. */
   find(ref: string): Promise<Habit[]>;
   create(habit: NewHabit, source: EntrySource): Promise<Habit>;
-  update(id: string, patch: Partial<NewHabit> & { active?: boolean }): Promise<Habit>;
+  update(
+    id: string,
+    patch: Partial<NewHabit> & { active?: boolean; pausedUntil?: string | null },
+  ): Promise<Habit>;
   archive(id: string): Promise<Habit>;
+  /** Back from the archive (history intact). */
+  unarchive?(id: string): Promise<Habit>;
+  /** Destructive: the habit and every check-in. */
+  remove?(id: string): Promise<void>;
   entries(habitIds: string[], from: string, to: string): Promise<HabitEntry[]>;
   /** One entry per habit per day: `add` accumulates, `set` replaces. */
   checkIn(
@@ -92,7 +105,7 @@ export function isScheduled(habit: Pick<Habit, "frequency" | "preferredDays">, d
   return habit.frequency !== "specific_days" || habit.preferredDays.includes(weekday(date));
 }
 
-function dayMet(habit: Habit, entry: HabitEntry | undefined): boolean {
+export function dayMet(habit: Habit, entry: HabitEntry | undefined): boolean {
   if (!entry || entry.status !== "done") return false;
   if (habit.frequency === "weekly") return habit.unit ? entry.value > 0 : true;
   return entry.value >= habit.target;
@@ -110,6 +123,7 @@ export interface WeekDay {
 export interface HabitProgress {
   habitId: string;
   name: string;
+  icon: string | null;
   frequency: HabitFrequency;
   unit: string | null;
   target: number;
@@ -122,8 +136,10 @@ export interface HabitProgress {
     /** Weekly habits: target; others: scheduled days this week. */
     goal: number;
     remaining: number;
-    /** Not reachable anymore with the days left this week. */
+    /** The target needs every remaining slot this week, or can't be reached any more. */
     atRisk: boolean;
+    /** Can't be reached any more with the days left. */
+    unreachable: boolean;
   };
   /** See `streak()` for the exact rule per frequency. */
   streak: { count: number; unit: "days" | "weeks" };
@@ -164,15 +180,28 @@ export function habitProgress(habit: Habit, entries: HabitEntry[], today: string
   }
   const remaining = Math.max(0, round(goal - done));
   const todayEntry = days.find((d) => d.date === today)!;
-  const atRisk =
+  // ADR-053 risk: the week is at risk once the target needs every slot left (or can't be met
+  // any more). "Saturday, 0/3" is at risk; "Monday, 0/3" isn't. Quantities can be caught up in
+  // one day, so they're at risk only on the last day left.
+  const unreachable =
     remaining > 0 &&
     (habit.frequency === "weekly" && habit.unit
       ? remainingSlots === 0
       : remaining > remainingSlots);
+  // Daily / specific-day habits need every scheduled day by definition, so they are at risk
+  // once a scheduled day was missed.
+  const atRisk =
+    remaining > 0 &&
+    (habit.frequency !== "weekly"
+      ? unreachable
+      : habit.unit
+        ? remainingSlots <= 1
+        : remaining >= remainingSlots);
 
   return {
     habitId: habit.id,
     name: habit.name,
+    icon: habit.icon ?? null,
     frequency: habit.frequency,
     unit: habit.unit,
     target: habit.target,
@@ -182,8 +211,8 @@ export function habitProgress(habit: Habit, entries: HabitEntry[], today: string
       value: todayEntry.value,
       met: todayEntry.met,
     },
-    week: { start, days, done: round(done), goal, remaining, atRisk },
-    streak: streak(habit, byDate, today),
+    week: { start, days, done: round(done), goal, remaining, atRisk, unreachable },
+    streak: currentStreak(habit, entries, today),
   };
 }
 
@@ -197,11 +226,12 @@ const round = (n: number) => Math.round(n * 100) / 100;
  * - weekly: consecutive ISO weeks whose target was reached, counting back from last week;
  *   the current week is added once its target is already reached.
  */
-function streak(
+export function currentStreak(
   habit: Habit,
-  byDate: Map<string, HabitEntry>,
+  entries: HabitEntry[],
   today: string,
 ): { count: number; unit: "days" | "weeks" } {
+  const byDate = new Map(entries.filter((e) => e.habitId === habit.id).map((e) => [e.date, e]));
   // Recomputed from the entries every time (edits to any past day are reflected), back to the
   // habit's start — or to the earliest day the user recorded, if they backfilled before it.
   const earliest = [...byDate.keys()].reduce(
@@ -253,6 +283,14 @@ export function localToday(timezone: string, now: Date) {
 // ── Model-facing inputs ──────────────────────────────────────────────────────
 
 const date = z.string().refine(isIsoDate, "Expected YYYY-MM-DD");
+
+/** Emoji only (one grapheme cluster, no text, no markup): never arbitrary SVG/code. */
+export function isHabitIcon(value: string): boolean {
+  if (!value || value.length > 16) return false;
+  const graphemes = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)];
+  return graphemes.length === 1 && /\p{Extended_Pictographic}/u.test(value);
+}
+const iconField = z.string().trim().refine(isHabitIcon, "Expected one emoji");
 const habitRef = z.string().trim().min(1).max(200).describe('The habit\'s id or name, e.g. "gym".');
 const days = z
   .array(z.number().int().min(0).max(6))
@@ -278,6 +316,9 @@ export const createHabitInput = z
       .describe('For quantities: "liters", "km", "minutes". Omit for done/not-done habits.'),
     preferredDays: days.optional(),
     startDate: date.optional().describe("Local date; defaults to today."),
+    icon: iconField
+      .optional()
+      .describe("One emoji that fits the habit (🏋 Workout, 📚 Leer, 💧 Agua). Omit if unsure."),
   })
   .strict()
   .refine((h) => h.frequency !== "specific_days" || (h.preferredDays?.length ?? 0) > 0, {
@@ -293,6 +334,7 @@ export const updateHabitInput = z
     target: z.number().positive().max(100000).optional(),
     unit: z.string().trim().max(30).nullable().optional(),
     preferredDays: days.optional(),
+    icon: iconField.nullable().optional().describe("An emoji; null removes it."),
   })
   .strict();
 
@@ -324,8 +366,10 @@ export const checkInInput = z
       .describe("Quantity for measured habits (1.5 liters, 8 km). Omit for done/not-done habits."),
     mode: z
       .enum(["add", "set"])
-      .default("add")
-      .describe("add: adds to what's logged that day. set: corrects the day's value."),
+      .optional()
+      .describe(
+        'add: adds to what\'s logged that day ("otro litro"). set: the day\'s value is this ("poné 20 minutos ayer"). Omitted: today adds, a past day is set.',
+      ),
     status: z
       .enum(["done", "skipped", "undo"])
       .default("done")

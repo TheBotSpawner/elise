@@ -33,7 +33,10 @@ export function HabitsCard({ display, rise }: { display: D<"habits">; rise: Moti
             key={p.habitId}
             className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 text-[14px]"
           >
-            <span className="truncate">{p.name}</span>
+            <span className="truncate">
+              {p.icon ? `${p.icon} ` : ""}
+              {p.name}
+            </span>
             <span className="flex gap-1" aria-hidden>
               {p.week.days.map((d) => (
                 <span
@@ -171,6 +174,59 @@ export function NoteCard({
                 {n.content.slice(0, 120)}
               </span>
             </Link>
+          </li>
+        ))}
+      </ul>
+    </motion.section>
+  );
+}
+
+/** "¿Cómo vengo con mis hábitos?" — completion per habit for the range (ADR-053). */
+export function HabitStatsCard({
+  display,
+  rise,
+}: {
+  display: D<"habit_stats">;
+  rise: MotionProps;
+}) {
+  const { t } = useI18n();
+  const r = display.report;
+  const pct = (n: number | null) => (n === null ? "—" : `${Math.round(n * 100)}%`);
+  if (!r.habits.length) return null;
+  const view = r.range.view === "custom" ? "custom" : r.range.view;
+  return (
+    <motion.section {...rise} aria-label={t.native.habits.title} className={CARD}>
+      <Header
+        label={`${t.native.habits.title} · ${t.native.habits.ws.views[view]}`}
+        href={`/my-elise/habits${view === "week" ? "" : `?view=${view}`}`}
+      />
+      <p className="text-[14px]">
+        <span className="font-mono text-[18px]">{pct(r.overall.rate)}</span>{" "}
+        <span className="text-muted">{t.native.habits.ws.completion}</span>
+        {r.overall.delta !== null && (
+          <span className="ml-2 text-[12px] text-faint">
+            {t.native.habits.ws.vsPrevious(r.overall.delta)}
+          </span>
+        )}
+      </p>
+      <ul className="flex flex-col gap-2">
+        {r.habits.slice(0, 8).map((h) => (
+          <li key={h.habitId} className="flex flex-col gap-1 text-[13.5px]">
+            <span className="flex justify-between gap-3">
+              <span className="truncate">
+                {h.icon ? `${h.icon} ` : ""}
+                {h.name}
+              </span>
+              <span className="font-mono text-[12.5px] text-muted">
+                {h.done} / {h.goal} · {pct(h.rate)}
+              </span>
+            </span>
+            <span className="h-1.5 overflow-hidden rounded-full bg-surface-2" aria-hidden>
+              <span
+                className="block h-full rounded-full bg-accent"
+                style={{ width: `${Math.round((h.progress ?? 0) * 100)}%` }}
+              />
+            </span>
           </li>
         ))}
       </ul>

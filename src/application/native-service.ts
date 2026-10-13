@@ -8,12 +8,21 @@ import {
   progressWindow,
   weekStart,
   type Habit,
+  type HabitEntry,
   type HabitProgress,
 } from "@/core/capabilities/habits";
 import { STARTER_LISTS, type NativeList } from "@/core/capabilities/lists";
 import type { Note } from "@/core/capabilities/notes";
 import { AppError } from "@/core/errors";
-import { addDays, todayIn } from "@/core/time";
+import {
+  daysIn,
+  entriesWindow,
+  HABIT_VIEWS,
+  habitRange,
+  type HabitRange,
+  type HabitView,
+} from "@/core/habits/analytics";
+import { addDays, isIsoDate, todayIn } from "@/core/time";
 import { EliseGoalsProvider } from "@/infrastructure/providers/elise-native/goals";
 import { EliseHabitsProvider } from "@/infrastructure/providers/elise-native/habits";
 import { EliseListsProvider } from "@/infrastructure/providers/elise-native/lists";
@@ -231,4 +240,121 @@ export async function planningSnapshot(auth: AuthContext) {
     goals: display(goals),
     availability: display(free),
   };
+}
+
+// ── Habits workspace (ADR-053) ───────────────────────────────────────────────
+
+export type HabitStatusFilter = "active" | "paused" | "archived";
+
+export interface HabitsWorkspace {
+  habits: Habit[];
+  entries: HabitEntry[];
+  range: HabitRange;
+  today: string;
+  status: HabitStatusFilter;
+  counts: Record<HabitStatusFilter, number>;
+}
+
+export function parseHabitParams(params: Record<string, string | string[] | undefined>) {
+  const one = (k: string) => {
+    const v = params[k];
+    return (Array.isArray(v) ? v[0] : v)?.trim() || undefined;
+  };
+  const view = one("view");
+  const status = one("status");
+  const date = one("date");
+  const from = one("from");
+  const to = one("to");
+  return {
+    view: (HABIT_VIEWS as readonly string[]).includes(view ?? "") ? (view as HabitView) : "week",
+    date: date && isIsoDate(date) ? date : null,
+    custom:
+      from && to && isIsoDate(from) && isIsoDate(to) && from <= to && daysIn({ from, to }) <= 731
+        ? { from, to }
+        : undefined,
+    status: (["active", "paused", "archived"] as const).includes(status as HabitStatusFilter)
+      ? (status as HabitStatusFilter)
+      : "active",
+  };
+}
+
+/**
+ * The Habits screen: habits of one status and the check-ins its range needs — the range, the
+ * previous equal range (comparison) and 26 weeks for streaks — never the full history.
+ * Every number is then computed by `core/habits/analytics` (the same code Chat uses).
+ */
+export async function habitsWorkspace(
+  auth: AuthContext,
+  q: ReturnType<typeof parseHabitParams>,
+): Promise<HabitsWorkspace> {
+  const provider = new EliseHabitsProvider(auth.db, auth.workspaceId, auth.userId);
+  const day = today(auth);
+  // Pauses with an end resume on their day, before anything is shown.
+  const live = await provider.list({ includeInactive: true });
+  for (const h of live.filter((x) => !x.active && x.pausedUntil && x.pausedUntil <= day))
+    await provider.update(h.id, { active: true });
+  const [all, archived] = await Promise.all([
+    provider.list({ includeInactive: true }),
+    provider.list({ includeInactive: true, archived: true }),
+  ]);
+  const habits =
+    q.status === "archived"
+      ? archived
+      : all.filter((h) => (q.status === "paused" ? !h.active : h.active));
+  const range = habitRange(q.view, q.date ?? day, q.custom);
+  const window = entriesWindow(range, day);
+  const entries = await provider.entries(
+    habits.map((h) => h.id),
+    window.from,
+    window.to,
+  );
+  return {
+    habits,
+    entries,
+    range,
+    today: day,
+    status: q.status,
+    counts: {
+      active: all.filter((h) => h.active).length,
+      paused: all.filter((h) => !h.active).length,
+      archived: archived.length,
+    },
+  };
+}
+
+/** One habit's full history (detail: longest streak, recent history). */
+export async function habitHistory(auth: AuthContext, habitId: string): Promise<HabitEntry[]> {
+  const provider = new EliseHabitsProvider(auth.db, auth.workspaceId, auth.userId);
+  return provider.entries([habitId], "1970-01-01", today(auth));
+}
+
+/** Every check-in as CSV (habit, date, value, unit, status, notes). */
+export async function habitsCsv(auth: AuthContext): Promise<string> {
+  const provider = new EliseHabitsProvider(auth.db, auth.workspaceId, auth.userId);
+  const habits = [
+    ...(await provider.list({ includeInactive: true })),
+    ...(await provider.list({ includeInactive: true, archived: true })),
+  ];
+  const entries = await provider.entries(
+    habits.map((h) => h.id),
+    "1970-01-01",
+    today(auth),
+  );
+  const name = new Map(habits.map((h) => [h.id, h]));
+  const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const rows = entries
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((e) =>
+      [
+        name.get(e.habitId)?.name ?? "",
+        e.date,
+        String(e.value),
+        name.get(e.habitId)?.unit ?? "",
+        e.status,
+        e.notes ?? "",
+      ]
+        .map(cell)
+        .join(","),
+    );
+  return ["habit,date,value,unit,status,notes", ...rows].join("\n");
 }

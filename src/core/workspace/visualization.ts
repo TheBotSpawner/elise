@@ -10,6 +10,7 @@ import type {
 } from "../capabilities/finance";
 import type { HabitProgress } from "../capabilities/habits";
 import { formatMoney } from "../finance/money";
+import type { DayCell, HabitStatsReport } from "../habits/analytics";
 
 /**
  * Visualization specs (ADR-021): typed, validated chart templates. ELISE may choose a template
@@ -802,7 +803,7 @@ export function habitsVisual(
     .slice(0, 8)
     .map((h) => ({
       id: h.habitId,
-      label: h.name.slice(0, 60) || "—",
+      label: `${h.icon ? `${h.icon} ` : ""}${h.name}`.slice(0, 60) || "—",
       days: h.week.days.map((d) =>
         d.date === h.today.date
           ? ("today" as const)
@@ -835,6 +836,169 @@ export function habitsVisual(
       rows,
     },
   };
+}
+
+type GridState = (typeof DAY_STATES)[number];
+
+const gridState = (d: DayCell, today: string): GridState =>
+  d.met
+    ? "done"
+    : d.date === today
+      ? "today"
+      : d.state === "future"
+        ? "future"
+        : d.state === "missed" || d.state === "partial"
+          ? "miss"
+          : "rest";
+
+/**
+ * "¿Cómo vengo con mis hábitos (este mes)?" / "¿cómo vengo con Workout?" (ADR-053): completion
+ * with the previous period, the days as a grid (a week, or a month as week rows), completion by
+ * habit and the trend — every number from `buildHabitStatsReport`.
+ */
+export function habitStatsVisuals(
+  report: HabitStatsReport,
+  today: string,
+  locale: VizLocale = "en",
+): BuiltVisualization[] {
+  const es = locale === "es";
+  const labels = vizText(locale);
+  const out: BuiltVisualization[] = [];
+  const single = report.habits.length === 1 ? report.habits[0]! : null;
+  const name = (h: { icon: string | null; name: string }) =>
+    `${h.icon ? `${h.icon} ` : ""}${h.name}`.slice(0, 60) || "—";
+  const rate = single ? single.rate : report.overall.rate;
+  const previous = single ? single.previousRate : report.overall.previousRate;
+  // Percent values are 0–100 in visualization specs.
+  const pc = (n: number) => Math.round(n * 1000) / 10;
+  const spark = report.trend.points
+    .filter((p) => p.rate !== null)
+    .map((p) => pc(p.rate!))
+    .slice(-24);
+  if (rate !== null) {
+    const streak = single?.streak.count
+      ? es
+        ? `racha ${single.streak.count} ${single.streak.unit === "weeks" ? "sem." : "días"}`
+        : `streak ${single.streak.count} ${single.streak.unit}`
+      : null;
+    out.push({
+      role: "kpi",
+      spec: {
+        type: "kpi",
+        title: single ? name(single) : es ? "Cumplimiento" : "Completion",
+        format: { kind: "percent" },
+        value: pc(rate),
+        ...(previous !== null
+          ? {
+              previous: pc(previous),
+              previousLabel: es ? "período anterior" : "previous period",
+            }
+          : {}),
+        goodWhen: "up",
+        ...(single || streak
+          ? {
+              note: [
+                single
+                  ? `${single.done} / ${single.goal}${single.unit ? ` ${single.unit}` : ""}`
+                  : null,
+                streak,
+              ]
+                .filter(Boolean)
+                .join(" · ")
+                .slice(0, 160),
+            }
+          : {}),
+        ...(spark.length >= 2 ? { spark } : {}),
+        confidence: "confirmed",
+      },
+    });
+  }
+  // The days as a grid: a week (one row per habit), or one habit's month as week rows.
+  const weekRows = report.habits
+    .filter((h) => h.days?.length === 7)
+    .slice(0, 8)
+    .map((h) => ({
+      id: h.habitId,
+      label: name(h),
+      days: h.days!.map((d) => gridState(d, today)),
+      summary: `${h.done} / ${h.goal}`,
+    }));
+  if (weekRows.length) {
+    const idx = report.habits[0]!.days!.findIndex((d) => d.date === today);
+    out.push({
+      role: "habits",
+      spec: {
+        type: "streak",
+        title: es ? "Esta semana" : "This week",
+        format: { kind: "count" },
+        days: [...labels.days],
+        ...(idx >= 0 ? { today: idx } : {}),
+        rows: weekRows,
+      },
+    });
+  } else if (single?.days && single.days.length > 7 && single.days.length <= 42) {
+    const cells = single.days;
+    const lead = (new Date(`${cells[0]!.date}T00:00:00Z`).getUTCDay() + 6) % 7;
+    const padded: (DayCell | null)[] = [...Array(lead).fill(null), ...cells];
+    const rows = [];
+    for (let i = 0; i < padded.length && rows.length < 8; i += 7) {
+      const week = padded.slice(i, i + 7);
+      while (week.length < 7) week.push(null);
+      const first = week.find((d) => d)!;
+      rows.push({
+        label: first.date.slice(5),
+        days: week.map((d) => (d ? gridState(d, today) : ("rest" as const))),
+        summary: `${week.filter((d) => d?.met).length}`,
+      });
+    }
+    out.push({
+      role: "habits",
+      spec: {
+        type: "streak",
+        title: es ? "Por día" : "By day",
+        format: { kind: "count" },
+        days: [...labels.days],
+        rows,
+      },
+    });
+  }
+  if (!single) {
+    const rows = report.habits
+      .filter((h) => h.rate !== null)
+      .sort((a, b) => a.rate! - b.rate!)
+      .slice(0, 12)
+      .map((h) => ({ label: name(h), value: pc(h.rate!) }));
+    if (rows.length >= 2)
+      out.push({
+        role: "categories",
+        spec: {
+          type: "hbar",
+          title: es ? "Cumplimiento por hábito" : "Completion by habit",
+          format: { kind: "percent" },
+          rows,
+        },
+      });
+  }
+  const points = report.trend.points.filter((p) => p.rate !== null);
+  if (points.length >= 3)
+    out.push({
+      role: "trend",
+      spec: {
+        type: "line",
+        title: es ? "Evolución del cumplimiento" : "Completion over time",
+        format: { kind: "percent" },
+        x: points
+          .slice(-62)
+          .map((p) => (report.trend.granularity === "month" ? p.key : p.key.slice(5))),
+        series: [
+          {
+            name: es ? "Cumplimiento" : "Completion",
+            values: points.slice(-62).map((p) => pc(p.rate!)),
+          },
+        ],
+      },
+    });
+  return out;
 }
 
 export interface GoalLike {

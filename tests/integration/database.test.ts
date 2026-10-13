@@ -760,9 +760,11 @@ describe("my elise native", () => {
         [bob.workspaceId, habit],
       ),
     ).rejects.toThrow(/same workspace/);
-    await expect(as(alice, "delete from public.habits where id = $1", [habit])).rejects.toThrow(
-      /permission denied/,
-    );
+    // Habits can be deleted by their members from migration 040 on (ADR-053); goals, lists and
+    // notes still only archive.
+    await expect(
+      as(alice, "delete from public.notes where workspace_id = $1", [alice.workspaceId]),
+    ).rejects.toThrow(/permission denied/);
   });
 
   it("stores one check-in per habit and day", async () => {
@@ -952,6 +954,33 @@ describe("finance", () => {
         alice.workspaceId,
       ]),
     ).rejects.toThrow(/duplicate key/);
+  });
+
+  it("lets members delete their own habits for good, check-ins included (ADR-053)", async () => {
+    const habit = (
+      await as<{ id: string }>(
+        alice,
+        "insert into public.habits (workspace_id, name, frequency_type, metadata) values ($1, 'Workout', 'weekly', '{\"icon\":\"🏋️\"}') returning id",
+        [alice.workspaceId],
+      )
+    ).rows[0]!.id;
+    await as(
+      alice,
+      "insert into public.habit_entries (workspace_id, habit_id, entry_date) values ($1, $2, '2026-10-12')",
+      [alice.workspaceId, habit],
+    );
+    // Bob can't see it, so his delete touches nothing.
+    await as(bob, "delete from public.habits where id = $1", [habit]);
+    expect(
+      (await db.query("select id from public.habits where id = $1", [habit])).rows,
+    ).toHaveLength(1);
+    await as(alice, "delete from public.habits where id = $1", [habit]);
+    expect(
+      (await db.query("select id from public.habits where id = $1", [habit])).rows,
+    ).toHaveLength(0);
+    expect(
+      (await db.query("select id from public.habit_entries where habit_id = $1", [habit])).rows,
+    ).toHaveLength(0);
   });
 
   it("keeps Books, budgets and rates in their workspace (ADR-052)", async () => {

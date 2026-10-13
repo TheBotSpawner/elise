@@ -21,9 +21,14 @@ export function PageHeader({
   );
 }
 
-export function PageContainer({ children }: { children: ReactNode }) {
+/** `wide`: data-dense workspaces (Habits, Finance) use the screen; forms and settings don't. */
+export function PageContainer({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
-    <div className="mx-auto w-full max-w-[960px] px-4 pt-6 pb-16 md:px-10 md:pt-10">{children}</div>
+    <div
+      className={`mx-auto w-full ${wide ? "max-w-[1440px]" : "max-w-[960px]"} px-4 pt-6 pb-16 md:px-10 md:pt-10`}
+    >
+      {children}
+    </div>
   );
 }
 

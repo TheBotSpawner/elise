@@ -34,7 +34,7 @@ import {
   FinanceTransactionsCard,
 } from "./finance-cards";
 import { KnowledgeSourcesCard, RecallResultsCard } from "./knowledge-cards";
-import { GoalsCard, HabitsCard, ListCard, NoteCard } from "./native-cards";
+import { GoalsCard, HabitsCard, HabitStatsCard, ListCard, NoteCard } from "./native-cards";
 import {
   StructuredBulkCard,
   StructuredRecordCard,
@@ -344,6 +344,8 @@ export function DisplayCard({
       return <EmailChangedCard display={display} rise={rise} />;
     case "habits":
       return <HabitsCard display={display} rise={rise} />;
+    case "habit_stats":
+      return <HabitStatsCard display={display} rise={rise} />;
     case "goals":
       return <GoalsCard display={display} rise={rise} />;
     case "native_list":

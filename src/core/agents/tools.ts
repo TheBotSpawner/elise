@@ -39,6 +39,7 @@ import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { ContextKind, ContextStore } from "../contexts/model";
 import type { FinanceReport } from "../finance/report";
+import type { HabitStatsReport } from "../habits/analytics";
 import type { KnowledgeManager } from "../knowledge/admin";
 import type { KnowledgeReader } from "../knowledge/model";
 import type { LatLng, LocationCapability } from "../location/model";
@@ -222,6 +223,7 @@ export type ToolDisplay =
     }
   /** Native data, computed by ELISE (progress is never the model's arithmetic). */
   | { kind: "habits"; progress: HabitProgress[] }
+  | { kind: "habit_stats"; report: HabitStatsReport }
   | { kind: "goals"; goals: { goal: Goal; progress: GoalProgress; openTasks: number }[] }
   | { kind: "native_list"; list: NativeList }
   | { kind: "note"; note: Note; change: "created" | "updated" | "archived" }

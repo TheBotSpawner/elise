@@ -110,11 +110,14 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     operations: {
       list: READ,
       getProgress: READ,
+      getStats: READ,
       create: WRITE,
       update: WRITE,
       checkIn: WRITE,
       pause: WRITE,
       archive: ARCHIVE,
+      restore: WRITE,
+      delete: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
     },
   },
   lists: {

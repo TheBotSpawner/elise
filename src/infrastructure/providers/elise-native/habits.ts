@@ -1,15 +1,26 @@
-import type {
-  EntrySource,
-  Habit,
-  HabitEntry,
-  HabitsProvider,
-  NewHabit,
+import {
+  isHabitIcon,
+  type EntrySource,
+  type Habit,
+  type HabitEntry,
+  type HabitsProvider,
+  type NewHabit,
 } from "@/core/capabilities/habits";
 import { AppError } from "@/core/errors";
-import type { HabitEntryRow, HabitRow } from "@/infrastructure/supabase/database.types";
+import type { HabitEntryRow, HabitRow, Json } from "@/infrastructure/supabase/database.types";
 import type { ServerSupabase } from "@/infrastructure/supabase/server";
 
 import { byNameOrId, check } from "./common";
+
+/** ADR-053 display fields live in the existing metadata (no migration needed). */
+interface HabitMeta {
+  icon?: string;
+  pausedUntil?: string;
+}
+const meta = (r: HabitRow): HabitMeta =>
+  r.metadata && typeof r.metadata === "object" && !Array.isArray(r.metadata)
+    ? (r.metadata as HabitMeta)
+    : {};
 
 const toHabit = (r: HabitRow): Habit => ({
   id: r.id,
@@ -22,6 +33,10 @@ const toHabit = (r: HabitRow): Habit => ({
   active: r.active,
   startDate: r.start_date,
   createdAt: r.created_at,
+  // Validated again on read: only an emoji is ever rendered.
+  icon: meta(r).icon && isHabitIcon(meta(r).icon!) ? meta(r).icon! : null,
+  pausedUntil: !r.active ? (meta(r).pausedUntil ?? null) : null,
+  archived: r.archived_at !== null,
 });
 
 const toEntry = (r: HabitEntryRow): HabitEntry => ({
@@ -42,14 +57,14 @@ export class EliseHabitsProvider implements HabitsProvider {
     private readonly userId: string,
   ) {}
 
-  async list({ includeInactive }: { includeInactive: boolean }) {
+  async list({ includeInactive, archived }: { includeInactive: boolean; archived?: boolean }) {
     let q = this.db
       .from("habits")
       .select("*")
       .eq("workspace_id", this.workspaceId)
-      .is("archived_at", null)
       .order("created_at");
-    if (!includeInactive) q = q.eq("active", true);
+    q = archived ? q.not("archived_at", "is", null) : q.is("archived_at", null);
+    if (!includeInactive && !archived) q = q.eq("active", true);
     const { data, error } = await q;
     check(error, "load habits");
     return (data ?? []).map(toHabit);
@@ -71,6 +86,7 @@ export class EliseHabitsProvider implements HabitsProvider {
         unit: h.unit ?? null,
         preferred_days: h.preferredDays ?? [],
         start_date: h.startDate,
+        metadata: (h.icon ? { icon: h.icon } : {}) as Json,
         source,
         created_by_user_id: this.userId,
       })
@@ -80,7 +96,32 @@ export class EliseHabitsProvider implements HabitsProvider {
     return toHabit(data!);
   }
 
-  async update(id: string, p: Partial<NewHabit> & { active?: boolean }) {
+  private async metadataOf(id: string): Promise<HabitMeta> {
+    const { data } = await this.db
+      .from("habits")
+      .select("*")
+      .eq("id", id)
+      .eq("workspace_id", this.workspaceId)
+      .maybeSingle();
+    return data ? meta(data) : {};
+  }
+
+  async update(
+    id: string,
+    p: Partial<NewHabit> & { active?: boolean; pausedUntil?: string | null },
+  ) {
+    let metadata: HabitMeta | undefined;
+    if (p.icon !== undefined || p.pausedUntil !== undefined || p.active === true) {
+      const current = await this.metadataOf(id);
+      metadata = { ...current };
+      if (p.icon !== undefined) {
+        if (p.icon) metadata.icon = p.icon;
+        else delete metadata.icon;
+      }
+      // Resuming clears a pause end; pausing sets (or clears) it.
+      if (p.active === true || p.pausedUntil === null) delete metadata.pausedUntil;
+      else if (p.pausedUntil) metadata.pausedUntil = p.pausedUntil;
+    }
     const { data, error } = await this.db
       .from("habits")
       .update({
@@ -91,6 +132,7 @@ export class EliseHabitsProvider implements HabitsProvider {
         ...(p.unit !== undefined ? { unit: p.unit } : {}),
         ...(p.preferredDays !== undefined ? { preferred_days: p.preferredDays } : {}),
         ...(p.active !== undefined ? { active: p.active } : {}),
+        ...(metadata ? { metadata: metadata as Json } : {}),
       })
       .eq("id", id)
       .eq("workspace_id", this.workspaceId)
@@ -112,6 +154,33 @@ export class EliseHabitsProvider implements HabitsProvider {
       .maybeSingle();
     if (!data) throw new AppError("NOT_FOUND", "Habit not found");
     return toHabit(data);
+  }
+
+  async unarchive(id: string) {
+    const { data } = await this.db
+      .from("habits")
+      .update({ archived_at: null, active: true })
+      .eq("id", id)
+      .eq("workspace_id", this.workspaceId)
+      .select("*")
+      .maybeSingle();
+    if (!data) throw new AppError("NOT_FOUND", "Habit not found");
+    return toHabit(data);
+  }
+
+  async remove(id: string) {
+    // Check-ins go with it (on delete cascade). Members may delete from migration 040 on.
+    const { error, count } = await this.db
+      .from("habits")
+      .delete({ count: "exact" })
+      .eq("id", id)
+      .eq("workspace_id", this.workspaceId);
+    if (error?.code === "42501")
+      throw new AppError("CAPABILITY_UNAVAILABLE", "This needs the latest ELISE database update", {
+        recovery: "review",
+      });
+    check(error, "delete the habit");
+    if (!count) throw new AppError("NOT_FOUND", "Habit not found");
   }
 
   async entries(habitIds: string[], from: string, to: string) {
