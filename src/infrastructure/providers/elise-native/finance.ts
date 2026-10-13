@@ -19,6 +19,7 @@ import {
   type TransactionPatch,
 } from "@/core/capabilities/finance";
 import type { EntrySource } from "@/core/capabilities/habits";
+import { isSingleEmoji } from "@/core/emoji";
 import { AppError } from "@/core/errors";
 import { normalizeAmount } from "@/core/finance/money";
 import type {
@@ -509,12 +510,19 @@ export class EliseFinanceProvider implements FinanceProvider {
         parentId: c.parent_category_id,
         parent: active.find((p) => p.id === c.parent_category_id)?.name ?? null,
         bookIds: c.book_ids ?? [],
+        icon: c.icon && isSingleEmoji(c.icon) ? c.icon : null,
       }))
       .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
   }
 
   async createCategory(
-    c: { name: string; type: CategoryType; parentId: string | null; bookIds?: string[] },
+    c: {
+      name: string;
+      type: CategoryType;
+      parentId: string | null;
+      bookIds?: string[];
+      icon?: string | null;
+    },
     source: EntrySource,
   ) {
     const existing = (await this.listCategories()).find(
@@ -531,6 +539,7 @@ export class EliseFinanceProvider implements FinanceProvider {
         parent_category_id: c.parentId,
         source,
         ...(v2 && c.bookIds?.length ? { book_ids: c.bookIds } : {}),
+        ...((await this.categoryIcons()) && c.icon ? { icon: c.icon } : {}),
       })
       .select("*")
       .single();
@@ -538,6 +547,48 @@ export class EliseFinanceProvider implements FinanceProvider {
     this.invalidate();
     const categories = await this.listCategories();
     return categories.find((x) => x.id === data!.id)!;
+  }
+
+  /** Category icons exist from migration 041 on (ADR-054). */
+  private async categoryIcons(): Promise<boolean> {
+    const { error } = await this.db.from("finance_categories").select("icon").limit(1);
+    return !error;
+  }
+
+  async updateCategory(
+    id: string,
+    p: { name?: string; icon?: string | null; parentId?: string | null; archived?: boolean },
+  ) {
+    if (p.icon !== undefined && !(await this.categoryIcons())) throw needsUpdate();
+    const { data, error } = await this.db
+      .from("finance_categories")
+      .update({
+        ...(p.name !== undefined ? { name: p.name } : {}),
+        ...(p.icon !== undefined ? { icon: p.icon } : {}),
+        ...(p.parentId !== undefined ? { parent_category_id: p.parentId } : {}),
+        ...(p.archived
+          ? { archived_at: new Date().toISOString(), status: "archived" as const }
+          : {}),
+      })
+      .eq("id", id)
+      .eq("workspace_id", this.workspaceId)
+      .select("id")
+      .maybeSingle();
+    check(error, "update the category");
+    if (!data) throw new AppError("NOT_FOUND", "Category not found");
+    this.invalidate();
+    const all = (await this.load()).categories.find((c) => c.id === id)!;
+    const list = await this.listCategories();
+    return (
+      list.find((c) => c.id === id) ?? {
+        id,
+        name: all.name,
+        type: all.category_type,
+        parentId: all.parent_category_id,
+        parent: null,
+        icon: null,
+      }
+    );
   }
 
   async settings() {

@@ -14,7 +14,9 @@ import {
   saveBookInput,
   setBudgetInput,
   setRateInput,
+  suggestCategoryIcon,
   UNCLASSIFIED,
+  updateCategoryInput,
   type ConvertedTotals,
   type FinanceBook,
   createAccountInput,
@@ -839,7 +841,7 @@ export const createCategoryTool: ToolDefinition = {
       parentId = pickOne(matches, c.parent, "category", (x) => x.name).id;
     }
     const category = await p.createCategory(
-      { name: c.name, type: c.type, parentId },
+      { name: c.name, type: c.type, parentId, icon: c.icon ?? suggestCategoryIcon(c.name) },
       sourceOf(env.ctx),
     );
     return {
@@ -849,6 +851,52 @@ export const createCategoryTool: ToolDefinition = {
       },
       display: { kind: "finance_categories", categories: [category] },
       target: { type: "finance_category", id: category.id },
+    };
+  },
+};
+
+export const updateCategoryTool: ToolDefinition = {
+  name: "finance.updateCategory",
+  capability: "finance",
+  operation: "updateCategory",
+  description:
+    "Rename a category, change its icon or parent, or archive it (its transactions keep it). Never deletes.",
+  input: updateCategoryInput,
+  route: nativeOnly,
+  async describe(raw) {
+    return { summary: `Update category “${updateCategoryInput.parse(raw).category}”` };
+  },
+  async run(raw, env) {
+    const u = updateCategoryInput.parse(raw);
+    const p = writable(env);
+    const categories = await p.listCategories();
+    const category = pickOne(
+      findByName(categories, u.category, (x) => x.name),
+      u.category,
+      "category",
+      (x) => x.name,
+    );
+    const parentId =
+      u.parent === undefined
+        ? undefined
+        : u.parent === null
+          ? null
+          : pickOne(
+              findByName(categories, u.parent, (x) => x.name),
+              u.parent,
+              "category",
+              (x) => x.name,
+            ).id;
+    const updated = await nativeFeature(p.updateCategory?.bind(p))(category.id, {
+      ...(u.name !== undefined ? { name: u.name } : {}),
+      ...(u.icon !== undefined ? { icon: u.icon } : {}),
+      ...(parentId !== undefined ? { parentId } : {}),
+      ...(u.archived ? { archived: true } : {}),
+    });
+    return {
+      output: { updated: true, category: { name: updated.name, icon: updated.icon ?? null } },
+      display: { kind: "finance_categories", categories: [updated] },
+      target: { type: "finance_category", id: updated.id },
     };
   },
 };
@@ -1161,6 +1209,7 @@ export const restoreTransactionTool: ToolDefinition = {
 export { UNCLASSIFIED };
 
 export const FINANCE_TOOLS = [
+  updateCategoryTool,
   getSummaryTool,
   queryTool,
   listTransactionsTool,

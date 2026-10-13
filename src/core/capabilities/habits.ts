@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isSingleEmoji } from "../emoji";
 import { addDays, isIsoDate, todayIn } from "../time";
 
 /**
@@ -285,11 +286,7 @@ export function localToday(timezone: string, now: Date) {
 const date = z.string().refine(isIsoDate, "Expected YYYY-MM-DD");
 
 /** Emoji only (one grapheme cluster, no text, no markup): never arbitrary SVG/code. */
-export function isHabitIcon(value: string): boolean {
-  if (!value || value.length > 16) return false;
-  const graphemes = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)];
-  return graphemes.length === 1 && /\p{Extended_Pictographic}/u.test(value);
-}
+export const isHabitIcon = isSingleEmoji;
 const iconField = z.string().trim().refine(isHabitIcon, "Expected one emoji");
 const habitRef = z.string().trim().min(1).max(200).describe('The habit\'s id or name, e.g. "gym".');
 const days = z

@@ -37,10 +37,17 @@ import { financeGoogleAccounts, listFinanceSources } from "./finance-sources";
 export const FINANCE_TABS = ["movements", "analysis", "budgets"] as const;
 export type FinanceTab = (typeof FINANCE_TABS)[number];
 
+/** ADR-054: how the period is chosen (Día / Semana / Mes / Año) around an anchor date. */
+export const FINANCE_GRANULARITIES = ["day", "week", "month", "year"] as const;
+export type FinanceGranularity = (typeof FINANCE_GRANULARITIES)[number];
+
 export interface FinanceFilters {
   tab: FinanceTab;
-  /** A preset, or "custom" when from/to are given (‹ › navigation, date pickers). */
-  period: PeriodPreset | "custom";
+  /** A preset (chat links), "custom" (from/to), or "span": `gran` around `date`. */
+  period: PeriodPreset | "custom" | "span";
+  gran: FinanceGranularity;
+  /** Anchor date for `gran`; absent = today. */
+  date?: string;
   from?: string;
   to?: string;
   /** A Book id, or UNCLASSIFIED. Absent = all Books. */
@@ -71,7 +78,13 @@ export function parseFinanceFilters(
   const from = one("from");
   const to = one("to");
   const custom = Boolean(from && to && ISO.test(from) && ISO.test(to) && from <= to);
+  const gran = one("gran");
+  const date = one("date");
   return {
+    gran: (FINANCE_GRANULARITIES as readonly string[]).includes(gran ?? "")
+      ? (gran as FinanceGranularity)
+      : "month",
+    ...(date && ISO.test(date) ? { date } : {}),
     tab: (FINANCE_TABS as readonly string[]).includes(tab ?? "")
       ? (tab as FinanceTab)
       : "movements",
@@ -79,7 +92,7 @@ export function parseFinanceFilters(
       ? "custom"
       : (PERIODS as readonly string[]).includes(period ?? "")
         ? (period as PeriodPreset)
-        : "this_month",
+        : "span",
     ...(custom ? { from, to } : {}),
     book: one("book")?.slice(0, 60),
     q: one("q"),
@@ -92,10 +105,17 @@ export function parseFinanceFilters(
   };
 }
 
+/** The span of a granularity around a date: that day, its Mon–Sun week, month or year. */
+export function spanOf(gran: FinanceGranularity, anchor: string): Period {
+  if (gran === "day") return { from: anchor, to: anchor };
+  if (gran === "week") return resolvePeriod("this_week", anchor);
+  return resolvePeriod(gran === "year" ? "this_year" : "this_month", anchor);
+}
+
 export function periodOfFilters(f: FinanceFilters, today: string): Period {
-  return f.period === "custom" && f.from && f.to
-    ? { from: f.from, to: f.to }
-    : resolvePeriod(f.period === "custom" ? "this_month" : f.period, today);
+  if (f.period === "custom" && f.from && f.to) return { from: f.from, to: f.to };
+  if (f.period !== "custom" && f.period !== "span") return resolvePeriod(f.period, today);
+  return spanOf(f.gran, f.date ?? today);
 }
 
 function display<K extends ToolDisplay["kind"]>(d: ToolDisplay | undefined, kind: K) {
@@ -126,11 +146,16 @@ export interface FinanceOverview {
   accounts: FinanceAccount[];
   categories: FinanceCategory[];
   books: FinanceBook[];
-  /** Analysis tab only. */
-  analysis: { counterparties: GroupTotal[]; projects: GroupTotal[]; books: GroupTotal[] } | null;
-  /** Budgets tab only: the period's first month. */
+  /** Statistics tab: clients, providers and projects. */
+  analysis: { counterparties: GroupTotal[]; projects: GroupTotal[] } | null;
+  /** Expenses and income per Book (all Books selected only). */
+  byBook: GroupTotal[];
+  /** Budgets of the period's month (today's month when the period includes today). */
   budgets: { month: string; usages: BudgetUsage[] } | null;
   settings: { defaultCurrency: string | null };
+  /** Any transaction at all (ELISE or a connected sheet): onboarding only when there is none. */
+  hasAny: boolean;
+  today: string;
 }
 
 export async function financeOverview(
@@ -156,7 +181,11 @@ export async function financeOverview(
       (b) => b.breakdown.groups,
     );
   const analysis = filters.tab === "analysis";
-  const [summary, trend, list, accounts, categories, books, settings, extra, budgets] =
+  const budgetMonth = (period.from <= today && today <= period.to ? today : period.from).slice(
+    0,
+    7,
+  );
+  const [summary, trend, list, accounts, categories, books, settings, extra, budgets, byBook, any] =
     await Promise.all([
       read(auth, "finance.getSummary", { ...shared, compare: "previous" }, "finance_summary"),
       groups(granularity),
@@ -179,25 +208,17 @@ export async function financeOverview(
         .select("default_currency")
         .eq("workspace_id", auth.workspaceId)
         .maybeSingle(),
-      analysis
-        ? optional(
-            Promise.all([
-              groups("counterparty"),
-              groups("project"),
-              filters.book ? Promise.resolve([]) : groups("book"),
-            ]),
-          )
-        : null,
-      filters.tab === "budgets"
-        ? optional(
-            read(
-              auth,
-              "finance.getBudgets",
-              { month: period.from.slice(0, 7), ...(filters.book ? { book: filters.book } : {}) },
-              "finance_budgets",
-            ),
-          )
-        : null,
+      analysis ? optional(Promise.all([groups("counterparty"), groups("project")])) : null,
+      optional(
+        read(
+          auth,
+          "finance.getBudgets",
+          { month: budgetMonth, ...(filters.book ? { book: filters.book } : {}) },
+          "finance_budgets",
+        ),
+      ),
+      filters.book ? Promise.resolve([]) : optional(groups("book")),
+      hasAnyFinance(auth),
     ]);
   return {
     filters,
@@ -210,13 +231,30 @@ export async function financeOverview(
     categories: categories.categories,
     books: books?.books ?? [],
     analysis: extra
-      ? { counterparties: extra[0], projects: extra[1], books: extra[2] }
+      ? { counterparties: extra[0], projects: extra[1] }
       : analysis
-        ? { counterparties: [], projects: [], books: [] }
+        ? { counterparties: [], projects: [] }
         : null,
+    byBook: byBook ?? [],
     budgets: budgets ? { month: budgets.month, usages: budgets.budgets } : null,
     settings: { defaultCurrency: settings.data?.default_currency ?? null },
+    hasAny: any || list.total > 0,
+    today,
   };
+}
+
+/** Does this workspace have any finance data (ELISE or a connected sheet)? One cheap probe. */
+async function hasAnyFinance(auth: AuthContext): Promise<boolean> {
+  const [own, sheets] = await Promise.all([
+    auth.db
+      .from("finance_transactions")
+      .select("id")
+      .eq("workspace_id", auth.workspaceId)
+      .is("archived_at", null)
+      .limit(1),
+    auth.db.from("finance_source_rows").select("id").eq("workspace_id", auth.workspaceId).limit(1),
+  ]);
+  return Boolean(own.data?.length || sheets.data?.length);
 }
 
 /**

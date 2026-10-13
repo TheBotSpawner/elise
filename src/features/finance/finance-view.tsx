@@ -6,23 +6,25 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
-  FileSpreadsheet,
   FileText,
+  MoreHorizontal,
   Plus,
   Search,
-  Wallet,
+  SlidersHorizontal,
+  Upload,
+  X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 
-import type { FinanceOverview } from "@/application/finance-service";
-import { EmptyState } from "@/components/shared/page";
+import type { FinanceGranularity, FinanceOverview } from "@/application/finance-service";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Select } from "@/components/ui/input";
 import {
+  suggestCategoryIcon,
   UNCLASSIFIED,
   type AccountType,
   type BudgetUsage,
@@ -31,12 +33,11 @@ import {
   type FinanceCategory,
   type FinanceTransaction,
   type GroupTotal,
-  type PeriodPreset,
 } from "@/core/capabilities/finance";
-import { compareAmounts } from "@/core/finance/money";
-import { resolvePeriod, shiftPeriod } from "@/core/periods";
+import { isSingleEmoji } from "@/core/emoji";
+import { addAmounts, compareAmounts } from "@/core/finance/money";
+import { shiftPeriod, type Period } from "@/core/periods";
 import { financeTrendVisual, type VisualizationSpec } from "@/core/workspace/visualization";
-import { useInsightText } from "@/features/chat/finance-cards";
 import { Visualization } from "@/features/workspace/viz/visualization";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
@@ -45,33 +46,24 @@ import { cn } from "@/lib/utils";
 
 import { financeToolAction, setDefaultCurrencyAction } from "./actions";
 import { COMMON_CURRENCIES, share, useMoney, usePeriodLabel } from "./format";
-import { TransactionDialog } from "./transaction-dialog";
+import { categoryIcon, TransactionDialog } from "./transaction-dialog";
+import { useFinanceUpload } from "./use-upload";
 
 /**
- * Finance Workspace (ADR-052): Book selector, period navigation, KPIs per currency, then
- * Movements / Analysis / Budgets (Reports opens its own page). Every number comes from the
- * Finance tools; the screen never adds currencies or does its own arithmetic on totals.
+ * Finance workspace (ADR-052, ADR-054). The shell — Ámbito filter, Movimientos / Estadísticas /
+ * Presupuestos / Reportes, Día–Año navigation, KPIs per currency — is always on screen, with or
+ * without results. Every number comes from the Finance tools; the screen never mixes currencies
+ * or does its own arithmetic on totals (day totals add same-currency amounts exactly).
  */
 
-const PRESETS: PeriodPreset[] = [
-  "this_month",
-  "last_month",
-  "last_30_days",
-  "last_90_days",
-  "this_quarter",
-  "last_quarter",
-  "this_year",
-  "last_year",
-];
+type T = ReturnType<typeof useI18n>["t"];
 
 function useFilters() {
   const router = useRouter();
   const pathname = usePathname();
-  const params = useSearchParams();
   const [, startTransition] = useTransition();
   const set = (patch: Record<string, string | null>) => {
-    // The live URL, not this render's copy: a delayed call (search debounce) must not undo a
-    // change made in between (tab, Book, period).
+    // The live URL: a delayed call (search debounce) never undoes a change made in between.
     const next = new URLSearchParams(window.location.search);
     for (const [k, v] of Object.entries(patch)) {
       if (v) next.set(k, v);
@@ -79,7 +71,7 @@ function useFilters() {
     }
     startTransition(() => router.replace(`${pathname}?${next.toString()}`, { scroll: false }));
   };
-  return { params, set };
+  return { set };
 }
 
 const chip = (active: boolean) =>
@@ -88,20 +80,182 @@ const chip = (active: boolean) =>
     active ? "bg-fg text-bg" : "bg-surface-2 text-muted hover:text-fg",
   );
 
-function BookSelector({ books, value }: { books: FinanceBook[]; value: string | undefined }) {
+const CARD = "rounded-2xl border border-border bg-surface";
+
+function useLabels() {
+  const { locale } = useI18n();
+  const loc = locale === "es" ? "es-AR" : "en-US";
+  const f = (o: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat(loc, { ...o, timeZone: "UTC" });
+  const at = (d: string) => new Date(`${d}T00:00:00Z`);
+  const dayLong = f({ weekday: "long", day: "numeric", month: "long" });
+  const dayMonth = f({ day: "numeric", month: "short" });
+  const monthYear = f({ month: "long", year: "numeric" });
+  const month = f({ month: "long" });
+  const period = usePeriodLabel();
+  return {
+    span(gran: FinanceGranularity | "custom", p: Period) {
+      if (gran === "day") return dayLong.format(at(p.from));
+      if (gran === "month") return monthYear.format(at(p.from));
+      if (gran === "year") return p.from.slice(0, 4);
+      if (gran === "week")
+        return p.from.slice(0, 7) === p.to.slice(0, 7)
+          ? `${Number(p.from.slice(8))}–${dayMonth.format(at(p.to))}`
+          : `${dayMonth.format(at(p.from))} – ${dayMonth.format(at(p.to))}`;
+      return period(p);
+    },
+    /** "octubre" for "No hay movimientos en octubre". */
+    short(gran: FinanceGranularity | "custom", p: Period) {
+      return gran === "month" ? month.format(at(p.from)) : this.span(gran, p);
+    },
+    dayMonth: (d: string) => dayMonth.format(at(d)),
+  };
+}
+
+function Menu({
+  label,
+  items,
+}: {
+  label: string;
+  items: { label: string; onClick: () => void; danger?: boolean }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (
+        e instanceof KeyboardEvent ? e.key === "Escape" : !root.current?.contains(e.target as Node)
+      )
+        setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", close);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", close);
+    };
+  }, [open]);
+  return (
+    <div ref={root} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => setOpen(!open)}
+        className="grid size-10 place-items-center rounded-full text-muted transition-colors hover:bg-active hover:text-fg"
+      >
+        <MoreHorizontal className="size-4" aria-hidden />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute top-full right-0 z-40 mt-1 flex w-52 flex-col rounded-2xl border border-border bg-[var(--menu-bg)] p-1 shadow-lg backdrop-blur"
+        >
+          {items.map((i) => (
+            <button
+              key={i.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                i.onClick();
+              }}
+              className={cn(
+                "flex w-full rounded-xl px-3 py-2 text-left text-[13.5px] hover:bg-surface-2",
+                i.danger && "hover:text-danger-text",
+              )}
+            >
+              {i.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Navigation ───────────────────────────────────────────────────────────────
+
+export type FinanceSection = "movements" | "analysis" | "budgets" | "reports";
+
+/** Movimientos · Estadísticas · Presupuestos · Reportes — the same row on every Finance page. */
+export function FinanceNav({
+  active,
+  onSelect,
+  reportsHref,
+}: {
+  active: FinanceSection;
+  /** In the workspace, tabs switch in place; elsewhere they link to it. */
+  onSelect?: (s: Exclude<FinanceSection, "reports">) => void;
+  reportsHref: string;
+}) {
+  const { t } = useI18n();
+  const n = t.finance.v21.tabs;
+  const item = (key: FinanceSection) =>
+    cn(
+      "-mb-px flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-1 text-[14px] transition-colors",
+      active === key
+        ? "border-accent font-medium text-fg"
+        : "border-transparent text-muted hover:text-fg",
+    );
+  const tabs: [Exclude<FinanceSection, "reports">, string][] = [
+    ["movements", n.movements],
+    ["analysis", n.stats],
+    ["budgets", n.budgets],
+  ];
+  return (
+    <nav aria-label={t.finance.title} className="flex gap-6 overflow-x-auto border-b border-border">
+      {tabs.map(([key, label]) =>
+        onSelect ? (
+          <button
+            key={key}
+            type="button"
+            aria-current={active === key ? "page" : undefined}
+            onClick={() => onSelect(key)}
+            className={item(key)}
+          >
+            {label}
+          </button>
+        ) : (
+          <Link
+            key={key}
+            href={key === "movements" ? "/my-elise/finance" : `/my-elise/finance?tab=${key}`}
+            className={item(key)}
+          >
+            {label}
+          </Link>
+        ),
+      )}
+      <Link
+        href={reportsHref}
+        aria-current={active === "reports" ? "page" : undefined}
+        className={item("reports")}
+      >
+        <FileText className="size-4" aria-hidden />
+        {n.reports}
+      </Link>
+    </nav>
+  );
+}
+
+function ScopeChips({ books, value }: { books: FinanceBook[]; value: string | undefined }) {
   const { t } = useI18n();
   const { set } = useFilters();
-  if (!books.length) return null;
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const visible = books.slice(0, 4);
+  const rest = books.slice(4);
   const options: [string | null, string][] = [
     [null, t.finance.ws.allBooks],
-    ...books.map((b) => [b.id, b.name] as [string, string]),
-    [UNCLASSIFIED, t.finance.ws.unclassified],
+    ...visible.map((b) => [b.id, `${b.icon ? `${b.icon} ` : ""}${b.name}`] as [string, string]),
   ];
   return (
     <div
       role="radiogroup"
       aria-label={t.finance.ws.book}
-      className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1"
+      className="flex flex-wrap items-center gap-1.5"
     >
       {options.map(([id, name]) => (
         <button
@@ -115,70 +269,147 @@ function BookSelector({ books, value }: { books: FinanceBook[]; value: string | 
           {name}
         </button>
       ))}
+      {rest.length > 0 && (
+        <Select
+          aria-label={t.finance.v21.more}
+          value={rest.some((b) => b.id === value) ? value : ""}
+          onChange={(e) => set({ book: e.target.value || null })}
+          className="h-8 w-auto rounded-full text-[13px]"
+        >
+          <option value="">{t.finance.v21.more}…</option>
+          {rest.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </Select>
+      )}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={value === UNCLASSIFIED}
+        onClick={() => set({ book: UNCLASSIFIED })}
+        className={chip(value === UNCLASSIFIED)}
+      >
+        {t.finance.ws.unclassified}
+      </button>
+      <button
+        type="button"
+        aria-label={t.finance.v21.newBook}
+        title={t.finance.v21.newBook}
+        disabled={pending}
+        onClick={() => {
+          const name = window.prompt(t.finance.v21.newBookPrompt)?.trim();
+          if (!name) return;
+          startTransition(async () => {
+            const r = await financeToolAction("finance.saveBook", { name, type: "business" });
+            if (!r.ok) toast.error(errorText(t, r.error));
+            else router.refresh();
+          });
+        }}
+        className="grid size-8 place-items-center rounded-full border border-dashed border-border-strong text-muted hover:text-fg"
+      >
+        <Plus className="size-3.5" aria-hidden />
+      </button>
     </div>
   );
 }
 
-function PeriodBar({ overview, today }: { overview: FinanceOverview; today: string }) {
+function PeriodBar({ overview }: { overview: FinanceOverview }) {
   const { t } = useI18n();
-  const label = usePeriodLabel();
+  const g = t.finance.v21.gran;
+  const labels = useLabels();
   const { set } = useFilters();
+  const f = overview.filters;
+  const custom = f.period === "custom";
+  const preset = f.period !== "custom" && f.period !== "span";
+  const gran: FinanceGranularity | "custom" = custom || preset ? "custom" : f.gran;
+  const [open, setOpen] = useState(custom);
   const [from, setFrom] = useState(overview.period.from);
   const [to, setTo] = useState(overview.period.to);
-  // Date pickers only when asked for; ‹ › keep the bar compact.
-  const [custom, setCustom] = useState(false);
+  const containsToday =
+    overview.period.from <= overview.today && overview.today <= overview.period.to;
   const go = (dir: -1 | 1) => {
     const p = shiftPeriod(overview.period, dir);
-    set({ period: null, from: p.from, to: p.to });
+    if (gran === "custom") set({ period: null, from: p.from, to: p.to });
+    else
+      set({
+        period: null,
+        from: null,
+        to: null,
+        date: p.from <= overview.today && overview.today <= p.to ? null : p.from,
+      });
   };
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <div className="flex items-center gap-1">
         <Button size="sm" variant="ghost" aria-label={t.finance.ws.prev} onClick={() => go(-1)}>
           <ChevronLeft />
         </Button>
-        <span className="min-w-36 text-center text-[14px] font-medium">
-          {label(overview.period)}
+        <span className="min-w-40 text-center text-[17px] font-medium first-letter:uppercase">
+          {labels.span(gran, overview.period)}
         </span>
         <Button size="sm" variant="ghost" aria-label={t.finance.ws.next} onClick={() => go(1)}>
           <ChevronRight />
         </Button>
+        {!containsToday && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => set({ period: null, from: null, to: null, date: null })}
+          >
+            {t.finance.v21.today}
+          </Button>
+        )}
       </div>
-      <Select
+      <div
+        role="radiogroup"
         aria-label={t.finance.period}
-        value={
-          custom
-            ? "custom"
-            : // ‹ › onto a whole preset span (e.g. back to this month) shows that preset.
-              (PRESETS.find((p) => {
-                const x = resolvePeriod(p, today);
-                return x.from === overview.period.from && x.to === overview.period.to;
-              }) ?? "custom")
-        }
-        className="h-9 w-auto"
-        onChange={(e) => {
-          if (e.target.value === "custom") return setCustom(true);
-          setCustom(false);
-          set({
-            period: e.target.value === "this_month" ? null : e.target.value,
-            from: null,
-            to: null,
-          });
-        }}
+        className="flex rounded-full bg-surface-2 p-0.5"
       >
-        {PRESETS.map((p) => (
-          <option key={p} value={p}>
-            {t.finance.periods[p]}
-          </option>
+        {(["day", "week", "month", "year"] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            role="radio"
+            aria-checked={gran === k}
+            onClick={() => {
+              setOpen(false);
+              set({
+                gran: k === "month" ? null : k,
+                period: null,
+                from: null,
+                to: null,
+                date: containsToday ? null : overview.period.from,
+              });
+            }}
+            className={cn(
+              "h-8 rounded-full px-3 text-[13px] transition-colors",
+              gran === k ? "bg-bg font-medium text-fg shadow-sm" : "text-muted hover:text-fg",
+            )}
+          >
+            {g[k]}
+          </button>
         ))}
-        <option value="custom">{t.finance.ws.custom}</option>
-      </Select>
-      {custom && (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={gran === "custom"}
+          onClick={() => setOpen(true)}
+          className={cn(
+            "h-8 rounded-full px-3 text-[13px] transition-colors",
+            gran === "custom" ? "bg-bg font-medium text-fg shadow-sm" : "text-muted hover:text-fg",
+          )}
+        >
+          {g.custom}
+        </button>
+      </div>
+      {open && (
         <form
           className="flex flex-wrap items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            if (from && to && from <= to) set({ period: null, from, to });
+            if (from && to && from <= to) set({ period: null, date: null, from, to });
           }}
         >
           <Input
@@ -204,109 +435,94 @@ function PeriodBar({ overview, today }: { overview: FinanceOverview; today: stri
   );
 }
 
-/** One card per currency: never a merged total across currencies. */
-function CurrencyCards({ overview }: { overview: FinanceOverview }) {
+/** Ingresos · Gastos · Neto, each with one line per currency (never a merged total). */
+function KpiStrip({ overview }: { overview: FinanceOverview }) {
   const { t } = useI18n();
   const money = useMoney();
-  const { totals } = overview.summary.current;
+  const totals = overview.summary.current.totals;
+  const cols = [
+    ["income", "income"],
+    ["expenses", "expense"],
+    ["net", "net"],
+  ] as const;
   return (
-    <ul className={cn("grid gap-3", totals.length > 1 && "md:grid-cols-2 xl:grid-cols-3")}>
-      {totals.map((c) => {
-        const change = overview.summary.changes.find((x) => x.currency === c.currency);
-        return (
-          <li
-            key={c.currency}
-            className="flex flex-col gap-2.5 rounded-2xl border border-border bg-surface px-4 py-3.5"
-          >
-            <span className="type-label text-faint">{c.currency}</span>
-            <dl className="flex flex-col gap-1.5">
-              {(
-                [
-                  ["income", c.income, change?.income ?? null],
-                  ["expenses", c.expense, change?.expense ?? null],
-                  ["net", c.net, null],
-                ] as const
-              ).map(([key, value, pct]) => (
-                <div
-                  key={key}
-                  className={cn(
-                    "flex items-baseline justify-between gap-3",
-                    key === "net" && "border-t border-border pt-1.5",
-                  )}
+    <dl className={cn(CARD, "grid divide-border max-sm:divide-y sm:grid-cols-3 sm:divide-x")}>
+      {cols.map(([label, key]) => (
+        <div key={key} className="flex flex-col gap-1.5 px-5 py-3.5">
+          <dt className="type-label text-faint">{t.finance[label]}</dt>
+          {totals.length === 0 ? (
+            <dd className="font-mono text-[20px] text-faint">—</dd>
+          ) : (
+            totals.map((c) => {
+              const value = c[key];
+              const change = overview.summary.changes.find((x) => x.currency === c.currency);
+              const pct =
+                key === "income" ? change?.income : key === "expense" ? change?.expense : null;
+              return (
+                <dd
+                  key={c.currency}
+                  className="flex flex-wrap items-baseline justify-between gap-x-3"
                 >
-                  <dt className="text-[12.5px] text-muted">
-                    {t.finance[key]}
-                    {pct !== null && (
-                      <span
-                        className="ml-1.5 text-[11.5px] text-faint"
-                        title={t.finance.vsPrevious}
-                      >
-                        {t.finance.change(pct)}
-                      </span>
-                    )}
-                  </dt>
-                  <dd
+                  <span
                     className={cn(
-                      "font-mono text-[14.5px] whitespace-nowrap md:text-[15.5px]",
+                      "font-mono text-[19px] whitespace-nowrap",
                       key === "income" && "text-success",
-                      key === "net" && "font-medium",
                       key === "net" && value.startsWith("-") && "text-danger-text",
                     )}
                   >
                     {money(value, c.currency)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </li>
-        );
-      })}
-    </ul>
+                  </span>
+                  {pct != null && (
+                    <span className="text-[11.5px] text-faint" title={t.finance.vsPrevious}>
+                      {t.finance.change(pct)} {t.finance.vsPrevious}
+                    </span>
+                  )}
+                </dd>
+              );
+            })
+          )}
+        </div>
+      ))}
+    </dl>
   );
 }
+
+// ── Movements ────────────────────────────────────────────────────────────────
 
 function TypeIcon({ type }: { type: FinanceTransaction["type"] }) {
   const { t } = useI18n();
+  const cls = "size-3.5 shrink-0";
   if (type === "income")
     return (
-      <ArrowDownRight
-        className="size-3.5 shrink-0 text-success"
-        aria-label={t.finance.types.income}
-      />
+      <ArrowDownRight className={cn(cls, "text-success")} aria-label={t.finance.types.income} />
     );
   if (type === "transfer")
     return (
-      <ArrowLeftRight
-        className="size-3.5 shrink-0 text-muted"
-        aria-label={t.finance.types.transfer}
-      />
+      <ArrowLeftRight className={cn(cls, "text-muted")} aria-label={t.finance.types.transfer} />
     );
-  return (
-    <ArrowUpRight className="size-3.5 shrink-0 text-muted" aria-label={t.finance.types.expense} />
-  );
+  return <ArrowUpRight className={cn(cls, "text-muted")} aria-label={t.finance.types.expense} />;
 }
 
-function signed(tx: FinanceTransaction, money: (a: string, c: string) => string) {
-  const sign = tx.type === "income" ? "+" : tx.type === "expense" ? "−" : "";
-  return `${sign}${money(tx.amount, tx.currency)}`;
-}
+const signed = (tx: FinanceTransaction, money: (a: string, c: string) => string) =>
+  `${tx.type === "income" ? "+" : tx.type === "expense" ? "−" : ""}${money(tx.amount, tx.currency)}`;
 
 function TransactionRow({
   tx,
-  showBook,
+  icon,
   onOpen,
 }: {
   tx: FinanceTransaction;
-  showBook: boolean;
+  icon: string;
   onOpen: (tx: FinanceTransaction) => void;
 }) {
   const { t } = useI18n();
   const money = useMoney();
-  const label = tx.counterparty || tx.description || tx.category || "—";
+  const label = tx.description || tx.counterparty || tx.category || "—";
   const meta = [
     tx.type === "transfer"
       ? `${tx.account ?? "—"} → ${tx.toAccount ?? "—"}`
-      : [tx.category, tx.subcategory].filter(Boolean).join(" › "),
+      : [tx.category ?? t.finance.v21.noCategory, tx.subcategory].filter(Boolean).join(" › "),
+    tx.book ?? (tx.readOnly ? null : t.finance.ws.unclassified),
     tx.type !== "transfer" ? (tx.account ?? tx.paymentMethod) : null,
     tx.provenance.source !== "ELISE Finance" ? tx.provenance.source : null,
   ]
@@ -316,18 +532,19 @@ function TransactionRow({
     <li>
       <button
         type="button"
+        data-tx=""
         onClick={() => onOpen(tx)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-active focus-visible:bg-active focus-visible:outline-none md:px-5"
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-active focus-visible:bg-active focus-visible:outline-none"
       >
+        <span
+          aria-hidden
+          className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-[17px]"
+        >
+          {tx.type === "transfer" ? <ArrowLeftRight className="size-4 text-muted" /> : icon}
+        </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5 text-[14px]">
-            <TypeIcon type={tx.type} />
             <span className="truncate">{label}</span>
-            {showBook && (
-              <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted">
-                {tx.book ?? t.finance.ws.unclassified}
-              </span>
-            )}
             {tx.status !== "completed" && (
               <span className="bg-approval-soft shrink-0 rounded-full px-2 py-0.5 text-[11px] text-approval-text">
                 {t.finance.statuses[tx.status]}
@@ -336,71 +553,459 @@ function TransactionRow({
           </span>
           {meta && <span className="block truncate text-[12px] text-faint">{meta}</span>}
         </span>
-        <span
-          className={cn(
-            "shrink-0 font-mono text-[13.5px]",
-            tx.type === "income" && "text-success",
-            tx.type === "transfer" && "text-muted",
-          )}
-        >
-          {signed(tx, money)}
+        <span className="flex shrink-0 items-center gap-1.5">
+          <TypeIcon type={tx.type} />
+          <span
+            className={cn(
+              "font-mono text-[14px]",
+              tx.type === "income" && "text-success",
+              tx.type === "transfer" && "text-muted",
+            )}
+          >
+            {signed(tx, money)}
+          </span>
         </span>
       </button>
     </li>
   );
 }
 
-/** Movements grouped by day, newest first. */
+/** Movements grouped by day, newest first, with that day's totals per currency. */
 function TransactionList({
   rows,
-  showBook,
+  today,
+  iconOf,
+  complete,
   onOpen,
 }: {
   rows: FinanceTransaction[];
-  showBook: boolean;
+  today: string;
+  iconOf: (tx: FinanceTransaction) => string;
+  /** False when the list is cut: the oldest day may be partial, so it gets no total. */
+  complete: boolean;
   onOpen: (tx: FinanceTransaction) => void;
 }) {
-  const { locale } = useI18n();
-  const heading = new Intl.DateTimeFormat(locale === "es" ? "es-AR" : "en-US", {
-    weekday: "long",
+  const { t, locale } = useI18n();
+  const money = useMoney();
+  const loc = locale === "es" ? "es-AR" : "en-US";
+  const fmt = new Intl.DateTimeFormat(loc, {
+    weekday: "short",
     day: "numeric",
-    month: "long",
+    month: "short",
     timeZone: "UTC",
   });
+  const short = new Intl.DateTimeFormat(loc, { day: "numeric", month: "short", timeZone: "UTC" });
   const days = new Map<string, FinanceTransaction[]>();
   for (const tx of rows) days.set(tx.date, [...(days.get(tx.date) ?? []), tx]);
+  const entries = [...days.entries()];
+  const heading = (d: string) => {
+    const at = new Date(`${d}T00:00:00Z`);
+    const prefix =
+      d === today ? t.finance.v21.today : d === yesterday(today) ? t.finance.v21.yesterday : null;
+    return prefix ? `${prefix} · ${short.format(at)}` : fmt.format(at);
+  };
   return (
     <div className="flex flex-col gap-4">
-      {[...days.entries()].map(([date, txs]) => (
-        <section key={date} className="flex flex-col gap-1.5">
-          <h3 className="px-1 text-[12.5px] text-faint first-letter:uppercase">
-            {heading.format(new Date(`${date}T00:00:00Z`))}
-          </h3>
-          <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
-            {txs.map((tx) => (
-              <TransactionRow key={tx.id} tx={tx} showBook={showBook} onOpen={onOpen} />
-            ))}
-          </ul>
-        </section>
-      ))}
+      {entries.map(([date, txs], i) => {
+        const totals = new Map<string, { inc: string[]; exp: string[] }>();
+        for (const tx of txs) {
+          if (tx.status !== "completed" || tx.type === "transfer") continue;
+          const c = totals.get(tx.currency) ?? { inc: [], exp: [] };
+          (tx.type === "income" ? c.inc : c.exp).push(tx.amount);
+          totals.set(tx.currency, c);
+        }
+        const showTotals = complete || i < entries.length - 1;
+        return (
+          <section key={date} className="flex flex-col gap-1.5">
+            <header className="flex flex-wrap items-baseline justify-between gap-x-3 px-1">
+              <h3 className="type-label text-faint">{heading(date)}</h3>
+              {showTotals && (
+                <span className="flex flex-wrap gap-x-3 font-mono text-[11.5px]">
+                  {[...totals.entries()].map(([cur, v]) => (
+                    <span key={cur} className="flex gap-2">
+                      {v.inc.length > 0 && (
+                        <span className="text-success">+{money(addAmounts(...v.inc), cur)}</span>
+                      )}
+                      {v.exp.length > 0 && (
+                        <span className="text-muted">−{money(addAmounts(...v.exp), cur)}</span>
+                      )}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </header>
+            <ul className={cn(CARD, "divide-y divide-border overflow-hidden")}>
+              {txs.map((tx) => (
+                <TransactionRow key={tx.id} tx={tx} icon={iconOf(tx)} onOpen={onOpen} />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }
 
-function DetailDialog({
+const yesterday = (d: string) => {
+  const x = new Date(`${d}T00:00:00Z`);
+  x.setUTCDate(x.getUTCDate() - 1);
+  return x.toISOString().slice(0, 10);
+};
+
+function FilterBar({
+  overview,
+  q,
+  setQ,
+}: {
+  overview: FinanceOverview;
+  q: string;
+  setQ: (v: string) => void;
+}) {
+  const { t } = useI18n();
+  const { set } = useFilters();
+  const f = overview.filters;
+  const [open, setOpen] = useState(false);
+  const currencies = overview.summary.current.totals.map((c) => c.currency);
+  const filtered = Boolean(f.q || f.type || f.category || f.account || f.currency || f.status);
+  const active: [string, string, string | null][] = [
+    [t.finance.category, "category", f.category ?? null],
+    [t.finance.account, "account", f.account ?? null],
+    [t.finance.currency, "currency", f.currency ?? null],
+    [t.finance.status, "status", f.status ? t.finance.ws.pendingOnly : null],
+    [t.finance.accountType, "type", f.type ? t.finance.types[f.type] : null],
+  ];
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint"
+            aria-hidden
+          />
+          <Input
+            aria-label={t.finance.search}
+            placeholder={t.finance.search}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="h-10 pl-9"
+          />
+        </div>
+        <Button
+          variant="secondary"
+          className="md:hidden"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          <SlidersHorizontal />
+          {t.finance.v21.filters}
+        </Button>
+      </div>
+      <div className={cn("grid gap-2 sm:grid-cols-2 md:grid-cols-5", !open && "max-md:hidden")}>
+        <Select
+          aria-label={t.finance.accountType}
+          value={f.type ?? ""}
+          onChange={(e) => set({ type: e.target.value || null })}
+        >
+          <option value="">{t.finance.all}</option>
+          <option value="expense">{t.finance.expenses}</option>
+          <option value="income">{t.finance.income}</option>
+          <option value="transfer">{t.finance.types.transfer}</option>
+        </Select>
+        <Select
+          aria-label={t.finance.category}
+          value={f.category ?? ""}
+          onChange={(e) => set({ category: e.target.value || null })}
+        >
+          <option value="">{t.finance.allCategories}</option>
+          {[...new Map(overview.categories.map((c) => [c.name, c])).values()].map((c) => (
+            <option key={c.id} value={c.name}>
+              {categoryIcon(c)} {c.name}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label={t.finance.account}
+          value={f.account ?? ""}
+          onChange={(e) => set({ account: e.target.value || null })}
+        >
+          <option value="">{t.finance.allAccounts}</option>
+          {overview.accounts.map((a) => (
+            <option key={a.id} value={a.name}>
+              {a.name}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label={t.finance.currency}
+          value={f.currency ?? ""}
+          onChange={(e) => set({ currency: e.target.value || null })}
+        >
+          <option value="">{t.finance.allCurrencies}</option>
+          {[...new Set([...currencies, ...COMMON_CURRENCIES])].map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label={t.finance.status}
+          value={f.status ?? ""}
+          onChange={(e) => set({ status: e.target.value || null })}
+        >
+          <option value="">{t.finance.all}</option>
+          <option value="pending">{t.finance.ws.pendingOnly}</option>
+        </Select>
+      </div>
+      {filtered && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {active
+            .filter(([, , v]) => v)
+            .map(([label, key, v]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => set({ [key]: null })}
+                aria-label={`${t.finance.v21.removeFilter}: ${label}`}
+                className="flex h-7 items-center gap-1 rounded-full border border-accent-line bg-accent-soft px-2.5 text-[12.5px] text-accent-text"
+              >
+                {label}: {v}
+                <X className="size-3" aria-hidden />
+              </button>
+            ))}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setQ("");
+              set({
+                q: null,
+                type: null,
+                category: null,
+                account: null,
+                currency: null,
+                source: null,
+                status: null,
+              });
+            }}
+          >
+            {t.finance.clearFilters}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Ranked, clickable bars (drill-down): one currency, one type. */
+function RankedBars({
+  title,
+  groups,
+  currency,
+  onPick,
+  iconOf,
+  limit = 8,
+}: {
+  title: string;
+  groups: GroupTotal[];
+  currency: string;
+  onPick?: (key: string) => void;
+  iconOf?: (key: string) => string | null;
+  limit?: number;
+}) {
+  const money = useMoney();
+  const { t } = useI18n();
+  const rows = groups
+    .filter((g) => g.currency === currency)
+    .sort((a, b) => compareAmounts(b.total, a.total))
+    .slice(0, limit);
+  if (!rows.length) return null;
+  const max = rows[0]!.total;
+  return (
+    <section className={cn(CARD, "flex flex-col gap-3 px-5 py-4")}>
+      <h2 className="type-label text-faint">
+        {title} · {currency}
+      </h2>
+      <ul className="flex flex-col gap-1">
+        {rows.map((g) => {
+          const none = g.key === "—";
+          return (
+            <li key={g.key}>
+              <button
+                type="button"
+                disabled={!onPick || none}
+                onClick={() => onPick?.(g.key)}
+                title={onPick && !none ? t.finance.ws.drill : undefined}
+                className="flex w-full flex-col gap-1 rounded-lg px-1.5 py-1 text-left text-[13.5px] enabled:hover:bg-active"
+              >
+                <span className="flex w-full justify-between gap-3">
+                  <span className="truncate">
+                    {iconOf && !none ? `${iconOf(g.key) ?? ""} ` : ""}
+                    {none ? t.finance.v21.noCategory : g.key}
+                  </span>
+                  <span className="shrink-0 font-mono text-[12.5px] text-muted">
+                    {money(g.total, currency)}
+                  </span>
+                </span>
+                <span
+                  className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2"
+                  aria-hidden
+                >
+                  <span
+                    className="block h-full rounded-full bg-accent"
+                    style={{ width: `${share(g.total, max)}%` }}
+                  />
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function BudgetLine({
+  u,
+  money,
+  t,
+}: {
+  u: BudgetUsage;
+  money: (a: string, c: string) => string;
+  t: T;
+}) {
+  const b = t.finance.v21.budget;
+  const pct = Math.round(u.percentTenths / 10);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-baseline justify-between gap-3 text-[13.5px]">
+        <span className="truncate">
+          {categoryIcon({ name: u.category, icon: null })}{" "}
+          {[u.category, u.subcategory].filter(Boolean).join(" › ")}
+        </span>
+        <span className="shrink-0 font-mono text-[12.5px] text-muted">
+          {money(u.spent, u.currency)} / {money(u.amount, u.currency)}
+        </span>
+      </div>
+      <div
+        className="h-2 overflow-hidden rounded-full bg-surface-2"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.min(100, pct)}
+        aria-label={u.category}
+      >
+        <span
+          className={cn(
+            "block h-full rounded-full",
+            u.state === "over" ? "bg-danger" : u.state === "warning" ? "bg-approval" : "bg-accent",
+          )}
+          style={{ width: `${Math.min(100, pct)}%` }}
+        />
+      </div>
+      <p
+        className={cn(
+          "text-[12px]",
+          u.state === "over"
+            ? "text-danger-text"
+            : u.state === "warning"
+              ? "text-approval-text"
+              : "text-faint",
+        )}
+      >
+        {b.used(pct)} ·{" "}
+        {u.remaining.startsWith("-")
+          ? t.finance.ws.overBy(money(u.remaining.slice(1), u.currency))
+          : b.remaining(Math.max(0, 100 - pct))}
+      </p>
+    </div>
+  );
+}
+
+function SidePanel({
+  overview,
+  currency,
+  catIcon,
+  onTab,
+}: {
+  overview: FinanceOverview;
+  currency: string | undefined;
+  catIcon: (name: string) => string | null;
+  onTab: (tab: "budgets") => void;
+}) {
+  const { t } = useI18n();
+  const money = useMoney();
+  const { set } = useFilters();
+  const budgets = [...(overview.budgets?.usages ?? [])]
+    .sort((a, b) => b.percentTenths - a.percentTenths)
+    .slice(0, 3);
+  return (
+    <aside className="flex flex-col gap-3">
+      {currency && (
+        <RankedBars
+          title={t.finance.v21.topCategories}
+          groups={overview.summary.current.byCategory.filter((g) => g.type === "expense")}
+          currency={currency}
+          limit={5}
+          iconOf={catIcon}
+          onPick={(category) => set({ category, type: "expense" })}
+        />
+      )}
+      {budgets.length > 0 && (
+        <section className={cn(CARD, "flex flex-col gap-3 px-5 py-4")}>
+          <button
+            type="button"
+            onClick={() => onTab("budgets")}
+            className="text-left type-label text-faint hover:text-accent-text"
+          >
+            {t.finance.v21.tabs.budgets}
+          </button>
+          {budgets.map((u) => (
+            <BudgetLine key={u.id} u={u} money={money} t={t} />
+          ))}
+        </section>
+      )}
+      {currency && !overview.filters.book && (
+        <RankedBars
+          title={`${t.finance.v21.byScope} · ${t.finance.expenses}`}
+          groups={overview.byBook.filter((g) => g.type === "expense")}
+          currency={currency}
+          onPick={(name) =>
+            set({ book: overview.books.find((b) => b.name === name)?.id ?? UNCLASSIFIED })
+          }
+        />
+      )}
+    </aside>
+  );
+}
+
+// ── Detail drawer ────────────────────────────────────────────────────────────
+
+function DetailDrawer({
   tx,
+  icon,
   onClose,
   onEdit,
+  onDuplicate,
 }: {
   tx: FinanceTransaction | null;
+  icon: string;
   onClose: () => void;
   onEdit: (tx: FinanceTransaction) => void;
+  onDuplicate: (tx: FinanceTransaction) => void;
 }) {
   const { t } = useI18n();
   const money = useMoney();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const ws = t.finance.ws;
+  const d = t.finance.v21.detail;
+  useEffect(() => {
+    if (!tx) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [tx, onClose]);
+  if (!tx) return null;
   const run = (tool: string, args: unknown, done: () => void) =>
     startTransition(async () => {
       const r = await financeToolAction(tool, args);
@@ -410,15 +1015,15 @@ function DetailDialog({
         router.refresh();
       }
     });
-  const archive = (x: FinanceTransaction) =>
-    run("finance.archiveTransaction", { transaction: x.id }, () => {
+  const archive = () =>
+    run("finance.archiveTransaction", { transaction: tx.id }, () => {
       onClose();
       toast.success(t.finance.archived, {
         duration: 10_000,
         action: {
           label: ws.undo,
           onClick: () =>
-            void financeToolAction("finance.restoreTransaction", { transaction: x.id }).then(
+            void financeToolAction("finance.restoreTransaction", { transaction: tx.id }).then(
               (r) => {
                 if (r.ok) {
                   toast.success(ws.restored);
@@ -429,262 +1034,149 @@ function DetailDialog({
         },
       });
     });
-  const receiptLink = tx?.receipt && /^https?:\/\//i.test(tx.receipt) ? tx.receipt : null;
-  const rows: [string, string | null | undefined][] = tx
-    ? [
-        [t.finance.date, tx.date],
-        [t.finance.status, t.finance.statuses[tx.status]],
-        [ws.book, tx.book ?? (tx.readOnly ? null : ws.unclassified)],
-        [
-          t.finance.category,
-          tx.type === "transfer"
-            ? null
-            : [tx.category, tx.subcategory].filter(Boolean).join(" › ") || null,
-        ],
-        [
-          t.finance.account,
-          tx.type === "transfer"
-            ? `${tx.account ?? "—"} → ${tx.toAccount ?? "—"}`
-            : (tx.account ?? tx.paymentMethod),
-        ],
-        [t.finance.counterparty, tx.counterparty],
-        [t.finance.description, tx.description],
-        [t.finance.project, tx.project],
-        [ws.receipt, receiptLink ? null : tx.receipt],
-        [t.finance.notes, tx.notes],
-        [
-          ws.origin,
-          tx.readOnly
-            ? `${tx.provenance.source}${tx.provenance.row ? ` · ${t.finance.wizard.row(tx.provenance.row)}` : ""}`
-            : tx.origin
-              ? ws.origins[tx.origin]
-              : null,
-        ],
-      ]
-    : [];
+  const receiptLink = tx.receipt && /^https?:\/\//i.test(tx.receipt) ? tx.receipt : null;
+  const rows: [string, string | null | undefined][] = [
+    [t.finance.accountType, t.finance.types[tx.type]],
+    [t.finance.date, tx.date],
+    [t.finance.status, t.finance.statuses[tx.status]],
+    [
+      t.finance.category,
+      tx.type === "transfer"
+        ? null
+        : [tx.category, tx.subcategory].filter(Boolean).join(" › ") || t.finance.v21.noCategory,
+    ],
+    [ws.book, tx.book ?? (tx.readOnly ? null : ws.unclassified)],
+    [
+      t.finance.account,
+      tx.type === "transfer"
+        ? `${tx.account ?? "—"} → ${tx.toAccount ?? "—"}`
+        : (tx.account ?? tx.paymentMethod),
+    ],
+    [t.finance.counterparty, tx.counterparty],
+    [t.finance.project, tx.project],
+    [ws.receipt, receiptLink ? null : tx.receipt],
+    [t.finance.notes, tx.notes],
+    [
+      ws.origin,
+      tx.readOnly
+        ? `${tx.provenance.source}${tx.provenance.row ? ` · ${t.finance.wizard.row(tx.provenance.row)}` : ""}`
+        : tx.origin
+          ? ws.origins[tx.origin]
+          : null,
+    ],
+  ];
   return (
-    <Dialog
-      open={tx !== null}
-      onClose={onClose}
-      busy={pending}
-      title={tx ? signed(tx, money) : ws.detail}
-      description={
-        tx
-          ? `${t.finance.types[tx.type]} · ${tx.counterparty || tx.description || tx.category || ""}`
-          : undefined
-      }
-    >
-      {tx && (
-        <div className="flex flex-col gap-4">
-          <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[14px]">
-            {rows
-              .filter(([, v]) => v)
-              .map(([k, v]) => (
-                <div key={k} className="contents">
-                  <dt className="text-muted">{k}</dt>
-                  <dd className="break-words whitespace-pre-wrap">{v}</dd>
-                </div>
-              ))}
-            {receiptLink && (
-              <>
-                <dt className="text-muted">{ws.receipt}</dt>
-                <dd>
-                  <a
-                    href={receiptLink}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="text-accent-text underline underline-offset-2"
-                  >
-                    {ws.openReceipt}
-                  </a>
-                </dd>
-              </>
-            )}
-          </dl>
-          {tx.readOnly ? (
-            <p className="text-[13px] text-muted">{t.finance.readOnly}</p>
-          ) : (
-            <div className="flex flex-wrap items-center justify-end gap-2">
+    <>
+      <div
+        aria-hidden
+        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label={ws.detail}
+        className="fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] flex-col gap-4 overflow-y-auto rounded-t-3xl border border-border-strong bg-[var(--overlay-bg)] p-5 shadow-2xl md:inset-y-3 md:right-3 md:left-auto md:max-h-none md:w-[26rem] md:rounded-3xl"
+      >
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden
+            className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface-2 text-[20px]"
+          >
+            {tx.type === "transfer" ? <ArrowLeftRight className="size-5 text-muted" /> : icon}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className={cn("font-mono text-[22px]", tx.type === "income" && "text-success")}>
+              {signed(tx, money)}
+            </p>
+            <p className="truncate text-[14px] text-muted">
+              {tx.description || tx.counterparty || tx.category || ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label={d.close}
+            onClick={onClose}
+            className="grid size-9 place-items-center rounded-full text-muted hover:bg-active"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <dl className="grid grid-cols-[7.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 border-t border-border pt-4 text-[14px]">
+          {rows
+            .filter(([, v]) => v)
+            .map(([k, v]) => (
+              <div key={k} className="contents">
+                <dt className="text-muted">{k}</dt>
+                <dd className="break-words whitespace-pre-wrap">{v}</dd>
+              </div>
+            ))}
+          {receiptLink && (
+            <>
+              <dt className="text-muted">{ws.receipt}</dt>
+              <dd>
+                <a
+                  href={receiptLink}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-accent-text underline underline-offset-2"
+                >
+                  {ws.openReceipt}
+                </a>
+              </dd>
+            </>
+          )}
+        </dl>
+        {tx.readOnly ? (
+          <p className="text-[13px] text-muted">{t.finance.readOnly}</p>
+        ) : (
+          <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-4">
+            <Button disabled={pending} onClick={() => onEdit(tx)}>
+              {ws.editAction}
+            </Button>
+            <Button variant="secondary" disabled={pending} onClick={() => onDuplicate(tx)}>
+              {d.duplicate}
+            </Button>
+            {tx.status !== "cancelled" && (
               <Button
                 variant="ghost"
-                className="mr-auto hover:text-danger-text"
                 disabled={pending}
-                onClick={() => {
-                  if (window.confirm(t.finance.archiveConfirm)) archive(tx);
-                }}
+                onClick={() =>
+                  run(
+                    "finance.updateTransaction",
+                    {
+                      transaction: tx.id,
+                      status: tx.status === "pending" ? "completed" : "pending",
+                    },
+                    onClose,
+                  )
+                }
               >
-                {t.finance.archive}
+                {tx.status === "pending" ? ws.markPaid : d.markPending}
               </Button>
-              {tx.status === "pending" && (
-                <Button
-                  variant="secondary"
-                  disabled={pending}
-                  onClick={() =>
-                    run(
-                      "finance.updateTransaction",
-                      { transaction: tx.id, status: "completed" },
-                      onClose,
-                    )
-                  }
-                >
-                  {ws.markPaid}
-                </Button>
-              )}
-              <Button disabled={pending} onClick={() => onEdit(tx)}>
-                {ws.editAction}
-              </Button>
+            )}
+            <div className="ml-auto">
+              <Menu
+                label={d.more}
+                items={[
+                  {
+                    label: t.finance.archive,
+                    danger: true,
+                    onClick: () => window.confirm(t.finance.archiveConfirm) && archive(),
+                  },
+                ]}
+              />
             </div>
-          )}
-        </div>
-      )}
-    </Dialog>
-  );
-}
-
-function AccountDialog({
-  open,
-  onClose,
-  account,
-  books,
-}: {
-  open: boolean;
-  onClose: () => void;
-  /** Present when editing. */
-  account: FinanceAccount | null;
-  books: FinanceBook[];
-}) {
-  const { t } = useI18n();
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const [name, setName] = useState("");
-  const [type, setType] = useState<AccountType>("credit_card");
-  const [currency, setCurrency] = useState("");
-  const [book, setBook] = useState("");
-  const [openedFor, setOpenedFor] = useState<string | null>(null);
-  const marker = open ? (account?.id ?? "new") : null;
-  if (marker !== openedFor) {
-    setOpenedFor(marker);
-    if (marker) {
-      setName(account?.name ?? "");
-      setType(account?.type ?? "credit_card");
-      setCurrency(account?.currency ?? "");
-      setBook(books.find((b) => b.id === account?.defaultBookId)?.name ?? "");
-    }
-  }
-  const run = (tool: string, args: unknown) =>
-    startTransition(async () => {
-      const r = await financeToolAction(tool, args);
-      if (!r.ok) toast.error(errorText(t, r.error));
-      else {
-        router.refresh();
-        onClose();
-      }
-    });
-  return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      busy={pending}
-      title={account ? t.finance.editAccount : t.finance.addAccount}
-    >
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (account)
-            run("finance.updateAccount", {
-              account: account.name,
-              name,
-              type,
-              currency: currency || null,
-              ...(books.length ? { book: book || null } : {}),
-            });
-          else run("finance.createAccount", { name, type, ...(currency ? { currency } : {}) });
-        }}
-      >
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="acct-name">{t.finance.accountName}</Label>
-          <Input
-            id="acct-name"
-            data-autofocus=""
-            required
-            maxLength={80}
-            value={name}
-            placeholder={t.finance.accountNamePlaceholder}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="acct-type">{t.finance.accountType}</Label>
-            <Select
-              id="acct-type"
-              value={type}
-              onChange={(e) => setType(e.target.value as AccountType)}
-            >
-              {(Object.keys(t.finance.accountTypes) as AccountType[]).map((k) => (
-                <option key={k} value={k}>
-                  {t.finance.accountTypes[k]}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="acct-currency">{t.finance.currency}</Label>
-            <Select
-              id="acct-currency"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-            >
-              <option value="">{t.finance.anyCurrency}</option>
-              {[...new Set([currency, ...COMMON_CURRENCIES].filter(Boolean))].map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
-        {account && books.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="acct-book">{t.finance.ws.defaultBook}</Label>
-            <Select id="acct-book" value={book} onChange={(e) => setBook(e.target.value)}>
-              <option value="">{t.finance.ws.noBook}</option>
-              {books.map((b) => (
-                <option key={b.id} value={b.name}>
-                  {b.name}
-                </option>
-              ))}
-            </Select>
           </div>
         )}
-        <div className="flex items-center justify-end gap-2">
-          {account && (
-            <Button
-              variant="ghost"
-              className="mr-auto hover:text-danger-text"
-              disabled={pending}
-              onClick={() => {
-                if (window.confirm(t.finance.archiveAccountConfirm(account.name)))
-                  run("finance.updateAccount", { account: account.name, archived: true });
-              }}
-            >
-              {t.finance.archive}
-            </Button>
-          )}
-          <Button variant="ghost" onClick={onClose} disabled={pending}>
-            {t.finance.cancel}
-          </Button>
-          <Button type="submit" disabled={pending || !name.trim()}>
-            {t.finance.save}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
+      </section>
+    </>
   );
 }
 
-function CategoryDialog({
+// ── Managers ─────────────────────────────────────────────────────────────────
+
+function CategoryManager({
   open,
   onClose,
   categories,
@@ -694,231 +1186,504 @@ function CategoryDialog({
   categories: FinanceCategory[];
 }) {
   const { t } = useI18n();
+  const c = t.finance.v21.categories;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [name, setName] = useState("");
-  const [type, setType] = useState<"expense" | "income">("expense");
-  const [parent, setParent] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, { name: string; icon: string }>>({});
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<"expense" | "income">("expense");
+  const run = (tool: string, args: unknown, done?: () => void) =>
+    startTransition(async () => {
+      const r = await financeToolAction(tool, args);
+      if (!r.ok) toast.error(errorText(t, r.error));
+      else {
+        done?.();
+        router.refresh();
+      }
+    });
   return (
-    <Dialog open={open} onClose={onClose} busy={pending} title={t.finance.addCategory}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      busy={pending}
+      title={c.title}
+      className="border-border-strong bg-[var(--overlay-bg)] sm:max-w-2xl"
+    >
       <form
-        className="flex flex-col gap-4"
+        className="flex flex-wrap items-end gap-2 rounded-2xl border border-border bg-bg p-3"
         onSubmit={(e) => {
           e.preventDefault();
-          startTransition(async () => {
-            const r = await financeToolAction("finance.createCategory", {
-              name,
-              type,
-              ...(parent ? { parent } : {}),
-            });
-            if (!r.ok) toast.error(errorText(t, r.error));
-            else {
-              setName("");
-              setParent("");
-              router.refresh();
-              onClose();
-            }
-          });
+          if (newName.trim())
+            run("finance.createCategory", { name: newName.trim(), type: newType }, () =>
+              setNewName(""),
+            );
         }}
       >
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="cat-name">{t.finance.accountName}</Label>
+        <div className="flex min-w-48 flex-1 flex-col gap-1.5">
+          <Label htmlFor="newcat">{t.finance.addCategory}</Label>
           <Input
-            id="cat-name"
-            data-autofocus=""
-            required
+            id="newcat"
+            value={newName}
             maxLength={80}
-            value={name}
             placeholder={t.finance.categoryPlaceholder}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => setNewName(e.target.value)}
+            className="h-10"
           />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="cat-type">{t.finance.accountType}</Label>
-            <Select
-              id="cat-type"
-              value={type}
-              onChange={(e) => {
-                setType(e.target.value as "expense" | "income");
-                setParent("");
-              }}
-            >
-              <option value="expense">{t.finance.expenses}</option>
-              <option value="income">{t.finance.income}</option>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="cat-parent">{t.finance.parentCategory}</Label>
-            <Select id="cat-parent" value={parent} onChange={(e) => setParent(e.target.value)}>
-              <option value="">{t.finance.noParent}</option>
-              {categories
-                .filter((c) => !c.parentId && (c.type === type || c.type === "both"))
-                .map((c) => (
-                  <option key={c.id} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-            </Select>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose} disabled={pending}>
-            {t.finance.cancel}
-          </Button>
-          <Button type="submit" disabled={pending || !name.trim()}>
-            {t.finance.save}
-          </Button>
-        </div>
+        <Select
+          aria-label={t.finance.accountType}
+          value={newType}
+          onChange={(e) => setNewType(e.target.value as "expense" | "income")}
+          className="h-10 w-auto"
+        >
+          <option value="expense">{c.expense}</option>
+          <option value="income">{c.income}</option>
+        </Select>
+        <Button type="submit" disabled={pending || !newName.trim()}>
+          <Plus />
+          {t.finance.v21.tx.create}
+        </Button>
       </form>
+      {(["expense", "income"] as const).map((type) => {
+        const list = categories.filter((x) => x.type === type || x.type === "both");
+        if (!list.length) return null;
+        return (
+          <section key={type} className="flex flex-col gap-1.5">
+            <h3 className="type-label text-faint">{type === "expense" ? c.expense : c.income}</h3>
+            <ul className="flex flex-col divide-y divide-border">
+              {list.map((cat) => {
+                const d = drafts[cat.id] ?? { name: cat.name, icon: cat.icon ?? "" };
+                const dirty = d.name.trim() !== cat.name || d.icon !== (cat.icon ?? "");
+                const iconOk = !d.icon || isSingleEmoji(d.icon);
+                return (
+                  <li key={cat.id} className="flex items-center gap-2 py-2">
+                    <Input
+                      aria-label={`${t.finance.v21.tx.icon}: ${cat.name}`}
+                      value={d.icon}
+                      maxLength={16}
+                      placeholder={suggestCategoryIcon(cat.name) ?? "•"}
+                      aria-invalid={!iconOk}
+                      onChange={(e) =>
+                        setDrafts({ ...drafts, [cat.id]: { ...d, icon: e.target.value.trim() } })
+                      }
+                      className="h-9 w-14 text-center text-[16px]"
+                    />
+                    <Input
+                      aria-label={c.rename}
+                      value={d.name}
+                      maxLength={80}
+                      onChange={(e) =>
+                        setDrafts({ ...drafts, [cat.id]: { ...d, name: e.target.value } })
+                      }
+                      className="h-9 min-w-0 flex-1"
+                    />
+                    {cat.parent && (
+                      <span className="hidden text-[12px] text-faint sm:inline">{cat.parent}</span>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={pending || !dirty || !d.name.trim() || !iconOk}
+                      onClick={() =>
+                        run("finance.updateCategory", {
+                          category: cat.name,
+                          ...(d.name.trim() !== cat.name ? { name: d.name.trim() } : {}),
+                          ...(d.icon !== (cat.icon ?? "") ? { icon: d.icon || null } : {}),
+                        })
+                      }
+                    >
+                      {c.save}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="hover:text-danger-text"
+                      disabled={pending}
+                      onClick={() =>
+                        window.confirm(c.archiveConfirm(cat.name)) &&
+                        run("finance.updateCategory", { category: cat.name, archived: true })
+                      }
+                    >
+                      {c.archive}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
     </Dialog>
   );
 }
 
-/** Ranked, clickable bars (drill-down): one currency, one type. */
-function RankedBars({
+function AccountManager({
+  open,
+  onClose,
+  accounts,
+  books,
+  defaultCurrency,
+}: {
+  open: boolean;
+  onClose: () => void;
+  accounts: FinanceAccount[];
+  books: FinanceBook[];
+  defaultCurrency: string | null;
+}) {
+  const { t } = useI18n();
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [editing, setEditing] = useState<FinanceAccount | "new" | null>(null);
+  const [name, setName] = useState("");
+  const [type, setType] = useState<AccountType>("bank");
+  const [currency, setCurrency] = useState("");
+  const [book, setBook] = useState("");
+  const edit = (a: FinanceAccount | "new") => {
+    setEditing(a);
+    setName(a === "new" ? "" : a.name);
+    setType(a === "new" ? "bank" : a.type);
+    setCurrency(a === "new" ? "" : (a.currency ?? ""));
+    setBook(a === "new" ? "" : (books.find((b) => b.id === a.defaultBookId)?.name ?? ""));
+  };
+  const run = (tool: string, args: unknown) =>
+    startTransition(async () => {
+      const r = await financeToolAction(tool, args);
+      if (!r.ok) toast.error(errorText(t, r.error));
+      else {
+        setEditing(null);
+        router.refresh();
+      }
+    });
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      busy={pending}
+      title={t.finance.v21.accounts.title}
+      className="border-border-strong bg-[var(--overlay-bg)] sm:max-w-xl"
+    >
+      {editing ? (
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (editing === "new")
+              run("finance.createAccount", { name, type, ...(currency ? { currency } : {}) });
+            else
+              run("finance.updateAccount", {
+                account: editing.name,
+                name,
+                type,
+                currency: currency || null,
+                ...(books.length ? { book: book || null } : {}),
+              });
+          }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="acct-name">{t.finance.accountName}</Label>
+            <Input
+              id="acct-name"
+              required
+              maxLength={80}
+              value={name}
+              placeholder={t.finance.accountNamePlaceholder}
+              onChange={(e) => setName(e.target.value)}
+              className="h-11"
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Select
+              aria-label={t.finance.accountType}
+              value={type}
+              onChange={(e) => setType(e.target.value as AccountType)}
+              className="h-11"
+            >
+              {(Object.keys(t.finance.accountTypes) as AccountType[]).map((k) => (
+                <option key={k} value={k}>
+                  {t.finance.accountTypes[k]}
+                </option>
+              ))}
+            </Select>
+            <Select
+              aria-label={t.finance.currency}
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="h-11"
+            >
+              <option value="">{t.finance.anyCurrency}</option>
+              {COMMON_CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+            {editing !== "new" && books.length > 0 && (
+              <Select
+                aria-label={t.finance.ws.defaultBook}
+                value={book}
+                onChange={(e) => setBook(e.target.value)}
+                className="h-11"
+              >
+                <option value="">{t.finance.ws.noBook}</option>
+                {books.map((b) => (
+                  <option key={b.id} value={b.name}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            {editing !== "new" && (
+              <Button
+                variant="ghost"
+                className="mr-auto hover:text-danger-text"
+                disabled={pending}
+                onClick={() =>
+                  window.confirm(t.finance.archiveAccountConfirm(editing.name)) &&
+                  run("finance.updateAccount", { account: editing.name, archived: true })
+                }
+              >
+                {t.finance.archive}
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => setEditing(null)}>
+              {t.finance.cancel}
+            </Button>
+            <Button type="submit" disabled={pending || !name.trim()}>
+              {t.finance.save}
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <>
+          {accounts.length === 0 ? (
+            <p className="text-[13.5px] text-muted">{t.finance.noAccounts}</p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-border">
+              {accounts.map((a) => (
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    onClick={() => edit(a)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-active"
+                  >
+                    <span className="text-[14px]">{a.name}</span>
+                    <span className="text-[12.5px] text-faint">
+                      {[
+                        t.finance.accountTypes[a.type],
+                        a.currency,
+                        books.find((b) => b.id === a.defaultBookId)?.name,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="default-currency">{t.finance.defaultCurrency}</Label>
+              <Select
+                id="default-currency"
+                value={defaultCurrency ?? ""}
+                className="h-9 w-auto"
+                onChange={(e) =>
+                  startTransition(async () => {
+                    const r = await setDefaultCurrencyAction(e.target.value || null);
+                    if (!r.ok) toast.error(errorText(t, r.error));
+                    else router.refresh();
+                  })
+                }
+              >
+                <option value="">{t.finance.notSet}</option>
+                {COMMON_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <Button onClick={() => edit("new")}>
+              <Plus />
+              {t.finance.addAccount}
+            </Button>
+          </div>
+        </>
+      )}
+    </Dialog>
+  );
+}
+
+// ── Statistics ───────────────────────────────────────────────────────────────
+
+function Card({
   title,
-  groups,
-  currency,
-  onPick,
-  noneLabel,
+  children,
+  className,
 }: {
   title: string;
-  groups: GroupTotal[];
-  currency: string;
-  onPick?: (key: string) => void;
-  /** Shown for the "—" group (e.g. "Sin categoría"); without it that group is left out. */
-  noneLabel?: string;
+  children: ReactNode;
+  className?: string;
 }) {
-  const money = useMoney();
-  const { t } = useI18n();
-  const rows = groups
-    .filter((g) => g.currency === currency && (noneLabel || g.key !== "—"))
-    .sort((a, b) => compareAmounts(b.total, a.total))
-    .slice(0, 8);
-  if (!rows.length) return null;
-  const max = rows[0]!.total;
   return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-border bg-surface px-5 py-4">
-      <h2 className="type-label text-faint">
-        {title} · {currency}
-      </h2>
-      <ul className="flex flex-col gap-1">
-        {rows.map((g) => (
-          <li key={g.key}>
-            <button
-              type="button"
-              disabled={!onPick || g.key === "—"}
-              onClick={() => onPick?.(g.key)}
-              title={onPick ? t.finance.ws.drill : undefined}
-              className="flex w-full flex-col gap-1 rounded-lg px-1.5 py-1 text-left text-[13.5px] enabled:hover:bg-active"
-            >
-              <span className="flex w-full justify-between gap-3">
-                <span className="truncate">{g.key === "—" ? noneLabel : g.key}</span>
-                <span className="shrink-0 font-mono text-[12.5px] text-muted">
-                  {money(g.total, currency)}
-                </span>
-              </span>
-              <span className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2" aria-hidden>
-                <span
-                  className="block h-full rounded-full bg-accent"
-                  style={{ width: `${share(g.total, max)}%` }}
-                />
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+    <section className={cn(CARD, "flex min-w-0 flex-col gap-2 px-5 py-4", className)}>
+      <h2 className="type-label text-faint">{title}</h2>
+      {children}
     </section>
   );
 }
 
-function Card({ spec }: { spec: VisualizationSpec }) {
-  return (
-    <section className="flex flex-col gap-2 rounded-2xl border border-border bg-surface px-5 py-4">
-      <h2 className="type-label text-faint">{spec.title}</h2>
-      <Visualization spec={spec} size="medium" />
-    </section>
-  );
-}
-
-function Analysis({ overview, currency }: { overview: FinanceOverview; currency: string }) {
+function Statistics({
+  overview,
+  currency,
+  catIcon,
+}: {
+  overview: FinanceOverview;
+  currency: string;
+  catIcon: (n: string) => string | null;
+}) {
   const { t, locale } = useI18n();
   const { set } = useFilters();
   const ws = t.finance.ws;
-  const series = overview.trend.find((s) => s.currency === currency);
+  const v = t.finance.v21;
+  // Buckets after today are empty, not zero: the series stop at today (ADR-054).
+  const full = overview.trend.find((s) => s.currency === currency);
+  const series =
+    full &&
+    (() => {
+      const today = overview.today;
+      const cut = full.keys.filter((k) =>
+        full.granularity === "month" ? k <= today.slice(0, 7) : k <= today,
+      ).length;
+      return cut >= full.keys.length
+        ? full
+        : {
+            ...full,
+            keys: full.keys.slice(0, cut),
+            income: full.income.slice(0, cut),
+            expense: full.expense.slice(0, cut),
+            net: full.net.slice(0, cut),
+          };
+    })();
   const trend = series ? financeTrendVisual(series, locale) : null;
+  const evolution: VisualizationSpec | null =
+    series && series.keys.length >= 2
+      ? {
+          type: "line",
+          title: v.evolution,
+          format: { kind: "currency", currency },
+          x: series.keys.slice(-62).map((k) => (series.granularity === "month" ? k : k.slice(5))),
+          series: [
+            {
+              name: t.finance.expenses,
+              values: series.expense.slice(-62).map((x) => Math.round(Number(x))),
+            },
+          ],
+        }
+      : null;
   const expenses = overview.summary.current.byCategory
     .filter((g) => g.type === "expense" && g.currency === currency)
     .sort((a, b) => compareAmounts(b.total, a.total));
   const top = expenses.slice(0, expenses.length > 6 ? 5 : 6);
-  const rest = expenses.slice(top.length).reduce((n, g) => n + Number(g.total), 0);
+  const rest = expenses.slice(top.length);
   const donut: VisualizationSpec | null =
     expenses.length >= 2
       ? {
           type: "donut",
-          title: `${ws.expensesByCategory} · ${currency}`,
+          title: v.expensesByCategory,
           format: { kind: "currency", currency },
           rows: [
             ...top.map((g) => ({
-              label: (g.key === "—" ? t.finance.noCategory : g.key).slice(0, 60),
+              label:
+                `${g.key === "—" ? "" : `${catIcon(g.key) ?? ""} `}${g.key === "—" ? v.noCategory : g.key}`.slice(
+                  0,
+                  60,
+                ),
               value: Math.round(Number(g.total)),
             })),
-            ...(rest > 0 ? [{ label: ws.other, value: Math.round(rest) }] : []),
+            ...(rest.length
+              ? [
+                  {
+                    label: ws.other,
+                    value: Math.round(Number(addAmounts(...rest.map((g) => g.total)))),
+                  },
+                ]
+              : []),
           ],
         }
       : null;
+  const book = overview.books.find((b) => b.id === overview.filters.book);
+  const business = book
+    ? book.type === "business"
+    : overview.books.some((b) => b.type === "business");
   const a = overview.analysis;
-  const income = (gs: GroupTotal[]) => gs.filter((g) => g.type === "income");
-  const expense = (gs: GroupTotal[]) => gs.filter((g) => g.type === "expense");
   const drill = (patch: Record<string, string | null>) => set({ tab: null, ...patch });
   if (!overview.summary.current.count)
-    return <p className="px-1 py-4 text-[14px] text-muted">{ws.noData}</p>;
+    return <p className={cn(CARD, "px-5 py-4 text-[14px] text-muted")}>{ws.noData}</p>;
   return (
     <div className="grid gap-3 lg:grid-cols-2">
       {trend && (
-        <div className="lg:col-span-2">
-          <Card spec={trend.spec} />
-        </div>
+        <Card title={v.incomeVsExpenses}>
+          <Visualization spec={{ ...trend.spec, title: "" }} size="medium" />
+        </Card>
       )}
-      {donut && <Card spec={donut} />}
+      {donut && (
+        <Card title={`${v.expensesByCategory} · ${currency}`}>
+          <Visualization spec={{ ...donut, title: "" }} size="medium" />
+        </Card>
+      )}
       <RankedBars
-        title={ws.expensesByCategory}
-        groups={expense(overview.summary.current.byCategory)}
+        title={v.ranking}
+        groups={expenses}
         currency={currency}
-        noneLabel={t.finance.noCategory}
+        iconOf={catIcon}
         onPick={(category) => drill({ category, type: "expense" })}
       />
+      {evolution && (
+        <Card title={v.evolution}>
+          <Visualization spec={{ ...evolution, title: "" }} size="medium" />
+        </Card>
+      )}
       <RankedBars
         title={ws.incomeByCategory}
-        groups={income(overview.summary.current.byCategory)}
+        groups={overview.summary.current.byCategory.filter(
+          (g) => g.type === "income" && g.key !== "—",
+        )}
         currency={currency}
-        noneLabel={t.finance.noCategory}
+        iconOf={catIcon}
         onPick={(category) => drill({ category, type: "income" })}
       />
-      {a && (
+      {!overview.filters.book && (
+        <RankedBars
+          title={`${v.byScope} · ${t.finance.expenses}`}
+          groups={overview.byBook.filter((g) => g.type === "expense")}
+          currency={currency}
+          onPick={(name) =>
+            set({ book: overview.books.find((b) => b.name === name)?.id ?? UNCLASSIFIED })
+          }
+        />
+      )}
+      {business && a && (
         <>
           <RankedBars
             title={ws.topClients}
-            groups={income(a.counterparties)}
+            groups={a.counterparties.filter((g) => g.type === "income" && g.key !== "—")}
             currency={currency}
             onPick={(q) => drill({ q, type: "income" })}
           />
           <RankedBars
             title={ws.topProviders}
-            groups={expense(a.counterparties)}
+            groups={a.counterparties.filter((g) => g.type === "expense" && g.key !== "—")}
             currency={currency}
             onPick={(q) => drill({ q, type: "expense" })}
           />
-          <RankedBars title={ws.byProject} groups={expense(a.projects)} currency={currency} />
           <RankedBars
-            title={`${ws.byBook} · ${t.finance.expenses}`}
-            groups={expense(a.books)}
+            title={ws.byProject}
+            groups={a.projects.filter((g) => g.key !== "—" && g.type === "expense")}
             currency={currency}
-            onPick={(name) => {
-              const b = overview.books.find((x) => x.name === name);
-              drill({ book: b?.id ?? UNCLASSIFIED });
-            }}
           />
         </>
       )}
@@ -926,115 +1691,206 @@ function Analysis({ overview, currency }: { overview: FinanceOverview; currency:
   );
 }
 
+// ── Budgets ──────────────────────────────────────────────────────────────────
+
+function BudgetForm({ overview, onDone }: { overview: FinanceOverview; onDone: () => void }) {
+  const { t, locale } = useI18n();
+  const b = t.finance.v21.budget;
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const expense = overview.categories.filter((c) => c.type === "expense" || c.type === "both");
+  const current = overview.books.find((x) => x.id === overview.filters.book);
+  const [category, setCategory] = useState(expense[0]?.name ?? "");
+  const [subcategory, setSubcategory] = useState("");
+  const [book, setBook] = useState(
+    current?.name ?? overview.books.find((x) => x.isDefault)?.name ?? "",
+  );
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState(
+    overview.settings.defaultCurrency ?? overview.summary.current.totals[0]?.currency ?? "ARS",
+  );
+  return (
+    <form
+      className={cn(CARD, "grid gap-3 border-border-strong p-4 sm:grid-cols-2 lg:grid-cols-6")}
+      onSubmit={(e) => {
+        e.preventDefault();
+        const value = amount.replace(locale === "es" ? /\./g : /,/g, "").replace(",", ".");
+        startTransition(async () => {
+          const r = await financeToolAction("finance.setBudget", {
+            category,
+            amount: value,
+            currency,
+            ...(book ? { book } : {}),
+            ...(subcategory.trim() ? { subcategory: subcategory.trim() } : {}),
+          });
+          if (!r.ok) return void toast.error(errorText(t, r.error));
+          toast.success(b.saved);
+          router.refresh();
+          onDone();
+        });
+      }}
+    >
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="bud-period">{b.period}</Label>
+        <Select id="bud-period" disabled value="monthly" className="h-10">
+          <option value="monthly">{b.monthly}</option>
+        </Select>
+      </div>
+      {overview.books.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="bud-book">{b.scope}</Label>
+          <Select
+            id="bud-book"
+            value={book}
+            onChange={(e) => setBook(e.target.value)}
+            className="h-10"
+          >
+            {overview.books.map((x) => (
+              <option key={x.id} value={x.name}>
+                {x.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="bud-cat">{b.category}</Label>
+        <Select
+          id="bud-cat"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="h-10"
+        >
+          {expense.map((c) => (
+            <option key={c.id} value={c.name}>
+              {categoryIcon(c)} {c.name}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="bud-sub">{b.subcategory}</Label>
+        <Input
+          id="bud-sub"
+          value={subcategory}
+          maxLength={80}
+          onChange={(e) => setSubcategory(e.target.value)}
+          className="h-10"
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="bud-amount">{b.amount}</Label>
+        <Input
+          id="bud-amount"
+          inputMode="decimal"
+          required
+          value={amount}
+          placeholder="200.000"
+          onChange={(e) => setAmount(e.target.value)}
+          className="h-10 font-mono"
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="bud-cur">{b.currency}</Label>
+        <Select
+          id="bud-cur"
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value)}
+          className="h-10"
+        >
+          {COMMON_CURRENCIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div className="flex justify-end gap-2 sm:col-span-2 lg:col-span-6">
+        <Button variant="ghost" onClick={onDone}>
+          {t.finance.cancel}
+        </Button>
+        <Button type="submit" disabled={pending || !category || !amount.trim()}>
+          {b.save}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 function Budgets({ overview }: { overview: FinanceOverview }) {
   const { t, locale } = useI18n();
   const money = useMoney();
-  const ws = t.finance.ws;
+  const [adding, setAdding] = useState(false);
   const b = overview.budgets;
-  if (!b || !b.usages.length)
-    return (
-      <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[14px] text-muted">
-        {ws.noBudgets}
-      </p>
-    );
-  const month = new Intl.DateTimeFormat(locale === "es" ? "es-AR" : "en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${b.month}-01T00:00:00Z`));
-  const tone = (u: BudgetUsage) =>
-    u.state === "over" ? "bg-danger" : u.state === "warning" ? "bg-approval" : "bg-accent";
+  const month = b
+    ? new Intl.DateTimeFormat(locale === "es" ? "es-AR" : "en-US", {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(new Date(`${b.month}-01T00:00:00Z`))
+    : "";
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="type-label text-faint first-letter:uppercase">{ws.budgetMonth(month)}</h2>
-      <ul className="grid gap-3 md:grid-cols-2">
-        {b.usages.map((u) => (
-          <li
-            key={u.id}
-            className="flex flex-col gap-2 rounded-2xl border border-border bg-surface px-4 py-3.5"
-          >
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="truncate text-[14px] font-medium">
-                {[u.category, u.subcategory].filter(Boolean).join(" › ")}
-                {u.book && !overview.filters.book && (
-                  <span className="ml-1.5 text-[12px] font-normal text-faint">{u.book}</span>
-                )}
-              </span>
-              <span
-                className={cn(
-                  "shrink-0 text-[12px]",
-                  u.state === "over"
-                    ? "text-danger-text"
-                    : u.state === "warning"
-                      ? "text-approval-text"
-                      : "text-faint",
-                )}
-              >
-                {(u.percentTenths / 10).toFixed(0)}% · {ws.budgetStates[u.state]}
-              </span>
-            </div>
-            <div
-              className="h-2 overflow-hidden rounded-full bg-surface-2"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.min(100, Math.round(u.percentTenths / 10))}
-              aria-label={u.category}
-            >
-              <span
-                className={cn("block h-full rounded-full", tone(u))}
-                style={{ width: `${Math.min(100, u.percentTenths / 10)}%` }}
-              />
-            </div>
-            <div className="flex flex-wrap justify-between gap-x-3 text-[12.5px] text-muted">
-              <span className="font-mono">
-                {money(u.spent, u.currency)} / {money(u.amount, u.currency)}
-              </span>
-              <span>
-                {u.remaining.startsWith("-")
-                  ? ws.overBy(money(u.remaining.slice(1), u.currency))
-                  : ws.left(money(u.remaining, u.currency))}
-              </span>
-            </div>
-            {(u.pending > 0 || u.otherCurrencies > 0) && (
-              <p className="text-[12px] text-faint">
-                {[
-                  u.pending ? ws.budgetPending(u.pending) : "",
-                  u.otherCurrencies ? ws.budgetOther(u.otherCurrencies) : "",
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </p>
-            )}
-          </li>
-        ))}
-      </ul>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="type-label text-faint first-letter:uppercase">
+          {b ? t.finance.ws.budgetMonth(month) : t.finance.v21.tabs.budgets}
+        </h2>
+        <Button onClick={() => setAdding(true)}>
+          <Plus />
+          {t.finance.v21.budget.new}
+        </Button>
+      </div>
+      {adding && <BudgetForm overview={overview} onDone={() => setAdding(false)} />}
+      {!b?.usages.length ? (
+        <p className={cn(CARD, "border-dashed px-5 py-4 text-[14px] text-muted")}>
+          {t.finance.ws.noBudgets}
+        </p>
+      ) : (
+        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {b.usages.map((u) => (
+            <li key={u.id} className={cn(CARD, "flex flex-col gap-2 px-4 py-3.5")}>
+              <BudgetLine u={u} money={money} t={t} />
+              {(u.pending > 0 || u.otherCurrencies > 0 || (u.book && !overview.filters.book)) && (
+                <p className="text-[12px] text-faint">
+                  {[
+                    u.book && !overview.filters.book ? u.book : "",
+                    u.pending ? t.finance.ws.budgetPending(u.pending) : "",
+                    u.otherCurrencies ? t.finance.ws.budgetOther(u.otherCurrencies) : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
 
+// ── Workspace ────────────────────────────────────────────────────────────────
+
 export function FinanceView({
   overview,
   workspaceId,
-  today,
 }: {
   overview: FinanceOverview;
   workspaceId: string;
-  today: string;
 }) {
   const { t } = useI18n();
-  const router = useRouter();
-  const insight = useInsightText();
-  const { params, set } = useFilters();
-  const ws = t.finance.ws;
+  const v = t.finance.v21;
+  const labels = useLabels();
+  const { set } = useFilters();
+  const { upload, uploading } = useFinanceUpload();
+  const file = useRef<HTMLInputElement>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<FinanceTransaction | null>(null);
+  const [duplicating, setDuplicating] = useState<FinanceTransaction | null>(null);
   const [viewing, setViewing] = useState<FinanceTransaction | null>(null);
-  const [accountOpen, setAccountOpen] = useState(false);
-  const [accountEditing, setAccountEditing] = useState<FinanceAccount | null>(null);
-  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [managing, setManaging] = useState<"categories" | "accounts" | null>(null);
   const [q, setQ] = useState(overview.filters.q ?? "");
-  const [, startTransition] = useTransition();
+  const [chartCurrency, setChartCurrency] = useState<string | null>(null);
   useRealtimeRefresh(workspaceId, [
     "finance_transactions",
     "finance_accounts",
@@ -1054,167 +1910,112 @@ export function FinanceView({
   const f = overview.filters;
   const s = overview.summary;
   const currencies = s.current.totals.map((c) => c.currency);
-  const [chartCurrency, setChartCurrency] = useState<string | null>(null);
   const shown = chartCurrency && currencies.includes(chartCurrency) ? chartCurrency : currencies[0];
-  const filtered = Boolean(
-    f.q || f.type || f.category || f.account || f.currency || f.source || f.status,
-  );
   const currentBook = overview.books.find((b) => b.id === f.book) ?? null;
-  const empty =
-    !filtered &&
-    !f.book &&
-    s.current.count === 0 &&
-    overview.transactions.length === 0 &&
-    f.period === "this_month";
+  const byName = new Map(overview.categories.map((c) => [c.name, c]));
+  const catIcon = (name: string) => categoryIcon(byName.get(name) ?? { name, icon: null });
+  const iconOf = (tx: FinanceTransaction) =>
+    tx.category
+      ? categoryIcon(
+          overview.categories.find((c) => c.id === tx.categoryId) ?? {
+            name: tx.category,
+            icon: null,
+          },
+        )
+      : "•";
+  const tab = f.tab;
+  const gran = f.period === "custom" || (f.period !== "span" && f.period) ? "custom" : f.gran;
 
   const reportQuery = new URLSearchParams({ from: overview.period.from, to: overview.period.to });
   if (currentBook) reportQuery.set("book", currentBook.name);
   for (const k of ["type", "category", "account", "currency"] as const)
     if (f[k]) reportQuery.set(k, f[k]!);
 
-  const dialogs = (
-    <>
-      <TransactionDialog
-        open={adding || editing !== null}
-        onClose={() => {
-          setAdding(false);
-          setEditing(null);
-        }}
-        transaction={editing}
-        accounts={overview.accounts}
-        categories={overview.categories}
-        books={overview.books}
-        defaultBook={currentBook?.name ?? null}
-        defaultCurrency={overview.settings.defaultCurrency ?? currencies[0] ?? null}
-        today={today}
-      />
-      <DetailDialog
-        tx={viewing}
-        onClose={() => setViewing(null)}
-        onEdit={(x) => {
-          setViewing(null);
-          setEditing(x);
-        }}
-      />
-      <AccountDialog
-        open={accountOpen || accountEditing !== null}
-        account={accountEditing}
-        books={overview.books}
-        onClose={() => {
-          setAccountOpen(false);
-          setAccountEditing(null);
-        }}
-      />
-      <CategoryDialog
-        open={categoryOpen}
-        onClose={() => setCategoryOpen(false)}
-        categories={overview.categories}
-      />
-    </>
-  );
-
-  const actions = (
-    <div className="flex flex-wrap items-center gap-2">
-      <Link href="/my-elise/finance/sources" className={buttonVariants({ variant: "secondary" })}>
-        <FileSpreadsheet />
-        {t.finance.sources}
-      </Link>
-      <Button onClick={() => setAdding(true)}>
-        <Plus />
-        {ws.quickAdd}
-      </Button>
+  const currencyChips = currencies.length > 1 && (
+    <div role="radiogroup" aria-label={t.finance.currency} className="flex gap-1.5">
+      {currencies.map((c) => (
+        <button
+          key={c}
+          type="button"
+          role="radio"
+          aria-checked={c === shown}
+          onClick={() => setChartCurrency(c)}
+          className={chip(c === shown)}
+        >
+          {c}
+        </button>
+      ))}
     </div>
   );
 
-  // Dialogs stay at one place in the tree: a refresh that swaps the empty state for the list
-  // must not remount (and wipe) a form the user is typing in.
-  const emptyBody = (
-    <div className="flex flex-col gap-6">
+  const startAdd = () => {
+    setDuplicating(null);
+    setAdding(true);
+  };
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Header actions + Ámbito filter */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <BookSelector books={overview.books} value={f.book} />
-        {actions}
-      </div>
-      <EmptyState
-        icon={Wallet}
-        title={t.finance.emptyTitle}
-        body={t.finance.emptyBody}
-        action={
-          <div className="flex flex-wrap justify-center gap-2">
-            <Button onClick={() => setAdding(true)}>
-              <Plus />
-              {ws.quickAdd}
-            </Button>
-            <Link
-              href="/my-elise/finance/sources"
-              className={buttonVariants({ variant: "secondary" })}
-            >
-              {t.finance.importFile}
-            </Link>
-          </div>
-        }
-      />
-    </div>
-  );
-
-  const tabs = (["movements", "analysis", "budgets"] as const).map((k) => (
-    <button
-      key={k}
-      type="button"
-      role="tab"
-      aria-selected={f.tab === k}
-      onClick={() => set({ tab: k === "movements" ? null : k })}
-      className={cn(
-        "-mb-px h-10 shrink-0 border-b-2 px-1 text-[14px] transition-colors",
-        f.tab === k
-          ? "border-fg font-medium text-fg"
-          : "border-transparent text-muted hover:text-fg",
-      )}
-    >
-      {ws.tabs[k]}
-    </button>
-  ));
-
-  const body = empty ? (
-    emptyBody
-  ) : (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <BookSelector books={overview.books} value={f.book} />
-        {actions}
-      </div>
-
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b border-border">
-        <div role="tablist" aria-label={t.finance.title} className="flex gap-5 overflow-x-auto">
-          {tabs}
-          <Link
-            href={`/my-elise/finance/reports?${reportQuery.toString()}`}
-            className="-mb-px flex h-10 shrink-0 items-center gap-1.5 border-b-2 border-transparent px-1 text-[14px] text-muted hover:text-fg"
-          >
-            <FileText className="size-4" aria-hidden />
-            {ws.tabs.reports}
+        <ScopeChips books={overview.books} value={f.book} />
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={file}
+            type="file"
+            accept=".csv,.tsv,.txt,.xlsx"
+            className="sr-only"
+            tabIndex={-1}
+            onChange={(e) => {
+              const picked = e.target.files?.[0];
+              e.target.value = "";
+              if (picked) void upload(picked);
+            }}
+          />
+          <Link href="/my-elise/finance/sources" className={buttonVariants({ variant: "ghost" })}>
+            {v.sources}
           </Link>
+          <Button variant="secondary" disabled={uploading} onClick={() => file.current?.click()}>
+            <Upload />
+            {uploading ? t.finance.wizard.uploading : v.importAction}
+          </Button>
+          <Button onClick={startAdd}>
+            <Plus />
+            {v.tx.newTitle}
+          </Button>
+          <Menu
+            label={v.more}
+            items={[
+              { label: v.categories.title, onClick: () => setManaging("categories") },
+              { label: v.accounts.title, onClick: () => setManaging("accounts") },
+            ]}
+          />
         </div>
       </div>
-
-      <PeriodBar
-        key={`${overview.period.from}|${overview.period.to}`}
-        overview={overview}
-        today={today}
-      />
-
-      {s.current.totals.length > 0 ? (
-        <CurrencyCards overview={overview} />
-      ) : (
-        <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[14px] text-muted">
-          {t.finance.nothingMatches}
+      {overview.books.length === 0 && (
+        <p
+          role="status"
+          className="bg-approval-soft rounded-xl border border-approval/40 px-4 py-2.5 text-[13px] text-approval-text"
+        >
+          {v.setupWarning}
         </p>
       )}
-      {(s.current.excluded.pending > 0 || s.truncated || (s.current.transfers ?? 0) > 0) && (
-        <p className="-mt-3 text-[12.5px] text-faint">
+
+      <FinanceNav
+        active={tab}
+        onSelect={(k) => set({ tab: k === "movements" ? null : k })}
+        reportsHref={`/my-elise/finance/reports?${reportQuery.toString()}`}
+      />
+      <PeriodBar key={`${overview.period.from}|${overview.period.to}`} overview={overview} />
+      <KpiStrip overview={overview} />
+      {(s.current.excluded.pending > 0 ||
+        s.truncated ||
+        (s.current.transfers ?? 0) > 0 ||
+        currencies.length > 1) && (
+        <p className="-mt-2 text-[12.5px] text-faint">
           {[
-            s.current.excluded.pending > 0 ? t.finance.excluded(s.current.excluded.pending) : "",
-            s.current.transfers ? ws.transfers(s.current.transfers) : "",
             currencies.length > 1 ? t.finance.separateCurrencies : "",
+            s.current.excluded.pending > 0 ? t.finance.excluded(s.current.excluded.pending) : "",
+            s.current.transfers ? t.finance.ws.transfers(s.current.transfers) : "",
             s.truncated ? t.finance.partial : "",
           ]
             .filter(Boolean)
@@ -1222,265 +2023,132 @@ export function FinanceView({
         </p>
       )}
 
-      {f.tab === "movements" && (
-        <>
-          {s.insights.length > 0 && (
-            <section className="flex flex-col gap-2">
-              <h2 className="type-label text-faint">{t.finance.insights}</h2>
-              <ul className="flex flex-col gap-1.5 text-[14px]">
-                {s.insights.map((i, n) => (
-                  <li key={n} className="flex gap-2">
-                    <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-accent" />
-                    {insight(i)}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          <section className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="type-label text-faint">
-                {t.finance.transactions} · {t.finance.matching(overview.matching)}
-              </h2>
-              {filtered && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setQ("");
-                    set({
-                      q: null,
-                      type: null,
-                      category: null,
-                      account: null,
-                      currency: null,
-                      source: null,
-                      status: null,
-                    });
-                  }}
-                >
-                  {t.finance.clearFilters}
-                </Button>
-              )}
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
-              <div className="relative sm:col-span-2 md:col-span-3">
-                <Search
-                  className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint"
-                  aria-hidden
-                />
-                <Input
-                  aria-label={t.finance.search}
-                  placeholder={t.finance.search}
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  className="pl-9"
-                />
+      {tab === "movements" && (
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+          <section className="flex min-w-0 flex-col gap-3">
+            <FilterBar overview={overview} q={q} setQ={setQ} />
+            {!overview.hasAny ? (
+              <div
+                className={cn(
+                  CARD,
+                  "flex flex-col items-center gap-3 border-dashed px-6 py-10 text-center",
+                )}
+              >
+                <h2 className="font-medium">{t.finance.emptyTitle}</h2>
+                <p className="max-w-md text-[13.5px] text-muted">{t.finance.emptyBody}</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button onClick={startAdd}>
+                    <Plus />
+                    {v.tx.newTitle}
+                  </Button>
+                  <Button variant="secondary" onClick={() => file.current?.click()}>
+                    <Upload />
+                    {v.importAction}
+                  </Button>
+                </div>
               </div>
-              <Select
-                aria-label={t.finance.types.expense}
-                value={params.get("type") ?? ""}
-                onChange={(e) => set({ type: e.target.value || null })}
+            ) : overview.transactions.length === 0 ? (
+              <div
+                className={cn(CARD, "flex flex-wrap items-center justify-between gap-3 px-5 py-4")}
               >
-                <option value="">{t.finance.all}</option>
-                <option value="expense">{t.finance.expenses}</option>
-                <option value="income">{t.finance.income}</option>
-                <option value="transfer">{t.finance.types.transfer}</option>
-              </Select>
-              <Select
-                aria-label={t.finance.category}
-                value={params.get("category") ?? ""}
-                onChange={(e) => set({ category: e.target.value || null })}
-              >
-                <option value="">{t.finance.allCategories}</option>
-                {[...new Set([f.category, ...overview.categories.map((c) => c.name)])]
-                  .filter(Boolean)
-                  .map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-              </Select>
-              <Select
-                aria-label={t.finance.account}
-                value={params.get("account") ?? ""}
-                onChange={(e) => set({ account: e.target.value || null })}
-              >
-                <option value="">{t.finance.allAccounts}</option>
-                {overview.accounts.map((a) => (
-                  <option key={a.id} value={a.name}>
-                    {a.name}
-                  </option>
-                ))}
-              </Select>
-              <Select
-                aria-label={t.finance.currency}
-                value={params.get("currency") ?? ""}
-                onChange={(e) => set({ currency: e.target.value || null })}
-              >
-                <option value="">{t.finance.allCurrencies}</option>
-                {[...new Set([...currencies, ...COMMON_CURRENCIES])].map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </Select>
-              <Select
-                aria-label={t.finance.status}
-                value={f.status ?? ""}
-                onChange={(e) => set({ status: e.target.value || null })}
-              >
-                <option value="">{t.finance.all}</option>
-                <option value="pending">{ws.pendingOnly}</option>
-              </Select>
-            </div>
-            {overview.transactions.length === 0 ? (
-              <p className="px-1 py-4 text-[14px] text-muted">{t.finance.nothingMatches}</p>
+                <p className="text-[14px] text-muted">
+                  {f.q || f.type || f.category || f.account || f.currency || f.status
+                    ? t.finance.nothingMatches
+                    : v.noMovesIn(labels.short(gran, overview.period))}
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={startAdd}>
+                    <Plus />
+                    {v.tx.newTitle}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => file.current?.click()}>
+                    {v.importAction}
+                  </Button>
+                </div>
+              </div>
             ) : (
               <>
                 <TransactionList
                   rows={overview.transactions}
-                  showBook={!f.book && overview.books.length > 0}
+                  today={overview.today}
+                  iconOf={iconOf}
+                  complete={overview.matching <= overview.transactions.length}
                   onOpen={setViewing}
                 />
                 {overview.matching > overview.transactions.length && (
                   <p className="px-1 text-[12.5px] text-faint">
-                    {ws.more(overview.matching - overview.transactions.length)}
+                    {t.finance.ws.more(overview.matching - overview.transactions.length)}
                   </p>
                 )}
               </>
             )}
           </section>
-
-          <section className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="type-label text-faint">{t.finance.accounts}</h2>
-              <Button size="sm" variant="ghost" onClick={() => setAccountOpen(true)}>
-                <Plus />
-                {t.finance.addAccount}
-              </Button>
-            </div>
-            {overview.accounts.length === 0 ? (
-              <p className="text-[13.5px] text-muted">{t.finance.noAccounts}</p>
-            ) : (
-              <ul className="flex flex-wrap gap-1.5">
-                {overview.accounts.map((a) => {
-                  const book = overview.books.find((b) => b.id === a.defaultBookId);
-                  return (
-                    <li key={a.id}>
-                      <button
-                        type="button"
-                        onClick={() => setAccountEditing(a)}
-                        aria-label={`${t.finance.editAccount}: ${a.name}`}
-                        className="rounded-full bg-surface-2 px-3 py-1.5 text-[13px] transition-colors hover:bg-active"
-                      >
-                        {a.name}
-                        <span className="text-faint">
-                          {" · "}
-                          {t.finance.accountTypes[a.type]}
-                          {a.currency ? ` · ${a.currency}` : ""}
-                          {book ? ` · ${book.name}` : ""}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            <div className="flex flex-wrap items-center gap-3 pt-1">
-              <Label htmlFor="default-currency">{t.finance.defaultCurrency}</Label>
-              <Select
-                id="default-currency"
-                value={overview.settings.defaultCurrency ?? ""}
-                className="h-9 w-auto"
-                onChange={(e) =>
-                  startTransition(async () => {
-                    const r = await setDefaultCurrencyAction(e.target.value || null);
-                    if (!r.ok) toast.error(errorText(t, r.error));
-                    else router.refresh();
-                  })
-                }
-              >
-                <option value="">{t.finance.notSet}</option>
-                {COMMON_CURRENCIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </Select>
-              <span className="text-[12.5px] text-faint">{t.finance.defaultCurrencyHint}</span>
-            </div>
-          </section>
-
-          <section className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="type-label text-faint">{t.finance.categories}</h2>
-              <Button size="sm" variant="ghost" onClick={() => setCategoryOpen(true)}>
-                <Plus />
-                {t.finance.addCategory}
-              </Button>
-            </div>
-            {(["expense", "income"] as const).map((type) => {
-              const list = overview.categories.filter((c) => c.type === type || c.type === "both");
-              if (!list.length) return null;
-              return (
-                <div key={type} className="flex flex-col gap-1.5">
-                  <span className="text-[12.5px] text-faint">
-                    {type === "expense" ? t.finance.expenses : t.finance.income}
-                  </span>
-                  <ul className="flex flex-wrap gap-1.5">
-                    {list.map((c) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          onClick={() => set({ category: c.name })}
-                          className="rounded-full bg-surface-2 px-3 py-1 text-[13px] text-muted transition-colors hover:text-fg"
-                        >
-                          {c.parent ? `${c.parent} › ${c.name}` : c.name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </section>
-        </>
+          <SidePanel
+            overview={overview}
+            currency={shown}
+            catIcon={catIcon}
+            onTab={(k) => set({ tab: k })}
+          />
+        </div>
       )}
 
-      {f.tab === "analysis" && shown && (
+      {tab === "analysis" && (
         <section className="flex flex-col gap-3">
-          {currencies.length > 1 && (
-            <div role="radiogroup" aria-label={t.finance.currency} className="flex gap-1.5">
-              {currencies.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  role="radio"
-                  aria-checked={c === shown}
-                  onClick={() => setChartCurrency(c)}
-                  className={chip(c === shown)}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
+          {currencyChips}
+          {shown ? (
+            <Statistics overview={overview} currency={shown} catIcon={catIcon} />
+          ) : (
+            <p className={cn(CARD, "px-5 py-4 text-[14px] text-muted")}>
+              {v.noMovesIn(labels.short(gran, overview.period))}
+            </p>
           )}
-          <Analysis overview={overview} currency={shown} />
         </section>
       )}
-      {f.tab === "analysis" && !shown && (
-        <p className="px-1 py-4 text-[14px] text-muted">{ws.noData}</p>
-      )}
 
-      {f.tab === "budgets" && <Budgets overview={overview} />}
+      {tab === "budgets" && <Budgets overview={overview} />}
+
+      <TransactionDialog
+        open={adding || editing !== null}
+        onClose={() => {
+          setAdding(false);
+          setEditing(null);
+          setDuplicating(null);
+        }}
+        transaction={editing}
+        duplicateOf={duplicating}
+        accounts={overview.accounts}
+        categories={overview.categories}
+        books={overview.books}
+        defaultBook={currentBook?.name ?? null}
+        defaultCurrency={overview.settings.defaultCurrency ?? currencies[0] ?? null}
+        today={overview.today}
+      />
+      <DetailDrawer
+        tx={viewing}
+        icon={viewing ? iconOf(viewing) : "•"}
+        onClose={() => setViewing(null)}
+        onEdit={(x) => {
+          setViewing(null);
+          setEditing(x);
+        }}
+        onDuplicate={(x) => {
+          setViewing(null);
+          setDuplicating(x);
+          setAdding(true);
+        }}
+      />
+      <CategoryManager
+        open={managing === "categories"}
+        onClose={() => setManaging(null)}
+        categories={overview.categories}
+      />
+      <AccountManager
+        open={managing === "accounts"}
+        onClose={() => setManaging(null)}
+        accounts={overview.accounts}
+        books={overview.books}
+        defaultCurrency={overview.settings.defaultCurrency}
+      />
     </div>
-  );
-  return (
-    <>
-      {body}
-      {dialogs}
-    </>
   );
 }

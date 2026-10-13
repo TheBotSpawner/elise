@@ -31,6 +31,8 @@ export function Combobox({
   placeholder,
   emptyText,
   className,
+  inputClassName,
+  action,
 }: {
   id?: string;
   value: string;
@@ -39,6 +41,9 @@ export function Combobox({
   placeholder?: string;
   emptyText: string;
   className?: string;
+  inputClassName?: string;
+  /** A last row that is not an option ("+ Create category"); gets what was typed. */
+  action?: { label: (query: string) => string; onSelect: (query: string) => void };
 }) {
   const listId = useId();
   const [open, setOpen] = useState(false);
@@ -125,7 +130,10 @@ export function Combobox({
               setQuery("");
             } else if (e.key === "Tab") setOpen(false);
           }}
-          className="h-10 w-full rounded-xl border border-border bg-surface pr-9 pl-3 text-sm text-fg transition-colors placeholder:text-muted/70 hover:border-border-strong focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:outline-none"
+          className={cn(
+            "h-10 w-full rounded-xl border border-border bg-surface pr-9 pl-3 text-sm text-fg transition-colors placeholder:text-muted/70 hover:border-border-strong focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:outline-none",
+            inputClassName,
+          )}
         />
         <ChevronDown
           className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-faint"
@@ -139,7 +147,7 @@ export function Combobox({
           role="listbox"
           className="absolute z-50 mt-1.5 max-h-72 w-full overflow-y-auto rounded-xl border border-border-strong bg-[var(--overlay-bg)] p-1 shadow-[var(--menu-shadow)]"
         >
-          {matches.length === 0 ? (
+          {matches.length === 0 && !action ? (
             <li className="px-3 py-2 text-[13px] text-muted">{emptyText}</li>
           ) : (
             matches.map((o, i) => (
@@ -166,6 +174,21 @@ export function Combobox({
                 {o.value === value && <Check className="size-4 shrink-0 text-accent" aria-hidden />}
               </li>
             ))
+          )}
+          {action && (
+            <li
+              role="option"
+              aria-selected={false}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setOpen(false);
+                action.onSelect(query.trim());
+                setQuery("");
+              }}
+              className="mt-1 flex cursor-pointer items-center gap-2 rounded-lg border-t border-border px-3 py-2 text-sm text-accent-text hover:bg-active"
+            >
+              {action.label(query.trim())}
+            </li>
           )}
         </ul>
       )}

@@ -338,3 +338,41 @@ describe("Finance v2 (ADR-052)", () => {
     ]);
   });
 });
+
+describe("Finance v2.1 (ADR-054)", () => {
+  it("Día / Semana / Mes / Año around an anchor, ‹ › keeps the span", async () => {
+    const { parseFinanceFilters, periodOfFilters, spanOf } =
+      await import("@/application/finance-service");
+    expect(spanOf("day", "2026-10-13")).toEqual({ from: "2026-10-13", to: "2026-10-13" });
+    expect(spanOf("week", "2026-10-15")).toEqual({ from: "2026-10-12", to: "2026-10-18" });
+    expect(spanOf("month", "2026-10-15")).toEqual({ from: "2026-10-01", to: "2026-10-31" });
+    expect(spanOf("year", "2026-10-15")).toEqual({ from: "2026-01-01", to: "2026-12-31" });
+    // Default: Movimientos, all Books, current month.
+    const def = parseFinanceFilters({});
+    expect(def).toMatchObject({ tab: "movements", gran: "month", period: "span" });
+    expect(def.book).toBeUndefined();
+    expect(periodOfFilters(def, "2026-10-13")).toEqual({ from: "2026-10-01", to: "2026-10-31" });
+    const prevYear = parseFinanceFilters({ gran: "year", date: "2025-01-01" });
+    expect(periodOfFilters(prevYear, "2026-10-13")).toEqual({
+      from: "2025-01-01",
+      to: "2025-12-31",
+    });
+    // Chat links with a preset and explicit ranges still work.
+    expect(periodOfFilters(parseFinanceFilters({ period: "last_month" }), "2026-10-13")).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+    expect(
+      periodOfFilters(parseFinanceFilters({ from: "2026-09-01", to: "2026-10-12" }), "2026-10-13"),
+    ).toEqual({ from: "2026-09-01", to: "2026-10-12" });
+  });
+
+  it("category icons: suggested from the name until the user picks one", async () => {
+    const { suggestCategoryIcon } = await import("@/core/capabilities/finance");
+    expect(suggestCategoryIcon("Supermercado")).toBe("🛒");
+    expect(suggestCategoryIcon("Software")).toBe("💻");
+    expect(suggestCategoryIcon("Publicidad/Marketing")).toBe("📣");
+    expect(suggestCategoryIcon("Impuestos")).toBe("🧾");
+    expect(suggestCategoryIcon("Zzz")).toBeNull();
+  });
+});

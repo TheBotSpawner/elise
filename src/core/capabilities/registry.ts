@@ -184,6 +184,7 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       updateTransaction: WRITE,
       createAccount: WRITE,
       updateAccount: WRITE,
+      updateCategory: WRITE,
       createCategory: WRITE,
       archiveTransaction: ARCHIVE,
       undoImport: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },

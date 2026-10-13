@@ -3,7 +3,7 @@
 import { ExternalLink, FileUp, Link2, RefreshCw, Sheet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useRef, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { ImportSummary } from "@/application/finance-import";
@@ -12,18 +12,17 @@ import { GoogleSheetsIcon } from "@/components/elise/brand-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
-import { createClient } from "@/infrastructure/supabase/client";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 import {
   financeToolAction,
-  prepareFileImportAction,
   removeSourceAction,
   syncSourceAction,
   updateSourceAction,
 } from "./actions";
+import { useFinanceUpload } from "./use-upload";
 
 const DOT: Record<string, string> = {
   ready: "bg-success",
@@ -60,7 +59,7 @@ export function SourcesView({
   const router = useRouter();
   const relative = useRelative();
   const file = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
+  const { upload, uploading } = useFinanceUpload();
   const [pending, startTransition] = useTransition();
   useRealtimeRefresh(workspaceId, ["finance_sources", "imports"]);
   const sheetsReady = googleAccounts.some((a) => a.ready);
@@ -77,29 +76,6 @@ export function SourcesView({
         router.refresh();
       }
     });
-  }
-
-  async function upload(f: File) {
-    setUploading(true);
-    try {
-      const prepared = await prepareFileImportAction({ name: f.name, size: f.size, type: f.type });
-      if (!prepared.ok) {
-        toast.error(errorText(t, prepared.error));
-        return;
-      }
-      const { error } = await createClient()
-        .storage.from("finance-imports")
-        .uploadToSignedUrl(prepared.value.path, prepared.value.token, f, {
-          contentType: f.type || "application/octet-stream",
-        });
-      if (error) {
-        toast.error(t.errors.codes.INTERNAL_ERROR);
-        return;
-      }
-      router.push(`/my-elise/finance/import/${prepared.value.importId}`);
-    } finally {
-      setUploading(false);
-    }
   }
 
   return (

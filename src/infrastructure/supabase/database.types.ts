@@ -865,6 +865,8 @@ export type FinanceCategoryRow = {
   archived_at: Ts | null;
   /** ADR-052: empty = every Book. */
   book_ids?: string[];
+  /** ADR-054 (migration 041). */
+  icon?: string | null;
 };
 
 /** `amount` is numeric: always read as text (`amount::text`) and written as a decimal string. */

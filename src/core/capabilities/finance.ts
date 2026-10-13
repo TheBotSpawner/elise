@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isSingleEmoji } from "../emoji";
 import type { EntrySource } from "./habits";
 import {
   addAmounts,
@@ -126,6 +127,8 @@ export interface FinanceCategory {
   parent: string | null;
   /** Books it is offered in; empty = every Book. */
   bookIds?: string[];
+  /** ADR-054: one emoji (validated); null shows the suggestion from the name. */
+  icon?: string | null;
 }
 
 export interface FinanceSourceInfo {
@@ -211,8 +214,13 @@ export interface FinanceProvider {
   ): Promise<FinanceAccount>;
   listCategories(): Promise<FinanceCategory[]>;
   createCategory(
-    c: { name: string; type: CategoryType; parentId: string | null },
+    c: { name: string; type: CategoryType; parentId: string | null; icon?: string | null },
     source: EntrySource,
+  ): Promise<FinanceCategory>;
+  /** ADR-054: rename, change icon or parent, archive (transactions keep their category). */
+  updateCategory?(
+    id: string,
+    patch: { name?: string; icon?: string | null; parentId?: string | null; archived?: boolean },
   ): Promise<FinanceCategory>;
   settings(): Promise<{ defaultCurrency: string | null; reportingCurrency: string | null }>;
   /** Currencies used most recently, most used first (to ask "ARS or USD?"). */
@@ -1327,12 +1335,59 @@ export const updateAccountInput = z
   })
   .strict();
 
+const emojiField = z.string().trim().refine(isSingleEmoji, "Expected one emoji");
+
+export const updateCategoryInput = z
+  .object({
+    category: text(80).describe("The category's current name."),
+    name: text(80).optional(),
+    icon: emojiField.nullable().optional().describe("One emoji; null removes it."),
+    parent: z.string().trim().max(80).nullable().optional(),
+    archived: z
+      .boolean()
+      .optional()
+      .describe("true hides it from new records; existing transactions keep it."),
+  })
+  .strict();
+
+/** Icon suggested from a category's name (shown until the user picks one). */
+const CATEGORY_ICONS: [RegExp, string][] = [
+  [/super|almac|grocer|mercado/i, "🛒"],
+  [/comida|food|restaur|delivery|caf/i, "🍽️"],
+  [/transp|uber|taxi|nafta|combust|fuel|auto|car\b/i, "🚗"],
+  [/vivienda|alquiler|rent|hogar|housing|expensas/i, "🏠"],
+  [/software|herramient|tools|saas|app/i, "💻"],
+  [/suscrip|subscr|streaming/i, "🔁"],
+  [/educ|curso|capacit|course|training/i, "🎓"],
+  [/salud|health|medic|farmac/i, "💊"],
+  [/viaje|travel|vuelo|hotel/i, "✈️"],
+  [/regalo|gift/i, "🎁"],
+  [/publicidad|marketing|ads|anunci/i, "📣"],
+  [/automatiz|automation|bot/i, "🤖"],
+  [/servicio|profesional|consult|honorario/i, "💼"],
+  [/sueldo|salario|salary|payroll/i, "💰"],
+  [/cliente|venta|revenue|ingreso|cobro|income/i, "💵"],
+  [/impuesto|tax|afip|iva/i, "🧾"],
+  [/comision|fee|pasarela|banc/i, "🏦"],
+  [/hosting|dominio|domain|server/i, "🌐"],
+  [/hardware|equip/i, "🖥️"],
+  [/mentor|coaching/i, "🧭"],
+  [/video|edici/i, "🎬"],
+  [/freelance/i, "🧑‍💻"],
+  [/otro|other|vario/i, "📦"],
+];
+
+export function suggestCategoryIcon(name: string): string | null {
+  return CATEGORY_ICONS.find(([re]) => re.test(name))?.[1] ?? null;
+}
+
 export const createCategoryInput = z
   .object({
     name: text(80),
     type: z.enum(["income", "expense", "both"]).default("expense"),
     parent: text(80).optional().describe("Parent category name, for a sub-category."),
     books: z.array(text(60)).max(10).optional().describe("Only offer it in these Books."),
+    icon: emojiField.optional().describe("One emoji (🛒, 💻, 📣); omit to let ELISE suggest it."),
   })
   .strict();
 
