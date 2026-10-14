@@ -26,6 +26,7 @@ const config = {
   clientSecret: "server-secret",
   redirectUri: "http://localhost:3000/api/connections/microsoft/callback",
   tenant: "common",
+  authority: "https://login.microsoftonline.com/common/oauth2/v2.0",
 };
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}) {

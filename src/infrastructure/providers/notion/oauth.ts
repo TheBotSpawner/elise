@@ -1,5 +1,6 @@
 import "server-only";
 
+import { oauthCallbackUrl } from "@/config/app-url";
 import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
 
@@ -32,11 +33,10 @@ export function notionOAuthConfig(origin?: string): NotionOAuthConfig {
       recovery: "configure",
     });
   }
-  const base = (env.NEXT_PUBLIC_APP_URL ?? origin ?? "").replace(/\/$/, "");
   return {
     clientId: env.NOTION_OAUTH_CLIENT_ID,
     clientSecret: env.NOTION_OAUTH_CLIENT_SECRET,
-    redirectUri: `${base}${NOTION_CALLBACK_PATH}`,
+    redirectUri: oauthCallbackUrl(NOTION_CALLBACK_PATH, origin),
   };
 }
 

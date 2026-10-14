@@ -28,7 +28,8 @@ import {
 } from "@/infrastructure/providers/google/oauth";
 import {
   isMicrosoftConfigured,
-  microsoftOAuthConfig,
+  microsoftSetup,
+  getMicrosoftOAuthConfig,
 } from "@/infrastructure/providers/microsoft/config";
 import {
   authError as microsoftAuthError,
@@ -390,7 +391,16 @@ export async function startMicrosoftConnection(
   params: { connectionId?: string | null; origin: string; returnPath?: string | null },
 ): Promise<string> {
   rateLimit(`oauth.start:${auth.userId}`, 10, 60_000);
-  const config = microsoftOAuthConfig(params.origin);
+  // Names and booleans only (never values), so a production failure is diagnosable from logs.
+  const setup = microsoftSetup();
+  logger.info("microsoft.oauth.start", {
+    configured: setup.ready,
+    ...(setup.ready
+      ? { tenantMode: setup.tenantMode }
+      : { missing: setup.missing, vaultMissing: setup.vaultMissing }),
+    environment: serverEnv().VERCEL_ENV ?? serverEnv().ELISE_ENV,
+  });
+  const config = getMicrosoftOAuthConfig(params.origin);
   let loginHint: string | null = null;
   if (params.connectionId) {
     const { data } = await auth.db
@@ -426,6 +436,7 @@ export async function startMicrosoftConnection(
     throw new AppError("SERVER_NOT_CONFIGURED", "This needs the latest ELISE database update", {
       recovery: "configure",
       cause: error,
+      details: { setup: "database_update", missing: ["migration 20261026000045"] },
     });
   if (error)
     throw new AppError("INTERNAL_ERROR", "Could not start the connection", { cause: error });
@@ -484,7 +495,7 @@ export async function completeMicrosoftConnection(
     throw microsoftAuthError(reason === "unknown" ? "cancelled" : reason);
   }
 
-  const config = microsoftOAuthConfig(params.origin);
+  const config = getMicrosoftOAuthConfig(params.origin);
   const verifier = decrypt(row.code_verifier_ciphertext, `oauth_state:${stateHash}`);
   const requested = row.capabilities.filter((c): c is MicrosoftCapability =>
     (MICROSOFT_CAPABILITIES as string[]).includes(c),

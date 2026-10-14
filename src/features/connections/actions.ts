@@ -18,7 +18,8 @@ import {
   startSpotifyConnection,
   enableYouTubeMusic,
 } from "@/application/connections-service";
-import { toPublicError, type PublicError } from "@/core/errors";
+import { toAppError, toPublicError, type PublicError } from "@/core/errors";
+import { logger } from "@/infrastructure/observability/logger";
 
 export type ConnectionActionResult = { ok: true } | { ok: false; error: PublicError };
 
@@ -78,7 +79,19 @@ export async function connectMicrosoft(form: FormData): Promise<void> {
       returnPath,
     });
   } catch (error) {
-    redirect(`${returnPath}?error=${toPublicError(error).code}`);
+    // Which setup is missing (Microsoft settings, credential vault, database update) and a
+    // reference to find the log line. Names only: never values.
+    const e = toAppError(error);
+    const setup = typeof e.details?.setup === "string" ? e.details.setup : null;
+    logger.warn("microsoft.oauth.start_failed", {
+      code: e.code,
+      setup,
+      missing: e.details?.missing,
+      reference: e.referenceId,
+    });
+    const q = new URLSearchParams({ provider: "microsoft", error: e.code, ref: e.referenceId });
+    if (setup) q.set("reason", setup);
+    redirect(`${returnPath}?${q}`);
   }
   redirect(url);
 }

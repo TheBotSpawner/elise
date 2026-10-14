@@ -1327,6 +1327,7 @@ export const en = {
       "Nothing is deleted in Outlook. To remove ELISE completely, also remove the app in your Microsoft account settings.",
       "Reconnecting later keeps the name you gave it.",
     ],
+    errorReference: (ref: string) => `Reference: ${ref}`,
     microsoftReasons: {
       cancelled: "You cancelled the Microsoft connection. You can try again any time.",
       admin_consent_required:
@@ -1338,6 +1339,10 @@ export const en = {
       expired: "Microsoft access expired. Reconnect the account.",
       revoked: "Microsoft revoked ELISE's access. Reconnect the account.",
       client_misconfigured: "The Microsoft connection is misconfigured on this server.",
+      microsoft_oauth: "Couldn't start the Microsoft connection: server configuration is missing.",
+      credential_vault:
+        "Couldn't start the Microsoft connection: the server's secure credential storage isn't configured.",
+      database_update: "Couldn't start the Microsoft connection: ELISE's database needs an update.",
     },
     missingToast: (caps: string) =>
       `Google didn't grant access to ${caps}. You can allow it anytime.`,

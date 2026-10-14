@@ -62,7 +62,7 @@ import { GmailProvider } from "@/infrastructure/providers/google/gmail";
 import { GoogleHttp } from "@/infrastructure/providers/google/http";
 import { GoogleSheetsFinanceProvider } from "@/infrastructure/providers/google/sheets-finance";
 import { GoogleTasksProvider } from "@/infrastructure/providers/google/tasks";
-import { microsoftOAuthConfig } from "@/infrastructure/providers/microsoft/config";
+import { getMicrosoftOAuthConfig } from "@/infrastructure/providers/microsoft/config";
 import { GraphHttp } from "@/infrastructure/providers/microsoft/http";
 import {
   IDENTITY_SCOPES as MICROSOFT_IDENTITY_SCOPES,
@@ -207,7 +207,7 @@ export function googleHttpFor(auth: AuthContext, connectionId: string): GoogleHt
 export function microsoftHttpFor(auth: AuthContext, connectionId: string): GraphHttp {
   const ref = { connectionId, workspaceId: auth.workspaceId };
   const vault = new SupabaseCredentialVault(createAdminClient(), "microsoft");
-  const config = microsoftOAuthConfig();
+  const config = getMicrosoftOAuthConfig();
   const reauthorize = (r: ConnectionRef, code: string) =>
     markNeedsReauthorization(auth, r, code, "Microsoft");
   return new GraphHttp(

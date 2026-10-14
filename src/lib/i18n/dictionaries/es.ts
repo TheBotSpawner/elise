@@ -1346,6 +1346,7 @@ export const es: Dictionary = {
       "No se borra nada en Outlook. Para quitar ELISE por completo, quitá también la app en la configuración de tu cuenta de Microsoft.",
       "Si la volvés a conectar, conserva el nombre que le diste.",
     ],
+    errorReference: (ref: string) => `Referencia: ${ref}`,
     microsoftReasons: {
       cancelled: "Cancelaste la conexión con Microsoft. Podés intentarlo cuando quieras.",
       admin_consent_required:
@@ -1357,6 +1358,12 @@ export const es: Dictionary = {
       expired: "El acceso a Microsoft venció. Reconectá la cuenta.",
       revoked: "Microsoft revocó el acceso de ELISE. Reconectá la cuenta.",
       client_misconfigured: "La conexión con Microsoft está mal configurada en este servidor.",
+      microsoft_oauth:
+        "No se pudo iniciar la conexión con Microsoft porque falta configuración del servidor.",
+      credential_vault:
+        "No se pudo iniciar la conexión con Microsoft porque el almacenamiento seguro de credenciales no está configurado en el servidor.",
+      database_update:
+        "No se pudo iniciar la conexión con Microsoft porque la base de datos de ELISE necesita una actualización.",
     },
     missingToast: (caps: string) =>
       `Google no dio acceso a ${caps}. Podés permitirlo cuando quieras.`,

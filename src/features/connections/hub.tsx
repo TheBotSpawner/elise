@@ -355,11 +355,16 @@ function useConnectionReturn() {
     }
     // A precise reason when the provider gave one (Microsoft: cancelled, admin approval…).
     const reason = params.get("reason") as keyof typeof t.connections.microsoftReasons | null;
+    // A reference lets support find the exact server log line (never anything secret).
+    const ref = params.get("ref");
     if (error)
       toast.error(
         (reason && t.connections.microsoftReasons[reason]) ??
           t.errors.codes[error] ??
           t.errors.codes.INTERNAL_ERROR,
+        ref && /^ERR-[A-Z0-9]+$/.test(ref)
+          ? { description: t.connections.errorReference(ref) }
+          : undefined,
       );
     router.replace(
       provider && !error

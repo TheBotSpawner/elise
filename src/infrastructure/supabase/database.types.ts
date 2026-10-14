@@ -138,6 +138,14 @@ export type UserPreferenceRow = {
   updated_at: Ts;
 };
 
+export type ProviderDefinitionRow = {
+  key: string;
+  display_name: string;
+  auth_type: string;
+  supports_multiple_accounts: boolean;
+  status: string;
+};
+
 export type ProviderConnectionRow = {
   id: string;
   workspace_id: string;
@@ -1389,6 +1397,8 @@ export type Database = {
       workspaces: Table<WorkspaceRow, "name" | "owner_user_id">;
       workspace_members: Table<WorkspaceMemberRow, "workspace_id" | "user_id">;
       user_preferences: Table<UserPreferenceRow, "workspace_id" | "user_id" | "key" | "value_json">;
+      /** The provider catalog (read-only for users; rows come from migrations). */
+      provider_definitions: Table<ProviderDefinitionRow, "key" | "display_name" | "auth_type">;
       provider_connections: Table<
         ProviderConnectionRow,
         "workspace_id" | "provider_key" | "external_account_id" | "display_name"

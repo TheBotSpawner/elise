@@ -1,5 +1,6 @@
 import "server-only";
 
+import { oauthCallbackUrl } from "@/config/app-url";
 import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
 
@@ -53,11 +54,10 @@ export function spotifyOAuthConfig(origin?: string): SpotifyOAuthConfig {
     throw new AppError("SERVER_NOT_CONFIGURED", "Spotify is not configured on this server", {
       recovery: "configure",
     });
-  const base = (env.NEXT_PUBLIC_APP_URL ?? origin ?? "").replace(/\/$/, "");
   return {
     clientId: env.SPOTIFY_CLIENT_ID,
     clientSecret: env.SPOTIFY_CLIENT_SECRET,
-    redirectUri: env.SPOTIFY_REDIRECT_URI ?? `${base}${SPOTIFY_CALLBACK_PATH}`,
+    redirectUri: env.SPOTIFY_REDIRECT_URI ?? oauthCallbackUrl(SPOTIFY_CALLBACK_PATH, origin),
   };
 }
 

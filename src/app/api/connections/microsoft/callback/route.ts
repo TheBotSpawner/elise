@@ -36,13 +36,27 @@ export async function GET(request: NextRequest) {
     if (result.missing.length) back.searchParams.set("missing", result.missing.join(","));
   } catch (error) {
     const e = toAppError(error);
-    const reason = typeof e.details?.reason === "string" ? e.details.reason : null;
+    const reason =
+      typeof e.details?.reason === "string"
+        ? e.details.reason
+        : typeof e.details?.setup === "string"
+          ? e.details.setup
+          : null;
+    // Microsoft's own error code and AADSTS numbers are safe to log; its free-text description
+    // (which can echo identifiers) is not.
+    const aadsts = [...(searchParams.get("error_description") ?? "").matchAll(/AADSTS(\d+)/g)].map(
+      (m) => Number(m[1]),
+    );
     logger.warn("connection.microsoft_callback_failed", {
       code: e.code,
       reason,
+      providerError: searchParams.get("error")?.slice(0, 64) ?? null,
+      aadsts,
+      missing: e.details?.missing,
       reference: e.referenceId,
     });
     back.searchParams.set("error", e.code);
+    back.searchParams.set("ref", e.referenceId);
     if (reason) back.searchParams.set("reason", reason);
   }
   return NextResponse.redirect(back);

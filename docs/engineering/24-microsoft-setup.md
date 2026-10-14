@@ -94,3 +94,25 @@ context and, when several can send, a default.
 - **Reconnecting:** password changes, revoked consent and Conditional Access policies mark the
   account "Needs reconnecting", with a notification.
 - **Throttling:** busy periods are reported as "try again shortly", never as disconnected.
+
+## Troubleshooting
+
+- **Diagnostics:** signed in as the workspace owner, open `/api/connections/microsoft/diagnostics`.
+  It returns only booleans and safe metadata:
+  - whether the client id and secret are present;
+  - the tenant's kind (`common` / `organizations` / `consumers` / `tenant-id`);
+  - vault readiness;
+  - whether the database knows the `microsoft` provider;
+  - the exact redirect URI ELISE sends, and where the base URL came from;
+  - the authorize endpoint.
+- **Logs:** Vercel logs `microsoft.oauth.start` on every Connect: `configured`, the missing
+  *names*, and `tenantMode`, never values. Failures are logged as `microsoft.oauth.start_failed`
+  and `connection.microsoft_callback_failed`, with the reference shown in the toast.
+- **Each missing piece has its own message, never a generic "not configured":**
+  - `MICROSOFT_OAUTH_*`: Microsoft settings.
+  - `ELISE_ENCRYPTION_KEY` / `SUPABASE_SECRET_KEY`: the credential vault.
+  - Migration 045: database update.
+- **Redirect URI:** it is `NEXT_PUBLIC_APP_URL` + `/api/connections/microsoft/callback`. On Vercel
+  Production without `NEXT_PUBLIC_APP_URL`, ELISE uses the project's production domain, never a
+  per-deployment hostname. Set `NEXT_PUBLIC_APP_URL=https://elise-lime.vercel.app` in Production
+  to make it explicit.

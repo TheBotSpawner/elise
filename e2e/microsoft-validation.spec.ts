@@ -106,6 +106,13 @@ test("the Hub finds Outlook; Provider Detail explains it; Connect starts Microso
     const u = new URL((await authorize).url());
     report.authorize = `${u.origin}${u.pathname}`;
     expect(u.pathname).toBe("/common/oauth2/v2.0/authorize");
+    // The configured app id (compared, never printed).
+    report.clientIdMatches =
+      u.searchParams.get("client_id") === process.env.MICROSOFT_OAUTH_CLIENT_ID?.trim();
+    expect(report.clientIdMatches).toBe(true);
+    expect(u.searchParams.get("response_type")).toBe("code");
+    expect(u.searchParams.get("response_mode")).toBe("query");
+    report.redirectUri = u.searchParams.get("redirect_uri");
     expect(u.searchParams.get("code_challenge_method")).toBe("S256");
     expect(u.searchParams.get("code_challenge")).toBeTruthy();
     expect(u.searchParams.get("state")).toBeTruthy();

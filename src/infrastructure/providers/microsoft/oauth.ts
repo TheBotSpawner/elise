@@ -8,7 +8,6 @@ import type { FetchLike, TokenSet } from "../google/oauth";
  * Microsoft accounts. PKCE, state and hashing are shared with Google (../google/oauth).
  */
 export const GRAPH_URL = "https://graph.microsoft.com/v1.0";
-const LOGIN_URL = "https://login.microsoftonline.com";
 
 /** Identity + a refresh token. User.Read is what /me needs. */
 export const IDENTITY_SCOPES = ["openid", "profile", "offline_access", "User.Read"] as const;
@@ -48,13 +47,15 @@ export interface MicrosoftOAuthConfig {
   redirectUri: string;
   /** "common" (default), "organizations", "consumers" or a tenant id. */
   tenant: string;
+  /** https://login.microsoftonline.com/{tenant}/oauth2/v2.0 (built once, in config.ts). */
+  authority: string;
 }
 
 export function buildAuthorizationUrl(
   config: MicrosoftOAuthConfig,
   params: { scopes: string[]; state: string; codeChallenge: string; loginHint?: string | null },
 ): string {
-  const url = new URL(`${LOGIN_URL}/${encodeURIComponent(config.tenant)}/oauth2/v2.0/authorize`);
+  const url = new URL(`${config.authority}/authorize`);
   url.search = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
@@ -161,7 +162,7 @@ async function postToken(
 ): Promise<TokenSet> {
   let res: Response;
   try {
-    res = await fetchImpl(`${LOGIN_URL}/${encodeURIComponent(config.tenant)}/oauth2/v2.0/token`, {
+    res = await fetchImpl(`${config.authority}/token`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({

@@ -5,6 +5,9 @@ import { z } from "zod";
 const serverEnvSchema = z.object({
   ELISE_ENV: z.enum(["development", "staging", "production"]).default("development"),
   NEXT_PUBLIC_APP_URL: z.url().optional(),
+  /** Set by Vercel: "production" | "preview" | "development", and the production domain. */
+  VERCEL_ENV: z.string().optional(),
+  VERCEL_PROJECT_PRODUCTION_URL: z.string().optional(),
   OPENAI_API_KEY: z.string().min(1).optional(),
   // Model names are configuration, never feature code (docs/architecture/12 §16).
 
@@ -90,7 +93,7 @@ let invalid: string[] = [];
 export function serverEnv(): ServerEnv {
   if (!cached) {
     const raw: Record<string, string | undefined> = Object.fromEntries(
-      Object.keys(serverEnvSchema.shape).map((key) => [key, process.env[key] || undefined]),
+      Object.keys(serverEnvSchema.shape).map((key) => [key, process.env[key]?.trim() || undefined]),
     );
     const first = serverEnvSchema.safeParse(raw);
     if (first.success) cached = first.data;
