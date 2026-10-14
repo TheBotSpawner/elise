@@ -30,7 +30,7 @@ import type {
 } from "@/infrastructure/supabase/database.types";
 import type { ServerSupabase } from "@/infrastructure/supabase/server";
 
-import { check, escapeLike } from "./common";
+import { check, escapeLike, needsUpdate, notMigrated } from "./common";
 
 /** numeric is read as text so no amount ever passes through a float. */
 const V1_COLUMNS =
@@ -66,13 +66,6 @@ type TxRow = Pick<
 
 const PAGE = 1000;
 const UUID = /^[0-9a-f-]{36}$/i;
-/** "Column/table doesn't exist": migration 039 isn't applied yet. */
-const notMigrated = (code?: string) =>
-  code === "42703" || code === "PGRST204" || code === "PGRST205" || code === "42P01";
-const needsUpdate = () =>
-  new AppError("CAPABILITY_UNAVAILABLE", "This needs the latest ELISE database update", {
-    recovery: "review",
-  });
 
 const ORIGIN: Record<string, TransactionOrigin> = {
   user_ui: "manual",

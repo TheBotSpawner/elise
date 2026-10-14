@@ -45,6 +45,10 @@ export const SURFACE_TYPES = [
   "clock",
   /** A native List (ADR-051), one Surface per list: `list:<id>` is updated, never duplicated. */
   "checklist",
+  /** Goals (ADR-055): one per goal (goal:<id>), per Vision (vision:<id>), per list scope. */
+  "goal",
+  "goals_overview",
+  "vision",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
@@ -121,6 +125,8 @@ export interface SurfaceRef {
     | "context_profile"
     | "study_session"
     | "list"
+    | "goal"
+    | "vision"
     | "place";
   id: string;
 }

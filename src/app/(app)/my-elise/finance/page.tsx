@@ -1,3 +1,5 @@
+import { Wallet } from "lucide-react";
+
 import { requireAuthContext } from "@/application/auth-context";
 import { financeOverview, parseFinanceFilters } from "@/application/finance-service";
 import { PageContainer, PageHeader } from "@/components/shared/page";
@@ -9,7 +11,7 @@ export default async function FinancePage({ searchParams }: PageProps<"/my-elise
   const overview = await financeOverview(auth, parseFinanceFilters(params));
   return (
     <PageContainer wide>
-      <PageHeader title={t.finance.title} subtitle={t.finance.subtitle} />
+      <PageHeader title={t.finance.title} icon={Wallet} />
       <FinanceView overview={overview} workspaceId={auth.workspaceId} />
     </PageContainer>
   );

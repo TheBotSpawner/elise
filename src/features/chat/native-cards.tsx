@@ -4,6 +4,8 @@ import { motion, type MotionProps } from "motion/react";
 import Link from "next/link";
 
 import type { ToolDisplay } from "@/core/agents/tools";
+import { goalCard } from "@/core/goals/analytics";
+import { GoalSummary } from "@/features/native/goal-parts";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -72,37 +74,49 @@ export function HabitsCard({ display, rise }: { display: D<"habits">; rise: Moti
 export function GoalsCard({ display, rise }: { display: D<"goals">; rise: MotionProps }) {
   const { t } = useI18n();
   if (!display.goals.length) return null;
+  const titles = new Map((display.visions ?? []).map((v) => [v.vision.id, v.vision.title]));
   return (
     <motion.section {...rise} aria-label={t.native.goals.title} className={CARD}>
       <Header label={t.native.goals.title} href="/my-elise/goals" />
-      <ul className="flex flex-col gap-2.5">
-        {display.goals.slice(0, 6).map(({ goal, progress, openTasks }) => (
-          <li key={goal.id} className="flex flex-col gap-1">
-            <p className="flex items-baseline justify-between gap-3 text-[14px]">
-              <span className="truncate">{goal.title}</span>
-              <span className="shrink-0 font-mono text-[12.5px] text-muted">
-                {progress.percent === null
-                  ? t.native.goals.status[goal.status]
-                  : `${progress.percent}%`}
-              </span>
-            </p>
-            {progress.percent !== null && (
-              <span className="h-1 overflow-hidden rounded-full bg-surface-2">
-                <span
-                  className="block h-full rounded-full bg-accent"
-                  style={{ width: `${progress.percent}%` }}
-                />
-              </span>
-            )}
-            {(goal.links.length > 0 || openTasks > 0) && (
-              <span className="truncate text-[12.5px] text-faint">
-                {goal.links
-                  .map((l) => l.title)
-                  .filter(Boolean)
-                  .join(" · ")}
-                {openTasks > 0 && ` · ${t.native.goals.openTasks(openTasks)}`}
-              </span>
-            )}
+      <ul className="flex flex-col gap-3">
+        {display.goals.slice(0, 6).map((s) => (
+          <li key={s.goal.id}>
+            <GoalSummary card={goalCard(s, titles)} />
+          </li>
+        ))}
+      </ul>
+    </motion.section>
+  );
+}
+
+/** One goal (created, updated, asked about): the same summary as My Elise → Goals. */
+export function GoalCard({ display, rise }: { display: D<"goal">; rise: MotionProps }) {
+  const { t } = useI18n();
+  const x = display.detail;
+  const titles = new Map(x.visions.map((v) => [v.id, v.title]));
+  return (
+    <motion.section {...rise} aria-label={x.snapshot.goal.title} className={CARD}>
+      <Header label={t.native.goals.title} href={`/my-elise/goals?goal=${x.snapshot.goal.id}`} />
+      <GoalSummary card={goalCard(x.snapshot, titles)} />
+    </motion.section>
+  );
+}
+
+export function VisionCard({ display, rise }: { display: D<"vision">; rise: MotionProps }) {
+  const { t } = useI18n();
+  const x = display.detail;
+  const titles = new Map([[x.vision.id, x.vision.title]]);
+  return (
+    <motion.section {...rise} aria-label={x.vision.title} className={CARD}>
+      <Header label={t.native.goals.visions} href={`/my-elise/goals?vision=${x.vision.id}`} />
+      <p className="text-[14px] leading-snug">
+        {x.vision.icon ? `${x.vision.icon} ` : ""}
+        {x.vision.title}
+      </p>
+      <ul className="mt-2 flex flex-col gap-3">
+        {x.goals.slice(0, 6).map((s) => (
+          <li key={s.goal.id}>
+            <GoalSummary card={goalCard(s, titles)} compact />
           </li>
         ))}
       </ul>

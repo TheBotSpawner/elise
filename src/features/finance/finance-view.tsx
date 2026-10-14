@@ -47,7 +47,6 @@ import { cn } from "@/lib/utils";
 import { financeToolAction, setDefaultCurrencyAction } from "./actions";
 import { COMMON_CURRENCIES, share, useMoney, usePeriodLabel } from "./format";
 import { categoryIcon, TransactionDialog } from "./transaction-dialog";
-import { useFinanceUpload } from "./use-upload";
 
 /**
  * Finance workspace (ADR-052, ADR-054). The shell — Ámbito filter, Movimientos / Estadísticas /
@@ -195,7 +194,7 @@ export function FinanceNav({
   const n = t.finance.v21.tabs;
   const item = (key: FinanceSection) =>
     cn(
-      "-mb-px flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-1 text-[14px] transition-colors",
+      "flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-1 text-[14px] transition-colors",
       active === key
         ? "border-accent font-medium text-fg"
         : "border-transparent text-muted hover:text-fg",
@@ -206,7 +205,12 @@ export function FinanceNav({
     ["budgets", n.budgets],
   ];
   return (
-    <nav aria-label={t.finance.title} className="flex gap-6 overflow-x-auto border-b border-border">
+    // The baseline is an inset shadow, not a border the tabs overlap with -mb-px: that 1px of
+    // vertical overflow made overflow-x-auto show a vertical scrollbar (its arrows on Windows).
+    <nav
+      aria-label={t.finance.title}
+      className="flex gap-6 overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_var(--line)]"
+    >
       {tabs.map(([key, label]) =>
         onSelect ? (
           <button
@@ -977,6 +981,20 @@ function SidePanel({
     </aside>
   );
 }
+
+/** Whether the Movements side column has any section to show (same rules as SidePanel). */
+function hasSidePanel(overview: FinanceOverview, currency: string | undefined) {
+  const expense = (g: { type: string; currency: string }) =>
+    g.type === "expense" && g.currency === currency;
+  return Boolean(
+    (overview.budgets?.usages.length ?? 0) > 0 ||
+    (currency &&
+      (overview.summary.current.byCategory.some(expense) ||
+        (!overview.filters.book && overview.byBook.some(expense)))),
+  );
+}
+
+const IMPORT_HREF = "/my-elise/finance/sources";
 
 // ── Detail drawer ────────────────────────────────────────────────────────────
 
@@ -1843,7 +1861,12 @@ function Budgets({ overview }: { overview: FinanceOverview }) {
       {adding && <BudgetForm overview={overview} onDone={() => setAdding(false)} />}
       {!b?.usages.length ? (
         <p className={cn(CARD, "border-dashed px-5 py-4 text-[14px] text-muted")}>
-          {t.finance.ws.noBudgets}
+          {/* Neutral Spanish: an amount in the user's default currency, never local slang. */}
+          {t.finance.ws.noBudgets(
+            overview.settings.defaultCurrency
+              ? money("200000", overview.settings.defaultCurrency)
+              : new Intl.NumberFormat(locale === "es" ? "es-AR" : "en-US").format(200000),
+          )}
         </p>
       ) : (
         <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1882,8 +1905,6 @@ export function FinanceView({
   const v = t.finance.v21;
   const labels = useLabels();
   const { set } = useFilters();
-  const { upload, uploading } = useFinanceUpload();
-  const file = useRef<HTMLInputElement>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<FinanceTransaction | null>(null);
   const [duplicating, setDuplicating] = useState<FinanceTransaction | null>(null);
@@ -1959,25 +1980,11 @@ export function FinanceView({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <ScopeChips books={overview.books} value={f.book} />
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            ref={file}
-            type="file"
-            accept=".csv,.tsv,.txt,.xlsx"
-            className="sr-only"
-            tabIndex={-1}
-            onChange={(e) => {
-              const picked = e.target.files?.[0];
-              e.target.value = "";
-              if (picked) void upload(picked);
-            }}
-          />
-          <Link href="/my-elise/finance/sources" className={buttonVariants({ variant: "ghost" })}>
-            {v.sources}
-          </Link>
-          <Button variant="secondary" disabled={uploading} onClick={() => file.current?.click()}>
+          {/* One entry point: files, connected Sheets and past imports live on the Import page. */}
+          <Link href={IMPORT_HREF} className={buttonVariants({ variant: "secondary" })}>
             <Upload />
-            {uploading ? t.finance.wizard.uploading : v.importAction}
-          </Button>
+            {v.importAction}
+          </Link>
           <Button onClick={startAdd}>
             <Plus />
             {v.tx.newTitle}
@@ -2024,7 +2031,13 @@ export function FinanceView({
       )}
 
       {tab === "movements" && (
-        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        // The side column exists only when it has something to show: no empty reserved space.
+        <div
+          className={cn(
+            "grid grid-cols-1 items-start gap-5",
+            hasSidePanel(overview, shown) && "xl:grid-cols-[minmax(0,1fr)_22rem]",
+          )}
+        >
           <section className="flex min-w-0 flex-col gap-3">
             <FilterBar overview={overview} q={q} setQ={setQ} />
             {!overview.hasAny ? (
@@ -2041,10 +2054,10 @@ export function FinanceView({
                     <Plus />
                     {v.tx.newTitle}
                   </Button>
-                  <Button variant="secondary" onClick={() => file.current?.click()}>
+                  <Link href={IMPORT_HREF} className={buttonVariants({ variant: "secondary" })}>
                     <Upload />
                     {v.importAction}
-                  </Button>
+                  </Link>
                 </div>
               </div>
             ) : overview.transactions.length === 0 ? (
@@ -2061,9 +2074,12 @@ export function FinanceView({
                     <Plus />
                     {v.tx.newTitle}
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => file.current?.click()}>
+                  <Link
+                    href={IMPORT_HREF}
+                    className={buttonVariants({ variant: "secondary", size: "sm" })}
+                  >
                     {v.importAction}
-                  </Button>
+                  </Link>
                 </div>
               </div>
             ) : (
@@ -2083,12 +2099,14 @@ export function FinanceView({
               </>
             )}
           </section>
-          <SidePanel
-            overview={overview}
-            currency={shown}
-            catIcon={catIcon}
-            onTab={(k) => set({ tab: k })}
-          />
+          {hasSidePanel(overview, shown) && (
+            <SidePanel
+              overview={overview}
+              currency={shown}
+              catIcon={catIcon}
+              onTab={(k) => set({ tab: k })}
+            />
+          )}
         </div>
       )}
 

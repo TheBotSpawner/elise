@@ -63,6 +63,112 @@ function Field({
   );
 }
 
+const ACCOUNT_TYPES = [
+  "other",
+  "cash",
+  "bank",
+  "credit_card",
+  "debit_card",
+  "digital_wallet",
+  "business",
+] as const;
+
+/**
+ * Tiny inline form: create an account (name, type, optional currency) without leaving the
+ * movement. The same `finance.createAccount` tool as the account manager; errors stay inline.
+ */
+function NewAccount({
+  initialName,
+  currencies,
+  onCreated,
+  onCancel,
+}: {
+  initialName: string;
+  currencies: string[];
+  onCreated: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useI18n();
+  const x = t.finance.v21.tx;
+  const [name, setName] = useState(initialName);
+  const [type, setType] = useState<(typeof ACCOUNT_TYPES)[number]>("other");
+  const [currency, setCurrency] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const save = () =>
+    startTransition(async () => {
+      setError(null);
+      const r = await financeToolAction("finance.createAccount", {
+        name: name.trim(),
+        type,
+        ...(currency ? { currency } : {}),
+      });
+      if (!r.ok) return void setError(errorText(t, r.error));
+      onCreated(name.trim());
+    });
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-accent-line bg-surface-2/60 p-3">
+      <p className="text-[13px] font-medium">{x.newAccount}</p>
+      <Input
+        aria-label={x.name}
+        autoFocus
+        value={name}
+        maxLength={80}
+        placeholder={t.finance.account}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            // Enter saves the account, never the whole movement.
+            e.preventDefault();
+            if (name.trim()) save();
+          }
+        }}
+        className={FIELD}
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <Select
+          aria-label={t.finance.accountType}
+          value={type}
+          onChange={(e) => setType(e.target.value as (typeof ACCOUNT_TYPES)[number])}
+          className={FIELD}
+        >
+          {ACCOUNT_TYPES.map((a) => (
+            <option key={a} value={a}>
+              {t.finance.accountTypes[a]}
+            </option>
+          ))}
+        </Select>
+        <Select
+          aria-label={t.finance.currency}
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value)}
+          className={FIELD}
+        >
+          <option value="">{t.finance.anyCurrency}</option>
+          {currencies.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </Select>
+      </div>
+      {error && (
+        <p role="alert" className="text-[12.5px] text-danger-text">
+          {error}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="ghost" onClick={onCancel} disabled={pending}>
+          {t.finance.cancel}
+        </Button>
+        <Button size="sm" onClick={save} disabled={pending || !name.trim()}>
+          {x.create}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** Tiny inline form: create a category (icon, name, optional parent) without leaving. */
 function NewCategory({
   initialName,
@@ -215,6 +321,11 @@ export function TransactionDialog({
   const [extraCategories, setExtraCategories] = useState<FinanceCategory[]>([]);
   const [extraAccounts, setExtraAccounts] = useState<string[]>([]);
   const [creatingCategory, setCreatingCategory] = useState<string | null>(null);
+  /** The inline account form: which field it fills and the name typed so far. */
+  const [creatingAccount, setCreatingAccount] = useState<{
+    field: "account" | "toAccount";
+    name: string;
+  } | null>(null);
   const marker = open ? (transaction?.id ?? `new:${duplicateOf?.id ?? ""}`) : null;
   if (marker !== openedFor) {
     // Each opening starts from the record (or empty) with a fresh idempotency key.
@@ -227,6 +338,7 @@ export function TransactionDialog({
       setError(null);
       setKey(crypto.randomUUID());
       setCreatingCategory(null);
+      setCreatingAccount(null);
     }
   }
   const set = <K extends keyof typeof v>(k: K, value: (typeof v)[K]) =>
@@ -248,17 +360,6 @@ export function TransactionDialog({
       ].filter(Boolean),
     ),
   ] as string[];
-
-  function createAccount(name: string) {
-    if (!name) return;
-    startTransition(async () => {
-      const r = await financeToolAction("finance.createAccount", { name, type: "other" });
-      if (!r.ok) return void toast.error(errorText(t, r.error));
-      setExtraAccounts((a) => [...a, name]);
-      set("account", name);
-      toast.success(x.created);
-    });
-  }
 
   function submit() {
     const amount = parseTypedAmount(v.amount, locale);
@@ -469,10 +570,31 @@ export function TransactionDialog({
                   ...accountNames.map((a) => ({ value: a, label: a })),
                 ]}
                 onChange={(a) => set(k, a)}
-                action={{ label: x.createAccount, onSelect: createAccount }}
+                // Opens the inline form (even with nothing typed): it used to create an account
+                // only from typed text, so a plain click did nothing.
+                action={{
+                  label: x.createAccount,
+                  onSelect: (q) => setCreatingAccount({ field: k, name: q }),
+                }}
               />
             </Field>
           ))}
+          {creatingAccount && (
+            <div className="sm:col-span-2">
+              <NewAccount
+                initialName={creatingAccount.name}
+                currencies={currencies}
+                onCancel={() => setCreatingAccount(null)}
+                onCreated={(name) => {
+                  // Only the account changes: amount, category, Ámbito, date and type stay.
+                  setExtraAccounts((a) => [...a, name]);
+                  set(creatingAccount.field, name);
+                  setCreatingAccount(null);
+                  toast.success(x.created);
+                }}
+              />
+            </div>
+          )}
           <Field id="tx-date" label={t.finance.date}>
             <Input
               id="tx-date"

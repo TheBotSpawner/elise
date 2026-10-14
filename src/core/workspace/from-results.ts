@@ -15,8 +15,6 @@ import {
   budgetsVisual,
   financeBreakdownVisual,
   financeSummaryVisuals,
-  goalPace,
-  goalsVisual,
   habitStatsVisuals,
   habitsVisual,
   type BuiltVisualization,
@@ -27,6 +25,7 @@ import type { CalendarEvent } from "../capabilities/calendar";
 import type { EmailMessage } from "../capabilities/email";
 import { splitItems } from "../capabilities/lists";
 import type { Task } from "../capabilities/tasks";
+import { goalCard, goalsSummary } from "../goals/analytics";
 import { analysisVisuals } from "../structured/analysis";
 import { todayIn } from "../time";
 
@@ -864,25 +863,119 @@ export function surfacesFromOutcome(
         ? []
         : visualsOr([habitsVisual(d.progress, opts.locale)], d, opts, capability);
     case "goals": {
+      // One overview per scope (goals:<status>:<range>:<vision>): asking again or any goal or
+      // habit change refreshes it in place (ADR-055).
       if (isEmptyResult(d)) return [];
-      const today = new Date().toISOString().slice(0, 10);
-      return visualsOr(
-        [
-          goalsVisual(
-            d.goals.map((g) => ({
-              title: g.goal.title,
-              percent: g.progress.percent,
-              pace:
-                g.goal.status === "completed"
-                  ? null
-                  : goalPace(g.goal.createdAt, g.goal.targetDate, today),
+      const titles = new Map((d.visions ?? []).map((v) => [v.vision.id, v.vision.title]));
+      const sc = d.scope ?? { status: "active", from: null, to: null, visionId: null };
+      const summary = d.summary ?? goalsSummary(d.goals);
+      return one(
+        draft(
+          "goals_overview",
+          `goals:${sc.status}:${sc.from ?? "all"}:${sc.to ?? "all"}:${sc.visionId ?? "all"}`,
+          {
+            goals: d.goals.slice(0, 30).map((g) => goalCard(g, titles)),
+            total: d.goals.length,
+            summary: {
+              active: summary.active,
+              atRisk: summary.atRisk,
+              completed: summary.completed,
+              averageProgress: summary.averageProgress,
+            },
+            visions: (d.visions ?? [])
+              .filter((v) => v.vision.status !== "archived")
+              .slice(0, 8)
+              .map((v) => ({
+                id: v.vision.id,
+                title: clip(v.vision.title, 500),
+                icon: v.vision.icon,
+                active: v.active,
+                completed: v.completed,
+              })),
+            scope: sc,
+            today: todayIn(opts.timezone ?? "UTC"),
+          },
+          opts,
+          {
+            title: opts.locale === "en" ? "Goals" : "Objetivos",
+            source: { capability: "goals", label: null },
+            ref: null,
+          },
+        ),
+      );
+    }
+    case "goal": {
+      const x = d.detail;
+      const g = x.snapshot.goal;
+      return one(
+        draft(
+          "goal",
+          g.id,
+          {
+            goal: goalCard(x.snapshot, new Map(x.visions.map((v) => [v.id, v.title]))),
+            history: x.history.slice(-60),
+            events: x.events.slice(0, 10).map((e) => ({
+              at: e.occurredAt,
+              value: e.newValue,
+              previous: e.previousValue,
+              note: e.note ? clip(e.note, 500) : null,
+              source: e.sourceType,
             })),
-            opts.locale,
-          ),
-        ],
-        d,
-        opts,
-        capability,
+            parent: x.parent ? { ...x.parent, title: clip(x.parent.title, 500) } : null,
+            children: x.children.slice(0, 12).map((c) => ({
+              id: c.id,
+              title: clip(c.title, 500),
+              icon: c.icon,
+              percent: c.percent,
+            })),
+            related: x.related.slice(0, 12).map((r) => ({ ...r, title: clip(r.title, 500) })),
+            today: x.today,
+          },
+          opts,
+          {
+            title: g.title,
+            source: { capability: "goals", label: null },
+            ref: { resource: "goal", id: g.id },
+          },
+        ),
+      );
+    }
+    case "vision": {
+      const x = d.detail;
+      const v = x.vision;
+      const titles = new Map([[v.id, v.title]]);
+      return one(
+        draft(
+          "vision",
+          v.id,
+          {
+            vision: {
+              id: v.id,
+              title: clip(v.title, 500),
+              description: v.description ? clip(v.description, 1200) : null,
+              icon: v.icon,
+              area: v.area,
+              status: v.status,
+            },
+            goals: x.goals.slice(0, 20).map((g) => goalCard(g, titles)),
+            habits: x.habits.slice(0, 8).map((h) => ({
+              name: clip(h.name, 120),
+              icon: h.icon ?? null,
+              done: h.done,
+              goal: h.goal,
+              drives: Boolean(h.drives),
+            })),
+            completed: x.goals.filter((g) => g.goal.status === "completed").length,
+            total: x.goals.length,
+            today: x.today,
+          },
+          opts,
+          {
+            title: v.title,
+            source: { capability: "goals", label: null },
+            ref: { resource: "vision", id: v.id },
+          },
+        ),
       );
     }
     case "schedule_proposal":

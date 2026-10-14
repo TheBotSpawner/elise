@@ -5,15 +5,21 @@ export function PageHeader({
   title,
   subtitle,
   actions,
+  icon: Icon,
 }: {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
+  /** The section's navigation icon, shown subtly before the title (Finance). */
+  icon?: LucideIcon;
 }) {
   return (
     <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-[30px] leading-[1.15] font-light tracking-[-0.025em]">{title}</h1>
+        <h1 className="flex items-center gap-3 text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
+          {Icon && <Icon className="size-6 shrink-0 text-muted" strokeWidth={1.6} aria-hidden />}
+          {title}
+        </h1>
         {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
       </div>
       {actions}

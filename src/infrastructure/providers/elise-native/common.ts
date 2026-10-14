@@ -12,6 +12,15 @@ export function check(error: { message: string; code?: string } | null, what: st
   throw new AppError("INTERNAL_ERROR", `Could not ${what}`, { cause: error });
 }
 
+/** "The column/table doesn't exist": a newer migration isn't applied to this database yet. */
+export const notMigrated = (code?: string) =>
+  code === "42703" || code === "PGRST204" || code === "PGRST205" || code === "42P01";
+
+export const needsUpdate = () =>
+  new AppError("CAPABILITY_UNAVAILABLE", "This needs the latest ELISE database update", {
+    recovery: "review",
+  });
+
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
 /**

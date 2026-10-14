@@ -44,15 +44,26 @@ const SUPABASE_STUB = `
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
 
-export async function createTestDatabase(): Promise<PGlite> {
+const migrations = () =>
+  readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
+
+/** `before`: stop before the first migration whose file name starts with it (data-migration tests). */
+export async function createTestDatabase(before?: string): Promise<PGlite> {
   const db = new PGlite({ extensions: { vector } });
   await db.exec(SUPABASE_STUB);
-  for (const file of readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith(".sql"))
-    .sort()) {
+  for (const file of migrations()) {
+    if (before && file >= before) break;
     await db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
   }
   return db;
+}
+
+/** Applies the remaining migrations from `from` on (inclusive). */
+export async function migrateFrom(db: PGlite, from: string): Promise<void> {
+  for (const file of migrations().filter((f) => f >= from))
+    await db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
 }
 
 export async function createUser(

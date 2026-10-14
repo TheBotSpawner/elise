@@ -11,7 +11,7 @@ import { AppError } from "@/core/errors";
 import type { ListItemRow, ListRow } from "@/infrastructure/supabase/database.types";
 import type { ServerSupabase } from "@/infrastructure/supabase/server";
 
-import { check } from "./common";
+import { check, notMigrated } from "./common";
 
 const toItem = (r: ListItemRow, labels: string[] = []): ListItem => ({
   id: r.id,
@@ -24,10 +24,6 @@ const toItem = (r: ListItemRow, labels: string[] = []): ListItem => ({
   checkedAt: r.checked_at ?? (r.checked ? r.updated_at : null),
   createdAt: r.created_at,
 });
-
-/** "The column doesn't exist" / "the table doesn't exist": migration 038 isn't applied yet. */
-const notMigrated = (code?: string) =>
-  code === "42703" || code === "PGRST204" || code === "PGRST205" || code === "42P01";
 
 const norm = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 

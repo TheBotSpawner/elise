@@ -155,25 +155,23 @@ describe("goal progress", () => {
     expect(goalProgress(goal({ progressType: "binary" }), none).percent).toBe(0);
     expect(goalProgress(goal({ currentValue: null }), none)).toMatchObject({
       percent: null,
-      basis: "not measurable yet",
+      basis: "none",
     });
     expect(goalProgress(goal({ status: "completed" }), none).percent).toBe(100);
   });
 
-  it("linked and hybrid progress come from tasks and habits, with the basis stated", () => {
+  it("lower-is-better goals never take linked progress (ADR-055)", () => {
     const status = {
       tasks: { total: 4, completed: 1, open: ["a", "b", "c"] },
-      habits: [{ name: "Run", done: 2, goal: 3 }],
+      habits: [{ name: "Run", done: 2, goal: 3, drives: true, contribution: 2 }],
     };
+    // Sessions can't be added to a race time: linked mode has nothing to measure.
     expect(goalProgress(goal({ progressMode: "linked" }), status)).toMatchObject({
-      percent: 46,
-      linked: 46,
-    });
-    expect(goalProgress(goal({ progressMode: "hybrid" }), status).percent).toBe(57);
-    expect(goalProgress(goal({ progressMode: "linked" }), none)).toMatchObject({
       percent: null,
-      basis: "nothing linked yet",
+      basis: "none",
+      linkedValue: null,
     });
+    expect(goalProgress(goal({ progressMode: "hybrid" }), status).percent).toBe(67);
   });
 });
 
@@ -236,6 +234,19 @@ describe("Morning Brief with habits and goals", () => {
           goal: goal({ title: "Launch ELISE MVP", progressType: "binary" }),
           progress: goalProgress(goal({ progressType: "binary" }), none),
           openTasks: 3,
+          // Only goals needing attention are mentioned (ADR-055), never every active goal.
+          health: {
+            state: "at_risk",
+            reason: { kind: "overdue", deadline: "2026-09-20" },
+            reached: false,
+            elapsed: 1,
+            daysLeft: -10,
+          },
+        },
+        {
+          goal: goal({ id: "g2", title: "Read more", progressType: "binary" }),
+          progress: goalProgress(goal({ progressType: "binary" }), none),
+          openTasks: 0,
         },
       ],
       warnings: [],
@@ -244,7 +255,7 @@ describe("Morning Brief with habits and goals", () => {
       expect.objectContaining({ name: "Run", week: "1/3", dueToday: true }),
     ]);
     expect(brief.goals).toEqual([
-      expect.objectContaining({ title: "Launch ELISE MVP", openTasks: 3 }),
+      expect.objectContaining({ title: "Launch ELISE MVP", openTasks: 3, why: "at_risk" }),
     ]);
   });
 });

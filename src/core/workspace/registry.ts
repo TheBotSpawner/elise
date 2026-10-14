@@ -167,6 +167,58 @@ const calendarPayloadSchema = z.object({
   seq: z.number().int().min(0).optional(),
 });
 
+const goalHabit = z.object({
+  name: text(120),
+  icon: text(16).nullable(),
+  done: z.number(),
+  goal: z.number(),
+  drives: z.boolean(),
+});
+
+const goalRefPayload = z.object({ id: text(100), title: text(500), icon: text(16).nullable() });
+
+/** One goal as Surfaces show it (ADR-055): every number computed by core/goals. */
+const goalItem = z.object({
+  id: text(100),
+  title: text(300),
+  icon: text(16).nullable(),
+  status: z.enum(["active", "completed", "paused", "cancelled", "archived"]),
+  health: z.enum([
+    "not_started",
+    "in_progress",
+    "on_track",
+    "at_risk",
+    "completed",
+    "paused",
+    "cancelled",
+    "archived",
+  ]),
+  reason: z
+    .object({
+      kind: z.enum(["pace", "overdue", "starts"]),
+      elapsed: z.number().optional(),
+      progress: z.number().optional(),
+      date: isoDay.optional(),
+    })
+    .nullable(),
+  percent: z.number().min(0).max(100).nullable(),
+  value: z.number().nullable(),
+  target: z.number().nullable(),
+  progressType: z.enum(["binary", "numeric", "percentage"]),
+  direction: z.enum(["increase", "decrease"]),
+  basis: z.enum(["completed", "manual", "linked", "hybrid", "none"]),
+  unit: text(60).nullable(),
+  currency: text(3).nullable(),
+  periodFrom: isoDay.nullable(),
+  periodTo: isoDay.nullable(),
+  deadline: isoDay.nullable(),
+  reached: z.boolean(),
+  visions: z.array(text(500)).max(5),
+  area: text(60).nullable(),
+  habits: z.array(goalHabit).max(6),
+  completedAt: text(40).nullable(),
+});
+
 export const PAYLOADS = {
   meeting: eventPayload,
   calendar_event: eventPayload,
@@ -603,6 +655,60 @@ export const PAYLOADS = {
     open: z.number().int(),
     total: z.number().int(),
   }),
+  goal: z.object({
+    goal: goalItem,
+    history: z.array(z.object({ date: isoDay, value: z.number() })).max(60),
+    events: z
+      .array(
+        z.object({
+          at: text(40),
+          value: z.number().nullable(),
+          previous: z.number().nullable(),
+          note: text(500).nullable(),
+          source: text(20),
+        }),
+      )
+      .max(10),
+    parent: goalRefPayload.nullable(),
+    children: z.array(goalRefPayload.extend({ percent: z.number().nullable() })).max(12),
+    related: z.array(goalRefPayload).max(12),
+    today: isoDay,
+  }),
+  goals_overview: z.object({
+    goals: z.array(goalItem).max(30),
+    total: z.number().int(),
+    summary: z.object({
+      active: z.number().int(),
+      atRisk: z.number().int(),
+      completed: z.number().int(),
+      averageProgress: z.number().nullable(),
+    }),
+    visions: z
+      .array(goalRefPayload.extend({ active: z.number().int(), completed: z.number().int() }))
+      .max(8),
+    scope: z.object({
+      status: text(20),
+      from: isoDay.nullable(),
+      to: isoDay.nullable(),
+      visionId: text(100).nullable(),
+    }),
+    today: isoDay,
+  }),
+  vision: z.object({
+    vision: z.object({
+      id: text(100),
+      title: text(500),
+      description: text(1200).nullable(),
+      icon: text(16).nullable(),
+      area: text(60).nullable(),
+      status: z.enum(["active", "achieved", "archived"]),
+    }),
+    goals: z.array(goalItem).max(20),
+    habits: z.array(goalHabit).max(8),
+    completed: z.number().int(),
+    total: z.number().int(),
+    today: isoDay,
+  }),
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
 } satisfies Record<SurfaceType, z.ZodType>;
 
@@ -632,6 +738,9 @@ const expand: SurfaceAction = { id: "expand", kind: "expand" };
 const local = (iso: string, tz: string) =>
   iso.length > 10 ? toLocalDateTime(new Date(iso), tz).replace("T", " ") : iso;
 const q = (s: string) => `"${s.replace(/"/g, "'")}"`;
+
+const describeGoal = (g: SurfacePayloads["goal"]["goal"]) =>
+  `${q(g.title)} ${g.health}${g.percent !== null ? ` ${g.percent}%` : ""}${g.deadline ? ` due ${g.deadline}` : ""} (goal ${g.id})`;
 
 const event = <K extends "meeting" | "calendar_event">(priority: number): SurfaceDefinition<K> => ({
   sizes: ["small", "medium", "large", "expanded"],
@@ -1117,6 +1226,29 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
         return { name: "lists.uncheckItem", args: { list: p.listId, item: item.id } };
       return null;
     },
+  },
+  goal: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 64,
+    actions: (p) => [...link("open", `/my-elise/goals?goal=${p.goal.id}`), expand],
+    describe: (p) => `goal ${describeGoal(p.goal)}`,
+  },
+  goals_overview: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 66,
+    actions: () => [...link("open", "/my-elise/goals"), expand],
+    describe: (p) =>
+      `goals (${p.scope.status}${p.scope.from ? ` ${p.scope.from}…${p.scope.to}` : ""}): ${p.goals.map(describeGoal).join("; ") || "none"}`,
+  },
+  vision: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 66,
+    actions: (p) => [...link("open", `/my-elise/goals?vision=${p.vision.id}`), expand],
+    describe: (p) =>
+      `Vision ${q(p.vision.title)} (vision ${p.vision.id}): ${p.completed}/${p.total} goals completed; ${p.goals.map(describeGoal).join("; ")}`,
   },
   result: {
     sizes: ["small", "medium", "large"],

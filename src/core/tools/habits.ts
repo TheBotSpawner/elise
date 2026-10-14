@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { syncHabitGoals } from "./goals";
 import { pickOne, sourceOf } from "./native-common";
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import {
@@ -166,8 +167,9 @@ export const createHabitTool: ToolDefinition = {
       },
       sourceOf(env.ctx),
     );
+    const notes = h.goals?.length ? await syncHabitGoals(env, habit.id, h.goals) : [];
     return {
-      ...(await result(env, [habit], { created: true })),
+      ...(await result(env, [habit], { created: true, ...(notes.length ? { notes } : {}) })),
       target: { type: "habit", id: habit.id },
     };
   },
@@ -186,17 +188,22 @@ export const updateHabitTool: ToolDefinition = {
   async run(raw, env) {
     const u = updateHabitInput.parse(raw);
     const habit = await resolve(env, u.habit);
-    const updated = await provider(env).update(habit.id, {
-      name: u.name,
-      description: u.description,
-      frequency: u.frequency,
-      target: u.target,
-      unit: u.unit,
-      preferredDays: u.preferredDays,
-      icon: u.icon,
-    });
+    // Only its related goals changed: the habit itself stays as it is.
+    const onlyGoals = Object.keys(u).every((k) => k === "habit" || k === "goals");
+    const updated = onlyGoals
+      ? habit
+      : await provider(env).update(habit.id, {
+          name: u.name,
+          description: u.description,
+          frequency: u.frequency,
+          target: u.target,
+          unit: u.unit,
+          preferredDays: u.preferredDays,
+          icon: u.icon,
+        });
+    const notes = u.goals ? await syncHabitGoals(env, habit.id, u.goals) : [];
     return {
-      ...(await result(env, [updated], { updated: true })),
+      ...(await result(env, [updated], { updated: true, ...(notes.length ? { notes } : {}) })),
       target: { type: "habit", id: habit.id },
     };
   },

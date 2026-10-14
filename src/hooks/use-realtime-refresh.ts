@@ -21,6 +21,8 @@ type RealtimeTable =
   | "habit_entries"
   | "goals"
   | "goal_links"
+  | "visions"
+  | "goal_progress_events"
   | "lists"
   | "list_items"
   | "notes"

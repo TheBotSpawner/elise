@@ -2,7 +2,7 @@ import "server-only";
 
 import { executeToolCall } from "@/core/agents/executor";
 import type { ToolDisplay } from "@/core/agents/tools";
-import { goalProgress, type Goal, type GoalProgress } from "@/core/capabilities/goals";
+import { drivesProgress } from "@/core/capabilities/goals";
 import {
   habitProgress,
   progressWindow,
@@ -14,6 +14,7 @@ import {
 import { STARTER_LISTS, type NativeList } from "@/core/capabilities/lists";
 import type { Note } from "@/core/capabilities/notes";
 import { AppError } from "@/core/errors";
+import type { GoalDetail, GoalSnapshot, VisionSummary } from "@/core/goals/analytics";
 import {
   daysIn,
   entriesWindow,
@@ -86,45 +87,75 @@ export async function habitsOverview(
   };
 }
 
-export interface GoalView {
-  goal: Goal;
-  progress: GoalProgress;
-  openTasks: string[];
-  habits: { name: string; done: number; goal: number }[];
+// ── Goals workspace (ADR-055) ────────────────────────────────────────────────
+
+export interface GoalsWorkspace {
+  goals: GoalSnapshot[];
+  visions: VisionSummary[];
+  /** Selectors for the forms: active habits and the areas already in use. */
+  habits: { id: string; name: string; icon: string | null }[];
+  areas: string[];
+  today: string;
+  archived: boolean;
 }
 
-export async function goalsOverview(auth: AuthContext) {
-  const goals = new EliseGoalsProvider(auth.db, auth.workspaceId, auth.userId);
-  const all = await goals.list({ status: "all" });
-  const day = today(auth);
-  const views: GoalView[] = await Promise.all(
-    all.map(async (goal) => {
-      const status = await goals.linkedStatus(goal, day);
-      return {
-        goal,
-        progress: goalProgress(goal, status),
-        openTasks: status.tasks.open,
-        habits: status.habits,
-      };
+/**
+ * The Goals screen in one light read: every goal (archived only when asked) with progress and
+ * health from the same tool Chat uses, in a fixed number of queries and without history. The
+ * history of a goal loads when its detail opens.
+ */
+export async function goalsWorkspace(
+  auth: AuthContext,
+  archived: boolean,
+): Promise<GoalsWorkspace> {
+  const [display, habits] = await Promise.all([
+    nativeAction(auth, "goals.list", { status: archived ? "archived" : "all" }),
+    new EliseHabitsProvider(auth.db, auth.workspaceId, auth.userId).list({
+      includeInactive: false,
     }),
-  );
-  const [{ habits }, { data: tasks }] = await Promise.all([
-    habitsOverview(auth),
-    auth.db
-      .from("tasks")
-      .select("id, title")
-      .eq("workspace_id", auth.workspaceId)
-      .is("archived_at", null)
-      .in("status", ["pending", "in_progress"])
-      .order("created_at", { ascending: false })
-      .limit(100),
   ]);
+  const goals = display?.kind === "goals" ? display.goals : [];
+  const visions = display?.kind === "goals" ? (display.visions ?? []) : [];
   return {
-    goals: views,
-    linkable: {
-      habits: habits.filter((h) => h.active).map((h) => ({ id: h.id, name: h.name })),
-      tasks: (tasks ?? []).map((t) => ({ id: t.id, name: t.title })),
-    },
+    goals,
+    visions,
+    habits: habits.map((h) => ({ id: h.id, name: h.name, icon: h.icon })),
+    areas: [
+      ...new Set(
+        [...goals.map((g) => g.goal.area), ...visions.map((v) => v.vision.area)].filter(
+          (a): a is string => Boolean(a),
+        ),
+      ),
+    ].sort(),
+    today: today(auth),
+    archived,
+  };
+}
+
+/** One goal in depth (history, Visions, related goals): the same read as goals.getProgress. */
+export async function goalDetail(auth: AuthContext, goalId: string): Promise<GoalDetail | null> {
+  const d = await nativeAction(auth, "goals.getProgress", { goal: goalId });
+  return d?.kind === "goal" ? d.detail : null;
+}
+
+/** The goals each habit relates to, and the active goals it could relate to (Habits form). */
+export async function habitGoals(auth: AuthContext) {
+  const goals = await new EliseGoalsProvider(auth.db, auth.workspaceId, auth.userId)
+    .list({ status: "active" })
+    .catch(() => []);
+  const links: Record<string, { goalId: string; drives: boolean }[]> = {};
+  for (const g of goals)
+    for (const l of g.links)
+      if (l.resourceType === "habit")
+        (links[l.resourceId] ??= []).push({ goalId: g.id, drives: drivesProgress(l) });
+  return {
+    goals: goals.map((g) => ({
+      id: g.id,
+      title: g.title,
+      icon: g.icon ?? null,
+      canDrive: g.progressType === "numeric" && g.direction !== "decrease",
+    })),
+    links,
   };
 }
 
@@ -253,6 +284,8 @@ export interface HabitsWorkspace {
   today: string;
   status: HabitStatusFilter;
   counts: Record<HabitStatusFilter, number>;
+  /** Related goals per habit and the goals it can relate to (ADR-055). */
+  goals: Awaited<ReturnType<typeof habitGoals>>;
 }
 
 export function parseHabitParams(params: Record<string, string | string[] | undefined>) {
@@ -303,11 +336,14 @@ export async function habitsWorkspace(
       : all.filter((h) => (q.status === "paused" ? !h.active : h.active));
   const range = habitRange(q.view, q.date ?? day, q.custom);
   const window = entriesWindow(range, day);
-  const entries = await provider.entries(
-    habits.map((h) => h.id),
-    window.from,
-    window.to,
-  );
+  const [entries, goals] = await Promise.all([
+    provider.entries(
+      habits.map((h) => h.id),
+      window.from,
+      window.to,
+    ),
+    habitGoals(auth),
+  ]);
   return {
     habits,
     entries,
@@ -319,6 +355,7 @@ export async function habitsWorkspace(
       paused: all.filter((h) => !h.active).length,
       archived: archived.length,
     },
+    goals,
   };
 }
 

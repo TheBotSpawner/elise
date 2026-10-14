@@ -39,7 +39,8 @@ export type LifecycleDecision = "keep" | "update" | "dismiss";
 const AFFECTS: Readonly<Record<string, readonly string[]>> = {
   habits: ["habits", "goals"],
   goals: ["goals"],
-  tasks: ["tasks", "planning"],
+  // Completed linked tasks count toward goals (ADR-055).
+  tasks: ["tasks", "planning", "goals"],
   calendar: ["calendar", "planning"],
   finance: ["finance"],
   lists: ["lists"],

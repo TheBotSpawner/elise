@@ -581,6 +581,12 @@ export type GoalRow = {
   direction: "increase" | "decrease";
   metric: string | null;
   parent_goal_id: string | null;
+  /** ADR-055 (migration 042): absent before it. */
+  icon?: string | null;
+  area?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  currency?: string | null;
   completed_at: Ts | null;
   source: NativeSource;
   created_by_user_id: string | null;
@@ -593,10 +599,40 @@ export type GoalLinkRow = {
   id: string;
   workspace_id: string;
   goal_id: string;
-  resource_type: "habit" | "task" | "goal" | "note" | "entity";
+  resource_type: "habit" | "task" | "goal" | "note" | "vision" | "entity";
   resource_id: string;
   relationship_type: "supports" | "milestone" | "related";
   created_at: Ts;
+};
+
+/** ADR-055 (migration 042). */
+export type VisionRow = {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string | null;
+  icon: string | null;
+  area: string | null;
+  status: "active" | "achieved" | "archived";
+  achieved_at: Ts | null;
+  source: NativeSource;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+/** Append-only progress history (ADR-055, migration 042). */
+export type GoalProgressEventRow = {
+  id: string;
+  workspace_id: string;
+  goal_id: string;
+  previous_value: number | null;
+  new_value: number | null;
+  source_type: "manual" | "habit" | "task" | "integration" | "system";
+  source_id: string | null;
+  note: string | null;
+  occurred_at: Ts;
+  created_by_user_id: string | null;
 };
 
 export type ListRow = {
@@ -1505,6 +1541,8 @@ export type Database = {
       habit_entries: Table<HabitEntryRow, "workspace_id" | "habit_id" | "entry_date">;
       goals: Table<GoalRow, "workspace_id" | "title">;
       goal_links: Table<GoalLinkRow, "workspace_id" | "goal_id" | "resource_type" | "resource_id">;
+      visions: Table<VisionRow, "workspace_id" | "title">;
+      goal_progress_events: Table<GoalProgressEventRow, "workspace_id" | "goal_id" | "source_type">;
       lists: Table<ListRow, "workspace_id" | "name">;
       list_items: Table<ListItemRow, "workspace_id" | "list_id" | "content" | "position">;
       notes: Table<NoteRow, "workspace_id" | "title">;

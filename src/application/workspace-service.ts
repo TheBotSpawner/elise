@@ -396,6 +396,20 @@ export class WorkspaceSession implements WorkspacePort {
             dataset: `list:${(d.payload as SurfacePayloads["checklist"]).listId}`,
           }
         : {}),
+      // A goal or Vision Surface re-reads that goal / Vision (ADR-055): a check-in of a linked
+      // habit, a progress update by voice or an edit on the Goals page updates it in place.
+      ...(d.type === "goal" && d.ref
+        ? {
+            query: { tool: "goals.getProgress", args: { goal: d.ref.id } },
+            dataset: `goal:${d.ref.id}`,
+          }
+        : {}),
+      ...(d.type === "vision" && d.ref
+        ? {
+            query: { tool: "goals.getVision", args: { vision: d.ref.id } },
+            dataset: `vision:${d.ref.id}`,
+          }
+        : {}),
       ...(change ? { changedAt: at } : {}),
       ...(priority !== undefined && d.type !== "approval" ? { priority } : {}),
       ...(d.type === "calendar" && query?.tool === "calendar.listEvents"

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireAuthContext } from "@/application/auth-context";
 import { commitImport, previewImport, type ImportKind } from "@/application/native-import";
 import {
+  goalDetail,
   habitHistory,
   habitsCsv,
   nativeAction,
@@ -117,6 +118,13 @@ async function read<T>(fn: () => Promise<T>): Promise<NativeResult<T>> {
 
 export async function habitHistoryAction(habitId: string) {
   return read(async () => habitHistory(await requireAuthContext(), z.uuid().parse(habitId)));
+}
+
+// ── Goals workspace (ADR-055) ────────────────────────────────────────────────
+
+/** A goal's detail with its history (loaded when it opens, never with the list). */
+export async function goalDetailAction(goalId: string) {
+  return read(async () => goalDetail(await requireAuthContext(), z.uuid().parse(goalId)));
 }
 
 export async function habitsCsvAction() {

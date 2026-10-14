@@ -35,6 +35,8 @@ import {
   MapPin,
   Timer as TimerIcon,
   AlarmClock,
+  Target,
+  Mountain,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -48,6 +50,11 @@ import type { SurfacePayloads } from "@/core/workspace/registry";
 import { ApprovalCard, type ApprovalPhase } from "@/features/chat/approval-card";
 import { DisplayCard } from "@/features/chat/result-cards";
 import { MusicSurfaceBody } from "@/features/music/music-view";
+import {
+  GoalSurfaceBody,
+  GoalsOverviewBody,
+  VisionSurfaceBody,
+} from "@/features/native/goal-surfaces";
 import { ClockSurfaceBody, TimerSurfaceBody } from "@/features/time/time-view";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -105,6 +112,9 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   clock: AlarmClock,
   place: MapPin,
   checklist: ListChecks,
+  goal: Target,
+  goals_overview: Target,
+  vision: Mountain,
   result: Sparkles,
 };
 
@@ -927,6 +937,12 @@ export function SurfaceBody({
           handlers={handlers}
         />
       );
+    case "goal":
+      return <GoalSurfaceBody p={surface.payload as SurfacePayloads["goal"]} />;
+    case "goals_overview":
+      return <GoalsOverviewBody p={surface.payload as SurfacePayloads["goals_overview"]} />;
+    case "vision":
+      return <VisionSurfaceBody p={surface.payload as SurfacePayloads["vision"]} />;
     case "person":
       return <PersonBody p={p} timezone={timezone} />;
     case "links":

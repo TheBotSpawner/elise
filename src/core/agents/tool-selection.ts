@@ -56,7 +56,11 @@ const SIGNALS: readonly [string, RegExp][] = [
     "study",
     /\b(estudi\w*|study|quiz|ex[aá]men\w*|exams?|oral|repas\w*|tomame|preguntame|practic\w*|flashcards?|parcial\w*|evaluame)\b/i,
   ],
-  ["goals", /\b(metas?|objetivos?|goals?)\b/i],
+  // "¿Cómo vengo con Firbot Solutions?" names a Vision, not the word "objetivo" (ADR-055).
+  [
+    "goals",
+    /\b(metas?|objetivos?|goals?|visi[oó]n(es)?|visions?|logros?|c[oó]mo (vengo|voy)|how am i doing|progreso|avance)\b/i,
+  ],
   ["habits", /\b(h[aá]bitos?|habits?|rachas?|streaks?|check-?in|gym|gimnasio|entren\w*)\b/i],
   ["lists", /\b(listas?|lists?|compras|shopping|packing|valija|supermercado)\b/i],
   ["notes", /\b(notas?|notes?|anot\w*|apunt[aá]\w*)\b/i],
@@ -117,6 +121,9 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   music: "music",
   timer: "time",
   clock: "time",
+  goal: "goals",
+  goals_overview: "goals",
+  vision: "goals",
 };
 
 export interface ToolSelection {

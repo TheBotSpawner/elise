@@ -151,7 +151,7 @@ export async function gatherBrief(
         ? call("tasks", "tasks.list", { status: "open", limit: OPEN_LIMIT }, config.sources.tasks)
         : undefined,
       want.has("habits") ? call("habits", "habits.list", {}, "all") : undefined,
-      want.has("goals") ? call("goals", "goals.list", { status: "active" }, "all") : undefined,
+      want.has("goals") ? call("goals", "goals.list", { status: "all" }, "all") : undefined,
       // Finance: month-to-date totals, the last 30 days vs the 30 before (for grounded
       // observations), and yesterday's expenses. Every number is computed by the tools.
       want.has("finance")

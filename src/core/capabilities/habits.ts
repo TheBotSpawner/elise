@@ -316,6 +316,20 @@ export const createHabitInput = z
     icon: iconField
       .optional()
       .describe("One emoji that fits the habit (🏋 Workout, 📚 Leer, 💧 Agua). Omit if unsure."),
+    goals: z
+      .array(
+        z
+          .object({
+            goal: z.string().trim().min(1).max(300),
+            useForProgress: z.boolean().default(false),
+          })
+          .strict(),
+      )
+      .max(10)
+      .optional()
+      .describe(
+        "Related goals (ADR-055). useForProgress: each check-in counts toward that goal. On update it replaces the set.",
+      ),
   })
   .strict()
   .refine((h) => h.frequency !== "specific_days" || (h.preferredDays?.length ?? 0) > 0, {
@@ -332,6 +346,20 @@ export const updateHabitInput = z
     unit: z.string().trim().max(30).nullable().optional(),
     preferredDays: days.optional(),
     icon: iconField.nullable().optional().describe("An emoji; null removes it."),
+    goals: z
+      .array(
+        z
+          .object({
+            goal: z.string().trim().min(1).max(300),
+            useForProgress: z.boolean().default(false),
+          })
+          .strict(),
+      )
+      .max(10)
+      .optional()
+      .describe(
+        "Related goals (ADR-055). useForProgress: each check-in counts toward that goal. On update it replaces the set.",
+      ),
   })
   .strict();
 

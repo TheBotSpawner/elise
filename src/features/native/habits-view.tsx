@@ -1,13 +1,15 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Minus, MoreHorizontal, Plus, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minus, Plus, Search, Target, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import type { HabitsWorkspace } from "@/application/native-service";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Input, Label, Select } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   habitProgress,
   isHabitIcon,
@@ -44,6 +46,7 @@ import { cn } from "@/lib/utils";
 
 import { habitCheckInAction, habitHistoryAction, habitsCsvAction } from "./actions";
 import { ImportPanel } from "./import-panel";
+import { Bar, IconTile, Menu } from "./native-ui";
 import { useNative } from "./use-native";
 
 /**
@@ -114,114 +117,102 @@ const targetText = (h: Habit, t: ReturnType<typeof useI18n>["t"]) => {
 
 // ── Small pieces ─────────────────────────────────────────────────────────────
 
-function IconTile({ icon, size = "md" }: { icon: string | null; size?: "sm" | "md" | "lg" }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "grid shrink-0 place-items-center rounded-xl bg-surface-2",
-        size === "sm" && "size-7 text-[15px]",
-        size === "md" && "size-9 text-[18px]",
-        size === "lg" && "size-12 text-[24px]",
-      )}
-    >
-      {icon ?? <span className="size-1.5 rounded-full bg-accent" />}
-    </span>
-  );
-}
+// ── Create / edit ────────────────────────────────────────────────────────────
 
-function Bar({ value, flag = false }: { value: number | null; flag?: boolean }) {
-  return (
-    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-surface-2" aria-hidden>
-      <span
-        className={cn(
-          "block h-full rounded-full transition-[width] duration-300",
-          flag ? "bg-approval" : "bg-accent",
-        )}
-        style={{ width: `${Math.round((value ?? 0) * 100)}%` }}
-      />
-    </span>
-  );
-}
+export type HabitGoalOptions = HabitsWorkspace["goals"];
 
-function Menu({
-  label,
-  items,
+/** "Objetivos relacionados" (ADR-055): the same links the goal side shows, set from here. */
+function RelatedGoals({
+  options,
+  value,
+  onChange,
 }: {
-  label: string;
-  items: { label: string; onClick: () => void; danger?: boolean }[];
+  options: HabitGoalOptions;
+  value: { goal: string; useForProgress: boolean }[];
+  onChange: (v: { goal: string; useForProgress: boolean }[]) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (
-        e instanceof KeyboardEvent ? e.key === "Escape" : !root.current?.contains(e.target as Node)
-      )
-        setOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", close);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", close);
-    };
-  }, [open]);
+  const { t } = useI18n();
+  const h = t.native.goals.habitSide;
+  const f = t.native.goals.form;
   return (
-    <div ref={root} className="relative">
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={label}
-        onClick={() => setOpen(!open)}
-        className="grid size-8 place-items-center rounded-full text-muted transition-colors hover:bg-active hover:text-fg"
-      >
-        <MoreHorizontal className="size-4" aria-hidden />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute top-full right-0 z-40 mt-1 flex w-52 flex-col rounded-2xl border border-border bg-[var(--menu-bg)] p-1 shadow-lg backdrop-blur"
-        >
-          {items.map((i) => (
-            <button
-              key={i.label}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                i.onClick();
-              }}
-              className={cn(
-                "flex w-full rounded-xl px-3 py-2 text-left text-[13.5px] hover:bg-surface-2",
-                i.danger && "hover:text-danger-text",
-              )}
-            >
-              {i.label}
-            </button>
-          ))}
-        </div>
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[13px] font-medium">{h.title}</span>
+      {value.length > 0 && (
+        <ul className="flex flex-col gap-1.5">
+          {value.map((v) => {
+            const goal = options.goals.find((g) => g.id === v.goal);
+            return (
+              <li
+                key={v.goal}
+                className="flex flex-wrap items-center gap-2 rounded-xl border border-border px-3 py-2 text-[13px]"
+              >
+                {goal?.icon && <span aria-hidden>{goal.icon}</span>}
+                <span className="min-w-0 flex-1 truncate">{goal?.title ?? "…"}</span>
+                {goal?.canDrive && (
+                  <label className="flex items-center gap-2 text-[12px] text-muted">
+                    {h.use}
+                    <Switch
+                      checked={v.useForProgress}
+                      aria-label={`${h.use}: ${goal.title}`}
+                      onCheckedChange={(use) =>
+                        onChange(
+                          value.map((x) => (x.goal === v.goal ? { ...x, useForProgress: use } : x)),
+                        )
+                      }
+                    />
+                  </label>
+                )}
+                <button
+                  type="button"
+                  aria-label={f.remove(goal?.title ?? "")}
+                  onClick={() => onChange(value.filter((x) => x.goal !== v.goal))}
+                  className="grid size-6 place-items-center rounded-full text-faint hover:bg-active hover:text-fg"
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       )}
+      <Combobox
+        value=""
+        placeholder={h.add}
+        emptyText={f.nothingFound}
+        options={options.goals
+          .filter((g) => !value.some((v) => v.goal === g.id))
+          .map((g) => ({ value: g.id, label: `${g.icon ?? "🎯"} ${g.title}` }))}
+        onChange={(id) =>
+          onChange([
+            ...value,
+            { goal: id, useForProgress: Boolean(options.goals.find((g) => g.id === id)?.canDrive) },
+          ])
+        }
+      />
+      {value.some((v) => v.useForProgress) && <p className="text-[11.5px] text-faint">{h.hint}</p>}
     </div>
   );
 }
 
-// ── Create / edit ────────────────────────────────────────────────────────────
-
 function HabitForm({
   habit,
   initialName = "",
+  goalOptions,
   onDone,
 }: {
   habit?: Habit;
   initialName?: string;
+  goalOptions: HabitGoalOptions;
   onDone: () => void;
 }) {
   const { t } = useI18n();
   const w = t.native.habits.ws;
   const { act, pending } = useNative();
+  const initialGoals = habit
+    ? (goalOptions.links[habit.id] ?? []).map((l) => ({ goal: l.goalId, useForProgress: l.drives }))
+    : [];
+  const [goals, setGoals] = useState(initialGoals);
+  const goalsChanged = JSON.stringify(goals) !== JSON.stringify(initialGoals);
   const [name, setName] = useState(habit?.name ?? initialName);
   const [icon, setIcon] = useState(habit?.icon ?? suggestHabitIcon(initialName) ?? "");
   const [frequency, setFrequency] = useState<HabitFrequency>(habit?.frequency ?? "weekly");
@@ -244,13 +235,25 @@ function HabitForm({
         if (habit)
           act(
             "habits.update",
-            { habit: habit.id, ...fields, unit: unit.trim() || null, icon: icon || null },
+            {
+              habit: habit.id,
+              ...fields,
+              unit: unit.trim() || null,
+              icon: icon || null,
+              // Only when they changed: the full set replaces the habit's goal links.
+              ...(goalsChanged ? { goals } : {}),
+            },
             onDone,
           );
         else
           act(
             "habits.create",
-            { ...fields, ...(unit.trim() ? { unit: unit.trim() } : {}), ...(icon ? { icon } : {}) },
+            {
+              ...fields,
+              ...(unit.trim() ? { unit: unit.trim() } : {}),
+              ...(icon ? { icon } : {}),
+              ...(goals.length ? { goals } : {}),
+            },
             onDone,
           );
       }}
@@ -361,6 +364,7 @@ function HabitForm({
           ))}
         </div>
       )}
+      <RelatedGoals options={goalOptions} value={goals} onChange={setGoals} />
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onDone}>
           {w.cancel}
@@ -669,6 +673,7 @@ function HabitRow({
   onOpen,
   onEdit,
   goMonth,
+  goals = [],
 }: {
   habit: Habit;
   stats: HabitStats;
@@ -682,6 +687,8 @@ function HabitRow({
   onOpen: () => void;
   onEdit: () => void;
   goMonth: (month: string) => void;
+  /** Titles of the goals this habit relates to (ADR-055). */
+  goals?: string[];
 }) {
   const { t } = useI18n();
   const w = t.native.habits.ws;
@@ -739,6 +746,16 @@ function HabitRow({
           </span>
           <span className="block truncate text-[12.5px] text-muted">
             {targetText(habit, t)}
+            {goals.length > 0 && (
+              <span
+                className="ml-2 inline-flex items-center gap-1 text-faint"
+                title={goals.join(", ")}
+              >
+                <Target className="size-3" aria-hidden />
+                <span className="sr-only">{t.native.goals.habitSide.title}: </span>
+                {goals.length === 1 ? goals[0] : goals.length}
+              </span>
+            )}
             {!habit.active && !habit.archived && (
               <>
                 {" · "}
@@ -1393,10 +1410,22 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
       )}
 
       {panel === "new" && (
-        <HabitForm key={starter} initialName={starter} onDone={() => setPanel(null)} />
+        <HabitForm
+          key={starter}
+          initialName={starter}
+          goalOptions={data.goals}
+          onDone={() => setPanel(null)}
+        />
       )}
       {panel === "import" && <ImportPanel kind="habits" onDone={() => setPanel(null)} />}
-      {editing && <HabitForm key={editing.id} habit={editing} onDone={() => setEditing(null)} />}
+      {editing && (
+        <HabitForm
+          key={editing.id}
+          habit={editing}
+          goalOptions={data.goals}
+          onDone={() => setEditing(null)}
+        />
+      )}
 
       {empty && panel !== "new" ? (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border px-6 py-12 text-center">
@@ -1447,6 +1476,9 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
                   onOpen={() => setSelectedId(h.id === selectedId ? null : h.id)}
                   onEdit={() => setEditing(h)}
                   goMonth={(m) => go(habitRange("month", `${m}-01`))}
+                  goals={(data.goals.links[h.id] ?? []).map(
+                    (l) => data.goals.goals.find((g) => g.id === l.goalId)?.title ?? "",
+                  )}
                 />
               ))}
             </ul>

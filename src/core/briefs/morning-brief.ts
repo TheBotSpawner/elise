@@ -10,7 +10,7 @@ import type {
   FinanceSummary,
   FinanceTransaction,
 } from "../capabilities/finance";
-import type { Goal, GoalProgress } from "../capabilities/goals";
+import { basisText, type Goal, type GoalProgress } from "../capabilities/goals";
 import type { HabitProgress } from "../capabilities/habits";
 import { isOpenTask, type Task } from "../capabilities/tasks";
 import {
@@ -22,6 +22,7 @@ import {
   type Entity,
 } from "../contexts/model";
 import { compareAmounts } from "../finance/money";
+import { healthText, type GoalHealth } from "../goals/analytics";
 import { addDays, toLocalDateTime, zonedDateTimeToUtc } from "../time";
 import {
   financeSummaryVisuals,
@@ -252,6 +253,11 @@ export interface BriefGoal {
   progress: string;
   targetDate: string | null;
   openTasks: number;
+  /** Why it is in the brief (ADR-055). */
+  why?: "at_risk" | "due_soon" | "reached" | "completed";
+  /** The deterministic risk explanation, when at risk. */
+  reason?: string | null;
+  icon?: string | null;
 }
 
 export interface BriefFinance {
@@ -270,7 +276,8 @@ export interface BriefData {
   waitingOnOthers?: FollowUp[];
   tasks?: Task[];
   habits?: HabitProgress[];
-  goals?: { goal: Goal; progress: GoalProgress; openTasks: number }[];
+  /** The same snapshots the Goals screen uses (health optional for older callers). */
+  goals?: { goal: Goal; progress: GoalProgress; openTasks: number; health?: GoalHealth }[];
   finance?: {
     month: FinanceSummary | null;
     recent: FinanceSummary | null;
@@ -544,7 +551,7 @@ export function assembleBrief(data: BriefData): MorningBrief {
     },
     waitingOnOthers: (data.waitingOnOthers ?? []).slice(0, CAPS.waiting).map(briefFollowUp),
     ...(data.habits ? { habits: briefHabits(data.habits) } : {}),
-    ...(data.goals ? { goals: briefGoals(data.goals) } : {}),
+    ...(data.goals ? { goals: briefGoals(data.goals, today) } : {}),
     ...(data.finance ? { finance: briefFinance(data.finance) } : {}),
     ...(data.news ? { news: briefNews(data.news) } : {}),
     ...(data.contexts ? { focus: briefFocus(data, today) } : {}),
@@ -591,18 +598,44 @@ function briefHabits(progress: HabitProgress[]): BriefHabit[] {
   return relevant.slice(0, CAPS.habits);
 }
 
-function briefGoals(
-  goals: { goal: Goal; progress: GoalProgress; openTasks: number }[],
-): BriefGoal[] {
+/**
+ * Goals worth a line this morning (ADR-055), never every active goal: at risk first, then due
+ * within two weeks, targets reached waiting to be completed, and goals completed since
+ * yesterday. Health comes from core/goals, the same as the Goals screen.
+ */
+function briefGoals(goals: NonNullable<BriefData["goals"]>, today: string): BriefGoal[] {
+  const soon = addDays(today, 14);
+  const since = addDays(today, -2);
+  const why = (g: NonNullable<BriefData["goals"]>[number]): BriefGoal["why"] | null => {
+    if (g.goal.status === "completed")
+      return g.goal.completedAt && g.goal.completedAt.slice(0, 10) >= since ? "completed" : null;
+    if (g.goal.status !== "active" || g.goal.archived) return null;
+    if (g.health?.state === "at_risk") return "at_risk";
+    if (g.health?.reached || g.progress.reached) return "reached";
+    if (g.goal.targetDate && g.goal.targetDate >= today && g.goal.targetDate <= soon)
+      return "due_soon";
+    return null;
+  };
+  const order = { at_risk: 0, due_soon: 1, reached: 2, completed: 3 } as const;
   return goals
-    .filter((g) => g.goal.status === "active")
-    .sort((a, b) => (a.goal.targetDate ?? "9999").localeCompare(b.goal.targetDate ?? "9999"))
+    .map((g) => ({ g, why: why(g) }))
+    .filter(
+      (x): x is { g: (typeof goals)[number]; why: NonNullable<BriefGoal["why"]> } => x.why !== null,
+    )
+    .sort(
+      (a, b) =>
+        order[a.why] - order[b.why] ||
+        (a.g.goal.targetDate ?? "9999").localeCompare(b.g.goal.targetDate ?? "9999"),
+    )
     .slice(0, CAPS.goals)
-    .map(({ goal, progress, openTasks }) => ({
-      title: goal.title,
-      progress: progress.percent === null ? progress.basis : `${progress.percent}%`,
-      targetDate: goal.targetDate,
-      openTasks,
+    .map(({ g, why: w }) => ({
+      title: g.goal.title,
+      progress: g.progress.percent === null ? basisText(g.progress) : `${g.progress.percent}%`,
+      targetDate: g.goal.targetDate,
+      openTasks: g.openTasks,
+      why: w,
+      reason: g.health ? healthText(g.health) : null,
+      icon: g.goal.icon ?? null,
     }));
 }
 
@@ -743,10 +776,12 @@ function weatherForModel(w: WeatherPayload) {
 function briefCharts(data: BriefData, today: string): Pick<MorningBrief, "charts"> {
   const locale = data.locale ?? "en";
   const habits = data.habits?.length ? habitsVisual(data.habits, locale)?.spec : undefined;
-  const goals = data.goals?.length
+  // Only the goals the brief mentions get a bar: the chart never dumps every goal.
+  const mentioned = new Set(briefGoals(data.goals ?? [], today).map((g) => g.title));
+  const goals = data.goals?.some((g) => mentioned.has(g.goal.title) && g.goal.status === "active")
     ? goalsVisual(
         data.goals
-          .filter((g) => g.goal.status === "active")
+          .filter((g) => g.goal.status === "active" && mentioned.has(g.goal.title))
           .map((g) => ({
             title: g.goal.title,
             percent: g.progress.percent,

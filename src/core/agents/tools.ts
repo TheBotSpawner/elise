@@ -22,7 +22,7 @@ import type {
   FinanceSummary,
   FinanceTransaction,
 } from "../capabilities/finance";
-import type { Goal, GoalProgress, GoalsProvider } from "../capabilities/goals";
+import type { GoalsProvider } from "../capabilities/goals";
 import type { HabitProgress, HabitsProvider } from "../capabilities/habits";
 import type { ListsProvider, NativeList } from "../capabilities/lists";
 import type { ClientPlayback, MusicCommand, MusicProvider } from "../capabilities/music";
@@ -39,6 +39,13 @@ import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { ContextKind, ContextStore } from "../contexts/model";
 import type { FinanceReport } from "../finance/report";
+import type {
+  GoalDetail,
+  GoalSnapshot,
+  GoalsSummary,
+  VisionDetail,
+  VisionSummary,
+} from "../goals/analytics";
 import type { HabitStatsReport } from "../habits/analytics";
 import type { KnowledgeManager } from "../knowledge/admin";
 import type { KnowledgeReader } from "../knowledge/model";
@@ -224,7 +231,17 @@ export type ToolDisplay =
   /** Native data, computed by ELISE (progress is never the model's arithmetic). */
   | { kind: "habits"; progress: HabitProgress[] }
   | { kind: "habit_stats"; report: HabitStatsReport }
-  | { kind: "goals"; goals: { goal: Goal; progress: GoalProgress; openTasks: number }[] }
+  /** Goals (ADR-055): every number and status computed by core/goals. */
+  | {
+      kind: "goals";
+      goals: GoalSnapshot[];
+      visions?: VisionSummary[];
+      summary?: GoalsSummary;
+      /** What was listed: identifies the overview Surface (goals:<status>:<range>). */
+      scope?: { status: string; from: string | null; to: string | null; visionId: string | null };
+    }
+  | { kind: "goal"; detail: GoalDetail }
+  | { kind: "vision"; detail: VisionDetail }
   | { kind: "native_list"; list: NativeList }
   | { kind: "note"; note: Note; change: "created" | "updated" | "archived" }
   | { kind: "notes"; notes: Note[] }
