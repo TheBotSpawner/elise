@@ -106,6 +106,10 @@ export interface ToolContext {
   here?: LatLng | null;
   /** The user's message this turn, verbatim: searches keep the original wording (Recall). */
   userMessage?: string | null;
+  /** Files sent with this turn (count only): their content is data, never a destination. */
+  attachmentCount?: number;
+  /** Structured, value-free telemetry from a tool's own decisions (names, ids, counts). */
+  log?: (level: "info" | "warn", event: string, fields: Record<string, unknown>) => void;
   /**
    * What this page's embedded music player is doing (ADR-042), as the browser reported it with
    * the turn. Only embedded providers (YouTube) read it; never stored.

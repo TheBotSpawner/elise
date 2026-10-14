@@ -1070,6 +1070,10 @@ export const es: Dictionary = {
         addItem: "Agregar elemento",
         emptyList: "Todavía no agregaste nada.",
         done: (n: number) => `Completados (${n})`,
+        surfaceCount: (open: number, done: number) =>
+          `${open} ${open === 1 ? "pendiente" : "pendientes"}${done ? ` · ${done} ${done === 1 ? "completado" : "completados"}` : ""}`,
+        showAllPending: (n: number) => `Ver todos (${n})`,
+        showFewer: "Ver menos",
         menu: (name: string) => `Opciones de ${name}`,
         sortBy: "Ordenar por",
         sorts: { manual: "Mi orden", alpha: "Nombre", recent: "Más recientes" },

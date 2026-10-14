@@ -695,6 +695,9 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
               // The conversation's Space, else the Section this message named.
               knowledgeSpaceId: activeSpace?.id ?? mentioned?.id ?? null,
               userMessage: input.message,
+              attachmentCount: attached?.sent.length ?? 0,
+              log: (level, event, fields) =>
+                logger[level](event, { run_id: runId, modality, ...fields }),
               workspace,
               voiceWake: input.voice?.wake ?? null,
               here,

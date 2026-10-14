@@ -627,6 +627,9 @@ function TaskRow({
 }
 
 /** A native List as on My Elise → Lists: active first, completed collapsed below (ADR-051). */
+/** Pending items a list Surface shows before "Show all (N)". */
+const CHECKLIST_PREVIEW = 12;
+
 function ChecklistBody({
   surface,
   p,
@@ -639,8 +642,12 @@ function ChecklistBody({
   const { t } = useI18n();
   const w = t.native.lists.ws;
   const [showDone, setShowDone] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const active = p.items.filter((i) => !i.checked);
   const done = p.items.filter((i) => i.checked);
+  // The whole list, always (ADR-061) — a long one shows its first pending items and says how
+  // many there are, never just what changed.
+  const shown = showAll ? active : active.slice(0, CHECKLIST_PREVIEW);
   const row = (i: (typeof p.items)[number]) => {
     const pending = handlers.pending === `${surface.id}:${i.id}`;
     return (
@@ -677,10 +684,29 @@ function ChecklistBody({
   };
   return (
     <div>
+      {/* Which list this is, by its real name (read back after every change). */}
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <h3 className="min-w-0 truncate text-[15px] font-medium">
+          {p.icon ? `${p.icon} ` : ""}
+          {p.name}
+        </h3>
+        <span className="shrink-0 text-[12px] text-faint">
+          {w.surfaceCount(active.length, done.length)}
+        </span>
+      </div>
       {active.length === 0 && done.length === 0 ? (
         <p className="text-[13px] text-faint">{w.emptyList}</p>
       ) : (
-        <ul className="flex flex-col">{active.map(row)}</ul>
+        <ul className="flex flex-col">{shown.map(row)}</ul>
+      )}
+      {active.length > CHECKLIST_PREVIEW && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="py-1 text-[12.5px] text-muted hover:text-fg"
+        >
+          {showAll ? w.showFewer : w.showAllPending(active.length)}
+        </button>
       )}
       {done.length > 0 && (
         <div className="mt-1 border-t border-border pt-1">

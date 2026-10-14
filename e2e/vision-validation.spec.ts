@@ -124,6 +124,10 @@ async function send(page: Page, text: string) {
   const at = Date.now();
   const box = await textBox(page);
   await box.fill(text);
+  // Like a person: send once ELISE is done with the previous answer (a busy dock ignores Enter).
+  await expect(page.getByRole("button", { name: "Enviar", exact: true })).toBeEnabled({
+    timeout: 60_000,
+  });
   await box.press("Enter");
   return at;
 }
@@ -194,12 +198,19 @@ test("A · CTRL+V the whiteboard, ask to add the items → 12 items in the list"
   for (const want of EXPECTED)
     expect(
       // The section may come along as a prefix ("Marketing: Hooks"): context, not noise.
-      got.some((x) => loose(x.content).endsWith(loose(want))),
+      got.some((x) => loose(x.content).includes(loose(want))),
       `missing ${want}`,
     ).toBe(true);
   const checkedA = got.filter((x) => x.checked).map((x) => loose(x.content));
   expect(checkedA).toHaveLength(1);
-  expect(checkedA[0]).toMatch(/meta coexistencia$/);
+  expect(checkedA[0]).toMatch(/meta coexistencia/);
+  // The named list was the only destination: no list made from the image title (ADR-061).
+  const { data: lists } = await admin!.from("lists").select("name").eq("workspace_id", workspaceId);
+  report.A_lists = lists?.map((l) => l.name);
+  expect(lists?.map((l) => l.name)).toEqual(["📚 Aprendizaje"]);
+  // The Surface is the whole list, by its real name, with its counts.
+  await expect(page.getByRole("heading", { name: "📚 Aprendizaje" })).toBeVisible();
+  await expect(page.getByText("11 pendientes · 1 completado")).toBeVisible();
   await page.screenshot({ path: i.outputPath("A-done.png") });
 });
 
@@ -240,7 +251,7 @@ test("B/C · attach, describe; then act WITHOUT re-attaching", async ({ page }, 
   report.C_items = (await items()).map((x) => `${x.checked ? "☑" : "☐"} ${x.content}`);
   const checkedC = (await items()).filter((x) => x.checked).map((x) => loose(x.content));
   expect(checkedC).toHaveLength(1);
-  expect(checkedC[0]).toMatch(/meta coexistencia$/);
+  expect(checkedC[0]).toMatch(/meta coexistencia/);
 });
 
 test("D · after a reload, ELISE still knows what the image showed", async ({ page }, i) => {

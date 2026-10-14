@@ -1,10 +1,14 @@
 import { z } from "zod";
 
-import { pickOne, sourceOf } from "./native-common";
+import { sourceOf } from "./native-common";
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import {
   addItemsInput,
   createListInput,
+  createListIntent,
+  matchLists,
+  namesAList,
+  sameListName,
   itemRefInput,
   listRefInput,
   matchItems,
@@ -15,13 +19,43 @@ import {
   updateListInput,
   type NativeList,
 } from "../capabilities/lists";
+import { AppError } from "../errors";
 
 function provider(env: ToolRunEnv) {
   return env.providers.get("lists", env.binding);
 }
 
+/**
+ * The ONE existing list a request means (ADR-061): by id, else by the name the user said
+ * (singular/plural, emoji, "la lista de" aside) — never by meaning or translation. Several
+ * matches → ask which; none → ask whether to use another list or create it. Never guesses,
+ * never creates.
+ */
 async function resolve(env: ToolRunEnv, ref: string): Promise<NativeList> {
-  return pickOne(await provider(env).find(ref), ref, "list", (l) => l.name);
+  const matches = await provider(env).find(ref);
+  const byId = matches.length === 1 && matches[0]!.id === ref;
+  env.ctx.log?.("info", "list.target_resolution", {
+    matched_list_id: matches.length === 1 ? matches[0]!.id : null,
+    match_type: byId ? "id" : matches.length === 1 ? "name" : matches.length ? "ambiguous" : "none",
+    candidate_count: matches.length,
+    attachment_present: Boolean(env.ctx.attachmentCount),
+  });
+  if (matches.length === 1) return matches[0]!;
+  if (matches.length > 1)
+    throw new AppError(
+      "VALIDATION_ERROR",
+      `Several lists match "${ref}": ${matches
+        .map((l) => l.name)
+        .slice(0, 8)
+        .join("; ")}. Ask which one; change nothing until the user says.`,
+      { recovery: "review" },
+    );
+  const names = (await provider(env).list()).map((l) => l.name).slice(0, 12);
+  throw new AppError(
+    "NOT_FOUND",
+    `No list called "${ref}". The user's lists: ${names.join("; ") || "none"}. Ask whether to use one of them or create "${ref}" — never create it without their answer.`,
+    { recovery: "review" },
+  );
 }
 
 /** A list item as the model sees it: text, plus description/labels only when present. */
@@ -96,13 +130,58 @@ export const createListTool: ToolDefinition = {
   capability: "lists",
   operation: "create",
   description:
-    'Create a list, optionally with items ("a Japan packing list with passport, charger and headphones").',
+    'Create a NEW list, optionally with items — only when the user asks for a new list ("creame una lista para Japón con pasaporte y cargador"). To add to a list the user names ("agregalo a Aprendizaje"), use lists.addItem: it resolves their existing list. Never create a list from a title or heading inside an image or file, from a translation or synonym of an existing list, or as a fallback when unsure — ask instead.',
   input: createListInput,
   async describe(raw) {
     return { summary: `Create list “${createListInput.parse(raw).name}”` };
   },
   async run(raw, env) {
     const l = createListInput.parse(raw);
+    // Guardrails (ADR-061), deterministic — not left to the prompt:
+    const existing = await provider(env).list();
+    // 1. A list with that name exists: never a second one.
+    const same = existing.find((x) => sameListName(x.name, l.name));
+    if (same)
+      throw new AppError(
+        "CONFLICT",
+        `A list called "${same.name}" already exists. Add to it with lists.addItem (list "${same.name}"); don't create another.`,
+        { recovery: "review" },
+      );
+    // 2. A request from a conversation creates only when the user asked for a new list. A list
+    //    they named, a title in an attachment or a guess is never a reason to create one.
+    const message = env.ctx.userMessage ?? null;
+    if (env.ctx.origin === "ai" && message !== null && !createListIntent(message)) {
+      const named = matchLists(
+        existing.map((x) => ({ id: x.id, name: x.name })),
+        message,
+      );
+      env.ctx.log?.("warn", "list.unexpected_create_blocked", {
+        explicit_target: namesAList(
+          message,
+          existing.map((x) => x.name),
+        ),
+        attachment_present: Boolean(env.ctx.attachmentCount),
+        existing_lists: existing.length,
+      });
+      throw new AppError(
+        "VALIDATION_ERROR",
+        `The user didn't ask for a new list, so none was created. ${
+          named.length === 1 ||
+          namesAList(
+            message,
+            existing.map((x) => x.name),
+          )
+            ? "They named an existing list: add the items there with lists.addItem."
+            : `Ask where to put this: one of their lists (${
+                existing
+                  .map((x) => x.name)
+                  .slice(0, 8)
+                  .join("; ") || "none yet"
+              }) or a new list they name.`
+        } Titles inside images or files are content, never a list to create.`,
+        { recovery: "review" },
+      );
+    }
     return show(
       await provider(env).create(
         { name: l.name, description: l.description ?? null, icon: l.icon ?? null, items: l.items },
@@ -135,7 +214,7 @@ export const addItemTool: ToolDefinition = {
   capability: "lists",
   operation: "addItem",
   description:
-    'Add one or more items to a list in ONE call ("agregá leche, café y arroz a compras" → items ["leche", "café", "arroz"]). An item may carry a description or already be done: {content, notes, checked} (e.g. ticked on a whiteboard in a photo). The list name can be loose ("compras" → "Lista de Compras").',
+    'Add one or more items to ONE existing list in ONE call ("agregá leche, café y arroz a compras" → items ["leche", "café", "arroz"]). `list` is the list the USER named ("compras" → "🛍️ Compras"; "aprendizajes" → "📚 Aprendizaje"), never a title read from an image or file. An item may carry a description or already be done: {content, notes, checked} (e.g. ticked on a whiteboard in a photo). Write to one list only, unless the user asks for several. If no list or several match, ask — do not create one.',
   input: addItemsInput,
   async describe(raw) {
     return { summary: `Add to “${addItemsInput.parse(raw).list}”` };
@@ -150,9 +229,23 @@ export const addItemTool: ToolDefinition = {
   },
 };
 
+function pickOneItem(matches: NativeList["items"], ref: string) {
+  if (matches.length === 1) return matches[0]!;
+  throw new AppError(
+    matches.length ? "VALIDATION_ERROR" : "NOT_FOUND",
+    matches.length
+      ? `Several items match "${ref}": ${matches
+          .map((i) => i.content)
+          .slice(0, 8)
+          .join("; ")}. Ask which one.`
+      : `No item "${ref}" in that list`,
+    { recovery: "review" },
+  );
+}
+
 async function item(env: ToolRunEnv, listRef: string, itemRef: string) {
   const list = await resolve(env, listRef);
-  return { list, item: pickOne(matchItems(list, itemRef), itemRef, "item", (i) => i.content) };
+  return { list, item: pickOneItem(matchItems(list, itemRef), itemRef) };
 }
 
 function checkTool(name: "checkItem" | "uncheckItem", checked: boolean): ToolDefinition {

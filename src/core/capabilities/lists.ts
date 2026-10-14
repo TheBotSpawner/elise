@@ -159,6 +159,30 @@ export function matchLists<T extends { id: string; name: string }>(lists: T[], r
 }
 
 /**
+ * Did the user ask for a NEW list? Creating is only for that ("creame una lista Learning Paths",
+ * "hacé una nueva lista con esto", "necesito una lista para el viaje", "make a list…"). Adding to
+ * a list, a title read in an image or a file name never counts.
+ */
+export function createListIntent(message: string): boolean {
+  const m = norm(message);
+  return (
+    /\b(cre\w*|hac\w*|arm\w*|abr\w*|empez\w*|inici\w*|gener\w*|nuev[ao]s?|otra|make|create|start|set up|new|another)\b[^.?!\n]{0,40}\b(listas?|lists?)\b/.test(
+      m,
+    ) ||
+    /\blistas? nuevas?\b/.test(m) ||
+    /\b(necesito|quiero|quisiera|i need|i want)\b[^.?!\n]{0,12}\b(una|a)\s+(nueva\s+)?(lista|list)\b/.test(
+      m,
+    )
+  );
+}
+
+/** Is there already a list with this name (same words, emoji/case/accents/plural aside)? */
+export function sameListName(a: string, b: string): boolean {
+  const x = words(a).join(" ");
+  return x.length > 0 && x === words(b).join(" ");
+}
+
+/**
  * Does the message name one of the user's lists ("agregalos a Aprendizajes" → "📚 Aprendizaje")?
  * Every meaningful word of a list's name must appear (singular/plural alike). Used to offer the
  * Lists tools up front when a message never says "lista".

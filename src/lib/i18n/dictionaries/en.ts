@@ -1053,6 +1053,10 @@ export const en = {
         addItem: "Add item",
         emptyList: "Nothing here yet.",
         done: (n: number) => `Completed (${n})`,
+        surfaceCount: (open: number, done: number) =>
+          `${open} open${done ? ` · ${done} done` : ""}`,
+        showAllPending: (n: number) => `Show all (${n})`,
+        showFewer: "Show fewer",
         menu: (name: string) => `${name} options`,
         sortBy: "Sort by",
         sorts: { manual: "My order", alpha: "Name", recent: "Most recent" },
