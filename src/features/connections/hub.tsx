@@ -239,7 +239,10 @@ function ProviderCard({
       <ProviderIcon id={entry.id} name={entry.name} />
       <span className="min-w-0 flex-1">
         <span className="block text-[14.5px] font-medium">{entry.name}</span>
-        <span className="block truncate text-[13px] text-muted">{h.descriptions[entry.id]}</span>
+        {/* The whole description, in at most two lines (descriptions are written to fit). */}
+        <span className="line-clamp-2 block text-[13px] leading-snug text-muted">
+          {h.descriptions[entry.id]}
+        </span>
         <span
           className={cn(
             "mt-0.5 flex items-center gap-1.5 truncate text-[12.5px]",

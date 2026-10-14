@@ -77,6 +77,13 @@ export interface SpaceInfo {
 export const GENERAL_KNOWLEDGE_NAME = "General";
 
 /**
+ * The description the database gives General at creation: product copy, not the user's. The page
+ * shows it behind ⓘ instead; a description the user wrote is content and always shows.
+ */
+export const GENERAL_DEFAULT_DESCRIPTION =
+  "Contexto y formas de trabajar que ELISE usa en todos tus espacios.";
+
+/**
  * Whether General Knowledge's context joins a turn (ADR-047 §AO-AP). With no Space or Section
  * active it is the default scope, so its context comes along (clipped by the caller). Inside a
  * Space it supplements, and only when the message touches what it says — never every turn.

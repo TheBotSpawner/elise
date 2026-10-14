@@ -46,6 +46,11 @@ export interface AITurnRequest {
    */
   reasoning?: ReasoningEffort;
   signal?: AbortSignal;
+  /**
+   * Structured output: the text answer is JSON matching this schema (all properties required,
+   * no extras). For bounded side tasks that need fields, not prose (e.g. drafting a Method).
+   */
+  output?: { name: string; schema: Record<string, unknown> };
 }
 
 export interface AIUsage {

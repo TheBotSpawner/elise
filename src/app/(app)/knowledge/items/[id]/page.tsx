@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireAuthContext } from "@/application/auth-context";
 import { getItemPreview } from "@/application/knowledge-service";
 import { knowledgeItemText } from "@/application/methods-service";
+import { BackLink } from "@/components/shared/back-link";
 import { PageContainer } from "@/components/shared/page";
 import { buttonVariants } from "@/components/ui/button";
 import { looksProcedural } from "@/core/skills/model";
@@ -43,12 +44,11 @@ export default async function KnowledgeItemPage({
       <article className="mx-auto flex max-w-[720px] flex-col gap-6">
         <header className="flex flex-col gap-2">
           {item.space && (
-            <Link
+            <BackLink
               href={`/knowledge/spaces/${item.space.id}`}
-              className="text-[13px] text-muted hover:text-fg"
-            >
-              ← {item.space.path}
-            </Link>
+              label={item.space.path}
+              ariaLabel={t.knowledge.backTo(item.space.path)}
+            />
           )}
           <h1 className="text-[26px] leading-[1.2] font-light tracking-[-0.02em]">{item.title}</h1>
           <p className="text-[13px] text-muted">

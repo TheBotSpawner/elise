@@ -329,7 +329,7 @@ describe("the paperclip", () => {
     expect(input.accept).toContain(".png");
     const pdf = file("plan.pdf");
     await act(async () => void fireEvent.change(input, { target: { files: [pdf] } }));
-    expect(await screen.findByText("Sumarlo al Conocimiento")).toBeInTheDocument();
+    expect(await screen.findByText("Guardarlo en Conocimiento")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Adjuntar a este mensaje"));
     expect(add).toHaveBeenCalledWith([pdf]);
     add.mockRestore();

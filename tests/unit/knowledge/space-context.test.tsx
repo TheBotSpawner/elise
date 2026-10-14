@@ -41,7 +41,9 @@ describe("Section context", () => {
   it("empty: a short prompt, no permanent textarea", () => {
     view(null);
     expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.getByText("Ayudá a ELISE a entender esta sección.")).toBeInTheDocument();
+    // The explanation is behind ⓘ now; the action stays visible.
+    expect(screen.queryByText("Ayudá a ELISE a entender esta sección.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Acerca del contexto" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Agregar contexto/ }));
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });

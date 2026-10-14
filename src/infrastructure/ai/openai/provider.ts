@@ -125,6 +125,18 @@ export class OpenAIProvider implements AIProvider {
           prompt_cache_key: `elise:${request.tier}`,
           // Only reasoning models accept an effort, each its own set (effortFor).
           ...(effort ? { reasoning: { effort } } : {}),
+          ...(request.output
+            ? {
+                text: {
+                  format: {
+                    type: "json_schema" as const,
+                    name: request.output.name,
+                    schema: request.output.schema,
+                    strict: true,
+                  },
+                },
+              }
+            : {}),
           // Fast mode (priority processing) only where the profile asks for it.
           ...(profile.serviceTier ? { service_tier: profile.serviceTier } : {}),
         },

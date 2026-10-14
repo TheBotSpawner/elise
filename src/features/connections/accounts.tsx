@@ -243,14 +243,10 @@ export function ConnectGoogleAction({ label }: { label: string }) {
   const [submitting, setSubmitting] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong text-[14px] text-muted transition-colors hover:border-accent-line hover:text-fg"
-      >
-        <Plus className="size-4" aria-hidden />
+      <Button onClick={() => setOpen(true)}>
+        <Plus />
         {label}
-      </button>
+      </Button>
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
@@ -325,14 +321,10 @@ export function ConnectMicrosoftAction({ label }: { label: string }) {
   const [submitting, setSubmitting] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong text-[14px] text-muted transition-colors hover:border-accent-line hover:text-fg"
-      >
-        <Plus className="size-4" aria-hidden />
+      <Button onClick={() => setOpen(true)}>
+        <Plus />
         {label}
-      </button>
+      </Button>
       <Dialog
         open={open}
         onClose={() => setOpen(false)}

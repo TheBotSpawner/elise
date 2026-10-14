@@ -98,12 +98,12 @@ export const es: Dictionary = {
       work: {
         label: "Trabajo",
         name: "Trabajo",
-        hint: "Después podés sumar Secciones para cada cliente o proyecto.",
+        hint: "Después podés crear Secciones para cada cliente o proyecto.",
       },
       university: {
         label: "Facultad",
         name: "Facultad",
-        hint: "Después podés sumar una Sección para cada materia.",
+        hint: "Después podés crear una Sección para cada materia.",
       },
       personal: {
         label: "Personal",
@@ -113,7 +113,7 @@ export const es: Dictionary = {
       business: {
         label: "Mi negocio",
         name: "Mi negocio",
-        hint: "Después podés sumar Secciones para cada cliente o proyecto.",
+        hint: "Después podés crear Secciones para cada cliente o proyecto.",
       },
       custom: { label: "Otra cosa", name: "", hint: "Cualquier parte de tu vida o tu trabajo." },
     },
@@ -1505,6 +1505,11 @@ export const es: Dictionary = {
       saved: "Contexto guardado",
       emptySection: "Ayudá a ELISE a entender esta sección.",
       emptySpace: "Ayudá a ELISE a entender este Espacio.",
+      about: "Acerca del contexto",
+      infoSpace:
+        "El contexto le indica a ELISE qué debe saber sobre este Espacio y se tiene en cuenta cuando trabajás dentro de él.",
+      infoSection:
+        "El contexto le indica a ELISE qué debe saber sobre esta sección y se tiene en cuenta cuando trabajás dentro de ella.",
       add: "Agregar contexto",
       edit: "Editar contexto",
       collapse: "Cerrar",
@@ -1513,6 +1518,13 @@ export const es: Dictionary = {
     },
     title: "Conocimiento",
     breadcrumb: "Ubicación",
+    backTo: (name: string) => `Volver a ${name}`,
+    aboutSpace: (name: string) => `Acerca de ${name}`,
+    generalInfo:
+      "General es el espacio predeterminado de ELISE. Su contexto, fuentes y métodos pueden utilizarse en cualquier área cuando no pertenecen a un Espacio específico.",
+    aboutSources: "Acerca de las fuentes",
+    sourcesInfo:
+      "Un Espacio puede combinar archivos subidos, Google Drive, Notion y Notas de ELISE. ELISE usa las fuentes relevantes según lo que le preguntes.",
     sections: {
       title: "Secciones",
       new: "Nueva sección",
@@ -1616,7 +1628,7 @@ export const es: Dictionary = {
     },
     picker: {
       titleDrive: "Elegí qué debería entender ELISE",
-      titleNotion: "Sumar desde Notion",
+      titleNotion: "Agregar desde Notion",
       notionDatabases: "Bases de datos",
       notionPages: "Páginas",
       searchDatabases: "Buscá bases que compartiste con ELISE",
@@ -1627,7 +1639,7 @@ export const es: Dictionary = {
         "¿No la ves? ELISE solo ve lo que compartiste con ella en Notion: abrila ahí › ··· › Conexiones › ELISE, o reconectá Notion para elegir de nuevo.",
       reconnectNotion: "Reconectar Notion",
       skipped: (n: number) =>
-        `${n} ya ${n === 1 ? "estaba" : "estaban"} en este lugar y no se ${n === 1 ? "sumó" : "sumaron"} de nuevo.`,
+        `${n} ya ${n === 1 ? "estaba" : "estaban"} en este lugar y no se ${n === 1 ? "agregó" : "agregaron"} de nuevo.`,
       account: "Cuenta",
       noAccounts: "Primero conectá una cuenta con Drive o Notion en Conexiones.",
       enableDrive: "Permitir Drive en Conexiones",
@@ -1703,16 +1715,16 @@ export const es: Dictionary = {
     continue: "Continuar",
     back: "Volver",
     creating: "Creando…",
-    addTitle: "Sumar conocimiento",
+    addTitle: "Agregar fuente",
     addBody:
-      "Las fuentes que sumes acá pasan a ser parte del contexto que ELISE usa para responder en este Espacio.",
-    addSource: "Sumar fuente",
+      "Las fuentes que agregues acá pasan a ser parte del contexto que ELISE usa para responder en este Espacio.",
+    addSource: "Agregar fuente",
     options: {
       upload: { title: "Subir archivos", body: "PDF, Word, texto, Markdown o CSV" },
-      documents: { title: "Sumar documentos", body: "PDF, Word, texto, Markdown o CSV" },
+      documents: { title: "Subir documentos", body: "PDF, Word, texto, Markdown o CSV" },
       drive: { title: "Conectar Google Drive", body: "Carpetas o archivos, siempre al día" },
       notion: { title: "Conectar Notion", body: "Páginas y bases que compartas con ELISE" },
-      empty: { title: "Empezar vacío", body: "Sumá fuentes cuando quieras" },
+      empty: { title: "Empezar vacío", body: "Agregá fuentes cuando quieras" },
     },
     goToConnections: "Ir a Conexiones",
     more: "Más",
@@ -1730,11 +1742,11 @@ export const es: Dictionary = {
       title: "¿Qué hago con este archivo?",
       onlyHere: "Adjuntar a este mensaje",
       onlyHereBody: "ELISE lo usa en esta conversación. No se guarda en Conocimiento.",
-      toKnowledge: "Sumarlo al Conocimiento",
+      toKnowledge: "Guardarlo en Conocimiento",
       toKnowledgeBody: "ELISE lo guarda en un Espacio y puede usarlo en otras conversaciones.",
       chooseSpace: "Espacio",
       newSpace: "Nuevo Espacio…",
-      add: "Sumar al Espacio",
+      add: "Agregar al Espacio",
     },
     sourcesCard: "Fuentes",
     notEnough: "Tu Conocimiento no tiene evidencia suficiente para esto.",
@@ -3209,18 +3221,35 @@ export const es: Dictionary = {
     spaceHint: (name: string) =>
       `Cómo trabaja ELISE en ${name}. Sus secciones pueden ajustarlos, y también valen los métodos generales.`,
     sectionHint: (name: string) => `Solo en esta sección; se suman a los de ${name}.`,
+    about: "Acerca de los Métodos",
+    infoSpace:
+      "Los Métodos le enseñan a ELISE cómo querés que haga determinadas cosas en este Espacio. También puede usar métodos generales. Si existe uno más específico para una Sección, ese tiene prioridad.",
+    infoSection: (name: string) =>
+      `Los Métodos le enseñan a ELISE cómo querés que haga determinadas cosas en esta sección. También usa los de ${name} y los generales; los de la sección tienen prioridad.`,
+    infoGeneral:
+      "Los Métodos de General son formas de trabajar que ELISE puede usar en cualquier área. Un Método definido en un Espacio o Sección específica tiene prioridad cuando corresponde.",
+    examples: [
+      "“Cuando planifiques mi día…”",
+      "“Cuando redactes algo para mí…”",
+      "“Antes de tomar una decisión…”",
+    ],
+    emptyCta: "Creá uno para enseñarle a ELISE cómo trabajar.",
+    importHint: "Importá un Método desde un archivo .md o .txt.",
+    importFormats: "Los Métodos se pueden importar desde archivos .md o .txt.",
+    savesIn: (where: string) => `Se guardará en ${where}.`,
+    draftUnstructured:
+      "No pude ordenarlo. Dejé tu texto en Instrucciones: completá el nombre y qué tiene que saber hacer.",
     globalTitle: "General",
     globalHint: "Valen en todo ELISE, en cualquier espacio.",
     generalHint:
       "Formas de trabajar que ELISE usa en cualquier área. Un espacio o una sección pueden tener las suyas, y esas mandan.",
     generalExample:
       "Por ejemplo: “Cuando planifiques mi día…”, “Cuando redactes algo para mí…”, “Antes de tomar una decisión…”",
-    empty:
-      "Todavía no hay métodos. Enseñale a ELISE cómo querés que haga algo y lo va a hacer siempre así.",
+    empty: "Todavía no hay métodos.",
     emptyExample:
       "Por ejemplo: “Cuando prepares una propuesta, primero explicá el problema del cliente y después la solución.”",
     new: "Nuevo método",
-    import: "Importar",
+    import: "Importar método",
     imported: "Método importado",
     edit: "Editar método",
     tell: "Contale a ELISE cómo querés que lo haga",

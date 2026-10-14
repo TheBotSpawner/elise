@@ -1,10 +1,9 @@
 import "server-only";
 
-import { MODEL_POLICY } from "@/core/agents/model-policy";
 import { AppError } from "@/core/errors";
+import { structureMethod, type MethodDraftResult } from "@/core/skills/draft";
 import { parseSkillMarkdown, toSkillMarkdown } from "@/core/skills/markdown";
 import {
-  composeInstructions,
   METHOD_LIMITS,
   normalizeMethod,
   scopeOf,
@@ -495,77 +494,15 @@ export async function knowledgeItemText(auth: AuthContext, itemId: string) {
 
 // ── "Contale a ELISE cómo querés que lo haga" (ADR-040 §J2) ───────────────────
 
-const DRAFT_INSTRUCTIONS = `You turn a user's description of how they want a kind of work done into a reusable Method for their assistant ELISE.
-Return only JSON: {"name": string, "description": string, "purpose"?: string, "whenToUse"?: string, "steps"?: string[], "checks"?: string[], "output"?: string, "mistakes"?: string[], "hints"?: string[]}.
-- name: short, an action ("Crear propuesta comercial"). description: one line, what kind of work it's for.
-- steps: the procedure in order, as reusable instructions. Keep the user's own rules and wording.
-- Never add facts about clients, prices or people (that is Knowledge), dates or one-off details. Never invent steps the user didn't imply.
-- hints: 3–8 words a request for this work would use, in the user's language and in English.
-- Write in the user's language.`;
-
-export interface MethodDraft {
-  name: string;
-  description: string;
-  instructions: string;
-  hints: string[];
-}
+export type MethodDraft = MethodDraftResult;
 
 /**
- * Structures free text into a Method for the user to review — nothing is saved here. Without AI
- * (or with an unusable answer) the user's text becomes the instructions as is.
+ * Structures free text into a Method for the user to review — nothing is saved here. The name,
+ * the capability and the steps come out as three distinct fields (core/skills/draft.ts); when
+ * the model can't, the text goes to Instructions only and the user is told.
  */
-export async function draftMethod(auth: AuthContext, text: string): Promise<MethodDraft> {
-  const locale = auth.profile.locale;
-  const fallback = (): MethodDraft => {
-    const first = text.trim().split(/[.\n]/)[0]!.trim();
-    return {
-      name: first.slice(0, 60) || (locale === "es" ? "Nuevo método" : "New method"),
-      description: first.slice(0, METHOD_LIMITS.description),
-      instructions: text.trim().slice(0, METHOD_LIMITS.instructions),
-      hints: [],
-    };
-  };
-  let out = "";
-  try {
-    for await (const event of getAIProvider().streamTurn({
-      instructions: DRAFT_INSTRUCTIONS,
-      input: [{ type: "message", role: "user", content: text.slice(0, 8000) }],
-      tools: [],
-      ...MODEL_POLICY.method_draft,
-    })) {
-      if (event.type === "text_delta") out += event.delta;
-    }
-    const raw = JSON.parse(out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1)) as Record<
-      string,
-      unknown
-    >;
-    const str = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : undefined);
-    const arr = (k: string) =>
-      Array.isArray(raw[k])
-        ? ((raw[k] as unknown[]).filter((x) => typeof x === "string") as string[])
-        : undefined;
-    const instructions = composeInstructions(
-      {
-        purpose: str("purpose"),
-        whenToUse: str("whenToUse"),
-        steps: arr("steps"),
-        checks: arr("checks"),
-        output: str("output"),
-        mistakes: arr("mistakes"),
-      },
-      locale,
-    );
-    if (!str("name") || !instructions) return fallback();
-    return {
-      name: str("name")!.slice(0, METHOD_LIMITS.name),
-      description: (str("description") ?? str("name")!).slice(0, METHOD_LIMITS.description),
-      instructions,
-      hints: arr("hints") ?? [],
-    };
-  } catch (error) {
-    logger.warn("method.draft_failed", {
-      code: error instanceof AppError ? error.code : "UNKNOWN",
-    });
-    return fallback();
-  }
+export async function draftMethod(_auth: AuthContext, text: string): Promise<MethodDraft> {
+  const draft = await structureMethod(getAIProvider(), text);
+  if (!draft.structured) logger.warn("method.draft_unstructured", { reason: draft.failure });
+  return draft;
 }

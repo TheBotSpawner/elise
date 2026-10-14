@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { InfoTip } from "@/components/shared/info-tip";
 import { Button } from "@/components/ui/button";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -34,6 +35,7 @@ export function SpaceContext({
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const dirty = value.trim() !== saved.trim();
+  const info = <InfoTip label={k.about} body={[isSection ? k.infoSection : k.infoSpace]} />;
 
   function close() {
     if (dirty && !window.confirm(k.discard)) return;
@@ -58,9 +60,12 @@ export function SpaceContext({
     const summary = saved.replace(/\s+/g, " ").trim();
     return (
       <section aria-labelledby={`${fieldId}-label`} className="flex flex-col gap-1">
-        <h2 id={`${fieldId}-label`} className="type-label text-faint">
-          {k.title}
-        </h2>
+        <div className="flex items-center gap-1">
+          <h2 id={`${fieldId}-label`} className="type-label text-faint">
+            {k.title}
+          </h2>
+          {info}
+        </div>
         {summary ? (
           <button
             type="button"
@@ -73,13 +78,15 @@ export function SpaceContext({
             <Pencil className="size-3.5 shrink-0 text-faint group-hover:text-fg" aria-hidden />
           </button>
         ) : (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <p className="text-[13.5px] text-muted">{isSection ? k.emptySection : k.emptySpace}</p>
-            <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
-              <Plus />
-              {k.add}
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-ml-2.5 self-start"
+            onClick={() => setOpen(true)}
+          >
+            <Plus />
+            {k.add}
+          </Button>
         )}
       </section>
     );
@@ -91,6 +98,7 @@ export function SpaceContext({
         <label htmlFor={fieldId} className="type-label text-faint">
           {k.title}
         </label>
+        {info}
         <button
           type="button"
           onClick={close}

@@ -139,16 +139,16 @@ describe("Live connected sources (ADR-046)", () => {
 describe("Space sources (ADR-037)", () => {
   it("adds a source from the header and from the Sources list, with the same flow and destination", () => {
     view([notionSource()]);
-    const buttons = screen.getAllByRole("button", { name: "Sumar fuente" });
+    const buttons = screen.getAllByRole("button", { name: "Agregar fuente" });
     expect(buttons).toHaveLength(2);
     for (const button of buttons) {
       fireEvent.click(button);
-      const dialog = screen.getByRole("dialog", { name: "Sumar fuente" });
+      const dialog = screen.getByRole("dialog", { name: "Agregar fuente" });
       // A Section's source goes to the Section, never its parent Space.
       expect(within(dialog).getByText("Se suma a UTN › AMII")).toBeInTheDocument();
       expect(within(dialog).getByRole("button", { name: /Notion/ })).toBeInTheDocument();
       fireEvent(dialog, new Event("cancel", { cancelable: true }));
-      expect(screen.queryByRole("dialog", { name: "Sumar fuente" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Agregar fuente" })).toBeNull();
     }
   });
 

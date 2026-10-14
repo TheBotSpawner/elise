@@ -71,7 +71,7 @@ export function ProviderDetail({
           {h.back}
         </Link>
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-start gap-4">
+          <div className="flex min-w-0 flex-1 basis-80 items-start gap-4">
             <ProviderIcon id={entry.id} name={entry.name} size={52} />
             <div className="min-w-0">
               <h1 className="text-[26px] leading-tight font-light tracking-[-0.02em]">
@@ -92,8 +92,11 @@ export function ProviderDetail({
               </p>
             </div>
           </div>
+          {/* Beside the title when there is room; under it on narrow screens. */}
           {!entry.builtIn && (
-            <ConnectAction entry={entry} accounts={mine.length} configured={configured} />
+            <div className="shrink-0">
+              <ConnectAction entry={entry} accounts={mine.length} configured={configured} />
+            </div>
           )}
         </div>
       </header>
@@ -163,17 +166,9 @@ function ConnectAction({
   const label = accounts ? h.connectAnother : h.connect;
   switch (entry.id) {
     case "google":
-      return (
-        <div className="w-full sm:w-64">
-          <ConnectGoogleAction label={label} />
-        </div>
-      );
+      return <ConnectGoogleAction label={label} />;
     case "microsoft":
-      return (
-        <div className="w-full sm:w-64">
-          <ConnectMicrosoftAction label={label} />
-        </div>
-      );
+      return <ConnectMicrosoftAction label={label} />;
     case "notion":
       return (
         <form action={connectNotion}>

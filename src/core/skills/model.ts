@@ -522,6 +522,20 @@ export function composeInstructions(s: MethodSections, locale: "es" | "en"): str
   return parts.join("\n\n");
 }
 
+/** Methods are imported from plain text only: Markdown or .txt (never PDF/Word, unlike Knowledge). */
+export const METHOD_IMPORT_ACCEPT = ".md,.txt";
+const IMPORT_TYPES = new Set(["", "text/plain", "text/markdown", "text/x-markdown"]);
+
+/**
+ * Whether a file can be imported as a Method: a .md or .txt name, a text type (browsers often
+ * send no type for .md) and text content (no NUL bytes, which binary files have).
+ */
+export function isMethodImportFile(file: { name: string; type?: string; text?: string }): boolean {
+  if (!/\.(md|txt)$/i.test(file.name.trim())) return false;
+  if (file.type !== undefined && !IMPORT_TYPES.has(file.type.toLowerCase())) return false;
+  return file.text === undefined || !file.text.includes("\u0000");
+}
+
 export function normalizeHints(hints: readonly string[] | undefined): string[] {
   return [
     ...new Set(

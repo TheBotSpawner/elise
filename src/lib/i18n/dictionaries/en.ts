@@ -1484,6 +1484,11 @@ export const en = {
       saved: "Context saved",
       emptySection: "Help ELISE understand this section.",
       emptySpace: "Help ELISE understand this Space.",
+      about: "About context",
+      infoSpace:
+        "Context tells ELISE what it should know about this Space, and it's taken into account when you work in it.",
+      infoSection:
+        "Context tells ELISE what it should know about this section, and it's taken into account when you work in it.",
       add: "Add context",
       edit: "Edit context",
       collapse: "Close",
@@ -1492,6 +1497,13 @@ export const en = {
     },
     title: "Knowledge",
     breadcrumb: "Location",
+    backTo: (name: string) => `Back to ${name}`,
+    aboutSpace: (name: string) => `About ${name}`,
+    generalInfo:
+      "General is ELISE's default space. Its context, sources and Methods can be used in any area when they don't belong to a specific Space.",
+    aboutSources: "About sources",
+    sourcesInfo:
+      "A Space can combine uploaded files, Google Drive, Notion and ELISE Notes. ELISE uses the relevant sources for what you ask.",
     sections: {
       title: "Sections",
       new: "New section",
@@ -1687,7 +1699,7 @@ export const en = {
     addSource: "Add source",
     options: {
       upload: { title: "Upload files", body: "PDF, Word, text, Markdown or CSV" },
-      documents: { title: "Add documents", body: "PDF, Word, text, Markdown or CSV" },
+      documents: { title: "Upload documents", body: "PDF, Word, text, Markdown or CSV" },
       drive: { title: "Connect Google Drive", body: "Folders or files, kept up to date" },
       notion: { title: "Connect Notion", body: "Pages and databases you share with ELISE" },
       empty: { title: "Start empty", body: "Add sources whenever you're ready" },
@@ -3190,18 +3202,35 @@ export const en = {
     spaceHint: (name: string) =>
       `How ELISE works in ${name}. Its Sections can refine them, and general Methods apply too.`,
     sectionHint: (name: string) => `Only in this Section; added to those of ${name}.`,
+    about: "About Methods",
+    infoSpace:
+      "Methods teach ELISE how you want certain things done in this Space. It can also use general Methods. If a more specific one exists for a Section, that one takes priority.",
+    infoSection: (name: string) =>
+      `Methods teach ELISE how you want certain things done in this section. It also uses those of ${name} and the general ones; the section's take priority.`,
+    infoGeneral:
+      "General's Methods are ways of working ELISE can use in any area. A Method defined in a specific Space or Section takes priority when it applies.",
+    examples: [
+      "“When you plan my day…”",
+      "“When you write something for me…”",
+      "“Before making a decision…”",
+    ],
+    emptyCta: "Create one to teach ELISE how to work.",
+    importHint: "Import a Method from a .md or .txt file.",
+    importFormats: "Methods can be imported from .md or .txt files.",
+    savesIn: (where: string) => `It will be saved in ${where}.`,
+    draftUnstructured:
+      "I couldn't structure it. Your text is in Instructions: fill in the name and what ELISE should do.",
     globalTitle: "General",
     globalHint: "They apply everywhere in ELISE, in any Space.",
     generalHint:
       "Ways of working ELISE uses in any area. A Space or Section can have its own, and those win.",
     generalExample:
       "For example: “When you plan my day…”, “When you write something for me…”, “Before making a decision…”",
-    empty:
-      "No Methods yet. Teach ELISE how you want something done and she'll do it that way every time.",
+    empty: "No Methods yet.",
     emptyExample:
       "For example: “When you prepare a proposal, explain the client's problem first and the solution after.”",
     new: "New method",
-    import: "Import",
+    import: "Import Method",
     imported: "Method imported",
     edit: "Edit method",
     tell: "Tell ELISE how you want it done",

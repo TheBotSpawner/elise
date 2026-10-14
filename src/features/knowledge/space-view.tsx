@@ -20,9 +20,12 @@ import type {
   SourceView,
   SpaceSummary,
 } from "@/application/knowledge-service";
+import { BackLink } from "@/components/shared/back-link";
+import { InfoTip } from "@/components/shared/info-tip";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/input";
+import { GENERAL_DEFAULT_DESCRIPTION } from "@/core/knowledge/model";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -202,31 +205,39 @@ export function SpaceView({
   return (
     <div className="flex flex-col gap-7">
       <header className="flex flex-col gap-3">
-        <nav aria-label={t.knowledge.breadcrumb} className="text-[13px] text-muted">
-          <Link href="/knowledge" className="hover:text-fg">
-            {t.knowledge.title}
-          </Link>
-          {parent && (
-            <>
-              {" › "}
-              <Link href={`/knowledge/spaces/${parent.id}`} className="hover:text-fg">
-                {parent.name}
-              </Link>
-            </>
+        {/* Back one level: a Section to its Space, a Space to Knowledge. */}
+        <nav aria-label={t.knowledge.breadcrumb}>
+          {parent ? (
+            <BackLink
+              href={`/knowledge/spaces/${parent.id}`}
+              label={parent.name}
+              ariaLabel={t.knowledge.backTo(parent.name)}
+            />
+          ) : (
+            <BackLink
+              href="/knowledge"
+              label={t.knowledge.title}
+              ariaLabel={t.knowledge.backTo(t.knowledge.title)}
+            />
           )}
         </nav>
         <div className="flex flex-col gap-1.5">
           <h1 className="flex items-center gap-3 text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
             <SpaceGlyph icon={space.icon} color={space.color} size="lg" />
             {space.name}
+            {/* What General is for lives behind ⓘ, not as permanent copy. */}
+            {space.general && (
+              <InfoTip
+                label={t.knowledge.aboutSpace(space.name)}
+                body={[t.knowledge.generalInfo]}
+              />
+            )}
           </h1>
-          {space.description && (
-            <p className="max-w-2xl text-[15px] text-muted">{space.description}</p>
-          )}
-          {/* A new General Knowledge says what it's for — nothing invented, no warnings. */}
-          {space.general && sources.length === 0 && sections.length === 0 && !space.context && (
-            <p className="max-w-2xl text-[13.5px] text-faint">{t.knowledge.generalIntro}</p>
-          )}
+          {/* The user's own description is content; General's system default is not. */}
+          {space.description &&
+            !(space.general && space.description.trim() === GENERAL_DEFAULT_DESCRIPTION) && (
+              <p className="max-w-2xl text-[15px] text-muted">{space.description}</p>
+            )}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <Link href={`/?space=${space.id}`} className={buttonVariants()}>
@@ -328,13 +339,26 @@ export function SpaceView({
       <section className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="flex items-center gap-2 type-label text-faint">
-              {isSection ? t.knowledge.sources : t.knowledge.sections.generalSources}
-              {sources.length > 0 && (
-                <span>· {t.knowledge.sourceSummary(space.sources.total, 0, 0)}</span>
-              )}
-              {uploading && <span className="text-accent-text">· {t.knowledge.uploading}</span>}
-            </h2>
+            <div className="flex items-center gap-1">
+              <h2 className="flex items-center gap-2 type-label text-faint">
+                {isSection ? t.knowledge.sources : t.knowledge.sections.generalSources}
+                {sources.length > 0 && (
+                  <span>· {t.knowledge.sourceSummary(space.sources.total, 0, 0)}</span>
+                )}
+                {uploading && <span className="text-accent-text">· {t.knowledge.uploading}</span>}
+              </h2>
+              <InfoTip
+                label={t.knowledge.aboutSources}
+                body={[
+                  t.knowledge.sourcesInfo,
+                  ...(isSection
+                    ? [t.knowledge.sections.sectionSourcesHint(parent?.name ?? "")]
+                    : sections.length
+                      ? [t.knowledge.sections.generalSourcesHint]
+                      : []),
+                ]}
+              />
+            </div>
             {/* Where sources are listed, adding one is right there too (same flow as the header). */}
             {sources.length > 0 && (
               <Button size="sm" variant="ghost" onClick={() => setAdding("choose")}>
@@ -343,13 +367,6 @@ export function SpaceView({
               </Button>
             )}
           </div>
-          <p className="text-[13px] text-muted">
-            {isSection
-              ? t.knowledge.sections.sectionSourcesHint(parent?.name ?? "")
-              : sections.length
-                ? t.knowledge.sections.generalSourcesHint
-                : t.knowledge.sourcesHint}
-          </p>
         </div>
         <input
           ref={fileInput}

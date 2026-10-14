@@ -6,10 +6,14 @@ import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { MethodCard, MethodDetail } from "@/application/methods-service";
+import { InfoTip } from "@/components/shared/info-tip";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Select } from "@/components/ui/input";
+import { GENERAL_KNOWLEDGE_NAME } from "@/core/knowledge/model";
 import {
+  isMethodImportFile,
+  METHOD_IMPORT_ACCEPT,
   needsDesktop,
   REFERENCE_KINDS,
   type ReferenceKind,
@@ -101,8 +105,12 @@ export function MethodsPanel({
 
   async function onImport(file: File | undefined) {
     if (!file) return;
+    const text = await file.text();
+    // Only .md / .txt with text content (the picker filters too; a drop or "All files" doesn't).
+    if (!isMethodImportFile({ name: file.name, type: file.type, text }))
+      return void toast.error(tm.importFormats);
     const r = await importMethodAction(
-      await file.text(),
+      text,
       file.name,
       space?.general ? null : (space?.id ?? null),
     );
@@ -127,24 +135,36 @@ export function MethodsPanel({
 
   return (
     <section className="flex flex-col gap-3" aria-label={tm.title}>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          {heading && <h2 className="type-label text-faint">{tm.title}</h2>}
-          <p className="text-[13px] text-muted">
-            {space
-              ? space.general
-                ? tm.generalHint
-                : parent
-                  ? tm.sectionHint(parent.name)
-                  : tm.spaceHint(space.name)
-              : tm.subtitle}
-          </p>
-        </div>
-        <div className="flex gap-1">
+      <div className="flex flex-col gap-2">
+        {space ? (
+          // In Knowledge the hierarchy and examples live behind ⓘ.
+          heading && (
+            <div className="flex items-center gap-1">
+              <h2 className="type-label text-faint">{tm.title}</h2>
+              <InfoTip
+                label={tm.about}
+                body={[
+                  space.general
+                    ? tm.infoGeneral
+                    : parent
+                      ? tm.infoSection(parent.name)
+                      : tm.infoSpace,
+                ]}
+                examples={tm.examples}
+              />
+            </div>
+          )
+        ) : (
+          <div className="flex flex-col gap-1">
+            {heading && <h2 className="type-label text-faint">{tm.title}</h2>}
+            <p className="text-[13px] text-muted">{tm.subtitle}</p>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
           <input
             ref={importInput}
             type="file"
-            accept=".md,.markdown,.txt"
+            accept={METHOD_IMPORT_ACCEPT}
             className="sr-only"
             tabIndex={-1}
             onChange={(e) => {
@@ -152,30 +172,32 @@ export function MethodsPanel({
               e.target.value = "";
             }}
           />
-          <Button size="sm" variant="ghost" onClick={() => importInput.current?.click()}>
-            <FileUp />
-            {tm.import}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setEditing({ detail: null, draft: null })}
-          >
+          <Button variant="secondary" onClick={() => setEditing({ detail: null, draft: null })}>
             <Plus />
             {tm.new}
+          </Button>
+          <Button
+            variant="ghost"
+            title={tm.importHint}
+            onClick={() => importInput.current?.click()}
+          >
+            <FileUp />
+            {tm.import}
           </Button>
         </div>
       </div>
 
       {active.length === 0 ? (
-        <div className="flex flex-col items-start gap-2 rounded-2xl border border-dashed border-border p-5">
-          <p className="flex items-center gap-2 text-[14px] text-muted">
-            <BookOpenCheck className="size-4 shrink-0 text-faint" aria-hidden />
-            {tm.empty}
-          </p>
-          <p className="text-[13px] text-faint">
-            {space?.general ? tm.generalExample : tm.emptyExample}
-          </p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl border border-dashed border-border px-5 py-4 text-[14px]">
+          <BookOpenCheck className="size-4 shrink-0 text-faint" aria-hidden />
+          <span className="text-muted">{tm.empty}</span>
+          <button
+            type="button"
+            onClick={() => setEditing({ detail: null, draft: null })}
+            className="text-[13px] text-faint underline-offset-2 hover:text-fg hover:underline"
+          >
+            {tm.emptyCta}
+          </button>
         </div>
       ) : (
         groups
@@ -361,8 +383,15 @@ function MethodEditor({
   async function draft() {
     const r = await act(() => draftMethodAction(tell));
     if (r) {
-      setForm((f) => ({ ...f, ...r, hints: r.hints.join(", ") }));
-      toast(tm.drafted);
+      setForm((f) => ({
+        ...f,
+        name: r.name,
+        description: r.description,
+        instructions: r.instructions,
+        hints: r.hints.join(", "),
+      }));
+      // Unstructured: the text went to Instructions only; name and purpose are left to the user.
+      toast(r.structured ? tm.drafted : tm.draftUnstructured);
     }
   }
 
@@ -416,7 +445,7 @@ function MethodEditor({
               value={tell}
               placeholder={tm.tellPlaceholder}
               onChange={(e) => setTell(e.target.value)}
-              className={TEXTAREA}
+              className={cn(TEXTAREA, "[field-sizing:content] max-h-56 min-h-20")}
             />
             <Button
               size="sm"
@@ -431,7 +460,9 @@ function MethodEditor({
           </div>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        {/* A new Method belongs where it was created (General, a Space or a Section): no
+            choice to make again. Moving a saved one keeps its selector. */}
+        <div className={cn("grid gap-3", methodId && "sm:grid-cols-2")}>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="method-name">{tm.name}</Label>
             <Input
@@ -442,33 +473,38 @@ function MethodEditor({
               onChange={(e) => set("name")(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="method-space">{tm.where}</Label>
-            <Select
-              id="method-space"
-              value={form.spaceId ?? ""}
-              onChange={(e) => setForm((f) => ({ ...f, spaceId: e.target.value || null }))}
-            >
-              <option value="">{tm.everywhere}</option>
-              {spaces
-                .filter((s) => !s.general)
-                .sort((a, b) => a.path.localeCompare(b.path))
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.path}
-                  </option>
-                ))}
-            </Select>
-          </div>
+          {methodId && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="method-space">{tm.where}</Label>
+              <Select
+                id="method-space"
+                value={form.spaceId ?? ""}
+                onChange={(e) => setForm((f) => ({ ...f, spaceId: e.target.value || null }))}
+              >
+                <option value="">{tm.everywhere}</option>
+                {spaces
+                  .filter((s) => !s.general)
+                  .sort((a, b) => a.path.localeCompare(b.path))
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.path}
+                    </option>
+                  ))}
+              </Select>
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="method-description">{tm.description}</Label>
-          <Input
+          {/* One sentence, shown whole: grows to its lines instead of scrolling sideways. */}
+          <textarea
             id="method-description"
+            rows={1}
             value={form.description}
             maxLength={300}
             placeholder={tm.descriptionPlaceholder}
-            onChange={(e) => set("description")(e.target.value)}
+            onChange={(e) => set("description")(e.target.value.replace(/\n/g, " "))}
+            className={cn(TEXTAREA, "[field-sizing:content] max-h-28 min-h-10 resize-none")}
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -479,7 +515,10 @@ function MethodEditor({
             value={form.instructions}
             maxLength={12000}
             onChange={(e) => set("instructions")(e.target.value)}
-            className={cn(TEXTAREA, "font-[inherit] leading-relaxed")}
+            className={cn(
+              TEXTAREA,
+              "[field-sizing:content] max-h-[45vh] min-h-40 font-[inherit] leading-relaxed",
+            )}
           />
           <p className="text-[12px] text-faint">{tm.instructionsHint}</p>
         </div>
@@ -687,7 +726,16 @@ function MethodEditor({
               </>
             )}
           </div>
-          <div className="flex gap-2">
+          {!methodId && (
+            <p className="text-[12.5px] text-faint">
+              {tm.savesIn(
+                form.spaceId
+                  ? (spaces.find((s) => s.id === form.spaceId)?.path ?? GENERAL_KNOWLEDGE_NAME)
+                  : GENERAL_KNOWLEDGE_NAME,
+              )}
+            </p>
+          )}
+          <div className="ml-auto flex gap-2">
             <Button variant="ghost" disabled={busy} onClick={onClose}>
               {tm.cancel}
             </Button>

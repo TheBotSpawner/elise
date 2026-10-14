@@ -13,6 +13,7 @@ import {
 } from "@/application/methods-service";
 import { AppError, toPublicError, type PublicError } from "@/core/errors";
 import {
+  isMethodImportFile,
   METHOD_LIMITS,
   normalizeHints,
   normalizeMethod,
@@ -174,6 +175,10 @@ export async function draftMethodAction(text: string) {
 export async function importMethodAction(text: string, fileName: string, spaceId: string | null) {
   return run(async () => {
     const auth = await requireAuthContext();
+    if (!isMethodImportFile({ name: fileName, text }))
+      throw new AppError("VALIDATION_ERROR", "Methods can be imported from .md or .txt files", {
+        recovery: "review",
+      });
     const m = await importMethod(auth, {
       text: z.string().min(1).max(100_000).parse(text),
       fileName: z.string().max(255).parse(fileName),
