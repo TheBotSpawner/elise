@@ -237,13 +237,16 @@ export async function reorderList(auth: AuthContext, listId: string, itemIds: st
 export async function notesOverview(
   auth: AuthContext,
   query: string | null,
-): Promise<{ notes: Note[]; spaces: { id: string; path: string }[] }> {
+): Promise<{ notes: Note[]; spaces: { id: string; path: string; general: boolean }[] }> {
   const provider = new EliseNotesProvider(auth.db, auth.workspaceId, auth.userId);
   const [notes, spaces] = await Promise.all([
     query ? provider.search(query, 50) : provider.list({ limit: 200 }),
     listSpaces(auth),
   ]);
-  return { notes, spaces: spaces.map((s) => ({ id: s.id, path: s.path })) };
+  return {
+    notes,
+    spaces: spaces.map((s) => ({ id: s.id, path: s.path, general: Boolean(s.general) })),
+  };
 }
 
 /**

@@ -1,34 +1,14 @@
-import {
-  BookOpenCheck,
-  CheckSquare,
-  Target,
-  ListChecks,
-  Repeat,
-  StickyNote,
-  Timer,
-  Wallet,
-  Zap,
-  type LucideIcon,
-} from "lucide-react";
 import Link from "next/link";
 
+import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { getCapability } from "@/core/capabilities/registry";
-import type { CapabilityKey } from "@/core/capabilities/types";
 import { getT } from "@/lib/i18n/server";
 import { cn } from "@/lib/utils";
 
-const MODULES: { key: CapabilityKey; icon: LucideIcon; href: string }[] = [
-  { key: "tasks", icon: CheckSquare, href: "/my-elise/tasks" },
-  { key: "habits", icon: Repeat, href: "/my-elise/habits" },
-  { key: "lists", icon: ListChecks, href: "/my-elise/lists" },
-  { key: "goals", icon: Target, href: "/my-elise/goals" },
-  { key: "notes", icon: StickyNote, href: "/my-elise/notes" },
-  { key: "finance", icon: Wallet, href: "/my-elise/finance" },
-  { key: "shortcuts", icon: Zap, href: "/my-elise/shortcuts" },
-  { key: "methods", icon: BookOpenCheck, href: "/my-elise/methods" },
-  { key: "time", icon: Timer, href: "/my-elise/time" },
-];
+const MODULES = (
+  ["tasks", "habits", "lists", "goals", "notes", "finance", "shortcuts", "methods", "time"] as const
+).map((key) => ({ key, icon: MY_ELISE_ICONS[key], href: `/my-elise/${key}` }));
 
 /** ELISE Native modules, grouped so the primary navigation stays small. */
 export default async function MyElisePage() {

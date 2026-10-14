@@ -6,7 +6,7 @@ import type {
   Vision,
 } from "../capabilities/goals";
 import { dayMet, type Habit, type HabitEntry } from "../capabilities/habits";
-import type { Period } from "../periods";
+import { resolvePeriod, type Period } from "../periods";
 import { todayIn } from "../time";
 import { daysBetween, resolveGoalPeriod, type GoalPeriodPreset } from "./periods";
 
@@ -224,6 +224,8 @@ export interface GoalFilter {
   status?: GoalStatusFilter;
   /** Only goals whose window overlaps this range. */
   range?: Period | null;
+  /** A period filter of the Goals screen, evaluated on `today`. */
+  period?: { filter: PeriodFilter; today: string; custom?: Period } | null;
   visionId?: string | null;
   area?: string | null;
   habitId?: string | null;
@@ -232,10 +234,68 @@ export interface GoalFilter {
 
 const norm = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
-/** Does the goal's window overlap the range? A goal with no end is open-ended. */
+/**
+ * The dates a goal occupies for filtering (ADR-057): its period, else creation → deadline;
+ * null when it has neither (it belongs to no date range).
+ */
+export function periodWindow(goal: Goal): Period | null {
+  if (goal.periodStart && goal.periodEnd) return { from: goal.periodStart, to: goal.periodEnd };
+  if (goal.targetDate) return { from: goal.createdAt.slice(0, 10), to: goal.targetDate };
+  return null;
+}
+
+/** Does the goal overlap the range? (1 oct → 31 dic is in November; no exact match needed.) */
 export function inRange(goal: Goal, range: Period): boolean {
-  const w = goalWindow(goal);
-  return w.from <= range.to && (w.to === null || w.to >= range.from);
+  const w = periodWindow(goal);
+  return w !== null && w.from <= range.to && w.to >= range.from;
+}
+
+export const PERIOD_FILTERS = [
+  "all",
+  "active_now",
+  "this_month",
+  "this_quarter",
+  "this_year",
+  "upcoming",
+  "finished",
+  "no_period",
+  "custom",
+] as const;
+export type PeriodFilter = (typeof PERIOD_FILTERS)[number];
+
+/** The range a dated filter stands for; null for the filters that aren't one range. */
+export function periodFilterRange(f: PeriodFilter, today: string, custom?: Period): Period | null {
+  if (f === "this_month") return resolvePeriod("this_month", today);
+  if (f === "this_quarter") return resolvePeriod("this_quarter", today);
+  if (f === "this_year") return resolvePeriod("this_year", today);
+  if (f === "custom" && custom && custom.from <= custom.to) return custom;
+  return null;
+}
+
+export function matchesPeriod(
+  goal: Goal,
+  f: PeriodFilter,
+  today: string,
+  custom?: Period,
+): boolean {
+  const w = periodWindow(goal);
+  switch (f) {
+    case "all":
+      return true;
+    case "no_period":
+      return !goal.periodStart;
+    // Undated goals are ongoing: they count as active now.
+    case "active_now":
+      return !w || (w.from <= today && w.to >= today);
+    case "upcoming":
+      return w !== null && w.from > today;
+    case "finished":
+      return w !== null && w.to < today;
+    default: {
+      const range = periodFilterRange(f, today, custom);
+      return range ? inRange(goal, range) : true;
+    }
+  }
 }
 
 export function matchesStatus(s: GoalSnapshot, status: GoalStatusFilter): boolean {
@@ -267,6 +327,8 @@ export function filterGoals(
     const g = s.goal;
     if (f.status && !matchesStatus(s, f.status)) return false;
     if (f.range && !inRange(g, f.range)) return false;
+    if (f.period && !matchesPeriod(g, f.period.filter, f.period.today, f.period.custom))
+      return false;
     if (f.visionId && !visionIdsOf(g).includes(f.visionId)) return false;
     if (f.area && norm(g.area ?? "") !== norm(f.area)) return false;
     if (f.habitId && !g.links.some((l) => l.resourceType === "habit" && l.resourceId === f.habitId))

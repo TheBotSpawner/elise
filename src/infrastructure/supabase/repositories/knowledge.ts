@@ -87,7 +87,7 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
 
     const itemIds = [...new Set(data.map((r) => r.knowledge_item_id))];
     const versionIds = [...new Set(data.map((r) => r.version_id))];
-    const [items, versions, spaces] = await Promise.all([
+    const [items, versions, spaces, members] = await Promise.all([
       itemIds.length
         ? this.db
             .from("knowledge_items")
@@ -103,7 +103,16 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
             .in("id", versionIds)
         : { data: [] },
       this.spaces(),
+      // A note in several Spaces is one item (ADR-056): its hits name every Space it is in.
+      itemIds.length
+        ? this.db
+            .from("knowledge_item_spaces")
+            .select("knowledge_item_id, space_id")
+            .eq("workspace_id", this.workspaceId)
+            .in("knowledge_item_id", itemIds)
+        : { data: [] },
     ]);
+    const membersOf = Map.groupBy(members.data ?? [], (m) => m.knowledge_item_id);
     const itemById = new Map((items.data ?? []).map((i) => [i.id, i]));
     const versionById = new Map((versions.data ?? []).map((v) => [v.id, v.version_number]));
     const spaceById = new Map(spaces.map((s) => [s.id, s]));
@@ -125,7 +134,13 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
           sourceType: source?.source_type ?? "upload",
           sourceUrl: item.source_url,
           spaceId: r.space_id,
-          spaceName: spaceById.get(r.space_id)?.path ?? "",
+          spaceName:
+            (membersOf.get(r.knowledge_item_id) ?? [])
+              .map((m) => spaceById.get(m.space_id)?.path)
+              .filter(Boolean)
+              .join(" · ") ||
+            spaceById.get(r.space_id)?.path ||
+            "",
           headingPath: r.heading_path ?? [],
           page: r.page_number,
           content: r.content,

@@ -172,6 +172,7 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       search: READ,
       create: WRITE,
       update: WRITE,
+      setKnowledgeSpaces: WRITE,
       archive: ARCHIVE,
     },
   },

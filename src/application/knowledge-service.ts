@@ -516,7 +516,7 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
   // Lost background work is closed before it's shown, so no state is stale on screen.
   await recoverStaleWork(auth.workspaceId).catch(() => null);
   const spaces = await listSpaces(auth);
-  const [{ data: sources }, { data: items }, children] = await Promise.all([
+  const [{ data: sources }, { data: ownItems }, children, { data: shared }] = await Promise.all([
     auth.db
       .from("knowledge_sources")
       .select(
@@ -540,7 +540,26 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       .limit(300),
     // Counts read every child, not just the recent ones listed (a database can hold hundreds).
     allItems(auth, spaceId),
+    // Notes filed here as well as in another Space (ADR-056): the same item, listed here too.
+    auth.db
+      .from("knowledge_item_spaces")
+      .select("knowledge_item_id")
+      .eq("workspace_id", auth.workspaceId)
+      .eq("space_id", spaceId),
   ]);
+  const ownIds = new Set((ownItems ?? []).map((i) => i.id));
+  const sharedIds = (shared ?? []).map((m) => m.knowledge_item_id).filter((id) => !ownIds.has(id));
+  const { data: sharedItems } = sharedIds.length
+    ? await auth.db
+        .from("knowledge_items")
+        .select(
+          "id, source_id, title, item_type, status, status_detail, error_code, source_url, updated_at, knowledge_sources!inner(source_type, access_mode), knowledge_versions!knowledge_versions_knowledge_item_id_fkey(id)",
+        )
+        .eq("workspace_id", auth.workspaceId)
+        .in("id", sharedIds)
+        .is("archived_at", null)
+    : { data: [] };
+  const items = [...(ownItems ?? []), ...(sharedItems ?? [])];
   const sourceIds = (sources ?? []).map((s) => s.id);
   const runs = new SupabaseKnowledgeStore(createAdminClient());
   const [active, last] = await Promise.all([

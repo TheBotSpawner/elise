@@ -36,7 +36,7 @@ import {
   Timer as TimerIcon,
   AlarmClock,
   Target,
-  Mountain,
+  Eye,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -114,7 +114,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   checklist: ListChecks,
   goal: Target,
   goals_overview: Target,
-  vision: Mountain,
+  vision: Eye,
   result: Sparkles,
 };
 

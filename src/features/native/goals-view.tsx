@@ -10,19 +10,21 @@ import { Input, Select } from "@/components/ui/input";
 import type { Goal, Vision } from "@/core/capabilities/goals";
 import {
   filterGoals,
-  filterRange,
   goalCard,
   goalsSummary,
   GOAL_SORTS,
-  goalWindow,
+  PERIOD_FILTERS,
+  periodFilterRange,
+  periodWindow,
   sortGoals,
   visionIdsOf,
   type GoalDetail,
   type GoalSnapshot,
   type GoalSort,
   type GoalStatusFilter,
+  type PeriodFilter,
 } from "@/core/goals/analytics";
-import { daysBetween, periodLabel, type GoalPeriodPreset } from "@/core/goals/periods";
+import { daysBetween, periodLabel } from "@/core/goals/periods";
 import type { VisualizationSpec } from "@/core/workspace/visualization";
 import { Visualization } from "@/features/workspace/viz/visualization";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
@@ -38,6 +40,7 @@ import {
   ProgressRing,
   ringTone,
   useGoalFormat,
+  VisionIcon,
 } from "./goal-parts";
 import { ImportPanel } from "./import-panel";
 import { Bar, IconTile, Menu } from "./native-ui";
@@ -49,18 +52,6 @@ import { useNative } from "./use-native";
  * once on the server (the same tool Chat uses); filtering and sorting run here instantly.
  */
 
-const FILTER_PERIODS: (GoalPeriodPreset | "all")[] = [
-  "all",
-  "this_quarter",
-  "next_quarter",
-  "q1",
-  "q2",
-  "q3",
-  "q4",
-  "this_year",
-  "next_year",
-  "custom",
-];
 const TABS: GoalStatusFilter[] = ["active", "at_risk", "completed", "all"];
 
 function Panel({
@@ -653,8 +644,8 @@ function Timeline({
   const g = t.native.goals;
   const fmt = useGoalFormat();
   const dated = shown
-    .map((s) => ({ s, w: goalWindow(s.goal) }))
-    .filter((x): x is { s: GoalSnapshot; w: { from: string; to: string } } => x.w.to !== null);
+    .map((s) => ({ s, w: periodWindow(s.goal) }))
+    .filter((x): x is { s: GoalSnapshot; w: { from: string; to: string } } => x.w !== null);
   if (!dated.length)
     return (
       <p className="rounded-2xl border border-dashed border-border px-5 py-4 text-[14px] text-muted">
@@ -784,7 +775,7 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
   ]);
 
   const [status, setStatus] = useState<GoalStatusFilter>(data.archived ? "archived" : "active");
-  const [period, setPeriod] = useState<GoalPeriodPreset | "all">("all");
+  const [period, setPeriod] = useState<PeriodFilter>("all");
   const [custom, setCustom] = useState({ from: data.today, to: data.today });
   const [query, setQuery] = useState("");
   const [visionId, setVisionId] = useState("");
@@ -829,7 +820,8 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
 
   const visionList = data.visions.map((v) => v.vision);
   const visionTitles = useMemo(() => new Map(visionList.map((v) => [v.id, v.title])), [visionList]);
-  const range = filterRange(period, data.today, period === "custom" ? custom : undefined);
+  // Period filters match by overlap with each goal's dates (ADR-057).
+  const periodMatch = { filter: period, today: data.today, custom };
   const shown = useMemo(
     () =>
       sortGoals(
@@ -837,7 +829,7 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
           data.goals,
           {
             status,
-            range,
+            period: periodMatch,
             visionId: visionId || null,
             area: area || null,
             habitId: habitId || null,
@@ -854,7 +846,13 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
     () =>
       filterGoals(
         data.goals,
-        { range, visionId: visionId || null, area: area || null, habitId: habitId || null, query },
+        {
+          period: periodMatch,
+          visionId: visionId || null,
+          area: area || null,
+          habitId: habitId || null,
+          query,
+        },
         visionList,
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- range derives from period/custom
@@ -906,12 +904,9 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
   ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
 
   const empty = data.goals.length === 0 && data.visions.length === 0 && !data.archived;
-  const periodOption = (p: GoalPeriodPreset | "all") => {
-    if (p === "all" || p === "custom") return g.periods[p];
-    const r = filterRange(p, data.today);
-    return /^q[1-4]$/.test(p)
-      ? `${g.periods[p]} ${r?.from.slice(0, 4)}`
-      : `${g.periods[p]} · ${r ? periodLabel(r, locale) : ""}`;
+  const periodOption = (p: PeriodFilter) => {
+    const r = p === "custom" ? null : periodFilterRange(p, data.today);
+    return r ? `${g.periodFilters[p]} · ${periodLabel(r, locale)}` : g.periodFilters[p];
   };
 
   return (
@@ -979,12 +974,16 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
                 label: data.archived ? g.tabs.active : g.tabs.archived,
                 onClick: () => switchArchived(!data.archived),
               },
-              { label: g.newVision, onClick: () => setVisionDialog({ vision: null }) },
             ]}
           />
           <Button onClick={() => setGoalDialog({ goal: null })} aria-keyshortcuts="n">
             <Plus />
-            <span className="max-sm:sr-only">{g.new}</span>
+            {g.new}
+          </Button>
+          {/* Creating a Vision is a core action: visible, next to New goal, never louder. */}
+          <Button variant="secondary" onClick={() => setVisionDialog({ vision: null })}>
+            <VisionIcon />
+            {g.newVision}
           </Button>
         </div>
       </div>
@@ -994,9 +993,9 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
           aria-label={g.periodLabel}
           value={period}
           className="h-9 w-auto"
-          onChange={(e) => setPeriod(e.target.value as GoalPeriodPreset | "all")}
+          onChange={(e) => setPeriod(e.target.value as PeriodFilter)}
         >
-          {FILTER_PERIODS.map((p) => (
+          {PERIOD_FILTERS.map((p) => (
             <option key={p} value={p}>
               {periodOption(p)}
             </option>

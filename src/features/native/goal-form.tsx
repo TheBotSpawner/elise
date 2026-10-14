@@ -1,7 +1,7 @@
 "use client";
 
 import { Minus, Plus, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
@@ -19,9 +19,8 @@ import {
 } from "@/core/capabilities/goals";
 import { inferGoalDraft, suggestGoalIcon, visionIdsOf } from "@/core/goals/analytics";
 import {
-  periodLabel,
-  presetOf,
-  quarterName,
+  durationLabel,
+  rangeLabel,
   resolveGoalPeriod,
   type GoalPeriodPreset,
 } from "@/core/goals/periods";
@@ -37,24 +36,20 @@ import { useNative } from "./use-native";
  */
 
 type Measure = "binary" | "number" | "percentage" | "money" | "decrease";
-type Section = "vision" | "habits" | "description" | "deadline" | "area" | "parent" | "related";
+type Section = "habits" | "description" | "deadline" | "area" | "parent" | "related";
 
 const QUICK_ICONS = ["🎯", "🚀", "💰", "🤝", "📰", "📚", "🎓", "🏋️", "🧠", "⚙️", "✈️", "❤️"];
 const CURRENCIES = ["ARS", "USD", "EUR", "BRL", "CLP", "MXN", "UYU"];
-const PERIOD_OPTIONS: GoalPeriodPreset[] = [
+/** Shortcuts that only fill the two dates (ADR-057): the period itself is the date range. */
+const PERIOD_SHORTCUTS: GoalPeriodPreset[] = [
   "this_quarter",
   "next_quarter",
-  "q1",
-  "q2",
-  "q3",
-  "q4",
   "this_year",
+  "rest_of_year",
   "next_year",
   "months_3",
   "months_6",
   "months_12",
-  "custom",
-  "none",
 ];
 
 const textareaClass =
@@ -106,6 +101,43 @@ function Field({
       <Label htmlFor={id} className="text-[12.5px] text-muted">
         {label}
       </Label>
+      {children}
+      {hint && <p className="text-[11.5px] text-faint">{hint}</p>}
+    </div>
+  );
+}
+
+function Optional({
+  id,
+  label,
+  hint,
+  removeLabel,
+  onRemove,
+  children,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  removeLabel: string;
+  onRemove: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor={id} className="text-[12.5px] text-muted">
+          {label}
+        </Label>
+        <button
+          type="button"
+          aria-label={removeLabel}
+          title={removeLabel}
+          onClick={onRemove}
+          className="grid size-6 place-items-center rounded-full text-faint hover:bg-active hover:text-fg focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+        >
+          <X className="size-3.5" aria-hidden />
+        </button>
+      </div>
       {children}
       {hint && <p className="text-[11.5px] text-faint">{hint}</p>}
     </div>
@@ -262,18 +294,14 @@ function GoalForm({
   const [currency, setCurrency] = useState(goal?.currency ?? "ARS");
   const [start, setStart] = useState(goal?.startValue?.toString() ?? "");
   const [current, setCurrent] = useState(goal?.currentValue?.toString() ?? "");
-  const startPeriod =
-    goal?.periodStart && goal.periodEnd ? { from: goal.periodStart, to: goal.periodEnd } : null;
-  const [preset, setPreset] = useState<GoalPeriodPreset>(
-    goal ? presetOf(startPeriod, today) : "this_year",
-  );
-  const [from, setFrom] = useState(startPeriod?.from ?? today);
-  const [to, setTo] = useState(startPeriod?.to ?? "");
+  // The period is two dates ("" = none); shortcuts only fill them.
+  const [from, setFrom] = useState(goal?.periodStart ?? "");
+  const [to, setTo] = useState(goal?.periodEnd ?? "");
   const [touched, setTouched] = useState<Set<string>>(new Set(goal ? ["all"] : []));
   const [suggested, setSuggested] = useState(false);
 
-  const followsPeriod = !goal?.targetDate || goal.targetDate === goal.periodEnd;
-  const [deadline, setDeadline] = useState(goal && !followsPeriod ? (goal.targetDate ?? "") : "");
+  // The deadline is its own field: never derived from the period.
+  const [deadline, setDeadline] = useState(goal?.targetDate ?? "");
   const [description, setDescription] = useState(goal?.description ?? "");
   const [area, setArea] = useState(goal?.area ?? "");
   const [visionIds, setVisionIds] = useState<string[]>(
@@ -291,7 +319,6 @@ function GoalForm({
   const [mode, setMode] = useState<ProgressMode>(goal?.progressMode ?? "manual");
   const [sections, setSections] = useState<Set<Section>>(() => {
     const s = new Set<Section>();
-    if (visionIds.length) s.add("vision");
     if (habits.length) s.add("habits");
     if (description) s.add("description");
     if (deadline) s.add("deadline");
@@ -301,12 +328,20 @@ function GoalForm({
     return s;
   });
   const show = (s: Section) => setSections(new Set([...sections, s]));
+  /** × on an optional field: it leaves the form, and its value with it (nothing hidden is saved). */
+  const hide = (s: Section) => {
+    setSections(new Set([...sections].filter((x) => x !== s)));
+    if (s === "habits") setHabits([]);
+    if (s === "description") setDescription("");
+    if (s === "deadline") setDeadline("");
+    if (s === "area") setArea("");
+    if (s === "parent") setParentId("");
+    if (s === "related") setRelatedIds([]);
+  };
   const touch = (k: string) => setTouched(new Set([...touched, k]));
 
-  const period = useMemo(
-    () => resolveGoalPeriod(preset, today, preset === "custom" ? { from, to } : {}),
-    [preset, today, from, to],
-  );
+  const period = from && to && from <= to ? { from, to } : null;
+  const periodInvalid = Boolean(from || to) && !period;
   const canDrive = measure === "number" || measure === "money";
   const anyDriver = canDrive && habits.some((h) => h.use);
 
@@ -336,17 +371,14 @@ function GoalForm({
     const d = inferGoalDraft(title, today);
     let used = false;
     if (!iconTouched) setIcon(suggestGoalIcon(title) ?? icon);
-    if (!touched.has("measure") && d.progressType) {
-      const m: Measure =
-        d.progressType === "binary"
-          ? "binary"
-          : d.currency
-            ? "money"
-            : d.direction === "decrease"
-              ? "decrease"
-              : "number";
-      setMeasure(m);
-      used = true;
+    // Only positive evidence changes the measure: a name without a number says nothing (and
+    // switching to Sí / No would reflow the dialog under the user's next click).
+    if (!touched.has("measure") && d.progressType === "numeric") {
+      const m: Measure = d.currency ? "money" : d.direction === "decrease" ? "decrease" : "number";
+      if (m !== measure) {
+        setMeasure(m);
+        used = true;
+      }
     }
     if (!touched.has("target") && d.targetValue) {
       setTarget(String(d.targetValue));
@@ -355,19 +387,22 @@ function GoalForm({
     if (!touched.has("unit") && d.metric) setUnit(d.metric);
     if (!touched.has("currency") && d.currency) setCurrency(d.currency);
     if (!touched.has("period") && d.period) {
-      setPreset(d.period);
-      if (d.period === "custom" && d.to) {
-        setFrom(today);
-        setTo(d.to);
+      const r =
+        d.period === "custom" && d.to
+          ? { from: today, to: d.to }
+          : resolveGoalPeriod(d.period, today);
+      if (r) {
+        setFrom(r.from);
+        setTo(r.to);
+        used = true;
       }
-      used = true;
     }
     setSuggested(used);
   };
 
   const submit = () => {
-    if (problems.length || !iconOk || !fields.title || (preset === "custom" && !period)) return;
-    const periodArgs = preset === "custom" ? { period: "custom", from, to } : { period: preset };
+    if (problems.length || !iconOk || !fields.title || periodInvalid) return;
+    const periodArgs = period ? { from: period.from, to: period.to } : { period: "none" };
     const base = {
       title: fields.title,
       progressType: fields.progressType,
@@ -385,7 +420,7 @@ function GoalForm({
           ...(icon ? { icon } : {}),
           ...(fields.metric ? { metric: fields.metric } : {}),
           ...(fields.currency ? { currency: fields.currency } : {}),
-          ...periodArgs,
+          ...(period ? periodArgs : {}),
           ...(deadline ? { targetDate: deadline } : {}),
           ...(description.trim() ? { description: description.trim() } : {}),
           ...(area.trim() ? { area: area.trim() } : {}),
@@ -410,7 +445,7 @@ function GoalForm({
         metric: fields.metric,
         currency: fields.currency,
         ...(periodChanged ? periodArgs : {}),
-        ...(deadline ? { targetDate: deadline } : !followsPeriod ? { targetDate: null } : {}),
+        targetDate: deadline || null,
         description: description.trim() || null,
         area: area.trim() || null,
         visions: visionIds,
@@ -425,7 +460,7 @@ function GoalForm({
   };
 
   const otherGoals = options.goals.filter((x) => x.id !== goal?.id);
-  const periodText = period ? periodLabel(period, locale) : null;
+  const periodText = period ? durationLabel(period.from, period.to, locale) : g.noPeriod;
   const addButton = (s: Section, label: string) =>
     sections.has(s) ? null : (
       <button
@@ -589,50 +624,81 @@ function GoalForm({
         </Field>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-        <Field id="goal-period" label={f.period} hint={periodText ?? undefined}>
-          <Select
-            id="goal-period"
-            value={preset}
+      <Field id="goal-from" label={f.period} hint={periodText}>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_auto]">
+          <Input
+            id="goal-from"
+            type="date"
+            aria-label={f.from}
+            value={from}
+            max={to || undefined}
             onChange={(e) => {
-              setPreset(e.target.value as GoalPeriodPreset);
+              setFrom(e.target.value);
               touch("period");
             }}
+            className="min-w-0"
+          />
+          <span aria-hidden className="text-faint">
+            →
+          </span>
+          <Input
+            type="date"
+            aria-label={f.to}
+            value={to}
+            min={from || undefined}
+            onChange={(e) => {
+              setTo(e.target.value);
+              touch("period");
+            }}
+            className="min-w-0"
+          />
+          <Select
+            aria-label={f.shortcuts}
+            value=""
+            onChange={(e) => {
+              const r = resolveGoalPeriod(e.target.value as GoalPeriodPreset, today);
+              if (r) {
+                setFrom(r.from);
+                setTo(r.to);
+                touch("period");
+              }
+            }}
+            className="col-span-2 h-10 w-auto max-w-44 sm:col-span-1"
           >
-            {PERIOD_OPTIONS.map((p) => {
-              const r = p === "custom" || p === "none" ? null : resolveGoalPeriod(p, today);
-              const label = /^q[1-4]$/.test(p)
-                ? `${quarterName(Number(p[1]), locale)} ${r?.from.slice(0, 4) ?? ""}`
-                : g.periods[p];
+            <option value="">{f.shortcuts}</option>
+            {PERIOD_SHORTCUTS.map((p) => {
+              const r = resolveGoalPeriod(p, today);
               return (
                 <option key={p} value={p}>
-                  {label}
-                  {r && !/^q[1-4]$/.test(p) ? ` · ${periodLabel(r, locale)}` : ""}
+                  {g.periods[p]}
+                  {r ? ` · ${rangeLabel(r.from, r.to, locale)}` : ""}
                 </option>
               );
             })}
           </Select>
-        </Field>
-        {preset === "custom" && (
-          <div className="flex gap-2">
-            <Input
-              type="date"
-              aria-label={f.from}
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-            <Input
-              type="date"
-              aria-label={f.to}
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            />
-          </div>
-        )}
-      </div>
+          {(from || to) && (
+            <button
+              type="button"
+              aria-label={f.clearPeriod}
+              title={f.clearPeriod}
+              onClick={() => {
+                setFrom("");
+                setTo("");
+                touch("period");
+              }}
+              className="grid size-8 place-items-center rounded-full text-faint hover:bg-active hover:text-fg"
+            >
+              <X className="size-4" aria-hidden />
+            </button>
+          )}
+        </div>
+      </Field>
+      {periodInvalid && (
+        <p className="-mt-2 text-[12.5px] text-danger-text">{f.problems.period_order}</p>
+      )}
 
-      {/* Optional, one tap away */}
-      {sections.has("vision") && (
+      {/* A Vision, when there are some: primary, not hidden behind a chip. */}
+      {options.visions.length > 0 && (
         <Field id="goal-visions" label={f.visions}>
           {visionIds.length > 0 && (
             <ul className="flex flex-col gap-1.5">
@@ -662,8 +728,16 @@ function GoalForm({
           />
         </Field>
       )}
+
+      {/* Optional, one tap away; each one can be removed again before saving. */}
       {sections.has("habits") && (
-        <Field id="goal-habits" label={f.habits} hint={canDrive ? f.useHint : f.useDisabled}>
+        <Optional
+          id="goal-habits"
+          label={f.habits}
+          hint={canDrive ? f.useHint : f.useDisabled}
+          removeLabel={f.removeField(f.habits)}
+          onRemove={() => hide("habits")}
+        >
           {habits.length > 0 && (
             <ul className="flex flex-col gap-1.5">
               {habits.map((h) => {
@@ -702,7 +776,7 @@ function GoalForm({
               .map((x) => ({ value: x.id, label: `${x.icon ?? "•"} ${x.name}` }))}
             onChange={(id) => setHabits([...habits, { id, use: canDrive }])}
           />
-        </Field>
+        </Optional>
       )}
       {goal && habits.length > 0 && anyDriver && (
         <Field id="goal-mode" label={f.source}>
@@ -720,7 +794,12 @@ function GoalForm({
         </Field>
       )}
       {sections.has("description") && (
-        <Field id="goal-description" label={f.description}>
+        <Optional
+          id="goal-description"
+          label={f.description}
+          removeLabel={f.removeField(f.description)}
+          onRemove={() => hide("description")}
+        >
           <textarea
             id="goal-description"
             maxLength={5000}
@@ -728,22 +807,33 @@ function GoalForm({
             onChange={(e) => setDescription(e.target.value)}
             className={textareaClass}
           />
-        </Field>
+        </Optional>
       )}
       {(sections.has("deadline") || sections.has("area")) && (
         <div className="grid gap-3 sm:grid-cols-2">
           {sections.has("deadline") && (
-            <Field id="goal-deadline" label={f.deadline} hint={f.deadlineHint}>
+            <Optional
+              id="goal-deadline"
+              label={f.deadline}
+              hint={f.deadlineHint}
+              removeLabel={f.removeField(f.deadline)}
+              onRemove={() => hide("deadline")}
+            >
               <Input
                 id="goal-deadline"
                 type="date"
                 value={deadline}
                 onChange={(e) => setDeadline(e.target.value)}
               />
-            </Field>
+            </Optional>
           )}
           {sections.has("area") && (
-            <Field id="goal-area" label={f.area}>
+            <Optional
+              id="goal-area"
+              label={f.area}
+              removeLabel={f.removeField(f.area)}
+              onRemove={() => hide("area")}
+            >
               <Input
                 id="goal-area"
                 list="goal-areas"
@@ -757,25 +847,48 @@ function GoalForm({
                   <option key={a} value={a} />
                 ))}
               </datalist>
-            </Field>
+            </Optional>
           )}
         </div>
       )}
       {sections.has("parent") && (
-        <Field id="goal-parent" label={f.parent}>
-          <Select id="goal-parent" value={parentId} onChange={(e) => setParentId(e.target.value)}>
-            <option value="">{f.noParent}</option>
-            {otherGoals.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.icon ? `${x.icon} ` : ""}
-                {x.title}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <Optional
+          id="goal-parent"
+          label={f.parent}
+          removeLabel={f.removeField(f.parent)}
+          onRemove={() => hide("parent")}
+        >
+          {parentId ? (
+            <ul>
+              <Chip
+                label={otherGoals.find((x) => x.id === parentId)?.title ?? "…"}
+                icon={otherGoals.find((x) => x.id === parentId)?.icon}
+                removeLabel={f.remove(otherGoals.find((x) => x.id === parentId)?.title ?? "")}
+                onRemove={() => setParentId("")}
+              />
+            </ul>
+          ) : (
+            <Combobox
+              id="goal-parent"
+              value=""
+              placeholder={f.searchGoal}
+              emptyText={f.nothingFound}
+              options={otherGoals.map((x) => ({
+                value: x.id,
+                label: `${x.icon ?? "🎯"} ${x.title}`,
+              }))}
+              onChange={setParentId}
+            />
+          )}
+        </Optional>
       )}
       {sections.has("related") && goal && (
-        <Field id="goal-related" label={f.related}>
+        <Optional
+          id="goal-related"
+          label={f.related}
+          removeLabel={f.removeField(f.related)}
+          onRemove={() => hide("related")}
+        >
           {relatedIds.length > 0 && (
             <ul className="flex flex-col gap-1.5">
               {relatedIds.map((id) => {
@@ -802,11 +915,10 @@ function GoalForm({
               .map((x) => ({ value: x.id, label: `${x.icon ?? "🎯"} ${x.title}` }))}
             onChange={(id) => setRelatedIds([...relatedIds, id])}
           />
-        </Field>
+        </Optional>
       )}
 
       <div className="flex flex-wrap gap-1.5" aria-label={f.more}>
-        {addButton("vision", f.add.vision)}
         {addButton("habits", f.add.habits)}
         {addButton("description", f.add.description)}
         {addButton("deadline", f.add.deadline)}
@@ -828,13 +940,7 @@ function GoalForm({
         </Button>
         <Button
           type="submit"
-          disabled={
-            pending ||
-            !title.trim() ||
-            problems.length > 0 ||
-            !iconOk ||
-            (preset === "custom" && !period)
-          }
+          disabled={pending || !title.trim() || problems.length > 0 || !iconOk || periodInvalid}
         >
           {goal ? f.save : f.create}
         </Button>

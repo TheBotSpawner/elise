@@ -174,7 +174,9 @@ test("1–9: empty state, Vision, a goal with target and period, progress and hi
   expect(created).toMatchObject({
     target_value: 12,
     metric: "clientes",
-    target_date: `${year}-12-31`,
+    period_start: `${year}-01-01`,
+    period_end: `${year}-12-31`,
+    target_date: null,
   });
   report.goal = {
     period: migrated ? [created!.period_start, created!.period_end] : "v1 columns only",

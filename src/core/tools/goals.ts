@@ -43,8 +43,8 @@ import {
   type GoalSnapshot,
   type VisionDetail,
 } from "../goals/analytics";
-import { resolveGoalPeriod, type GoalPeriodPreset } from "../goals/periods";
-import { todayIn } from "../time";
+import { addMonths, monthOrDay, resolveGoalPeriod, type GoalPeriodPreset } from "../goals/periods";
+import { addDays, todayIn } from "../time";
 
 /**
  * Goals and Visions tools (ADR-055). Every number and status comes from core/goals; the tools
@@ -152,18 +152,39 @@ function forModel(s: GoalSnapshot, visionTitles: Map<string, string> = new Map()
 
 // ── Period, validation and links ─────────────────────────────────────────────
 
-type PeriodInput = { period?: GoalPeriodPreset; year?: number; from?: string; to?: string };
+type PeriodInput = {
+  period?: GoalPeriodPreset;
+  year?: number;
+  from?: string;
+  to?: string;
+  duration?: { months?: number; weeks?: number; days?: number };
+};
 
-/** The dates a period input stands for: undefined = unchanged, null = cleared. */
-function periodOf(input: PeriodInput, day: string) {
-  if (!input.period) {
-    if (input.from && input.to) input = { ...input, period: "custom" };
-    else return undefined;
-  }
-  const p = resolveGoalPeriod(input.period!, day, input);
-  if (p === undefined)
+/**
+ * The dates a period input stands for (ADR-057): undefined = unchanged, null = cleared. The
+ * period is a date range; presets, whole months ("2027-01") and durations only produce dates,
+ * always computed here. `start` is the current start, for "que dure tres meses".
+ */
+function periodOf(input: PeriodInput, day: string, start?: string | null) {
+  const from = input.from ? monthOrDay(input.from, "start") : undefined;
+  const to = input.to ? monthOrDay(input.to, "end") : undefined;
+  let p: { from: string; to: string } | null | undefined;
+  if (input.duration) {
+    const begin = from ?? start ?? day;
+    const d = input.duration;
+    const end = addDays(addMonths(begin, d.months ?? 0), (d.weeks ?? 0) * 7 + (d.days ?? 0) - 1);
+    p = { from: begin, to: end };
+  } else if (input.period && input.period !== "custom")
+    p = resolveGoalPeriod(input.period, day, { ...(input.year ? { year: input.year } : {}) });
+  else if (from && to) p = { from, to };
+  else if (from || to)
+    throw new AppError("VALIDATION_ERROR", "A period needs both a start and an end date", {
+      recovery: "review",
+    });
+  else return undefined;
+  if (p && p.from > p.to)
     throw new AppError("VALIDATION_ERROR", PROBLEM_TEXT.period_order, { recovery: "review" });
-  return p;
+  return p ?? null;
 }
 
 function validate(g: Partial<NewGoal>) {
@@ -432,7 +453,8 @@ export const createGoalTool: ToolDefinition = {
       periodStart: period?.from ?? null,
       periodEnd: period?.to ?? null,
       // The deadline follows the period's end unless the user gave another one.
-      targetDate: g.targetDate ?? period?.to ?? null,
+      // The deadline is the user's, never invented from the period (ADR-057).
+      targetDate: g.targetDate ?? null,
       progressType: g.progressType,
       progressMode: g.progressMode,
       startValue: g.startValue ?? (g.direction === "decrease" ? (g.currentValue ?? null) : null),
@@ -496,6 +518,7 @@ export const updateGoalTool: ToolDefinition = {
       year,
       from,
       to,
+      duration,
       parentGoal,
       visions: visionRefs,
       habits: habitRefs,
@@ -506,18 +529,11 @@ export const updateGoalTool: ToolDefinition = {
     const p = provider(env);
     const patch: GoalPatch = { ...fields };
     const previous = goal.currentValue;
-    const dates = periodOf({ period, year, from, to }, today(env));
+    const dates = periodOf({ period, year, from, to, duration }, today(env), goal.periodStart);
     if (dates !== undefined) {
       patch.periodStart = dates?.from ?? null;
       patch.periodEnd = dates?.to ?? null;
-      // A deadline that followed the old period follows the new one.
-      if (
-        fields.targetDate === undefined &&
-        (!goal.targetDate || goal.targetDate === goal.periodEnd)
-      )
-        patch.targetDate = dates?.to ?? null;
     }
-    if (fields.targetDate === null) patch.targetDate = patch.periodEnd ?? goal.periodEnd ?? null;
     if (fields.progressType === "percentage") patch.targetValue = 100;
     if (parentGoal !== undefined) {
       const parent = parentGoal ? await resolve(env, parentGoal) : null;

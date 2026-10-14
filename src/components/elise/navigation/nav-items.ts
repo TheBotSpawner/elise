@@ -1,9 +1,11 @@
 import {
+  BookOpenCheck,
   CheckSquare,
   Target,
   ListChecks,
   Repeat,
   StickyNote,
+  Timer,
   Wallet,
   Zap,
   type LucideIcon,
@@ -26,16 +28,28 @@ export const SECTIONS: { key: SectionKey; href: string }[] = [
   { key: "schedules", href: "/schedules" },
 ];
 
-/** Monochrome icons, the same ones as the My Elise page. */
-export const MY_ELISE: { key: CapabilityKey; href: string | null; icon: LucideIcon }[] = [
-  { key: "tasks", href: "/my-elise/tasks", icon: CheckSquare },
-  { key: "habits", href: "/my-elise/habits", icon: Repeat },
-  { key: "lists", href: "/my-elise/lists", icon: ListChecks },
-  { key: "goals", href: "/my-elise/goals", icon: Target },
-  { key: "notes", href: "/my-elise/notes", icon: StickyNote },
-  { key: "finance", href: "/my-elise/finance", icon: Wallet },
-  { key: "shortcuts", href: "/my-elise/shortcuts", icon: Zap },
-];
+/**
+ * The one icon per My Elise module: the menu, the My Elise page and every module's page header
+ * use this mapping, so a module looks the same wherever it appears.
+ */
+export const MY_ELISE_ICONS = {
+  tasks: CheckSquare,
+  habits: Repeat,
+  lists: ListChecks,
+  goals: Target,
+  notes: StickyNote,
+  finance: Wallet,
+  shortcuts: Zap,
+  methods: BookOpenCheck,
+  time: Timer,
+} as const satisfies Partial<Record<CapabilityKey, LucideIcon>>;
+
+export type MyEliseModule = keyof typeof MY_ELISE_ICONS;
+
+/** The modules in the My Elise menu, in order. */
+export const MY_ELISE: { key: MyEliseModule; href: string | null; icon: LucideIcon }[] = (
+  ["tasks", "habits", "lists", "goals", "notes", "finance", "shortcuts"] as const
+).map((key) => ({ key, href: `/my-elise/${key}`, icon: MY_ELISE_ICONS[key] }));
 
 export type ActiveSection = SectionKey | "myElise" | "settings" | "approvals" | null;
 

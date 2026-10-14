@@ -7,6 +7,7 @@ import {
   Circle,
   CircleDashed,
   CircleDot,
+  Eye,
   PauseCircle,
   Repeat,
   TrendingUp,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 
 import type { GoalCard, HealthState } from "@/core/goals/analytics";
-import { dayLabel, periodLabel } from "@/core/goals/periods";
+import { dayLabel, durationLabel, rangeLabel } from "@/core/goals/periods";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -46,8 +47,9 @@ export function useGoalFormat() {
     number,
     amount,
     day: (d: string) => dayLabel(d, locale),
+    /** "14 oct → 13 ene 2027 · 3 meses" — the range and its duration, never a preset name. */
     period: (from: string | null, to: string | null) =>
-      from && to ? periodLabel({ from, to }, locale) : null,
+      from && to ? `${rangeLabel(from, to, locale)} · ${durationLabel(from, to, locale)}` : null,
     /** "7 / 12 clientes", "38 → 30 min", "68%". */
     value(c: GoalCard) {
       const unit = c.currency
@@ -77,6 +79,9 @@ export function useGoalFormat() {
     },
   };
 }
+
+/** The Vision icon, everywhere a Vision appears (button, cards, Canvas). */
+export const VisionIcon = Eye;
 
 const HEALTH: Record<HealthState, { icon: LucideIcon; tone: string }> = {
   at_risk: { icon: AlertTriangle, tone: "text-approval-text bg-approval-bg" },
@@ -223,7 +228,10 @@ export function GoalSummary({
   const g = t.native.goals;
   const fmt = useGoalFormat();
   const period = fmt.period(card.periodFrom, card.periodTo);
-  const context = [card.visions[0] ?? card.area, period].filter(Boolean).join(" · ");
+  // A deadline alone is not a period: it shows below as "Vence …".
+  const context = [card.visions[0] ?? card.area, period ?? (card.deadline ? null : g.noPeriod)]
+    .filter(Boolean)
+    .join(" · ");
   const value = fmt.value(card);
   const drivers = card.habits.length;
   return (

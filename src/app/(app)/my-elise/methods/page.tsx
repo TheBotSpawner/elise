@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { knowledgeItemText, listMethodCards, methodDetail } from "@/application/methods-service";
+import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { parseSkillMarkdown } from "@/core/skills/markdown";
 import { MethodsPanel, type MethodDraftInput } from "@/features/methods/methods-panel";
@@ -39,7 +40,7 @@ export default async function MethodsPage({ searchParams }: PageProps<"/my-elise
   }
   return (
     <PageContainer>
-      <PageHeader title={t.methods.title} subtitle={t.methods.subtitle} />
+      <PageHeader title={t.methods.title} icon={MY_ELISE_ICONS.methods} />
       <MethodsPanel
         methods={methods}
         spaces={spaces}

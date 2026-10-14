@@ -302,13 +302,17 @@ function providerFactory(
     notes(binding) {
       if (binding.providerKey !== "elise_native") throw unsupported("notes", binding);
       // Every change to a note keeps its Knowledge representation in step.
-      return new EliseNotesProvider(auth.db, auth.workspaceId, auth.userId, (note, archived) =>
-        syncNoteToKnowledge(auth.workspaceId, note, archived).catch((error) =>
-          logger.warn("knowledge.note_sync_failed", {
-            note_id: note.id,
-            code: error instanceof AppError ? error.code : "UNKNOWN",
-          }),
-        ),
+      return new EliseNotesProvider(
+        auth.db,
+        auth.workspaceId,
+        auth.userId,
+        (note, archived, textChanged) =>
+          syncNoteToKnowledge(auth.workspaceId, note, archived, textChanged).catch((error) =>
+            logger.warn("knowledge.note_sync_failed", {
+              note_id: note.id,
+              code: error instanceof AppError ? error.code : "UNKNOWN",
+            }),
+          ),
       );
     },
     finance(binding) {

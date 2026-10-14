@@ -1,6 +1,7 @@
 import { requireAuthContext } from "@/application/auth-context";
 import { contextOptions } from "@/application/contexts-service";
 import { shortcutStore } from "@/application/shortcuts-service";
+import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { ShortcutsView } from "@/features/shortcuts/shortcuts-view";
 import { getT } from "@/lib/i18n/server";
@@ -14,7 +15,7 @@ export default async function ShortcutsPage() {
   ]);
   return (
     <PageContainer>
-      <PageHeader title={t.shortcuts.title} subtitle={t.shortcuts.subtitle} />
+      <PageHeader title={t.shortcuts.title} icon={MY_ELISE_ICONS.shortcuts} />
       <ShortcutsView
         shortcuts={shortcuts}
         contexts={contexts.map((c) => ({ id: c.id, name: c.name }))}

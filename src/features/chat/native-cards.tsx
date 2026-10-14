@@ -184,8 +184,10 @@ export function NoteCard({
                 {n.title}
               </span>
               <span className="block truncate text-[12.5px] text-faint">
-                {n.spaceName ? t.native.notes.inSpace(n.spaceName) : t.native.notes.noSpace} ·{" "}
-                {n.content.slice(0, 120)}
+                {n.spaces?.length
+                  ? t.native.notes.inSpace(n.spaces.map((s) => s.path).join(" · "))
+                  : t.native.notes.noSpace}{" "}
+                · {n.content.slice(0, 120)}
               </span>
             </Link>
           </li>

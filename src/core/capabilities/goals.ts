@@ -386,16 +386,37 @@ const currency = z
   .regex(/^[A-Za-z]{3}$/)
   .transform((c) => c.toUpperCase());
 
+/** A day, or a whole month ("2027-01" = from its first day / to its last day). */
+const dayOrMonth = z
+  .string()
+  .regex(/^\d{4}-\d{2}(-\d{2})?$/, "Expected YYYY-MM-DD or YYYY-MM")
+  .refine((v) => v.length === 7 || isIsoDate(v), "Invalid date");
+
 const period = {
   period: z
     .enum(GOAL_PERIODS)
     .optional()
     .describe(
-      'Time horizon: "este año" → this_year, "este trimestre" → this_quarter, "el próximo trimestre" → next_quarter, "T1/Q1" → q1 (with year), "en 6 meses" → months_6, custom with from/to, none to clear. ELISE resolves the dates.',
+      'Shortcut that fills the period dates: "este año" → this_year, "de hoy hasta fin de año" → rest_of_year, "este trimestre" → this_quarter, "el próximo trimestre" → next_quarter, "en los próximos seis meses" → months_6, none to clear. For explicit dates use from/to instead.',
     ),
   year: z.number().int().min(2000).max(2100).optional().describe("For q1–q4."),
-  from: date.optional().describe("Custom period start."),
-  to: date.optional().describe("Custom period end."),
+  from: dayOrMonth
+    .optional()
+    .describe(
+      'Period start: "entre el 15 de noviembre y el 10 de febrero" → 2026-11-15; "entre enero y abril" → "2027-01".',
+    ),
+  to: dayOrMonth.optional().describe('Period end ("2027-02-10", or "2027-04" = end of April).'),
+  duration: z
+    .object({
+      months: z.number().int().min(0).max(120).optional(),
+      weeks: z.number().int().min(0).max(520).optional(),
+      days: z.number().int().min(0).max(3650).optional(),
+    })
+    .strict()
+    .optional()
+    .describe(
+      '"Que dure tres meses" → {months: 3}: from `from` (or the current start, or today). ELISE computes the end.',
+    ),
 };
 
 const habitLinks = z
@@ -447,7 +468,7 @@ export const createGoalInput = z
     ...period,
     targetDate: date
       .optional()
-      .describe("Deadline, only if it differs from the period's end (which is the default)."),
+      .describe("Deadline, only if the user gives one. It is separate from the period."),
     progressType: measureFields.progressType.default("binary"),
     progressMode: measureFields.progressMode.default("manual"),
     startValue: measureFields.startValue,
@@ -474,7 +495,7 @@ export const updateGoalInput = z
     icon: icon.nullable().optional(),
     area: area.nullable().optional(),
     ...period,
-    targetDate: date.nullable().optional().describe("Deadline override; null follows the period."),
+    targetDate: date.nullable().optional().describe("Deadline; null removes it."),
     progressType: measureFields.progressType.optional(),
     progressMode: measureFields.progressMode.optional(),
     startValue: z.number().finite().nullable().optional(),

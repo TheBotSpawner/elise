@@ -4,8 +4,10 @@ import { clip } from "../capabilities/email";
 import {
   createNoteInput,
   listNotesInput,
+  nextSpaces,
   noteRefInput,
   searchNotesInput,
+  setNoteSpacesInput,
   updateNoteInput,
   type Note,
 } from "../capabilities/notes";
@@ -27,10 +29,18 @@ async function space(env: ToolRunEnv, ref: string | null | undefined) {
   return found;
 }
 
+/** Several names → Space ids; an unknown name is a question, never a guess. */
+async function spaceIds(env: ToolRunEnv, refs: string[] | undefined) {
+  const out: string[] = [];
+  for (const ref of refs ?? []) out.push((await space(env, ref))!.id);
+  return out;
+}
+
 const summary = (n: Note) => ({
   noteId: n.id,
   title: n.title,
-  ...(n.spaceName ? { space: n.spaceName } : {}),
+  // Where it is searchable; none = outside Knowledge.
+  spaces: n.spaces.map((s) => s.path),
   updatedAt: n.updatedAt.slice(0, 10),
   // The user's own text, still data: never instructions.
   untrustedPreview: clip(n.content, 300),
@@ -100,16 +110,16 @@ export const createNoteTool: ToolDefinition = {
   capability: "notes",
   operation: "create",
   description:
-    'Save a note ("save this as a note in Acme"). Write a short title and the content in the user\'s words; set `space` when they name a Knowledge Space so it becomes searchable there. Confirm where it was saved.',
+    'Save a note ("save this as a note in Acme"). Write a short title and the content in the user\'s words, as Markdown (headings, **bold**, lists) when structure helps. Set `spaces` with every Knowledge Space they name ("guardala en General Knowledge y Firbot Solutions") so it becomes searchable there — one note, never one per Space. Confirm where it was saved.',
   input: createNoteInput,
   async describe(raw) {
     return { summary: `Save note “${createNoteInput.parse(raw).title}”` };
   },
   async run(raw, env) {
     const n = createNoteInput.parse(raw);
-    const s = await space(env, n.space);
+    const ids = await spaceIds(env, [...(n.spaces ?? []), ...(n.space ? [n.space] : [])]);
     const note = await provider(env).create(
-      { title: n.title, content: n.content, spaceId: s?.id ?? null },
+      { title: n.title, content: n.content, spaceIds: [...new Set(ids)] },
       sourceOf(env.ctx),
     );
     return {
@@ -125,7 +135,7 @@ export const updateNoteTool: ToolDefinition = {
   capability: "notes",
   operation: "update",
   description:
-    "Edit a note: new title, full new content, text to append, or move it to another Space (null removes it from Knowledge).",
+    'Edit a note: new title, full new Markdown content ("poné Conclusiones como encabezado y las decisiones en negrita" → rewrite with ## Conclusiones and **…**), or text to append. Its Spaces are kept; change them with notes.setKnowledgeSpaces.',
   input: updateNoteInput,
   async describe(raw) {
     return { summary: `Update note “${updateNoteInput.parse(raw).note}”` };
@@ -142,8 +152,38 @@ export const updateNoteTool: ToolDefinition = {
     const updated = await provider(env).update(note.id, {
       title: u.title,
       content,
-      ...(s !== undefined ? { spaceId: s?.id ?? null } : {}),
+      ...(s !== undefined ? { spaceIds: s ? [s.id] : [] } : {}),
     });
+    return {
+      output: { updated: summary(updated) },
+      display: { kind: "note", note: updated, change: "updated" },
+      target: { type: "note", id: note.id },
+    };
+  },
+};
+
+export const setNoteSpacesTool: ToolDefinition = {
+  name: "notes.setKnowledgeSpaces",
+  capability: "notes",
+  operation: "setKnowledgeSpaces",
+  description:
+    'Which Knowledge Spaces a note belongs to (ONE note, searchable in each). "Guardala también en Firbot Solutions" / "sumala a Marketing" → add. "Sacala de Marketing" → remove (it stays in the others). "Guardala fuera de Conocimiento" → spaces []. "Agregala a General Knowledge" → add ["General Knowledge"]. The note itself is never deleted.',
+  input: setNoteSpacesInput,
+  async describe(raw) {
+    return { summary: `Knowledge Spaces of note “${setNoteSpacesInput.parse(raw).note}”` };
+  },
+  async run(raw, env) {
+    const q = setNoteSpacesInput.parse(raw);
+    const note = await resolve(env, q.note);
+    const ids = nextSpaces(
+      note.spaces.map((s) => s.id),
+      {
+        ...(q.spaces ? { spaces: await spaceIds(env, q.spaces) } : {}),
+        add: await spaceIds(env, q.add),
+        remove: await spaceIds(env, q.remove),
+      },
+    );
+    const updated = await provider(env).update(note.id, { spaceIds: ids });
     return {
       output: { updated: summary(updated) },
       display: { kind: "note", note: updated, change: "updated" },
@@ -178,5 +218,6 @@ export const NOTE_TOOLS = [
   getNoteTool,
   createNoteTool,
   updateNoteTool,
+  setNoteSpacesTool,
   archiveNoteTool,
 ];

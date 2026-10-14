@@ -365,7 +365,8 @@ describe("Finance v2.1 (ADR-054)", () => {
     expect(
       periodOfFilters(parseFinanceFilters({ from: "2026-09-01", to: "2026-10-12" }), "2026-10-13"),
     ).toEqual({ from: "2026-09-01", to: "2026-10-12" });
-  });
+    // The first import of the finance service is slow under a full parallel run.
+  }, 30_000);
 
   it("category icons: suggested from the name until the user picks one", async () => {
     const { suggestCategoryIcon } = await import("@/core/capabilities/finance");

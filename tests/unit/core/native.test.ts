@@ -21,7 +21,7 @@ import {
   type ListsProvider,
   type NativeList,
 } from "@/core/capabilities/lists";
-import { noteKnowledgePlan } from "@/core/capabilities/notes";
+import { noteIndexPlan } from "@/core/capabilities/notes";
 import { buildPreview, suggestMapping } from "@/core/native/import";
 import { surfacesFromOutcome } from "@/core/workspace/from-results";
 
@@ -176,13 +176,20 @@ describe("goal progress", () => {
 });
 
 describe("notes ↔ knowledge plan", () => {
-  it("indexes, moves, removes — one editable note, never a copy", () => {
-    expect(noteKnowledgePlan(null, { spaceId: "s1" }, false)).toBe("reindex");
-    expect(noteKnowledgePlan("s1", { spaceId: "s1" }, false)).toBe("reindex");
-    expect(noteKnowledgePlan("s1", { spaceId: "s2" }, false)).toBe("move");
-    expect(noteKnowledgePlan("s1", { spaceId: null }, false)).toBe("remove");
-    expect(noteKnowledgePlan("s1", { spaceId: "s1" }, true)).toBe("remove");
-    expect(noteKnowledgePlan(null, { spaceId: null }, false)).toBe("none");
+  it("one item per note: indexes, keeps or moves home, removes — never a copy (ADR-056)", () => {
+    expect(noteIndexPlan(null, ["s1", "s2"], false, true)).toEqual({
+      action: "sync",
+      home: "s1",
+      rehome: false,
+      reindex: true,
+    });
+    // Only Spaces changed: no new version, no re-embedding.
+    expect(noteIndexPlan("s1", ["s1", "s3"], false, false)).toMatchObject({ reindex: false });
+    // Its home Space removed: the same item moves home.
+    expect(noteIndexPlan("s1", ["s2"], false, false)).toMatchObject({ home: "s2", rehome: true });
+    expect(noteIndexPlan("s1", [], false, false)).toEqual({ action: "remove" });
+    expect(noteIndexPlan("s1", ["s1"], true, false)).toEqual({ action: "remove" });
+    expect(noteIndexPlan(null, [], false, true)).toEqual({ action: "none" });
   });
 });
 

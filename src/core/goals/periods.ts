@@ -2,9 +2,9 @@ import { resolvePeriod, type Period } from "../periods";
 import { addDays } from "../time";
 
 /**
- * Goal time horizons (ADR-055). A preset is only a way to pick dates: what is stored is
- * `period_start` / `period_end` (local dates), never a translated label. Labels are derived
- * from the dates. Deterministic: same preset and day in, same dates out.
+ * Goal time horizons (ADR-055, ADR-057). The period IS a date range: `period_start` /
+ * `period_end` (local dates). Presets are only shortcuts that fill those two dates; nothing
+ * stores a preset or a label. Deterministic: same preset and day in, same dates out.
  */
 
 export const GOAL_PERIODS = [
@@ -15,6 +15,8 @@ export const GOAL_PERIODS = [
   "q3",
   "q4",
   "this_year",
+  /** From today to 31 Dec ("de hoy hasta fin de año"). */
+  "rest_of_year",
   "next_year",
   "months_3",
   "months_6",
@@ -78,6 +80,8 @@ export function resolveGoalPeriod(
       return resolvePeriod("this_year", today);
     case "next_year":
       return { from: `${y + 1}-01-01`, to: `${y + 1}-12-31` };
+    case "rest_of_year":
+      return { from: today, to: `${y}-12-31` };
     case "months_3":
     case "months_6":
     case "months_12": {
@@ -184,6 +188,53 @@ export function periodLabel(p: Period, locale: "es" | "en"): string {
     return `${mf} ${fy} – ${mt} ${ty}`;
   }
   return `${dayLabel(p.from, locale, fy !== ty)} – ${dayLabel(p.to, locale)}`;
+}
+
+/**
+ * How long a period is, deterministically (ADR-057): a familiar unit when the range is one
+ * ("1 oct → 31 dic" or "14 oct → 14 abr" = 3 / 6 meses, a whole year = "1 año"), else days
+ * under two months ("14 días"), else months and days ("5 meses y 12 días").
+ */
+export function durationLabel(from: string, to: string, locale: "es" | "en"): string {
+  const es = locale === "es";
+  const months = (n: number) =>
+    n % 12 === 0
+      ? es
+        ? `${n / 12} ${n === 12 ? "año" : "años"}`
+        : `${n / 12} ${n === 12 ? "year" : "years"}`
+      : es
+        ? `${n} ${n === 1 ? "mes" : "meses"}`
+        : `${n} ${n === 1 ? "month" : "months"}`;
+  const days = (n: number) =>
+    es ? `${n} ${n === 1 ? "día" : "días"}` : `${n} ${n === 1 ? "day" : "days"}`;
+  for (let n = 1; n <= 120; n++) {
+    const end = addMonths(from, n);
+    if (to === end || to === addDays(end, -1)) return months(n);
+    if (end > to) break;
+  }
+  const total = daysBetween(from, to);
+  if (total < 60) return days(Math.max(total, 1));
+  let n = 0;
+  while (addMonths(from, n + 1) <= to) n++;
+  const rest = daysBetween(addMonths(from, n), to);
+  return rest
+    ? es
+      ? `${months(n)} y ${days(rest)}`
+      : `${months(n)} and ${days(rest)}`
+    : months(n);
+}
+
+/** "14 oct → 13 ene 2027" (the year only where it isn't obvious). */
+export function rangeLabel(from: string, to: string, locale: "es" | "en"): string {
+  const sameYear = from.slice(0, 4) === to.slice(0, 4);
+  return `${dayLabel(from, locale, !sameYear)} → ${dayLabel(to, locale)}`;
+}
+
+/** "2027-01" (a whole month) or a day, as the first or last day it covers. */
+export function monthOrDay(value: string, edge: "start" | "end"): string {
+  if (!/^\d{4}-\d{2}$/.test(value)) return value;
+  const [y, m] = value.split("-").map(Number) as [number, number];
+  return edge === "start" ? `${value}-01` : `${value}-${pad(lastDay(y, m))}`;
 }
 
 export const daysBetween = (a: string, b: string) =>

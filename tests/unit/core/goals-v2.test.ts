@@ -32,13 +32,22 @@ import {
   goalsSummary,
   habitContribution,
   inferGoalDraft,
+  matchesPeriod,
   progressSeries,
   sortGoals,
   suggestGoalIcon,
   visionSummaries,
   type GoalSnapshot,
 } from "@/core/goals/analytics";
-import { periodLabel, presetOf, quarterName, resolveGoalPeriod } from "@/core/goals/periods";
+import {
+  durationLabel,
+  monthOrDay,
+  periodLabel,
+  presetOf,
+  quarterName,
+  rangeLabel,
+  resolveGoalPeriod,
+} from "@/core/goals/periods";
 import { surfacesFromOutcome } from "@/core/workspace/from-results";
 import { changeOf, decide } from "@/core/workspace/lifecycle";
 import type { Surface } from "@/core/workspace/model";
@@ -156,6 +165,43 @@ describe("goal periods", () => {
     expect(quarterName(1, "es")).toBe("T1 · enero–marzo");
     expect(presetOf({ from: "2026-10-01", to: "2026-12-31" }, TODAY)).toBe("this_quarter");
     expect(presetOf({ from: "2026-10-05", to: "2026-12-31" }, TODAY)).toBe("custom");
+  });
+});
+
+describe("period as a date range (ADR-057)", () => {
+  it("names durations deterministically: familiar units, else days, else months and days", () => {
+    expect(durationLabel("2026-10-14", "2027-01-13", "es")).toBe("3 meses");
+    expect(durationLabel("2026-10-14", "2027-04-14", "es")).toBe("6 meses");
+    expect(durationLabel("2027-01-01", "2027-12-31", "es")).toBe("1 año");
+    expect(durationLabel("2027-04-01", "2027-06-30", "es")).toBe("3 meses");
+    expect(durationLabel("2026-10-14", "2026-10-28", "es")).toBe("14 días");
+    expect(durationLabel("2026-10-14", "2026-11-27", "es")).toBe("44 días");
+    expect(durationLabel("2026-01-10", "2026-06-22", "es")).toBe("5 meses y 12 días");
+    expect(durationLabel("2026-10-14", "2027-01-13", "en")).toBe("3 months");
+    expect(rangeLabel("2026-10-14", "2027-01-13", "es")).toBe("14 oct 2026 → 13 ene 2027");
+    expect(rangeLabel("2026-10-14", "2026-11-27", "es")).toBe("14 oct → 27 nov 2026");
+    expect(monthOrDay("2027-02", "end")).toBe("2027-02-28");
+    expect(monthOrDay("2027-02", "start")).toBe("2027-02-01");
+  });
+
+  it("filters by overlap, not exact dates", () => {
+    const g = (over: Partial<Goal>) => goal({ createdAt: "2026-01-01T00:00:00Z", ...over });
+    const q4 = g({ periodStart: "2026-10-01", periodEnd: "2026-12-31" });
+    expect(matchesPeriod(q4, "custom", TODAY, { from: "2026-11-01", to: "2026-11-30" })).toBe(true);
+    expect(matchesPeriod(q4, "this_month", TODAY)).toBe(true);
+    expect(matchesPeriod(q4, "active_now", TODAY)).toBe(true);
+    expect(matchesPeriod(q4, "finished", "2027-01-05")).toBe(true);
+    const next = g({ periodStart: "2027-01-01", periodEnd: "2027-03-31" });
+    expect(matchesPeriod(next, "upcoming", TODAY)).toBe(true);
+    expect(matchesPeriod(next, "this_year", TODAY)).toBe(false);
+    const undated = g({});
+    expect(matchesPeriod(undated, "no_period", TODAY)).toBe(true);
+    expect(matchesPeriod(undated, "this_year", TODAY)).toBe(false);
+    expect(matchesPeriod(undated, "active_now", TODAY)).toBe(true);
+    // A deadline alone isn't a period, but it places the goal in time.
+    const due = g({ targetDate: "2026-12-20" });
+    expect(matchesPeriod(due, "no_period", TODAY)).toBe(true);
+    expect(matchesPeriod(due, "this_quarter", TODAY)).toBe(true);
   });
 });
 
@@ -661,7 +707,8 @@ describe("goal tools (voice / chat)", () => {
     expect(g).toMatchObject({
       periodStart: "2026-01-01",
       periodEnd: "2026-12-31",
-      targetDate: "2026-12-31",
+      // ADR-057: the deadline is never invented from the period.
+      targetDate: null,
       icon: "🎓",
     });
     expect(g.links.map((l) => [l.resourceType, l.relationship])).toEqual([
@@ -700,7 +747,7 @@ describe("goal tools (voice / chat)", () => {
     );
   });
 
-  it("moves a goal to next quarter: the deadline follows the period", async () => {
+  it("moves a goal to next quarter: only the period changes (ADR-057)", async () => {
     const { ports, goals } = goalPorts();
     await executeToolCall(ports, ctx, {
       name: "goals.create",
@@ -718,8 +765,43 @@ describe("goal tools (voice / chat)", () => {
     expect(goals.goals[0]).toMatchObject({
       periodStart: "2027-01-01",
       periodEnd: "2027-03-31",
-      targetDate: "2027-03-31",
+      targetDate: null,
     });
+  });
+
+  it("chat ranges become exact dates: explicit days, whole months, durations, rest of year", async () => {
+    const { ports, goals } = goalPorts();
+    const create = (title: string, extra: Record<string, unknown>) =>
+      executeToolCall(ports, ctx, {
+        name: "goals.create",
+        args: { title, progressType: "numeric", targetValue: 20, ...extra },
+      });
+    await create("Clientes nov-feb", { from: "2026-11-15", to: "2027-02-10" });
+    await create("Media maratón", { from: "2027-01", to: "2027-04" });
+    await create("Leer libros", { period: "rest_of_year" });
+    await create("Seis meses", { period: "months_6" });
+    const by = (t: string) => goals.goals.find((g) => g.title === t)!;
+    expect(by("Clientes nov-feb")).toMatchObject({
+      periodStart: "2026-11-15",
+      periodEnd: "2027-02-10",
+    });
+    expect(by("Media maratón")).toMatchObject({
+      periodStart: "2027-01-01",
+      periodEnd: "2027-04-30",
+    });
+    expect(by("Leer libros")).toMatchObject({ periodStart: "2026-10-13", periodEnd: "2026-12-31" });
+    expect(by("Seis meses")).toMatchObject({ periodStart: "2026-10-13", periodEnd: "2027-04-12" });
+    // "Que dure tres meses": from its current start.
+    await executeToolCall(ports, ctx, {
+      name: "goals.update",
+      args: { goal: "Clientes nov-feb", duration: { months: 3 } },
+    });
+    expect(by("Clientes nov-feb")).toMatchObject({
+      periodStart: "2026-11-15",
+      periodEnd: "2027-02-14",
+    });
+    const half = await create("Sin fin", { from: "2026-11-15" });
+    expect(half.status).toBe("failed");
   });
 
   it("links never duplicate, and a parent chain can't loop", async () => {
@@ -811,7 +893,7 @@ describe("goal Surfaces", () => {
     const { ports } = goalPorts();
     const created = await executeToolCall(ports, ctx, {
       name: "goals.create",
-      args: { title: "Clientes", progressType: "numeric", targetValue: 12 },
+      args: { title: "Clientes", progressType: "numeric", targetValue: 12, period: "this_year" },
     });
     const updated = await executeToolCall(ports, ctx, {
       name: "goals.updateProgress",

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { notesOverview } from "@/application/native-service";
+import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { NotesView } from "@/features/native/notes-view";
 import { getT } from "@/lib/i18n/server";
@@ -14,8 +15,8 @@ export default async function NotesPage({ searchParams }: PageProps<"/my-elise/n
     typeof params.note === "string" && z.uuid().safeParse(params.note).success ? params.note : null;
   const { notes, spaces } = await notesOverview(auth, query || null);
   return (
-    <PageContainer>
-      <PageHeader title={t.native.notes.title} subtitle={t.native.notes.subtitle} />
+    <PageContainer wide>
+      <PageHeader title={t.native.notes.title} icon={MY_ELISE_ICONS.notes} />
       <Suspense>
         <NotesView
           notes={notes}

@@ -1,5 +1,6 @@
 import { requireAuthContext } from "@/application/auth-context";
 import { habitsWorkspace, parseHabitParams } from "@/application/native-service";
+import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { HabitsView } from "@/features/native/habits-view";
 import { getT } from "@/lib/i18n/server";
@@ -10,7 +11,7 @@ export default async function HabitsPage({ searchParams }: PageProps<"/my-elise/
   const data = await habitsWorkspace(auth, parseHabitParams(raw));
   return (
     <PageContainer wide>
-      <PageHeader title={t.native.habits.title} subtitle={t.native.habits.subtitle} />
+      <PageHeader title={t.native.habits.title} icon={MY_ELISE_ICONS.habits} />
       <HabitsView data={data} workspaceId={auth.workspaceId} />
     </PageContainer>
   );

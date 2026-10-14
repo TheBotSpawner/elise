@@ -635,6 +635,24 @@ export type GoalProgressEventRow = {
   created_by_user_id: string | null;
 };
 
+/** ADR-056 (migration 043): which Knowledge Spaces a note belongs to. */
+export type NoteKnowledgeSpaceRow = {
+  id: string;
+  workspace_id: string;
+  note_id: string;
+  space_id: string;
+  created_at: Ts;
+};
+
+/** ADR-056 (migration 043): other Spaces that may retrieve one knowledge item. */
+export type KnowledgeItemSpaceRow = {
+  id: string;
+  workspace_id: string;
+  knowledge_item_id: string;
+  space_id: string;
+  created_at: Ts;
+};
+
 export type ListRow = {
   id: string;
   workspace_id: string;
@@ -1542,6 +1560,11 @@ export type Database = {
       goals: Table<GoalRow, "workspace_id" | "title">;
       goal_links: Table<GoalLinkRow, "workspace_id" | "goal_id" | "resource_type" | "resource_id">;
       visions: Table<VisionRow, "workspace_id" | "title">;
+      note_knowledge_spaces: Table<NoteKnowledgeSpaceRow, "workspace_id" | "note_id" | "space_id">;
+      knowledge_item_spaces: Table<
+        KnowledgeItemSpaceRow,
+        "workspace_id" | "knowledge_item_id" | "space_id"
+      >;
       goal_progress_events: Table<GoalProgressEventRow, "workspace_id" | "goal_id" | "source_type">;
       lists: Table<ListRow, "workspace_id" | "name">;
       list_items: Table<ListItemRow, "workspace_id" | "list_id" | "content" | "position">;

@@ -26,6 +26,7 @@ type RealtimeTable =
   | "lists"
   | "list_items"
   | "notes"
+  | "note_knowledge_spaces"
   | "finance_transactions"
   | "finance_accounts"
   | "finance_categories"

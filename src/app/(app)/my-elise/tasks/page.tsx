@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { tasksOverview } from "@/application/tasks-service";
+import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageHeader } from "@/components/shared/page";
 import { TaskWorkspace } from "@/features/tasks/task-workspace";
 import { parseSelection } from "@/features/tasks/views";
@@ -22,8 +23,8 @@ export default async function TasksPage({ searchParams }: PageProps<"/my-elise/t
   });
   return (
     // Wide: Tasks uses the screen for navigation, the list and details (ADR-050).
-    <div className="mx-auto w-full max-w-[1560px] px-4 pt-6 pb-16 md:px-8 md:pt-8">
-      <PageHeader title={t.tasks.title} subtitle={t.tasks.subtitle} />
+    <div className="mx-auto w-full max-w-[1560px] px-4 pt-6 pb-16 md:px-10 md:pt-10">
+      <PageHeader title={t.tasks.title} icon={MY_ELISE_ICONS.tasks} />
       <TaskWorkspace
         overview={overview}
         selection={selection}
