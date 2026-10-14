@@ -340,7 +340,9 @@ function useConnectionReturn() {
           ? t.connections.connectedNotionToast
           : provider === "spotify"
             ? t.connections.connectedSpotifyToast
-            : t.connections.connectedToast,
+            : provider === "microsoft"
+              ? t.connections.connectedMicrosoftToast
+              : t.connections.connectedToast,
       );
     if (missing) {
       const names = missing
@@ -348,7 +350,14 @@ function useConnectionReturn() {
         .map((c) => t.capabilities[c as keyof typeof t.capabilities] ?? c);
       toast.warning(t.connections.missingToast(names.join(", ")));
     }
-    if (error) toast.error(t.errors.codes[error] ?? t.errors.codes.INTERNAL_ERROR);
+    // A precise reason when the provider gave one (Microsoft: cancelled, admin approval…).
+    const reason = params.get("reason") as keyof typeof t.connections.microsoftReasons | null;
+    if (error)
+      toast.error(
+        (reason && t.connections.microsoftReasons[reason]) ??
+          t.errors.codes[error] ??
+          t.errors.codes.INTERNAL_ERROR,
+      );
     router.replace(
       provider && !error
         ? `/connections/${provider}${connected ? `?opened=${connected}` : ""}`

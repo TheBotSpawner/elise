@@ -3,6 +3,7 @@ import "server-only";
 import { isSupabaseConfigured, supabasePublicConfig } from "@/config/env";
 import { invalidEnvKeys, serverEnv } from "@/config/server-env";
 import { isGoogleConfigured } from "@/infrastructure/providers/google/config";
+import { isMicrosoftConfigured } from "@/infrastructure/providers/microsoft/config";
 import { isNotionConfigured } from "@/infrastructure/providers/notion/oauth";
 
 /**
@@ -11,7 +12,16 @@ import { isNotionConfigured } from "@/infrastructure/providers/notion/oauth";
  * Never exposes secrets, values or provider internals — only states.
  */
 export type HealthDomain =
-  "database" | "auth" | "ai" | "web" | "voice" | "background" | "google" | "notion" | "encryption";
+  | "database"
+  | "auth"
+  | "ai"
+  | "web"
+  | "voice"
+  | "background"
+  | "google"
+  | "microsoft"
+  | "notion"
+  | "encryption";
 
 export type DomainState = "ready" | "not_configured" | "down";
 
@@ -30,6 +40,7 @@ export function configuredDomains(): Record<HealthDomain, DomainState> {
     voice: state(Boolean(env.OPENAI_API_KEY)),
     background: state(Boolean(env.TRIGGER_SECRET_KEY)),
     google: state(isGoogleConfigured()),
+    microsoft: state(isMicrosoftConfigured()),
     notion: state(isNotionConfigured()),
     encryption: state(Boolean(env.ELISE_ENCRYPTION_KEY && env.SUPABASE_SECRET_KEY)),
   };

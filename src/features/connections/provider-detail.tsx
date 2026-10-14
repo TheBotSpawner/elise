@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 
 import {
   ConnectGoogleAction,
+  ConnectMicrosoftAction,
   DefaultMark,
   GoogleConnectionCard,
   MusicConnectionCard,
@@ -106,9 +107,10 @@ export function ProviderDetail({
               {h.accountsTitle}
             </h2>
             {mine.map((c) =>
-              providerId === "google" ? (
+              providerId === "google" || providerId === "microsoft" ? (
                 <GoogleConnectionCard
                   key={c.id}
+                  provider={providerId}
                   connection={c}
                   googleAvailable={configured}
                   multi={multi}
@@ -164,6 +166,12 @@ function ConnectAction({
       return (
         <div className="w-full sm:w-64">
           <ConnectGoogleAction label={label} />
+        </div>
+      );
+    case "microsoft":
+      return (
+        <div className="w-full sm:w-64">
+          <ConnectMicrosoftAction label={label} />
         </div>
       );
     case "notion":

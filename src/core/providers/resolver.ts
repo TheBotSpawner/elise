@@ -39,6 +39,7 @@ export type Resolution =
 const PROVIDER_NAMES: Record<ProviderKey, string[]> = {
   elise_native: ["elise"],
   google: ["google"],
+  microsoft: ["microsoft", "outlook", "hotmail", "office 365", "microsoft 365"],
   notion: ["notion"],
   web_search: ["web"],
   spotify: ["spotify"],

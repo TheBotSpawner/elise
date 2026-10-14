@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 
 import { ExternalIcon } from "@/components/elise/icons";
 import type { ToolDisplay } from "@/core/agents/tools";
-import type { EmailAddress, EmailMessage } from "@/core/capabilities/email";
+import type { EmailAddress, EmailMessage, EmailProvenance } from "@/core/capabilities/email";
 import { discardDraftAction, sendDraftAction } from "@/features/email/actions";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,14 @@ const CARD =
   "flex flex-col gap-2 rounded-2xl border border-border bg-surface px-4 py-3.5 md:px-5 md:py-[18px]";
 
 const name = (a: EmailAddress | null) => a?.name ?? a?.email ?? "?";
+
+/** Which mailbox an item lives in: "Outlook · Firbot", "Gmail · Personal". */
+const origin = (p: EmailProvenance) =>
+  p.providerKey === "microsoft"
+    ? `Outlook · ${p.source}`
+    : p.providerKey === "google"
+      ? `Gmail · ${p.source}`
+      : p.source;
 
 function useWhen(timezone: string) {
   const { locale } = useI18n();
@@ -102,7 +110,7 @@ function Row({
       </a>
       <span className="flex shrink-0 flex-col items-end text-[12.5px] text-faint">
         <span className="font-mono">{when(m.date)}</span>
-        {multiSource && <span>{m.provenance.source}</span>}
+        {multiSource && <span>{origin(m.provenance)}</span>}
       </span>
     </li>
   );
@@ -156,9 +164,13 @@ export function EmailThreadCard({
   return (
     <motion.section {...rise} aria-label={t.chat.resultLabel} className={CARD}>
       <Header
-        label={`${t.email.thread} · ${t.email.messages(thread.messages.length)} · ${thread.provenance.source}`}
+        label={`${t.email.thread} · ${t.email.messages(thread.messages.length)} · ${origin(thread.provenance)}`}
         href={thread.url}
-        linkLabel={t.email.openInGmail}
+        linkLabel={
+          thread.provenance.providerKey === "microsoft"
+            ? t.email.openInOutlook
+            : t.email.openInGmail
+        }
       />
       <p className="text-base font-medium tracking-[-0.01em] md:text-lg">{thread.subject}</p>
       <ol className="flex flex-col gap-2 border-l border-border pl-3">
@@ -228,7 +240,7 @@ export function DraftCard({
       )}
     >
       <Header
-        label={`${t.email.label} · ${t.email.changes[change]} · ${draft.provenance.source}`}
+        label={`${t.email.label} · ${t.email.changes[change]} · ${origin(draft.provenance)}`}
         href={open ? draft.url : null}
         linkLabel={t.email.edit}
       />

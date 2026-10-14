@@ -166,6 +166,7 @@ export const es: Dictionary = {
   providers: {
     elise_native: "ELISE",
     google: "Google",
+    microsoft: "Microsoft",
     notion: "Notion",
     web_search: "Búsqueda web",
   },
@@ -556,6 +557,7 @@ export const es: Dictionary = {
     bcc: "Cco",
     account: "Cuenta",
     openInGmail: "Abrir en Gmail",
+    openInOutlook: "Abrir en Outlook",
     edit: "Editar en Gmail",
     send: "Enviar",
     discard: "Descartar",
@@ -1173,7 +1175,7 @@ export const es: Dictionary = {
       notion: "Páginas, documentos y bases de datos.",
       spotify: "Reproducí y controlá música con ELISE.",
       youtube: "Buscá y reproducí música y videos en pantalla.",
-      microsoft: "Outlook, Calendar, OneDrive y To Do.",
+      microsoft: "Correo de Outlook (trabajo, escuela o personal).",
       slack: "Canales y conversaciones del equipo.",
       github: "Repositorios, issues y trabajo de desarrollo.",
       dropbox: "Archivos y carpetas.",
@@ -1182,6 +1184,8 @@ export const es: Dictionary = {
     } as Record<string, string>,
     intros: {
       google: "Conectá Calendar, Gmail, Drive, Tasks y Sheets de una o varias cuentas.",
+      microsoft:
+        "Conectá el correo de Outlook de una o varias cuentas de Microsoft, de trabajo, escuela o personales. Calendar, OneDrive y To Do llegan después.",
       notion:
         "Conectá un espacio de Notion: sus páginas son Conocimiento y sus bases, datos estructurados.",
       spotify:
@@ -1325,6 +1329,35 @@ export const es: Dictionary = {
     off: "Pausado",
     connectedToast: "Google conectado",
     connectedNotionToast: "Notion conectado",
+    connectedMicrosoftToast: "Outlook conectado",
+    connectMicrosoftTitle: "Conectar cuenta de Microsoft",
+    microsoftBody:
+      "Outlook de una o varias cuentas de Microsoft (trabajo, escuela o personal). Buscar, resumir y preparar respuestas; enviar siempre te lo pregunta antes.",
+    microsoftConsent:
+      "Microsoft te va a pedir permiso para leer y organizar tu correo y para enviar en tu nombre. ELISE nunca envía sin tu aprobación.",
+    continueWithMicrosoft: "Continuar con Microsoft",
+    reconnectMicrosoft: "Reconectar Microsoft",
+    microsoftNotConfigured:
+      "Las conexiones con Microsoft todavía no están configuradas en este servidor.",
+    outlookBody: "Buscar, resumir y preparar respuestas. Enviar siempre te lo pregunta antes.",
+    disconnectMicrosoftConsequences: [
+      "ELISE deja de leer y modificar el correo de esta cuenta y borra sus credenciales.",
+      "Se cancelan las aprobaciones pendientes de esta cuenta.",
+      "No se borra nada en Outlook. Para quitar ELISE por completo, quitá también la app en la configuración de tu cuenta de Microsoft.",
+      "Si la volvés a conectar, conserva el nombre que le diste.",
+    ],
+    microsoftReasons: {
+      cancelled: "Cancelaste la conexión con Microsoft. Podés intentarlo cuando quieras.",
+      admin_consent_required:
+        "Tu organización requiere que un administrador apruebe ELISE en Microsoft antes de conectarla. Pedíselo a tu área de IT y volvé a intentar.",
+      consent_revoked:
+        "El permiso para ELISE se quitó en Microsoft. Reconectá la cuenta para seguir.",
+      conditional_access:
+        "Una política de tu organización pide volver a iniciar sesión en Microsoft. Reconectá la cuenta.",
+      expired: "El acceso a Microsoft venció. Reconectá la cuenta.",
+      revoked: "Microsoft revocó el acceso de ELISE. Reconectá la cuenta.",
+      client_misconfigured: "La conexión con Microsoft está mal configurada en este servidor.",
+    },
     missingToast: (caps: string) =>
       `Google no dio acceso a ${caps}. Podés permitirlo cuando quieras.`,
     cancel: "Cancelar",

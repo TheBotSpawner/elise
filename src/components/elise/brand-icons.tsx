@@ -117,6 +117,28 @@ export function GoogleSheetsIcon({ size = 32, ...props }: Props) {
   );
 }
 
+export function MicrosoftMark({ size = 18, ...props }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden {...props}>
+      <path fill="#F25022" d="M2 2h9.5v9.5H2z" />
+      <path fill="#7FBA00" d="M12.5 2H22v9.5h-9.5z" />
+      <path fill="#00A4EF" d="M2 12.5h9.5V22H2z" />
+      <path fill="#FFB900" d="M12.5 12.5H22V22h-9.5z" />
+    </svg>
+  );
+}
+
+export function OutlookIcon({ size = 32, ...props }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden {...props}>
+      <rect x="18" y="9" width="25" height="30" rx="3" fill="#28A8EA" />
+      <path d="M18 21l12.5 8L43 21v15a3 3 0 0 1-3 3H21a3 3 0 0 1-3-3z" fill="#0078D4" />
+      <rect x="5" y="13" width="22" height="22" rx="3" fill="#0A5FB4" />
+      <ellipse cx="16" cy="24" rx="5.2" ry="6.4" fill="none" stroke="#fff" strokeWidth="2.8" />
+    </svg>
+  );
+}
+
 export function NotionIcon({ size = 32, ...props }: Props) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden {...props}>

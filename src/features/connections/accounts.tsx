@@ -12,7 +12,9 @@ import {
   GoogleDriveIcon,
   GoogleSheetsIcon,
   GoogleTasksIcon,
+  MicrosoftMark,
   NotionIcon,
+  OutlookIcon,
 } from "@/components/elise/brand-icons";
 import { CheckIcon } from "@/components/elise/icons";
 import { Button } from "@/components/ui/button";
@@ -24,6 +26,7 @@ import { cn } from "@/lib/utils";
 
 import {
   connectGoogle,
+  connectMicrosoft,
   disconnectAction,
   renameConnectionAction,
   setDefaultAction,
@@ -51,6 +54,38 @@ const CAP_PRODUCT = {
 } as const;
 /** Gmail is opt-in: its consent is broader, so least privilege by default. */
 const OPT_IN = new Set<string>(["email", "knowledge", "finance"]);
+
+type AccountCap = (typeof GOOGLE_CAPS)[number];
+/**
+ * What an OAuth account card shows per provider family: its capabilities, their product names
+ * and logos, its mark, and the action that (re)starts its consent. Microsoft is Outlook only
+ * today (ADR-058).
+ */
+const ACCOUNT_UI: Record<
+  "google" | "microsoft",
+  {
+    caps: readonly AccountCap[];
+    logos: Partial<Record<AccountCap, typeof GmailIcon>>;
+    product: Partial<Record<AccountCap, string>>;
+    Mark: typeof GoogleMark;
+    connect: (form: FormData) => Promise<void>;
+  }
+> = {
+  google: {
+    caps: GOOGLE_CAPS,
+    logos: CAP_LOGOS,
+    product: CAP_PRODUCT,
+    Mark: GoogleMark,
+    connect: connectGoogle,
+  },
+  microsoft: {
+    caps: ["email"],
+    logos: { email: OutlookIcon },
+    product: { email: "Outlook" },
+    Mark: MicrosoftMark,
+    connect: connectMicrosoft,
+  },
+};
 
 // Which account cards are expanded, remembered per browser (collapsed by default).
 const EXPANDED_KEY = "elise.connections.expanded";
@@ -283,13 +318,70 @@ export function ConnectGoogleAction({ label }: { label: string }) {
   );
 }
 
+/** Microsoft's consent covers Outlook as a whole: one clear explanation, then Microsoft. */
+export function ConnectMicrosoftAction({ label }: { label: string }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-dashed border-border-strong text-[14px] text-muted transition-colors hover:border-accent-line hover:text-fg"
+      >
+        <Plus className="size-4" aria-hidden />
+        {label}
+      </button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title={t.connections.connectMicrosoftTitle}
+        busy={submitting}
+      >
+        <form
+          action={connectMicrosoft}
+          onSubmit={() => setSubmitting(true)}
+          className="flex flex-col gap-5"
+        >
+          <div className="flex items-start gap-3.5 rounded-xl border border-border-strong bg-bg p-4">
+            <OutlookIcon size={36} className="shrink-0" />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">Outlook</span>
+              <span className="block text-[13px] text-muted">{t.connections.outlookBody}</span>
+            </span>
+          </div>
+          <p className="text-[13px] text-faint">{t.connections.microsoftConsent}</p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={submitting}
+              onClick={() => setOpen(false)}
+            >
+              {t.connections.cancel}
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              <MicrosoftMark size={16} />
+              {t.connections.continueWithMicrosoft}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+    </>
+  );
+}
+
 export function GoogleConnectionCard({
   connection: c,
   googleAvailable,
   multi,
   openOnce,
+  provider = "google",
 }: {
   connection: ConnectionView;
+  /** Which OAuth family the account belongs to (same card, its own capabilities). */
+  provider?: "google" | "microsoft";
   googleAvailable: boolean;
   /** Just connected: open in this view, collapsed again on the next visit. */
   openOnce: boolean;
@@ -301,11 +393,11 @@ export function GoogleConnectionCard({
   const [name, setName] = useState(c.displayName);
   const [context, setContext] = useState(c.contextLabel ?? "");
   const [expanded, setOpen] = useExpanded(c.id, openOnce);
+  const ui = ACCOUNT_UI[provider];
   const healthy = c.health === "connected";
-  const enabled = GOOGLE_CAPS.filter((key) =>
-    c.capabilities.some((x) => x.key === key && x.enabled),
-  )
-    .map((key) => CAP_PRODUCT[key])
+  const enabled = ui.caps
+    .filter((key) => c.capabilities.some((x) => x.key === key && x.enabled))
+    .map((key) => ui.product[key])
     .join(" · ");
   const dirty = name !== c.displayName || context !== (c.contextLabel ?? "");
 
@@ -337,7 +429,7 @@ export function GoogleConnectionCard({
           className="-mx-2 -my-1 grid w-[calc(100%+1rem)] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-1 text-left transition-colors hover:bg-active"
         >
           <span className="grid size-9 place-items-center rounded-full border border-border bg-bg">
-            <GoogleMark size={18} />
+            <ui.Mark size={18} />
           </span>
           <span className="min-w-0">
             <span className="block truncate text-base font-medium">{c.displayName}</span>
@@ -357,10 +449,7 @@ export function GoogleConnectionCard({
       {expanded && (
         <div id={`conn-${c.id}`} className="flex flex-col gap-4">
           {!healthy && (
-            <form
-              action={connectGoogle}
-              className="flex flex-wrap items-center justify-between gap-3"
-            >
+            <form action={ui.connect} className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-[13.5px] text-approval-text">
                 {t.connections.healthBody[c.health]}
               </p>
@@ -375,17 +464,19 @@ export function GoogleConnectionCard({
                 <Button type="submit">
                   {c.health === "permission_missing"
                     ? t.connections.grantMissing
-                    : t.connections.reconnect}
+                    : provider === "microsoft"
+                      ? t.connections.reconnectMicrosoft
+                      : t.connections.reconnect}
                 </Button>
               )}
             </form>
           )}
 
           <ul className="flex flex-col divide-y divide-border rounded-xl border border-border">
-            {GOOGLE_CAPS.map((key) => {
+            {ui.caps.map((key) => {
               const cap = c.capabilities.find((x) => x.key === key);
               const granted = Boolean(cap?.granted);
-              const Logo = CAP_LOGOS[key];
+              const Logo = ui.logos[key] ?? GmailIcon;
               return (
                 <li
                   key={key}
@@ -397,7 +488,7 @@ export function GoogleConnectionCard({
                       className={cn("shrink-0", !cap?.enabled && "opacity-50 grayscale")}
                     />
                     <span className="min-w-0">
-                      <span className="block">{CAP_PRODUCT[key]}</span>
+                      <span className="block">{ui.product[key]}</span>
                       {/* What ELISE can do with it, in plain words (never scope strings). */}
                       <span className="block text-[12.5px] text-faint">
                         {t.connections.capabilityBody[key]}
@@ -406,7 +497,7 @@ export function GoogleConnectionCard({
                   </span>
                   <div className="flex items-center gap-2">
                     {!granted ? (
-                      <form action={connectGoogle}>
+                      <form action={ui.connect}>
                         <input type="hidden" name="connectionId" value={c.id} />
                         <input type="hidden" name="capability" value={key} />
                         <span className="mr-2 text-[13px] text-muted">
@@ -571,7 +662,9 @@ export function DisconnectButton({ connection: c }: { connection: ConnectionView
       ? t.connections.disconnectNotionConsequences
       : c.providerKey === "spotify" || c.providerKey === "youtube"
         ? t.connections.disconnectMusicConsequences
-        : t.connections.disconnectGoogleConsequences;
+        : c.providerKey === "microsoft"
+          ? t.connections.disconnectMicrosoftConsequences
+          : t.connections.disconnectGoogleConsequences;
   return (
     <>
       <Button

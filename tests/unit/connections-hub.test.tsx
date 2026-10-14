@@ -23,6 +23,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/features/connections/actions", () => ({
   connectGoogle: vi.fn(),
+  connectMicrosoft: vi.fn(),
   connectNotion: vi.fn(),
   connectSpotify: vi.fn(),
   enableYouTubeAction: vi.fn(),
@@ -138,7 +139,10 @@ describe("provider catalog", () => {
     expect(ids("Google")).toEqual(["google"]);
     expect(ids("Gmail")).toEqual(["google"]);
     expect(ids("drive")).toContain("google");
-    expect(ids("Calendar")).toEqual(expect.arrayContaining(["google", "microsoft"]));
+    // Microsoft offers Outlook only (ADR-058): it is not found for capabilities it lacks.
+    expect(ids("Calendar")).toEqual(["google"]);
+    expect(ids("Outlook")).toEqual(["microsoft"]);
+    expect(ids("hotmail")).toEqual(["microsoft"]);
     expect(ids("correo")).toEqual(expect.arrayContaining(["google", "microsoft"]));
     expect(ids("UTN")).toEqual(["google"]);
     expect(ids("notion")).toEqual(["notion"]);

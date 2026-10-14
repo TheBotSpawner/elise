@@ -63,6 +63,10 @@ const serverEnvSchema = z.object({
   TRIGGER_SECRET_KEY: z.string().min(1).optional(),
   GOOGLE_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  /** Microsoft Entra app (Outlook Mail, ADR-058). Tenant defaults to "common". */
+  MICROSOFT_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  MICROSOFT_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  MICROSOFT_OAUTH_TENANT: z.string().min(1).optional(),
   /** 32 random bytes, base64. Encrypts OAuth credentials at rest. */
   ELISE_ENCRYPTION_KEY: z.string().min(1).optional(),
   ELISE_ENCRYPTION_KEY_PREVIOUS: z.string().min(1).optional(),

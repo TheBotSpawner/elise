@@ -121,7 +121,7 @@ async function firstRunPrompts(auth: AuthContext): Promise<string[]> {
   const on = (key: string) =>
     (connections?.connections ?? []).some(
       (c) =>
-        c.providerKey === "google" &&
+        c.providerKey !== "elise_native" &&
         c.health === "connected" &&
         c.capabilities.some((x) => x.key === key && x.enabled && x.granted),
     );

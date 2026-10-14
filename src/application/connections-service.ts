@@ -27,6 +27,23 @@ import {
   type GoogleCapability,
 } from "@/infrastructure/providers/google/oauth";
 import {
+  isMicrosoftConfigured,
+  microsoftOAuthConfig,
+} from "@/infrastructure/providers/microsoft/config";
+import {
+  authError as microsoftAuthError,
+  buildAuthorizationUrl as buildMicrosoftAuthorizationUrl,
+  CAPABILITY_SCOPES as MICROSOFT_CAPABILITY_SCOPES,
+  exchangeCode as exchangeMicrosoftCode,
+  fetchIdentity as fetchMicrosoftIdentity,
+  grantedCapabilities as microsoftGrantedCapabilities,
+  MICROSOFT_CAPABILITIES,
+  microsoftAuthReason,
+  scopesFor as microsoftScopesFor,
+  suggestAlias as suggestMicrosoftAlias,
+  type MicrosoftCapability,
+} from "@/infrastructure/providers/microsoft/oauth";
+import {
   buildNotionAuthorizationUrl,
   exchangeNotionCode,
   isNotionConfigured,
@@ -189,9 +206,9 @@ export async function startGoogleConnection(
 
 export interface ConnectionResult {
   connectionId: string;
-  enabled: GoogleCapability[];
-  /** Requested but not granted on Google's consent screen. */
-  missing: GoogleCapability[];
+  enabled: CapabilityKey[];
+  /** Requested but not granted on the provider's consent screen. */
+  missing: CapabilityKey[];
 }
 
 export async function completeGoogleConnection(
@@ -362,6 +379,240 @@ export async function completeGoogleConnection(
   return { connectionId, enabled, missing: requested.filter((c) => !granted.includes(c)) };
 }
 
+// ── Microsoft (ADR-058) ──────────────────────────────────────────────────────
+
+/**
+ * Starts Microsoft consent (Outlook Mail). With `connectionId` it reconnects that exact
+ * account. Same pending-authorization row and PKCE as Google.
+ */
+export async function startMicrosoftConnection(
+  auth: AuthContext,
+  params: { connectionId?: string | null; origin: string; returnPath?: string | null },
+): Promise<string> {
+  rateLimit(`oauth.start:${auth.userId}`, 10, 60_000);
+  const config = microsoftOAuthConfig(params.origin);
+  let loginHint: string | null = null;
+  if (params.connectionId) {
+    const { data } = await auth.db
+      .from("provider_connections")
+      .select("id, account_label")
+      .eq("id", params.connectionId)
+      .eq("workspace_id", auth.workspaceId)
+      .eq("provider_key", "microsoft")
+      .maybeSingle();
+    if (!data) throw new AppError("NOT_FOUND", "Connection not found");
+    loginHint = data.account_label;
+  }
+  const capabilities = [...MICROSOFT_CAPABILITIES];
+  const pkce = createPkce();
+  const { state, hash } = createState();
+  await auth.db
+    .from("oauth_states")
+    .delete()
+    .eq("user_id", auth.userId)
+    .lt("expires_at", new Date().toISOString());
+  const { error } = await auth.db.from("oauth_states").insert({
+    state_hash: hash,
+    workspace_id: auth.workspaceId,
+    user_id: auth.userId,
+    provider_key: "microsoft",
+    capabilities,
+    connection_id: params.connectionId ?? null,
+    return_path: safeReturnPath(params.returnPath),
+    code_verifier_ciphertext: encrypt(pkce.verifier, `oauth_state:${hash}`),
+  });
+  // 23503: the "microsoft" provider row (migration 045) isn't in this database yet.
+  if (error?.code === "23503")
+    throw new AppError("SERVER_NOT_CONFIGURED", "This needs the latest ELISE database update", {
+      recovery: "configure",
+      cause: error,
+    });
+  if (error)
+    throw new AppError("INTERNAL_ERROR", "Could not start the connection", { cause: error });
+  return buildMicrosoftAuthorizationUrl(config, {
+    scopes: microsoftScopesFor(capabilities),
+    state,
+    codeChallenge: pkce.challenge,
+    loginHint,
+  });
+}
+
+/**
+ * Microsoft's callback. The account key is the Graph user id (stable), never the address;
+ * reconnecting must pick the same account. Several Microsoft accounts can live side by side.
+ */
+export async function completeMicrosoftConnection(
+  auth: AuthContext,
+  params: {
+    code: string | null;
+    state: string | null;
+    error: string | null;
+    errorDescription?: string | null;
+    origin: string;
+    onReturnPath?: (path: ReturnPath) => void;
+  },
+): Promise<ConnectionResult> {
+  if (!params.state) throw new AppError("VALIDATION_ERROR", "Missing authorization state");
+  const stateHash = hashState(params.state);
+  const { data: pending, error: consumeError } = await auth.db
+    .from("oauth_states")
+    .delete()
+    .eq("state_hash", stateHash)
+    .eq("user_id", auth.userId)
+    .eq("workspace_id", auth.workspaceId)
+    .select("*")
+    .maybeSingle();
+  if (consumeError)
+    throw new AppError("INTERNAL_ERROR", "Could not verify the connection", {
+      cause: consumeError,
+    });
+  validatePendingAuthorization(pending, {
+    userId: auth.userId,
+    workspaceId: auth.workspaceId,
+    providerKey: "microsoft",
+    now: new Date(),
+  });
+  params.onReturnPath?.(safeReturnPath(pending!.return_path));
+  const row = pending!;
+
+  if (params.error || !params.code) {
+    // Cancelled, admin approval required, consent declined…: a precise reason, never raw text.
+    const reason = microsoftAuthReason({
+      error: params.error ?? "access_denied",
+      description: params.errorDescription,
+    });
+    throw microsoftAuthError(reason === "unknown" ? "cancelled" : reason);
+  }
+
+  const config = microsoftOAuthConfig(params.origin);
+  const verifier = decrypt(row.code_verifier_ciphertext, `oauth_state:${stateHash}`);
+  const requested = row.capabilities.filter((c): c is MicrosoftCapability =>
+    (MICROSOFT_CAPABILITIES as string[]).includes(c),
+  );
+  const tokens = await exchangeMicrosoftCode(config, {
+    code: params.code,
+    codeVerifier: verifier,
+    scopes: microsoftScopesFor(requested),
+  });
+  if (!tokens.refreshToken)
+    throw new AppError("PERMISSION_DENIED", "Microsoft did not grant lasting access", {
+      recovery: "retry",
+    });
+  const identity = await fetchMicrosoftIdentity(tokens.accessToken);
+  const granted = microsoftGrantedCapabilities(tokens.scopes);
+
+  let connectionId: string | null = null;
+  if (row.connection_id) {
+    const { data: existing } = await auth.db
+      .from("provider_connections")
+      .select("id, external_account_id")
+      .eq("id", row.connection_id)
+      .eq("workspace_id", auth.workspaceId)
+      .eq("provider_key", "microsoft")
+      .maybeSingle();
+    if (!existing) throw new AppError("NOT_FOUND", "Connection not found");
+    if (existing.external_account_id !== identity.id)
+      throw new AppError(
+        "CONFLICT",
+        "You chose a different Microsoft account than this connection. Add it as a new connection instead.",
+        { recovery: "review" },
+      );
+    connectionId = existing.id;
+  } else {
+    const { data: sameAccount } = await auth.db
+      .from("provider_connections")
+      .select("id")
+      .eq("workspace_id", auth.workspaceId)
+      .eq("provider_key", "microsoft")
+      .eq("external_account_id", identity.id)
+      .maybeSingle();
+    connectionId = sameAccount?.id ?? null;
+  }
+
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  if (connectionId) {
+    const { error } = await admin
+      .from("provider_connections")
+      .update({
+        status: "connected",
+        account_label: identity.email,
+        last_connected_at: now,
+        last_error_code: null,
+        last_error_at: null,
+        disconnected_at: null,
+      })
+      .eq("id", connectionId)
+      .eq("workspace_id", auth.workspaceId);
+    if (error)
+      throw new AppError("INTERNAL_ERROR", "Could not update the connection", { cause: error });
+  } else {
+    const { data: created, error } = await admin
+      .from("provider_connections")
+      .insert({
+        workspace_id: auth.workspaceId,
+        provider_key: "microsoft",
+        created_by_user_id: auth.userId,
+        external_account_id: identity.id,
+        display_name: await uniqueAlias(
+          auth,
+          suggestMicrosoftAlias(identity.email),
+          identity.email,
+        ),
+        account_label: identity.email,
+        status: "connected",
+        auth_metadata: { name: identity.name },
+      })
+      .select("id")
+      .single();
+    if (error)
+      throw new AppError("INTERNAL_ERROR", "Could not save the connection", { cause: error });
+    connectionId = created.id;
+  }
+
+  const ref = { connectionId, workspaceId: auth.workspaceId };
+  const vault = new SupabaseCredentialVault(admin, "microsoft");
+  await vault.write(ref, credentialFromTokens(tokens, await vault.read(ref)));
+
+  const enabled: MicrosoftCapability[] = [];
+  for (const capability of requested) {
+    const ok = granted.includes(capability);
+    await auth.db.from("connection_capabilities").upsert(
+      {
+        workspace_id: auth.workspaceId,
+        connection_id: connectionId,
+        capability_key: capability,
+        enabled: ok,
+        permission_level: "write",
+        authorized_scopes: ok ? [...MICROSOFT_CAPABILITY_SCOPES[capability]] : [],
+      },
+      { onConflict: "connection_id,capability_key" },
+    );
+    if (ok) {
+      enabled.push(capability);
+      await ensureBinding(auth, connectionId, capability);
+    }
+  }
+
+  await auth.db.from("audit_events").insert({
+    workspace_id: auth.workspaceId,
+    user_id: auth.userId,
+    event_type: row.connection_id ? "connection.reauthorized" : "connection.created",
+    resource_type: "provider_connection",
+    resource_id: connectionId,
+    provider_key: "microsoft",
+    connection_id: connectionId,
+    origin: "user_ui",
+    result: "success",
+    metadata: { capabilities: enabled },
+  });
+  logger.info("connection.microsoft_connected", {
+    connection_id: connectionId,
+    capabilities: enabled,
+  });
+  return { connectionId, enabled, missing: requested.filter((c) => !granted.includes(c)) };
+}
+
 /** First account for a capability becomes its default; ELISE Tasks stays default for tasks. */
 async function ensureBinding(auth: AuthContext, connectionId: string, capability: CapabilityKey) {
   const { data: bindings } = await auth.db
@@ -412,6 +663,7 @@ export interface ConnectionView {
 export async function listConnections(auth: AuthContext): Promise<{
   connections: ConnectionView[];
   googleAvailable: boolean;
+  microsoftAvailable: boolean;
   notionAvailable: boolean;
   spotifyAvailable: boolean;
   youtubeAvailable: boolean;
@@ -436,6 +688,7 @@ export async function listConnections(auth: AuthContext): Promise<{
   ]);
   const available: Partial<Record<string, boolean>> = {
     google: isGoogleConfigured(),
+    microsoft: isMicrosoftConfigured(),
     notion: isNotionConfigured(),
     spotify: isSpotifyConfigured(),
     youtube: isYouTubeConfigured(),
@@ -474,6 +727,7 @@ export async function listConnections(auth: AuthContext): Promise<{
   return {
     connections,
     googleAvailable: available.google ?? false,
+    microsoftAvailable: available.microsoft ?? false,
     notionAvailable: available.notion ?? false,
     spotifyAvailable: available.spotify ?? false,
     youtubeAvailable: available.youtube ?? false,
@@ -573,7 +827,7 @@ export async function disconnectConnection(auth: AuthContext, connectionId: stri
   const ref = { connectionId, workspaceId: auth.workspaceId };
   const vault = new SupabaseCredentialVault(createAdminClient(), connection.provider_key);
   const credential = await vault.read(ref).catch(() => null);
-  // Notion and Spotify have no token revocation endpoint: deleting the credential ends ELISE's
+  // Microsoft, Notion and Spotify have no token revocation endpoint: deleting the credential ends ELISE's
   // access here, and the user can remove the app in the provider's settings.
   const revoked =
     credential && connection.provider_key === "google"
@@ -1034,12 +1288,14 @@ export async function spotifyPlayerToken(
 /** Which providers this server can connect (the Hub shows the rest as not set up yet). */
 export function configuredProviders(list: {
   googleAvailable: boolean;
+  microsoftAvailable: boolean;
   notionAvailable: boolean;
   spotifyAvailable: boolean;
   youtubeAvailable: boolean;
 }): Record<string, boolean> {
   return {
     google: list.googleAvailable,
+    microsoft: list.microsoftAvailable,
     notion: list.notionAvailable,
     spotify: list.spotifyAvailable,
     youtube: list.youtubeAvailable,

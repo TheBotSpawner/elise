@@ -13,6 +13,7 @@ import {
   setCapabilityEnabled,
   setDefaultConnection,
   startGoogleConnection,
+  startMicrosoftConnection,
   startNotionConnection,
   startSpotifyConnection,
   enableYouTubeMusic,
@@ -51,6 +52,27 @@ export async function connectGoogle(form: FormData): Promise<void> {
   try {
     url = await startGoogleConnection(auth, {
       capabilities: form.getAll("capability").map(String),
+      connectionId,
+      origin: await origin(),
+      returnPath,
+    });
+  } catch (error) {
+    redirect(`${returnPath}?error=${toPublicError(error).code}`);
+  }
+  redirect(url);
+}
+
+/** Starts Microsoft consent for Outlook (or reconnects one Microsoft account). */
+export async function connectMicrosoft(form: FormData): Promise<void> {
+  const auth = await requireAuthContext();
+  const connectionId = z
+    .uuid()
+    .optional()
+    .parse(form.get("connectionId") || undefined);
+  const returnPath = safeReturnPath(form.get("returnTo"));
+  let url: string;
+  try {
+    url = await startMicrosoftConnection(auth, {
       connectionId,
       origin: await origin(),
       returnPath,

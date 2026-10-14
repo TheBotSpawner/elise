@@ -164,6 +164,7 @@ export const en = {
   providers: {
     elise_native: "ELISE",
     google: "Google",
+    microsoft: "Microsoft",
     notion: "Notion",
     web_search: "Web search",
   },
@@ -545,6 +546,7 @@ export const en = {
     bcc: "Bcc",
     account: "Account",
     openInGmail: "Open in Gmail",
+    openInOutlook: "Open in Outlook",
     edit: "Edit in Gmail",
     send: "Send",
     discard: "Discard",
@@ -1156,7 +1158,7 @@ export const en = {
       notion: "Pages, documents and databases.",
       spotify: "Play and control music with ELISE.",
       youtube: "Search and play music and videos on screen.",
-      microsoft: "Outlook, Calendar, OneDrive and To Do.",
+      microsoft: "Outlook mail (work, school or personal).",
       slack: "Channels and workspace conversations.",
       github: "Repositories, issues and development work.",
       dropbox: "Files and folders.",
@@ -1165,6 +1167,8 @@ export const en = {
     } as Record<string, string>,
     intros: {
       google: "Connect Calendar, Gmail, Drive, Tasks and Sheets from one or several accounts.",
+      microsoft:
+        "Connect Outlook mail from one or more Microsoft accounts — work, school or personal. Calendar, OneDrive and To Do come later.",
       notion:
         "Connect a Notion workspace: its pages become Knowledge, its databases structured data.",
       spotify:
@@ -1307,6 +1311,34 @@ export const en = {
     off: "Off",
     connectedToast: "Google connected",
     connectedNotionToast: "Notion connected",
+    connectedMicrosoftToast: "Outlook connected",
+    connectMicrosoftTitle: "Connect a Microsoft account",
+    microsoftBody:
+      "Outlook from one or more Microsoft accounts (work, school or personal). Search, summarize and draft replies; sending always asks you first.",
+    microsoftConsent:
+      "Microsoft will ask you to let ELISE read and organize your mail and send on your behalf. ELISE never sends without your approval.",
+    continueWithMicrosoft: "Continue with Microsoft",
+    reconnectMicrosoft: "Reconnect Microsoft",
+    microsoftNotConfigured: "Microsoft connections are not configured on this server yet.",
+    outlookBody: "Search, summarize and draft replies. Sending always asks you first.",
+    disconnectMicrosoftConsequences: [
+      "ELISE stops reading and changing this account's email and deletes its credentials.",
+      "Pending approvals for this account are cancelled.",
+      "Nothing is deleted in Outlook. To remove ELISE completely, also remove the app in your Microsoft account settings.",
+      "Reconnecting later keeps the name you gave it.",
+    ],
+    microsoftReasons: {
+      cancelled: "You cancelled the Microsoft connection. You can try again any time.",
+      admin_consent_required:
+        "Your organization requires an administrator to approve ELISE in Microsoft before you can connect it. Ask your IT team, then try again.",
+      consent_revoked:
+        "ELISE's permission was removed in Microsoft. Reconnect the account to continue.",
+      conditional_access:
+        "A policy in your organization requires signing in to Microsoft again. Reconnect the account.",
+      expired: "Microsoft access expired. Reconnect the account.",
+      revoked: "Microsoft revoked ELISE's access. Reconnect the account.",
+      client_misconfigured: "The Microsoft connection is misconfigured on this server.",
+    },
     missingToast: (caps: string) =>
       `Google didn't grant access to ${caps}. You can allow it anytime.`,
     cancel: "Cancel",

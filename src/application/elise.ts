@@ -62,6 +62,13 @@ import { GmailProvider } from "@/infrastructure/providers/google/gmail";
 import { GoogleHttp } from "@/infrastructure/providers/google/http";
 import { GoogleSheetsFinanceProvider } from "@/infrastructure/providers/google/sheets-finance";
 import { GoogleTasksProvider } from "@/infrastructure/providers/google/tasks";
+import { microsoftOAuthConfig } from "@/infrastructure/providers/microsoft/config";
+import { GraphHttp } from "@/infrastructure/providers/microsoft/http";
+import {
+  IDENTITY_SCOPES as MICROSOFT_IDENTITY_SCOPES,
+  refreshAccessToken as refreshMicrosoftToken,
+} from "@/infrastructure/providers/microsoft/oauth";
+import { OutlookProvider } from "@/infrastructure/providers/microsoft/outlook";
 import { NotionClient } from "@/infrastructure/providers/notion/client";
 import { NotionHttp } from "@/infrastructure/providers/notion/http";
 import { NotionStructuredApi } from "@/infrastructure/providers/notion/structured";
@@ -193,6 +200,31 @@ export function googleHttpFor(auth: AuthContext, connectionId: string): GoogleHt
   );
 }
 
+/**
+ * Microsoft Graph client for one connection of this workspace (tokens stay server-side). The
+ * refresh asks again for the scopes this account was granted, so it keeps exactly those.
+ */
+export function microsoftHttpFor(auth: AuthContext, connectionId: string): GraphHttp {
+  const ref = { connectionId, workspaceId: auth.workspaceId };
+  const vault = new SupabaseCredentialVault(createAdminClient(), "microsoft");
+  const config = microsoftOAuthConfig();
+  const reauthorize = (r: ConnectionRef, code: string) =>
+    markNeedsReauthorization(auth, r, code, "Microsoft");
+  return new GraphHttp(
+    new GoogleTokenProvider(ref, {
+      vault,
+      providerName: "Microsoft",
+      onReauthorizationRequired: reauthorize,
+      refresh: async (refreshToken) => {
+        const granted = (await vault.read(ref))?.scopes ?? [];
+        const scopes = [...new Set([...MICROSOFT_IDENTITY_SCOPES, ...granted])];
+        return refreshMicrosoftToken(config, refreshToken, scopes);
+      },
+    }),
+    { onUnauthorized: (reason) => reauthorize(ref, reason) },
+  );
+}
+
 /** Token + revocation handling for one Notion connection (shared by Knowledge and Structured). */
 function notionAuth(auth: AuthContext, connectionId: string) {
   const ref = { connectionId, workspaceId: auth.workspaceId };
@@ -230,6 +262,7 @@ function providerFactory(
   resolved: () => WorkspaceBindings | undefined,
 ): ProviderFactory {
   const google = new Map<string, GoogleHttp>();
+  const microsoft = new Map<string, GraphHttp>();
   const googleHttp = (connectionId: string) => {
     let http = google.get(connectionId);
     if (!http) {
@@ -281,11 +314,23 @@ function providerFactory(
       );
     },
     email(binding) {
+      const conn = {
+        connectionId: binding.connectionId,
+        label: binding.label,
+        account: binding.accountLabel,
+      };
+      if (binding.providerKey === "microsoft") {
+        // One Graph client per connection and run: it holds the mailbox's concurrency limit.
+        let http = microsoft.get(binding.connectionId);
+        if (!http)
+          microsoft.set(
+            binding.connectionId,
+            (http = microsoftHttpFor(auth, binding.connectionId)),
+          );
+        return new OutlookProvider(conn, http);
+      }
       if (binding.providerKey !== "google") throw unsupported("email", binding);
-      return new GmailProvider(
-        { connectionId: binding.connectionId, label: binding.label, account: binding.accountLabel },
-        googleHttp(binding.connectionId),
-      );
+      return new GmailProvider(conn, googleHttp(binding.connectionId));
     },
     habits(binding) {
       if (binding.providerKey !== "elise_native") throw unsupported("habits", binding);

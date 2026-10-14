@@ -39,6 +39,7 @@ These documents are the source of truth for product and architecture decisions. 
 | `20-testing-acceptance.md`         | Testing and acceptance          |
 | `22-mvp-readiness.md`              | MVP readiness: deploy, QA, gaps |
 | `23-music-setup.md`                | Music providers setup (ADR-042) |
+| `24-microsoft-setup.md`            | Microsoft / Outlook setup (ADR-058) |
 
 ## roadmap/
 

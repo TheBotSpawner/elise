@@ -1,8 +1,15 @@
-import { GoogleMark, NotionIcon, SpotifyIcon, YouTubeIcon } from "@/components/elise/brand-icons";
+import {
+  GoogleMark,
+  MicrosoftMark,
+  NotionIcon,
+  SpotifyIcon,
+  YouTubeIcon,
+} from "@/components/elise/brand-icons";
 import { cn } from "@/lib/utils";
 
 const MARKS: Record<string, (p: { size: number }) => React.ReactNode> = {
   google: ({ size }) => <GoogleMark size={size} />,
+  microsoft: ({ size }) => <MicrosoftMark size={size} />,
   notion: ({ size }) => <NotionIcon size={size} />,
   spotify: ({ size }) => <SpotifyIcon size={size} />,
   youtube: ({ size }) => <YouTubeIcon size={size} />,

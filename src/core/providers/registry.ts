@@ -18,6 +18,15 @@ export const PROVIDERS: readonly ProviderDefinition[] = [
     status: "planned",
     sourceOfTruth: "external",
   },
+  // Microsoft (ADR-058): a provider family; only Outlook Mail (Email) is implemented today.
+  {
+    key: "microsoft",
+    authType: "oauth2",
+    supportsMultipleAccounts: true,
+    capabilities: ["email"],
+    status: "available",
+    sourceOfTruth: "external",
+  },
   {
     key: "notion",
     authType: "oauth2",
