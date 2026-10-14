@@ -178,6 +178,10 @@ export async function* runElise(run: RunInput): AsyncGenerator<RuntimeEvent> {
       timing.end = Date.now();
       timing.toolCalls = calls.length;
       yield { type: "model_call", stats: timing };
+      // A call that returned nothing at all (no completion, text or tool call) and wasn't
+      // cancelled failed somewhere below: never let it pass as an empty answer.
+      if (!timing.model && !spoke && calls.length === 0 && !run.signal?.aborted)
+        throw new AppError("AI_PROVIDER_ERROR", "The model returned no response");
 
       if (calls.length === 0) {
         yield { type: "done", text, tools: traces, usage, model };

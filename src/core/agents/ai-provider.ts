@@ -4,6 +4,15 @@
  * src/infrastructure/ai/ (OpenAI first). Core never imports a model SDK.
  */
 
+/**
+ * An image the model looks at (ADR-060). Provider-neutral: `url` is a data URL (never a signed
+ * storage URL), `detail` how closely to read it ("high" for text, handwriting, screenshots).
+ */
+export interface AIImageInput {
+  url: string;
+  detail: "auto" | "low" | "high";
+}
+
 /** Conversation items in provider-neutral form. */
 export type AIInputItem =
   /** "developer": ELISE's own per-turn context (time, visible Surfaces…), never user words. */
@@ -11,8 +20,8 @@ export type AIInputItem =
       type: "message";
       role: "user" | "assistant" | "developer";
       content: string;
-      /** Images the user attached to this message (data URLs; user role only, ADR-031). */
-      images?: readonly string[];
+      /** Images the user attached to this message (user role only, ADR-031/060). */
+      images?: readonly AIImageInput[];
     }
   | { type: "tool_call"; callId: string; name: string; arguments: string }
   | { type: "tool_result"; callId: string; output: string };

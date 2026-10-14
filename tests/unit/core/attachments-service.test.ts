@@ -229,7 +229,8 @@ describe("the turn's model input", () => {
     expect(user).toMatchObject({
       type: "message",
       role: "user",
-      images: ["data:image/png;base64,AAA"],
+      // The image itself, with how closely to read it (ADR-060).
+      images: [{ url: "data:image/png;base64,AAA", detail: "auto" }],
     });
     const content = (user as { content: string }).content;
     expect(content.startsWith("Resumime esto")).toBe(true);
@@ -241,5 +242,88 @@ describe("the turn's model input", () => {
   it("leaves a message without files untouched", () => {
     const user = buildContextPackage(base).input.at(-1)!;
     expect(user).toEqual({ type: "message", role: "user", content: "Resumime esto" });
+  });
+});
+
+describe("earlier images of a conversation (ADR-060)", () => {
+  const CONV = "33333333-3333-4333-8333-333333333333";
+  const OTHER = "44444444-4444-4444-8444-444444444444";
+  const sentImage = (id: string, over: Row = {}) => {
+    const path = `workspace/${WS}/chat/${id}/wb.png`;
+    stored.set(path, PNG);
+    rows.push({
+      id,
+      workspace_id: WS,
+      user_id: ME,
+      name: `${id}.png`,
+      mime_type: "image/png",
+      size_bytes: PNG.byteLength,
+      status: "sent",
+      storage_path: path,
+      conversation_id: CONV,
+      session_id: null,
+      ...over,
+    });
+    return path;
+  };
+
+  it("loads this conversation's own images as data (never a storage URL), with a detail", async () => {
+    const { loadThreadImages } = await import("@/application/attachments-service");
+    sentImage("img-1");
+    const r = await loadThreadImages(
+      authFor(),
+      { kind: "conversation", id: CONV },
+      ["img-1"],
+      "Agregalos a la lista",
+    );
+    expect(r.unavailable).toEqual([]);
+    expect(r.images.get("img-1")).toEqual({
+      url: expect.stringMatching(/^data:image\/png;base64,/),
+      detail: "high",
+    });
+  });
+
+  it("another conversation's or another user's image is never loaded", async () => {
+    const { loadThreadImages } = await import("@/application/attachments-service");
+    sentImage("img-other-conv", { conversation_id: OTHER });
+    sentImage("img-other-user", { user_id: "55555555-5555-4555-8555-555555555555" });
+    const r = await loadThreadImages(
+      authFor(),
+      { kind: "conversation", id: CONV },
+      ["img-other-conv", "img-other-user"],
+      "la imagen",
+    );
+    expect(r.images.size).toBe(0);
+    expect(r.unavailable.sort()).toEqual(["img-other-conv", "img-other-user"]);
+  });
+
+  it("storage that can't be read is an explicit failure, logged without the image or its path", async () => {
+    const { loadThreadImages } = await import("@/application/attachments-service");
+    const { logger } = await import("@/infrastructure/observability/logger");
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const path = sentImage("img-gone");
+    stored.delete(path);
+    const r = await loadThreadImages(
+      authFor(),
+      { kind: "conversation", id: CONV },
+      ["img-gone"],
+      "la imagen",
+    );
+    expect(r.unavailable).toEqual(["img-gone"]);
+    expect(warn).toHaveBeenCalledWith("chat.vision.failed", {
+      category: "ATTACHMENT_ACCESS_FAILED",
+    });
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).not.toContain(path);
+    expect(logged).not.toContain("base64");
+    warn.mockRestore();
+  });
+
+  it("the transcript route serves only the author's sent images", async () => {
+    const { attachmentImage } = await import("@/application/attachments-service");
+    sentImage("img-mine");
+    sentImage("img-theirs", { user_id: "55555555-5555-4555-8555-555555555555" });
+    expect(await attachmentImage(authFor(), "img-mine")).toMatchObject({ mimeType: "image/png" });
+    expect(await attachmentImage(authFor(), "img-theirs")).toBeNull();
   });
 });

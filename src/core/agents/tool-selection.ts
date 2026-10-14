@@ -1,4 +1,5 @@
 import type { AnyToolDefinition } from "./tools";
+import { namesAList } from "../capabilities/lists";
 
 /**
  * Which tools a turn sees (ADR-025). ELISE has ~150 tools; sending all of them on every model
@@ -145,10 +146,14 @@ export function selectTools(
     recentTools?: readonly string[];
     /** The active context's kind ("subject", "client"…), if any. */
     contextKind?: string | null;
+    /** The user's ELISE list names: naming one brings the Lists tools ("agregalos a Compras"). */
+    listNames?: readonly string[];
   },
 ): ToolSelection {
   const groups = new Set(CORE_GROUPS);
   for (const [g, re] of SIGNALS) if (re.test(signals.message)) groups.add(g);
+  if (signals.listNames?.length && namesAList(signals.message, signals.listNames))
+    groups.add("lists");
   for (const s of signals.surfaceTypes ?? []) if (SURFACE_GROUPS[s]) groups.add(SURFACE_GROUPS[s]);
   for (const n of signals.recentTools ?? []) groups.add(n.split(".")[0] ?? n);
   if (signals.contextKind) {

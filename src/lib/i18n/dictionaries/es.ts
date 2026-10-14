@@ -2637,6 +2637,7 @@ export const es: Dictionary = {
     tooLarge: (name: string, mb: number) => `${name} es demasiado grande (hasta ${mb} MB)`,
     empty: (name: string) => `${name} está vacío`,
     sent: "Archivos adjuntos",
+    open: (name: string) => `Ver ${name}`,
   },
   canvas: {
     label: "Live Canvas",

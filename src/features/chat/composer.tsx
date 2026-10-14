@@ -7,6 +7,8 @@ import { SendIcon, StopIcon } from "@/components/elise/icons";
 import { AttachToKnowledge } from "@/features/knowledge/attach-dialog";
 import { cn } from "@/lib/utils";
 
+import { usePasteImages } from "./attachments-ui";
+
 /**
  * Input dock (reference: 720 × 60 pill, radius 30; mobile 56 / 28). Shared between Home and the
  * conversation so it can glide from the hero to the bottom dock (layoutId, motion spec).
@@ -55,6 +57,9 @@ export function Composer({
     setDraft("");
   }
 
+  // CTRL/CMD+V with an image attaches it (same draft as the paperclip and drop).
+  const onPaste = usePasteImages();
+
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -84,6 +89,7 @@ export function Composer({
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
         rows={1}
         maxLength={8000}
         autoComplete="off"

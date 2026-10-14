@@ -8,6 +8,7 @@ import {
   imageMatchesType,
   type SentAttachment,
 } from "@/core/attachments/model";
+import { imageDetail, imageSize, isImage, type ImageDetail } from "@/core/attachments/vision";
 import { AppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import { extractionText } from "@/core/knowledge/extraction";
@@ -49,7 +50,7 @@ export interface TurnAttachments {
     /** Scanned pages not read yet (OCR limit or not configured). */
     unreadPages?: number[];
   }[];
-  images: { id: string; name: string; dataUrl: string }[];
+  images: { id: string; name: string; dataUrl: string; detail: ImageDetail }[];
 }
 
 export async function stageAttachments(
@@ -180,6 +181,8 @@ async function expireStaged(auth: AuthContext) {
 export async function loadTurnAttachments(
   auth: AuthContext,
   ids: string[],
+  /** The turn's text: decides how closely images are read (ADR-060). */
+  message = "",
 ): Promise<TurnAttachments | null> {
   if (!ids.length) return null;
   const unique = [...new Set(ids)];
@@ -194,15 +197,24 @@ export async function loadTurnAttachments(
     const data = await downloadChatAttachment(auth.workspaceId, row.storage_path);
     if (!data)
       throw new AppError("VALIDATION_ERROR", "An attachment is missing", { recovery: "retry" });
-    result.sent.push({ id: row.id, name: row.name, mimeType: row.mime_type, size: row.size_bytes });
     if (ATTACHMENT_TYPES[row.mime_type]?.kind === "image") {
+      const size = imageSize(row.mime_type, data);
+      result.sent.push({
+        id: row.id,
+        name: row.name,
+        mimeType: row.mime_type,
+        size: row.size_bytes,
+        ...(size ?? {}),
+      });
       result.images.push({
         id: row.id,
         name: row.name,
         dataUrl: `data:${row.mime_type};base64,${Buffer.from(data).toString("base64")}`,
+        detail: imageDetail({ name: row.name, message, ...(size ?? {}) }),
       });
       continue;
     }
+    result.sent.push({ id: row.id, name: row.name, mimeType: row.mime_type, size: row.size_bytes });
     const { text, unread } = await documentTextOf(auth, row, data);
     result.documents.push({
       id: row.id,
@@ -290,4 +302,67 @@ export async function markSent(auth: AuthContext, ids: string[], thread: ThreadR
     .eq("status", "ready")
     .in("id", ids);
   if (error) throw new AppError("INTERNAL_ERROR", "Could not attach the files", { cause: error });
+}
+
+/**
+ * Earlier images of THIS conversation or voice session that a turn refers to (ADR-060): the
+ * author's own, already sent with that thread, read fresh from private storage as data URLs
+ * (never a signed URL to the model or the logs). Ids that can't be read come back as unavailable.
+ */
+export async function loadThreadImages(
+  auth: AuthContext,
+  thread: ThreadRef,
+  ids: string[],
+  message: string,
+): Promise<{
+  images: Map<string, { url: string; detail: ImageDetail }>;
+  unavailable: string[];
+}> {
+  const images = new Map<string, { url: string; detail: ImageDetail }>();
+  const unavailable: string[] = [];
+  if (!ids.length) return { images, unavailable };
+  const rows = (await own(auth, [...new Set(ids)])).filter(
+    (r) =>
+      r.status === "sent" &&
+      isImage({ mimeType: r.mime_type }) &&
+      (thread.kind === "conversation" ? r.conversation_id : r.session_id) === thread.id,
+  );
+  await Promise.all(
+    rows.map(async (row) => {
+      const data = await downloadChatAttachment(auth.workspaceId, row.storage_path).catch(
+        () => null,
+      );
+      if (!data) {
+        unavailable.push(row.id);
+        logger.warn("chat.vision.failed", { category: "ATTACHMENT_ACCESS_FAILED" });
+        return;
+      }
+      const size = imageSize(row.mime_type, data);
+      images.set(row.id, {
+        url: `data:${row.mime_type};base64,${Buffer.from(data).toString("base64")}`,
+        detail: imageDetail({ name: row.name, message, ...(size ?? {}) }),
+      });
+    }),
+  );
+  // Referenced but not this thread's (or gone): ATTACHMENT_NOT_FOUND, named as unavailable.
+  for (const id of ids)
+    if (!images.has(id) && !unavailable.includes(id)) {
+      logger.warn("chat.vision.failed", { category: "ATTACHMENT_NOT_FOUND" });
+      unavailable.push(id);
+    }
+  return { images, unavailable };
+}
+
+/**
+ * A sent image's bytes for its author's transcript (thumbnail, larger preview, after reloads).
+ * Owner-only through RLS + workspace + user; images only; never a signed URL to the page.
+ */
+export async function attachmentImage(
+  auth: AuthContext,
+  id: string,
+): Promise<{ data: Uint8Array; mimeType: string } | null> {
+  const [row] = await own(auth, [id]);
+  if (!row || row.status !== "sent" || !isImage({ mimeType: row.mime_type })) return null;
+  const data = await downloadChatAttachment(auth.workspaceId, row.storage_path);
+  return data ? { data, mimeType: row.mime_type } : null;
 }

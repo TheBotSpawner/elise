@@ -9,7 +9,7 @@ import { Orb } from "@/components/elise/orb/orb";
 import { ORB_LAYOUT_ID } from "@/components/elise/orb/orb-presence";
 import type { OrbState } from "@/components/elise/orb/orb-states";
 import { isHearing, type VoiceState } from "@/core/voice/session";
-import { DraftAttachmentChips } from "@/features/chat/attachments-ui";
+import { DraftAttachmentChips, usePasteImages } from "@/features/chat/attachments-ui";
 import { composerDraft } from "@/features/chat/continuity";
 import { AttachToKnowledge } from "@/features/knowledge/attach-dialog";
 import { MicButton, type VoiceHandlers } from "@/features/voice/voice-controls";
@@ -71,6 +71,8 @@ export function Dock({
   const { t } = useI18n();
   const [typing, setTyping] = useState(!voice);
   const [draft, setDraft] = useState("");
+  // CTRL/CMD+V with an image attaches it to the next turn (typed or spoken).
+  const onPaste = usePasteImages();
   const [restoredAt, setRestoredAt] = useState(restore?.at ?? 0);
   const input = useRef<HTMLTextAreaElement>(null);
   if (restore && restore.at !== restoredAt) {
@@ -168,6 +170,7 @@ export function Dock({
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}
+              onPaste={onPaste}
               rows={1}
               maxLength={8000}
               autoComplete="off"

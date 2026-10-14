@@ -17,6 +17,12 @@ import { effortFor, type AIProfile } from "../profiles";
 
 /** No output this long from a fast or standard call: treated as a provider stall (see streamTurn). */
 const FIRST_OUTPUT_MS = 8_000;
+/**
+ * With images the model first reads them (thousands of input tokens per image at high detail):
+ * measured first output 6–14 s for one photo plus ELISE's context. A tighter guard aborted a real
+ * whiteboard turn mid-read; this one still catches a provider that never answers.
+ */
+const IMAGE_FIRST_OUTPUT_MS = 30_000;
 
 /** OpenAI function names allow [a-zA-Z0-9_-]; ELISE tool names use dots ("tasks.create"). */
 const encodeName = (name: string) => name.replaceAll(".", "__");
@@ -28,6 +34,8 @@ export interface OpenAIProviderOptions {
   profiles: Record<ModelTier, AIProfile>;
   /** No output this long from a fast or standard call = a stall (default FIRST_OUTPUT_MS). */
   firstOutputMs?: number;
+  /** The same, when the input carries images (default IMAGE_FIRST_OUTPUT_MS). */
+  imageFirstOutputMs?: number;
 }
 
 /**
@@ -58,6 +66,10 @@ export class OpenAIProvider implements AIProvider {
    */
   async *streamTurn(request: AITurnRequest): AsyncIterable<AIStreamEvent> {
     const guarded = request.tier !== "deep";
+    const withImages = request.input.some((i) => i.type === "message" && i.images?.length);
+    const budget = withImages
+      ? (this.options.imageFirstOutputMs ?? IMAGE_FIRST_OUTPUT_MS)
+      : (this.options.firstOutputMs ?? FIRST_OUTPUT_MS);
     for (let attempt = 0; ; attempt++) {
       const controller = new AbortController();
       const relay = () => controller.abort();
@@ -69,22 +81,32 @@ export class OpenAIProvider implements AIProvider {
           ? setTimeout(() => {
               stalled = true;
               controller.abort();
-            }, this.options.firstOutputMs ?? FIRST_OUTPUT_MS)
+            }, budget)
           : undefined;
+      const stall = () => {
+        recordUsage({
+          operation: "llm",
+          provider: this.id,
+          model: this.options.profiles[request.tier].model,
+          status: "failed",
+        });
+        logger.warn("ai.stall_retry", { tier: request.tier, withImages, budgetMs: budget });
+      };
       try {
         yield* this.attempt(request, controller.signal, () => {
           produced = true;
           clearTimeout(timer);
         });
+        // The SDK ends an aborted stream quietly instead of throwing: a stall must still retry,
+        // never pass for an empty answer.
+        if (stalled && !produced && !request.signal?.aborted) {
+          stall();
+          continue;
+        }
         return;
       } catch (error) {
         if (stalled && !produced && !request.signal?.aborted) {
-          recordUsage({
-            operation: "llm",
-            provider: this.id,
-            model: this.options.profiles[request.tier].model,
-            status: "failed",
-          });
+          stall();
           continue;
         }
         throw error;
@@ -147,6 +169,7 @@ export class OpenAIProvider implements AIProvider {
       throw normalizeError(error);
     }
 
+    let completed = false;
     try {
       for await (const event of stream) {
         switch (event.type) {
@@ -167,6 +190,7 @@ export class OpenAIProvider implements AIProvider {
             }
             break;
           case "response.completed": {
+            completed = true;
             const usage = event.response.usage;
             const cachedTokens = usage?.input_tokens_details?.cached_tokens ?? 0;
             const reasoningTokens = usage?.output_tokens_details?.reasoning_tokens ?? 0;
@@ -207,6 +231,10 @@ export class OpenAIProvider implements AIProvider {
     } catch (error) {
       throw normalizeError(error);
     }
+    // Aborted (cancelled by the caller, or the stall guard, which retries): nothing to report.
+    // Otherwise a stream that stopped before completing must not read as an empty answer.
+    if (!completed && !signal.aborted)
+      throw new AppError("AI_PROVIDER_ERROR", "The AI provider ended without completing");
   }
 }
 
@@ -218,10 +246,10 @@ function toOpenAIItem(item: AIInputItem): OpenAI.Responses.ResponseInputItem {
           role: "user",
           content: [
             { type: "input_text", text: item.content },
-            ...item.images.map((url) => ({
+            ...item.images.map((image) => ({
               type: "input_image" as const,
-              image_url: url,
-              detail: "auto" as const,
+              image_url: image.url,
+              detail: image.detail,
             })),
           ],
         };

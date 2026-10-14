@@ -135,7 +135,7 @@ export const addItemTool: ToolDefinition = {
   capability: "lists",
   operation: "addItem",
   description:
-    'Add one or more items to a list in ONE call ("agregá leche, café y arroz a compras" → items ["leche", "café", "arroz"]). An item may carry a description: {content, notes}. The list name can be loose ("compras" → "Lista de Compras").',
+    'Add one or more items to a list in ONE call ("agregá leche, café y arroz a compras" → items ["leche", "café", "arroz"]). An item may carry a description or already be done: {content, notes, checked} (e.g. ticked on a whiteboard in a photo). The list name can be loose ("compras" → "Lista de Compras").',
   input: addItemsInput,
   async describe(raw) {
     return { summary: `Add to “${addItemsInput.parse(raw).list}”` };

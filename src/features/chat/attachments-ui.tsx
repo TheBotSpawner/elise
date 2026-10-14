@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { Dialog } from "@/components/ui/dialog";
 import { ATTACHMENT_LIMITS, type SentAttachment } from "@/core/attachments/model";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,52 @@ export function useAddFiles(store: DraftStore = draftAttachments) {
   return (files: readonly File[]) => {
     const rejected = store.add(files);
     rejected.forEach((r) => toast.error(rejectionText(t, r)));
+  };
+}
+
+const PASTE_EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+/**
+ * Images in a paste (CTRL/CMD+V), as named files for the same draft pipeline as the picker and
+ * drop. Browsers name every pasted image "image.png": each gets a distinct, dated name.
+ */
+export function clipboardImages(data: DataTransfer | null, now = new Date()): File[] {
+  if (!data) return [];
+  const fromItems = Array.from(data.items ?? [])
+    .filter((i) => i.kind === "file" && PASTE_EXT[i.type])
+    .map((i) => i.getAsFile())
+    .filter((f): f is File => f !== null);
+  const files = fromItems.length
+    ? fromItems
+    : Array.from(data.files ?? []).filter((f) => PASTE_EXT[f.type]);
+  const stamp = now.toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
+  return files.map(
+    (f, n) =>
+      new File([f], `pegada-${stamp}${files.length > 1 ? `-${n + 1}` : ""}.${PASTE_EXT[f.type]}`, {
+        type: f.type,
+        lastModified: now.getTime() + n,
+      }),
+  );
+}
+
+/**
+ * The paste handler for ELISE's message inputs (the Live Canvas dock and the Composer): CTRL/CMD
+ * +V with an image joins the draft like a picked file — same pipeline, chip and upload. Text in
+ * the same paste still pastes normally; a text-only paste is untouched. Only on these inputs:
+ * nothing else on the page intercepts paste.
+ */
+export function usePasteImages(store: DraftStore = draftAttachments) {
+  const addFiles = useAddFiles(store);
+  return (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const images = clipboardImages(e.clipboardData);
+    if (!images.length) return;
+    if (!Array.from(e.clipboardData.types).includes("text/plain")) e.preventDefault();
+    addFiles(images);
   };
 }
 
@@ -221,20 +268,71 @@ export function DraftAttachmentChips({ store = draftAttachments }: { store?: Dra
   );
 }
 
-/** A sent turn's files, compact, in the transcript. */
+/**
+ * A sent turn's files in the transcript: images as thumbnails that open larger (served to their
+ * author from /api/attachments, so they survive reloads and reopening the conversation), other
+ * files as compact chips.
+ */
 export function SentAttachments({ files }: { files: readonly SentAttachment[] }) {
   const { t } = useI18n();
+  const [open, setOpen] = useState<SentAttachment | null>(null);
+  const [broken, setBroken] = useState<ReadonlySet<string>>(new Set());
+  // Just sent, the file may become readable a moment after the thumbnail asks: retry twice.
+  const [tries, setTries] = useState<Readonly<Record<string, number>>>({});
+  const failed = (id: string) => {
+    const n = tries[id] ?? 0;
+    if (n >= 2) return setBroken((b) => new Set(b).add(id));
+    window.setTimeout(() => setTries((t) => ({ ...t, [id]: n + 1 })), 1200 * (n + 1));
+  };
   return (
-    <ul aria-label={t.attachments.sent} className="mt-1.5 flex flex-wrap justify-end gap-1">
-      {files.map((f) => (
-        <li
-          key={f.id}
-          className="flex max-w-[220px] items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11.5px] text-fg2"
-        >
-          <Paperclip className="size-3 shrink-0 text-muted" aria-hidden />
-          <span className="truncate">{f.name}</span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul aria-label={t.attachments.sent} className="mt-1.5 flex flex-wrap justify-end gap-1.5">
+        {files.map((f) =>
+          f.mimeType.startsWith("image/") && !broken.has(f.id) ? (
+            <li key={f.id}>
+              <button
+                type="button"
+                onClick={() => setOpen(f)}
+                aria-label={t.attachments.open(f.name)}
+                title={f.name}
+                className="block overflow-hidden rounded-xl border border-border transition-colors hover:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- private, same-origin bytes */}
+                <img
+                  src={`/api/attachments/${f.id}${tries[f.id] ? `?try=${tries[f.id]}` : ""}`}
+                  alt={f.name}
+                  loading="lazy"
+                  onError={() => failed(f.id)}
+                  className="h-20 max-w-[180px] object-cover"
+                />
+              </button>
+            </li>
+          ) : (
+            <li
+              key={f.id}
+              className="flex max-w-[220px] items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11.5px] text-fg2"
+            >
+              <Paperclip className="size-3 shrink-0 text-muted" aria-hidden />
+              <span className="truncate">{f.name}</span>
+            </li>
+          ),
+        )}
+      </ul>
+      <Dialog
+        open={Boolean(open)}
+        onClose={() => setOpen(null)}
+        title={open?.name ?? ""}
+        className="sm:max-w-4xl"
+      >
+        {open && (
+          // eslint-disable-next-line @next/next/no-img-element -- private, same-origin bytes
+          <img
+            src={`/api/attachments/${open.id}`}
+            alt={open.name}
+            className="max-h-[75vh] w-full rounded-xl object-contain"
+          />
+        )}
+      </Dialog>
+    </>
   );
 }

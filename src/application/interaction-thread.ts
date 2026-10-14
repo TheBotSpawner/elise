@@ -49,6 +49,8 @@ type Meta = AssistantMessageMetadata & {
 // Well-formed before storage: a split character must never cost the user an answer.
 const json = (v: unknown) => wellFormed(JSON.parse(JSON.stringify(v))) as Json;
 const notes = (m: Json | null) => ((m as Meta | null)?.toolNotes ?? []).slice(0, 10);
+/** A user turn's files as references (ADR-060: earlier images can be shown again when referred to). */
+const attachedFiles = (m: Json | null) => (m as Meta | null)?.attachments ?? [];
 /** A user turn's files, as later turns see them (the content went to that turn only). */
 const withAttached = (content: string, m: Json | null) => {
   const files = (m as Meta | null)?.attachments ?? [];
@@ -118,6 +120,7 @@ function conversationThread(auth: AuthContext, id: string, isNew: boolean): Thre
         role: m.role as "user" | "assistant",
         content: withAttached(m.content, m.metadata),
         toolNotes: notes(m.metadata),
+        attachments: attachedFiles(m.metadata),
       }));
     },
     async addUserTurn(text, modality, voice, attachments) {
@@ -225,6 +228,7 @@ function sessionThread(auth: AuthContext, id: string, isNew: boolean): Thread {
         role: t.role as "user" | "assistant",
         content: withAttached(t.content, t.metadata),
         toolNotes: notes(t.metadata),
+        attachments: attachedFiles(t.metadata),
       }));
     },
     async addUserTurn(text, modality, voice, attachments) {

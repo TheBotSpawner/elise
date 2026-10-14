@@ -289,23 +289,34 @@ export class EliseListsProvider implements ListsProvider {
   /** One insert for every item (no per-item round trip). */
   async addItems(
     listId: string,
-    items: (string | { content: string; notes?: string | null })[],
+    items: (string | { content: string; notes?: string | null; checked?: boolean })[],
     source: EntrySource,
   ) {
     const start = await this.lastPosition(listId);
-    const { data, error } = await this.db
-      .from("list_items")
-      .insert(
-        items.map((it, i) => ({
-          workspace_id: this.workspaceId,
-          list_id: listId,
-          content: typeof it === "string" ? it : it.content,
-          notes: typeof it === "string" ? null : (it.notes ?? null),
-          position: start + (i + 1) * 1024,
-          source,
-        })),
-      )
-      .select("*");
+    const now = new Date().toISOString();
+    const insert = (withCheckedAt: boolean) =>
+      this.db
+        .from("list_items")
+        .insert(
+          items.map((it, i) => {
+            const checked = typeof it !== "string" && it.checked === true;
+            return {
+              workspace_id: this.workspaceId,
+              list_id: listId,
+              content: typeof it === "string" ? it : it.content,
+              notes: typeof it === "string" ? null : (it.notes ?? null),
+              position: start + (i + 1) * 1024,
+              source,
+              // Every row carries the same columns: a bulk insert fills a key one row lacks
+              // with null (not the default), and `checked` is NOT NULL.
+              checked,
+              ...(withCheckedAt ? { checked_at: checked ? now : null } : {}),
+            };
+          }),
+        )
+        .select("*");
+    let { data, error } = await insert(true);
+    if (error && notMigrated(error.code)) ({ data, error } = await insert(false));
     check(error, "add the items");
     // Touch the list so "recent lists" reflects activity.
     await this.db

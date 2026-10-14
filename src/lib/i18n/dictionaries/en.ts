@@ -2615,6 +2615,7 @@ export const en = {
     tooLarge: (name: string, mb: number) => `${name} is too large (up to ${mb} MB)`,
     empty: (name: string) => `${name} is empty`,
     sent: "Attached files",
+    open: (name: string) => `View ${name}`,
   },
   canvas: {
     label: "Live Canvas",

@@ -63,7 +63,8 @@ export interface ListsProvider {
   reorderLists(listIds: string[]): Promise<void>;
   addItems(
     listId: string,
-    items: (string | { content: string; notes?: string | null })[],
+    /** `checked`: already done (e.g. ticked on the whiteboard a photo shows). */
+    items: (string | { content: string; notes?: string | null; checked?: boolean })[],
     source: EntrySource,
   ): Promise<ListItem[]>;
   updateItem(
@@ -157,6 +158,25 @@ export function matchLists<T extends { id: string; name: string }>(lists: T[], r
   });
 }
 
+/**
+ * Does the message name one of the user's lists ("agregalos a Aprendizajes" → "📚 Aprendizaje")?
+ * Every meaningful word of a list's name must appear (singular/plural alike). Used to offer the
+ * Lists tools up front when a message never says "lista".
+ */
+export function namesAList(message: string, names: readonly string[]): boolean {
+  const said = words(message);
+  if (!said.length) return false;
+  return names.some((name) => {
+    const have = words(name).filter((w) => w.length >= 3);
+    return (
+      have.length > 0 &&
+      have.every((h) =>
+        said.some((w) => w === h || (w.length >= 4 && (h.startsWith(w) || w.startsWith(h)))),
+      )
+    );
+  });
+}
+
 /** Presentation order of a list's items (never rewrites positions or timestamps). */
 export function sortItems(items: ListItem[], sort: ListItemSort = "manual"): ListItem[] {
   return [...items].sort((a, b) =>
@@ -232,7 +252,21 @@ export const addItemsInput = z
     list: listRef,
     items: z
       .array(
-        z.union([itemText, z.object({ content: itemText, notes: itemNotes.optional() }).strict()]),
+        z.union([
+          itemText,
+          z
+            .object({
+              content: itemText,
+              notes: itemNotes.optional(),
+              checked: z
+                .boolean()
+                .optional()
+                .describe(
+                  "true when the entry is already done — e.g. ticked, checked or crossed out in the photo or list it came from. Use this field, not a note, to keep that state.",
+                ),
+            })
+            .strict(),
+        ]),
       )
       .min(1)
       .max(100)

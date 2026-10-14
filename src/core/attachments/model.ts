@@ -91,4 +91,7 @@ export interface SentAttachment {
   name: string;
   mimeType: string;
   size: number;
+  /** Images: pixel size read from the bytes (telemetry, detail policy, layout). */
+  width?: number;
+  height?: number;
 }

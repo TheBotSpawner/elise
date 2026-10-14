@@ -8,6 +8,7 @@ import { escalateAfter, MODEL_POLICY, routeTurn } from "@/core/agents/model-poli
 import { methodNote, recentMethodId, runElise, toolNotes } from "@/core/agents/runtime";
 import { selectTools, toolsInNotes } from "@/core/agents/tool-selection";
 import type { ToolContext } from "@/core/agents/tools";
+import { isImage, resolveImageContext } from "@/core/attachments/vision";
 import type { ClientPlayback } from "@/core/capabilities/music";
 import { getOperation } from "@/core/capabilities/registry";
 import {
@@ -43,7 +44,7 @@ import { withUsageScope } from "@/infrastructure/observability/usage";
 import type { Json } from "@/infrastructure/supabase/database.types";
 
 import { pendingForInteraction, resolveApproval } from "./approvals-service";
-import { loadTurnAttachments, markSent } from "./attachments-service";
+import { loadThreadImages, loadTurnAttachments, markSent } from "./attachments-service";
 import type { AuthContext } from "./auth-context";
 import type {
   AssistantMessageMetadata,
@@ -161,7 +162,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
 
   // Setup in dependency phases (ADR-025): independent reads share one round trip. Nothing is
   // written before the rate limit passes; history is read before this turn's message is saved.
-  const [, { bindings }, contexts, shortcuts, nodes, methods] = await perf.time(
+  const [, { bindings }, contexts, shortcuts, nodes, methods, listNames] = await perf.time(
     "setup.reads",
     Promise.all([
       perf.time("rate_limit", enforceRateLimit(auth)),
@@ -176,14 +177,41 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
       ),
       // Methods (ADR-040): the lightweight index only; one Method may load below.
       perf.time("preload.methods", methodsForTurn(auth)),
+      // List names only (for tool selection): naming a list brings the Lists tools.
+      perf.time(
+        "preload.lists",
+        Promise.resolve(
+          auth.db
+            .from("lists")
+            .select("name")
+            .eq("workspace_id", auth.workspaceId)
+            .is("archived_at", null)
+            .limit(100),
+        ).then(
+          (r) => (r.data ?? []).map((l) => l.name),
+          () => [] as string[],
+        ),
+      ),
     ]),
   );
   const capabilities = availableCapabilities(bindings);
   // Attachments are verified before anything is written: a turn never goes out without a file
   // the user saw in the draft (ADR-031).
   const attached = input.attachments?.length
-    ? await perf.time("attachments", loadTurnAttachments(auth, input.attachments))
+    ? await perf.time("attachments", loadTurnAttachments(auth, input.attachments, input.message))
     : null;
+  // Safe telemetry only: counts, types, sizes — never the image, its URL or what it shows.
+  if (attached?.sent.length)
+    logger.info("chat.attachment.received", {
+      count: attached.sent.length,
+      images: attached.images.length,
+      mime_types: [...new Set(attached.sent.map((a) => a.mimeType))],
+      bytes: attached.sent.reduce((n, a) => n + a.size, 0),
+      dimensions: attached.sent
+        .filter(isImage)
+        .map((a) => (a.width ? `${a.width}x${a.height}` : null)),
+      modality: input.modality ?? "text",
+    });
   const thread = await perf.time(
     "thread",
     openThread(auth, {
@@ -234,6 +262,46 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
       perf.time("workspace", openWorkspaceSession(auth, thread.ref, thread.isNew)),
     ]),
   );
+
+  // Earlier images this turn refers to ("los de la imagen", "agregalos"), shown again on their
+  // own turn — bounded, never every image of the conversation (ADR-060).
+  const imageRefs = resolveImageContext(history, input.message, Boolean(attached?.images.length));
+  let imageContext: { resent?: string[]; ambiguous?: string[]; unavailable?: string[] } | null =
+    null;
+  if (imageRefs.kind === "ambiguous") imageContext = { ambiguous: imageRefs.candidates };
+  if (imageRefs.kind === "resend") {
+    const ids = [...imageRefs.byMessage.values()].flat();
+    const loaded = await perf.time(
+      "history_images",
+      loadThreadImages(auth, thread.ref, ids, input.message),
+    );
+    const nameOf = (id: string) =>
+      history.flatMap((m) => m.attachments ?? []).find((a) => a.id === id)?.name ?? id;
+    for (const [index, refs] of imageRefs.byMessage) {
+      const images = refs.flatMap((id) => {
+        const image = loaded.images.get(id);
+        return image ? [image] : [];
+      });
+      if (images.length) history[index] = { ...history[index]!, images };
+    }
+    imageContext = {
+      resent: ids.filter((id) => loaded.images.has(id)).map(nameOf),
+      ...(loaded.unavailable.length ? { unavailable: loaded.unavailable.map(nameOf) } : {}),
+    };
+  }
+  const visionImages = [
+    ...(attached?.images ?? []).map((i) => i.detail),
+    ...history.flatMap((m) => m.images ?? []).map((i) => i.detail),
+  ];
+  if (visionImages.length || imageContext)
+    logger.info("chat.vision.requested", {
+      images: visionImages.length,
+      current: attached?.images.length ?? 0,
+      earlier: visionImages.length - (attached?.images.length ?? 0),
+      detail: visionImages,
+      reference: imageRefs.kind === "resend" ? imageRefs.reason : imageRefs.kind,
+      modality: input.modality ?? "text",
+    });
 
   const [, { data: run, error: runError }] = await Promise.all([
     perf.time(
@@ -381,6 +449,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     history,
     userMessage: input.message,
     attachments: attached,
+    imageContext,
     activeSpace: activeSpace?.path ?? null,
     knowledgeMap: knowledgeMap(nodes),
     resolvedSpace: resolvedPath,
@@ -461,6 +530,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
             ...(loadedMethod || methodPlan.hint ? ["methods.get"] : []),
           ],
           contextKind: activeProfile?.kind ?? null,
+          listNames,
         })
       : { tools: allTools, rest: [] };
   perf.mark("context_built");
@@ -1014,6 +1084,20 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
           }
           // Recall indexing never delays or fails the chat (spoken turns included).
           queueRecallIndex(auth.workspaceId, thread.ref);
+          if (visionImages.length)
+            logger[failure ? "warn" : "info"](
+              failure ? "chat.vision.failed" : "chat.vision.completed",
+              {
+                run_id: runId,
+                images: visionImages.length,
+                detail: visionImages,
+                latency_ms: latency,
+                tool_calls: traces.size,
+                ...(failure
+                  ? { category: "VISION_ANALYSIS_FAILED", error_code: failure.code }
+                  : {}),
+              },
+            );
           logger.info("ai_run.finished", {
             run_id: runId,
             request_id: input.requestId,
