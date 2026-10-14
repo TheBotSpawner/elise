@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { requireAuthContext } from "@/application/auth-context";
 import { autoLinkThread } from "@/application/history-links-service";
 import { historyRows, type HistoryRow } from "@/application/history-service";
+import { SECTION_ICONS } from "@/components/elise/navigation/nav-items";
 import { EmptyState, PageContainer, PageHeader } from "@/components/shared/page";
 import { Input } from "@/components/ui/input";
 import {
@@ -159,7 +160,12 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
 
   return (
     <PageContainer>
-      <PageHeader title={t.chat.history} subtitle={t.chat.historySubtitle} actions={newChat} />
+      <PageHeader
+        title={t.chat.history}
+        icon={SECTION_ICONS.chat}
+        info={[t.chat.historySubtitle]}
+        actions={newChat}
+      />
       <form role="search" action="/chat" className="relative mb-4">
         <Search
           className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint"

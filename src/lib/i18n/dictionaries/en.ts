@@ -3158,7 +3158,7 @@ export const en = {
     spaceHint: (name: string) =>
       `How ELISE works in ${name}. Its Sections can refine them, and general Methods apply too.`,
     sectionHint: (name: string) => `Only in this Section; added to those of ${name}.`,
-    globalTitle: "General Knowledge",
+    globalTitle: "General",
     globalHint: "They apply everywhere in ELISE, in any Space.",
     generalHint:
       "Ways of working ELISE uses in any area. A Space or Section can have its own, and those win.",
@@ -3321,6 +3321,7 @@ export const en = {
   common: {
     loading: "Loading…",
     close: "Close",
+    aboutSection: (title: string) => `About ${title}`,
   },
 };
 

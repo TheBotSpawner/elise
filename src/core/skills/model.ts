@@ -423,7 +423,7 @@ const CROSS_DOMAIN =
 export const crossDomainSignal = (message: string) => CROSS_DOMAIN.test(message);
 
 const SCOPE_GUIDANCE =
-  'Where to save it: the narrowest scope that represents what the user means — a Section for one subject, client or project; its Space for work across that Space; General Knowledge (space: "General Knowledge") for cross-domain ways of working (planning the day, writing for them, deciding), even inside a Space conversation. Ask only if it is genuinely ambiguous and the scope matters. Settings (timezone, language, theme, notifications) are not Methods: point to Settings. Never save something you only inferred from past conversations.';
+  'Where to save it: the narrowest scope that represents what the user means — a Section for one subject, client or project; its Space for work across that Space; General Knowledge (space: "General") for cross-domain ways of working (planning the day, writing for them, deciding), even inside a Space conversation. Ask only if it is genuinely ambiguous and the scope matters. Settings (timezone, language, theme, notifications) are not Methods: point to Settings. Never save something you only inferred from past conversations.';
 
 /** Editing what was just produced: "hacela más corta", "agregá…", "make it shorter", "redo it". */
 const FOLLOW_UP =

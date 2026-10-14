@@ -609,7 +609,7 @@ describe("knowledge", () => {
           [general!.id],
         ),
       );
-      expect((await generalOf(alice.workspaceId))[0]!.name).toBe("General Knowledge");
+      expect((await generalOf(alice.workspaceId))[0]!.name).toBe("General");
     });
 
     it("holds Sections and sources like any Space; a user Space named 'General Knowledge' stays ordinary", async () => {

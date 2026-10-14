@@ -120,7 +120,8 @@ test("setup: Spaces and a legacy plain-text note", async ({ page }) => {
     .eq("workspace_id", workspaceId)
     .eq("kind", "general")
     .single();
-  ids["General Knowledge"] = general!.id;
+  ids.general = general!.id;
+  ids.General = general!.id;
   const { data: legacy } = await admin!
     .from("notes")
     .insert({
@@ -180,14 +181,14 @@ test("2–6: one note in three Spaces, edit, remove a Space, remove all, no dupl
   await page.getByLabel("Título").fill("Proceso comercial");
   await editor(page).click();
   await page.keyboard.type("Pasos de la propuesta comercial: brief, borrador, revisión.");
-  await pickSpaces(page, ["General Knowledge", "Firbot Solutions", "Firbot Marketing"]);
+  await pickSpaces(page, ["General", "Firbot Solutions", "Firbot Marketing"]);
   await page.screenshot({ path: info.outputPath("notes-spaces.png"), fullPage: true });
   await page.getByRole("button", { name: "Guardar", exact: true }).click();
 
   // 2. One note, three memberships, one knowledge item, one set of chunks.
   await expect.poll(async () => (await noteBy("Proceso comercial")).length).toBe(1);
   const note = (await noteBy("Proceso comercial"))[0]!;
-  const three = [ids["General Knowledge"]!, ids["Firbot Solutions"]!, ids["Firbot Marketing"]!];
+  const three = [ids.general!, ids["Firbot Solutions"]!, ids["Firbot Marketing"]!];
   await expect.poll(async () => (await memberships(note.id)).length).toBe(3);
   const items = async () =>
     (await admin!.from("knowledge_items").select("id").eq("external_id", note.id)).data ?? [];
@@ -200,13 +201,12 @@ test("2–6: one note in three Spaces, edit, remove a Space, remove all, no dupl
     (await admin!.from("knowledge_versions").select("id").eq("knowledge_item_id", itemId)).data ??
     [];
   report.versionsAfterCreate = (await versions()).length;
-  for (const name of ["General Knowledge", "Firbot Solutions", "Firbot Marketing"]) {
+  for (const name of ["General", "Firbot Solutions", "Firbot Marketing"]) {
     const hits = (await retrieve("propuesta", [ids[name]!])) ?? [];
     expect(new Set(hits.map((h) => h.knowledge_item_id))).toEqual(new Set([itemId]));
   }
   // 6. Two Spaces in scope: the note comes back once.
-  const both =
-    (await retrieve("propuesta", [ids["General Knowledge"]!, ids["Firbot Solutions"]!])) ?? [];
+  const both = (await retrieve("propuesta", [ids.general!, ids["Firbot Solutions"]!])) ?? [];
   report.dedupe = { rows: both.length, chunks: new Set(both.map((h) => h.chunk_id)).size };
   expect(both.length).toBe(new Set(both.map((h) => h.chunk_id)).size);
   expect(new Set(both.map((h) => h.knowledge_item_id)).size).toBe(1);
@@ -217,7 +217,7 @@ test("2–6: one note in three Spaces, edit, remove a Space, remove all, no dupl
   await page.keyboard.press("End");
   await page.keyboard.type(" Incluye cotización express.");
   await page.getByRole("button", { name: "Guardar", exact: true }).click();
-  for (const name of ["General Knowledge", "Firbot Solutions", "Firbot Marketing"])
+  for (const name of ["General", "Firbot Solutions", "Firbot Marketing"])
     await expect
       .poll(async () => ((await retrieve("cotización & express", [ids[name]!])) ?? []).length, {
         timeout: 120_000,
@@ -235,9 +235,7 @@ test("2–6: one note in three Spaces, edit, remove a Space, remove all, no dupl
       timeout: 30_000,
     })
     .toBe(0);
-  expect(
-    ((await retrieve("cotización", [ids["General Knowledge"]!])) ?? []).length,
-  ).toBeGreaterThan(0);
+  expect(((await retrieve("cotización", [ids.general!])) ?? []).length).toBeGreaterThan(0);
   expect(((await retrieve("cotización", [ids["Firbot Solutions"]!])) ?? []).length).toBeGreaterThan(
     0,
   );
@@ -247,7 +245,7 @@ test("2–6: one note in three Spaces, edit, remove a Space, remove all, no dupl
 
   // 5. Remove every Space: the note stays, outside Knowledge.
   await page.reload();
-  await page.getByRole("button", { name: "Quitar de General Knowledge" }).click();
+  await page.getByRole("button", { name: "Quitar de General" }).click();
   await page.getByRole("button", { name: "Quitar de Firbot Solutions" }).click();
   await page.getByRole("button", { name: "Guardar", exact: true }).click();
   await expect.poll(async () => (await memberships(note.id)).length).toBe(0);
@@ -296,16 +294,14 @@ test("8: chat — create in two Spaces, then take it out of one", async ({ page 
     });
   };
   await ask(
-    "Creá una nota llamada 'Proceso de propuestas' y guardala en General Knowledge y Firbot Solutions.",
+    "Creá una nota llamada 'Proceso de propuestas' y guardala en General y Firbot Solutions.",
   );
   await expect
     .poll(async () => (await noteBy("Proceso de propuestas")).length, { timeout: 30_000 })
     .toBe(1);
   const note = (await noteBy("Proceso de propuestas"))[0]!;
-  expect(await memberships(note.id)).toEqual(
-    [ids["General Knowledge"]!, ids["Firbot Solutions"]!].sort(),
-  );
-  await ask("Sacala de General Knowledge.");
+  expect(await memberships(note.id)).toEqual([ids.general!, ids["Firbot Solutions"]!].sort());
+  await ask("Sacala de General.");
   await expect
     .poll(async () => await memberships(note.id), { timeout: 30_000 })
     .toEqual([ids["Firbot Solutions"]!]);

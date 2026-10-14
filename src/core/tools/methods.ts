@@ -42,7 +42,7 @@ const spaceRef = z
   .min(1)
   .max(200)
   .describe(
-    'Where it applies: a Space or Section by name ("Firbot", "Firbot › Cliente X") or id, or "General Knowledge" for everywhere (cross-domain).',
+    'Where it applies: a Space or Section by name ("Firbot", "Firbot › Cliente X") or id, or "General" for everywhere (cross-domain).',
   );
 
 const GLOBAL = new Set([
@@ -187,7 +187,7 @@ export const listMethodsTool: ToolDefinition = {
   capability: "methods",
   operation: "list",
   description:
-    '"¿Qué métodos tenés para Firbot?", "what Methods do I have?", "¿qué métodos generales tengo?" (space: "General Knowledge" — only those): the user\'s Methods (how they want kinds of work done) with where each applies. Names and descriptions only.',
+    '"¿Qué métodos tenés para Firbot?", "what Methods do I have?", "¿qué métodos generales tengo?" (space: "General" — only those): the user\'s Methods (how they want kinds of work done) with where each applies. Names and descriptions only.',
   input: listInput,
   async describe() {
     return { summary: "List methods" };
@@ -370,7 +370,7 @@ const createInput = z
     space: spaceRef
       .optional()
       .describe(
-        'The narrowest scope that matches what the user means (ADR-047): a Section ("UTN › Legislación") for work of that subject/client/project, its Space for work across it, "General Knowledge" for cross-domain ways of working (planning the day, writing for me, deciding — "siempre", "en general", "para cualquier proyecto", "sin importar el espacio"), even when the conversation is in a Space. Omit to use the Space/Section this conversation is in (General Knowledge when none).',
+        'The narrowest scope that matches what the user means (ADR-047): a Section ("UTN › Legislación") for work of that subject/client/project, its Space for work across it, "General" for cross-domain ways of working (planning the day, writing for me, deciding — "siempre", "en general", "para cualquier proyecto", "sin importar el espacio"), even when the conversation is in a Space. Omit to use the Space/Section this conversation is in (General Knowledge when none).',
       ),
     ...sections,
     instructions: z
@@ -481,7 +481,7 @@ const updateInput = z
     space: spaceRef
       .optional()
       .describe(
-        'Moves it ("mové este método a la sección Cliente X", "hacelo general" → "General Knowledge").',
+        'Moves it ("mové este método a la sección Cliente X", "hacelo general" → "General").',
       ),
     platforms: z.array(z.enum(METHOD_PLATFORMS)).min(1).max(3).optional(),
     changeSummary: z

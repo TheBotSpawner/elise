@@ -2,6 +2,7 @@ import { requireAuthContext } from "@/application/auth-context";
 import { spaceOptions } from "@/application/knowledge-service";
 import { methodStore } from "@/application/methods-service";
 import { listSchedules } from "@/application/schedules-service";
+import { SECTION_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { scheduleInputSchema, type ScheduleInput } from "@/core/schedules/schedule";
 import { SchedulesView } from "@/features/schedules/schedules-view";
@@ -31,7 +32,11 @@ export default async function SchedulesPage({ searchParams }: PageProps<"/schedu
   ]);
   return (
     <PageContainer>
-      <PageHeader title={t.schedules.title} subtitle={t.schedules.subtitle} />
+      <PageHeader
+        title={t.schedules.title}
+        icon={SECTION_ICONS.schedules}
+        info={[t.schedules.subtitle]}
+      />
       <SchedulesView
         schedules={schedules}
         workspaceId={auth.workspaceId}

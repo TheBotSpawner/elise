@@ -70,7 +70,7 @@ const space = z
   .trim()
   .min(1)
   .max(200)
-  .describe('A Knowledge Space or Section by name ("Firbot Solutions", "General Knowledge").');
+  .describe('A Knowledge Space or Section by name ("Firbot Solutions", "General").');
 const spaceList = z.array(space).max(20);
 
 export const createNoteInput = z

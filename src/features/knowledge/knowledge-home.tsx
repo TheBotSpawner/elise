@@ -151,7 +151,6 @@ export function KnowledgeHome({
         />
       ) : (
         <>
-          <p className="text-[13.5px] text-muted">{t.knowledge.helper}</p>
           <ul className="grid gap-3 sm:grid-cols-2">
             {top.map((s) => (
               <SpaceCard key={s.id} space={s} subspaces={childrenOf(s.id)} />

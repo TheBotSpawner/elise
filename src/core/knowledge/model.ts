@@ -74,7 +74,7 @@ export interface SpaceInfo {
  * sources and Methods. Its content is fully editable; it can't be renamed, archived/deleted or
  * moved (the database refuses too). Identity is `kind = 'general'`, never this name.
  */
-export const GENERAL_KNOWLEDGE_NAME = "General Knowledge";
+export const GENERAL_KNOWLEDGE_NAME = "General";
 
 /**
  * Whether General Knowledge's context joins a turn (ADR-047 §AO-AP). With no Space or Section

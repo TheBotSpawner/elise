@@ -1,5 +1,9 @@
 import {
   BookOpenCheck,
+  Brain,
+  CalendarClock,
+  History,
+  Plug,
   CheckSquare,
   Target,
   ListChecks,
@@ -20,6 +24,14 @@ export type SectionKey = "home" | "chat" | "knowledge" | "connections" | "schedu
  * §6-7). "chat" is labeled History: Home is where you talk to ELISE; this lists past
  * conversations (the route stays /chat).
  */
+/** The icon of each main section, shown with its page title (like My Elise modules). */
+export const SECTION_ICONS = {
+  chat: History,
+  knowledge: Brain,
+  connections: Plug,
+  schedules: CalendarClock,
+} as const satisfies Partial<Record<SectionKey, LucideIcon>>;
+
 export const SECTIONS: { key: SectionKey; href: string }[] = [
   { key: "home", href: "/" },
   { key: "chat", href: "/chat" },

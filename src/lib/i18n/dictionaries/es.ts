@@ -3176,7 +3176,7 @@ export const es: Dictionary = {
     spaceHint: (name: string) =>
       `Cómo trabaja ELISE en ${name}. Sus secciones pueden ajustarlos, y también valen los métodos generales.`,
     sectionHint: (name: string) => `Solo en esta sección; se suman a los de ${name}.`,
-    globalTitle: "General Knowledge",
+    globalTitle: "General",
     globalHint: "Valen en todo ELISE, en cualquier espacio.",
     generalHint:
       "Formas de trabajar que ELISE usa en cualquier área. Un espacio o una sección pueden tener las suyas, y esas mandan.",
@@ -3339,5 +3339,6 @@ export const es: Dictionary = {
   common: {
     loading: "Cargando…",
     close: "Cerrar",
+    aboutSection: (title: string) => `Qué es ${title}`,
   },
 };

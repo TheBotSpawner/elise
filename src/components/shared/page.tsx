@@ -1,25 +1,33 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { PageInfo } from "./page-info";
+
 export function PageHeader({
   title,
   subtitle,
   actions,
   icon: Icon,
+  info,
 }: {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
   /** The section's navigation icon, shown subtly before the title (Finance). */
   icon?: LucideIcon;
+  /** What the section is, behind a small ⓘ next to the title (instead of a subtitle). */
+  info?: string[];
 }) {
   return (
     <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="flex items-center gap-3 text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
-          {Icon && <Icon className="size-6 shrink-0 text-muted" strokeWidth={1.6} aria-hidden />}
-          {title}
-        </h1>
+        <div className="flex items-center gap-1.5">
+          <h1 className="flex items-center gap-3 text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
+            {Icon && <Icon className="size-6 shrink-0 text-muted" strokeWidth={1.6} aria-hidden />}
+            {title}
+          </h1>
+          {info && <PageInfo title={title} body={info} />}
+        </div>
         {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
       </div>
       {actions}

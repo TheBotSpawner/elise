@@ -211,7 +211,7 @@ describe("General Knowledge Methods", () => {
     expect(out.status).toBe("succeeded");
     const [saved] = [...m.store.methods.values()];
     expect(saved!.spaceId).toBeNull();
-    expect(JSON.stringify(out)).toContain("General Knowledge");
+    expect(JSON.stringify(out)).toContain('"scope":"General"');
     // Omitting the scope from Home (no Space) lands there too.
     const home = await m.call("methods.create", { ...planning, name: "Escribir para mí" });
     expect(home.status).toBe("succeeded");
@@ -238,7 +238,7 @@ describe("General Knowledge Methods", () => {
       output: { methods: { name: string; scope: string }[] };
     };
     expect(out.output.methods).toEqual([
-      expect.objectContaining({ name: "Planificar el día", scope: "General Knowledge" }),
+      expect.objectContaining({ name: "Planificar el día", scope: "General" }),
     ]);
   });
 

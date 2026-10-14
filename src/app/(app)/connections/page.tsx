@@ -2,6 +2,7 @@ import { Suspense } from "react";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { configuredProviders, listConnections } from "@/application/connections-service";
+import { SECTION_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { ConnectionsHub } from "@/features/connections/hub";
 import { getT } from "@/lib/i18n/server";
@@ -15,7 +16,11 @@ export default async function ConnectionsPage() {
   const list = await listConnections(auth);
   return (
     <PageContainer>
-      <PageHeader title={t.connections.title} subtitle={t.connections.subtitle} />
+      <PageHeader
+        title={t.connections.title}
+        icon={SECTION_ICONS.connections}
+        info={[t.connections.subtitle]}
+      />
       <Suspense>
         <ConnectionsHub accounts={list.connections} configured={configuredProviders(list)} />
       </Suspense>
