@@ -355,15 +355,19 @@ function useConnectionReturn() {
         .map((c) => t.capabilities[c as keyof typeof t.capabilities] ?? c);
       toast.warning(t.connections.missingToast(names.join(", ")));
     }
-    // A precise reason when the provider gave one (Microsoft: cancelled, admin approval…).
-    const reason = params.get("reason") as keyof typeof t.connections.microsoftReasons | null;
+    // A precise reason when the provider gave one, in that provider's own words (never another's).
+    const reason = params.get("reason");
+    const reasons: Record<string, string> =
+      provider === "microsoft"
+        ? t.connections.microsoftReasons
+        : provider === "slack"
+          ? t.connections.slackReasons
+          : {};
     // A reference lets support find the exact server log line (never anything secret).
     const ref = params.get("ref");
     if (error)
       toast.error(
-        (reason && t.connections.microsoftReasons[reason]) ??
-          t.errors.codes[error] ??
-          t.errors.codes.INTERNAL_ERROR,
+        (reason && reasons[reason]) ?? t.errors.codes[error] ?? t.errors.codes.INTERNAL_ERROR,
         ref && /^ERR-[A-Z0-9]+$/.test(ref)
           ? { description: t.connections.errorReference(ref) }
           : undefined,

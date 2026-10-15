@@ -1408,6 +1408,16 @@ export const en = {
         "Couldn't start the Microsoft connection: the server's secure credential storage isn't configured.",
       database_update: "Couldn't start the Microsoft connection: ELISE's database needs an update.",
     },
+    slackReasons: {
+      cancelled: "You cancelled the Slack connection. You can try again any time.",
+      expired: "Slack access expired. Reconnect the workspace.",
+      revoked: "Slack revoked ELISE's access. Reconnect the workspace.",
+      client_misconfigured: "The Slack connection is misconfigured on this server.",
+      slack_oauth: "Couldn't start the Slack connection: server configuration is missing.",
+      credential_vault:
+        "Couldn't start the Slack connection: the server's secure credential storage isn't configured.",
+      database_update: "Couldn't start the Slack connection: ELISE's database needs an update.",
+    } as Record<string, string>,
     missingToast: (caps: string) =>
       `Google didn't grant access to ${caps}. You can allow it anytime.`,
     cancel: "Cancel",

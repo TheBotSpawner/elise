@@ -1432,6 +1432,18 @@ export const es: Dictionary = {
       database_update:
         "No se pudo iniciar la conexión con Microsoft porque la base de datos de ELISE necesita una actualización.",
     },
+    slackReasons: {
+      cancelled: "Cancelaste la conexión con Slack. Podés intentarlo cuando quieras.",
+      expired: "El acceso a Slack venció. Reconectá el workspace.",
+      revoked: "Slack revocó el acceso de ELISE. Reconectá el workspace.",
+      client_misconfigured: "La conexión con Slack está mal configurada en este servidor.",
+      slack_oauth:
+        "No se pudo iniciar la conexión con Slack porque falta configuración del servidor.",
+      credential_vault:
+        "No se pudo iniciar la conexión con Slack porque el almacenamiento seguro de credenciales no está configurado en el servidor.",
+      database_update:
+        "No se pudo iniciar la conexión con Slack porque la base de datos de ELISE necesita una actualización.",
+    } as Record<string, string>,
     missingToast: (caps: string) =>
       `Google no dio acceso a ${caps}. Podés permitirlo cuando quieras.`,
     cancel: "Cancelar",
