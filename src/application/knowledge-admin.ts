@@ -15,6 +15,7 @@ import {
   removeSource,
   retryItem,
   saveFileToKnowledge,
+  saveSnapshotToKnowledge,
   syncNow,
   updateSpace,
   updateSpaceContext,
@@ -148,5 +149,7 @@ export function knowledgeManager(auth: AuthContext): KnowledgeManager {
       });
       return { itemId, title: row.name };
     },
+
+    saveSnapshot: (spaceId, snapshot) => saveSnapshotToKnowledge(auth, spaceId, snapshot),
   };
 }

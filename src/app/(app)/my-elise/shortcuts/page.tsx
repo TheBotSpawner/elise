@@ -15,7 +15,11 @@ export default async function ShortcutsPage() {
   ]);
   return (
     <PageContainer>
-      <PageHeader title={t.shortcuts.title} icon={MY_ELISE_ICONS.shortcuts} />
+      <PageHeader
+        title={t.shortcuts.title}
+        icon={MY_ELISE_ICONS.shortcuts}
+        info={[t.shortcuts.subtitle]}
+      />
       <ShortcutsView
         shortcuts={shortcuts}
         contexts={contexts.map((c) => ({ id: c.id, name: c.name }))}

@@ -25,6 +25,7 @@ import type { CalendarEvent } from "../capabilities/calendar";
 import type { EmailMessage } from "../capabilities/email";
 import { splitItems } from "../capabilities/lists";
 import type { Task } from "../capabilities/tasks";
+import { channelLabel, type TeamMessage } from "../capabilities/team-messaging";
 import { goalCard, goalsSummary } from "../goals/analytics";
 import { analysisVisuals } from "../structured/analysis";
 import { todayIn } from "../time";
@@ -318,6 +319,94 @@ function threadSurface(d: Display<"email_thread">, opts: PresentOptions) {
   );
 }
 
+/** Fixed keys: one results and one thread Surface per interaction, updated in place (ADR-062). */
+export const TEAM_RESULTS_KEY = "team_messaging:results";
+export const TEAM_THREAD_KEY = "team_messaging:thread";
+export const TEAM_DRAFT_KEY = "team_messaging:draft";
+
+const oneLine = (s: string, max: number) => clip(s.replace(/\s+/g, " ").trim(), max);
+
+function teamItem(m: TeamMessage): SurfacePayloads["team_messages"]["items"][number] {
+  return {
+    messageId: m.id,
+    threadId: m.threadId,
+    channel: clip(channelLabel(m.channel), 200),
+    author: clip(m.author.name, 200),
+    date: m.date,
+    text: oneLine(m.text, 800),
+    replyCount: m.replyCount,
+    url: safe(m.url),
+    workspace: clip(m.provenance.source, 200),
+  };
+}
+
+/**
+ * A search (or a channel's window) is one Surface the next search replaces — even when it finds
+ * nothing, so an outdated result never stays on screen as if it answered the new question.
+ */
+function teamMessagesSurface(d: Display<"team_messages">, opts: PresentOptions) {
+  return draft(
+    "team_messages",
+    TEAM_RESULTS_KEY,
+    {
+      query: d.query ? clip(d.query, 300) : null,
+      channel: d.channel ? clip(d.channel, 200) : null,
+      items: d.messages.slice(0, 10).map(teamItem),
+      files: d.files.slice(0, 6).map((f) => ({
+        title: clip(f.title, 300),
+        fileType: f.fileType ? clip(f.fileType, 40) : null,
+        url: safe(f.url),
+        date: f.date,
+        author: f.author ? clip(f.author, 200) : null,
+        workspace: clip(f.provenance.source, 200),
+      })),
+      notSearched: d.notSearched,
+      ...(d.unavailable?.length
+        ? { unavailable: d.unavailable.slice(0, 10).map((u) => clip(u, 200)) }
+        : {}),
+    },
+    opts,
+    {
+      title: opts.title ?? d.query ?? d.channel ?? "Slack",
+      source: {
+        capability: "team_messaging",
+        label: [...new Set(d.messages.map((m) => m.provenance.source))].join(", ") || null,
+      },
+      ref: null,
+    },
+  );
+}
+
+/** The conversation as one Surface: its root and latest replies, never a Surface per message. */
+function teamThreadSurface(d: Display<"team_thread">, opts: PresentOptions) {
+  const t = d.thread;
+  return draft(
+    "team_thread",
+    TEAM_THREAD_KEY,
+    {
+      threadId: t.id,
+      channel: clip(channelLabel(t.channel), 200),
+      workspace: clip(t.provenance.source, 200),
+      url: safe(t.url),
+      total: t.messages.length,
+      hasMore: t.hasMore,
+      messages: [...t.messages.slice(0, 1), ...t.messages.slice(1).slice(-29)].map((m) => ({
+        messageId: m.id,
+        author: clip(m.author.name, 200),
+        date: m.date,
+        text: oneLine(m.text, 800),
+        url: safe(m.url),
+      })),
+    },
+    opts,
+    {
+      title: channelLabel(t.channel),
+      source: { capability: "team_messaging", label: t.provenance.source },
+      ref: null,
+    },
+  );
+}
+
 /** The list a result is about; an empty one is nothing worth showing. */
 function isEmptyResult(d: ToolDisplay): boolean {
   const lists: unknown[] = [];
@@ -521,6 +610,16 @@ export function surfacesFromOutcome(
           )
         : [];
     }
+    case "team_messages":
+      return one(teamMessagesSurface(d, opts));
+    case "team_thread":
+      return one(teamThreadSurface(d, opts));
+    case "team_draft":
+      // One draft card: preparing, then sending, updates it in place.
+      return one(resultSurface(d, { ...opts, key: TEAM_DRAFT_KEY }, "team_messaging"));
+    // A reaction is a line in the conversation, not a window.
+    case "team_reaction":
+      return [];
     case "task_list":
       return one(taskListSurface(d.tasks, opts));
     case "native_list": {
@@ -1072,6 +1171,7 @@ const INTENT_BY_CAPABILITY: Record<string, IntentKind> = {
   history: "recall",
   knowledge: "research",
   email: "communication",
+  teamMessaging: "communication",
   calendar: "planning",
   tasks: "planning",
   habits: "planning",

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
+import { createExecutorPorts, toolContext } from "@/application/elise";
 import {
   cancelActive,
   createSchedule,
@@ -15,7 +16,8 @@ import {
   updateSchedule,
   type RunView,
 } from "@/application/schedules-service";
-import { toPublicError, type PublicError } from "@/core/errors";
+import { executeToolCall } from "@/core/agents/executor";
+import { AppError, toPublicError, type PublicError } from "@/core/errors";
 
 export type ScheduleActionResult<T = undefined> =
   { ok: true; value: T } | { ok: false; error: PublicError };
@@ -73,5 +75,34 @@ export async function markResultReadAction(resultId: string) {
     revalidatePath("/");
   } catch {
     // Read state is a convenience; never block viewing the brief.
+  }
+}
+
+/**
+ * The channels of one Slack workspace a brief can read (ADR-062): through the same executor path
+ * as chat (that exact connection, its permissions, traced). Names and ids only.
+ */
+export async function slackChannelsAction(
+  connectionId: string,
+): Promise<ScheduleActionResult<{ id: string; name: string }[]>> {
+  try {
+    const auth = await requireAuthContext();
+    const outcome = await executeToolCall(createExecutorPorts(auth), toolContext(auth, "user_ui"), {
+      name: "teamMessaging.listChannels",
+      args: { limit: 50 },
+      connectionId: id.parse(connectionId),
+    });
+    if (outcome.status !== "succeeded")
+      return {
+        ok: false,
+        error:
+          outcome.status === "failed"
+            ? outcome.error
+            : toPublicError(new AppError("PERMISSION_DENIED", "Slack channels unavailable")),
+      };
+    const { channels } = outcome.output as { channels: { id: string; name: string }[] };
+    return { ok: true, value: channels.map((c) => ({ id: c.id, name: c.name })) };
+  } catch (error) {
+    return { ok: false, error: toPublicError(error) };
   }
 }

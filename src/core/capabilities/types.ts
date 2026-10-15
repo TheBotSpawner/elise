@@ -26,7 +26,9 @@ export type CapabilityKey =
   | "schedules"
   | "methods"
   | "music"
-  | "time";
+  | "time"
+  /** Workspace messaging: Slack today, Microsoft Teams later (ADR-062). */
+  | "team_messaging";
 
 /** docs/architecture/15-tools-actions-approvals.md §9 */
 export type OperationKind =

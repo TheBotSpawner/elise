@@ -2,6 +2,7 @@ import {
   GoogleMark,
   MicrosoftMark,
   NotionIcon,
+  SlackIcon,
   SpotifyIcon,
   YouTubeIcon,
 } from "@/components/elise/brand-icons";
@@ -11,6 +12,7 @@ const MARKS: Record<string, (p: { size: number }) => React.ReactNode> = {
   google: ({ size }) => <GoogleMark size={size} />,
   microsoft: ({ size }) => <MicrosoftMark size={size} />,
   notion: ({ size }) => <NotionIcon size={size} />,
+  slack: ({ size }) => <SlackIcon size={size} />,
   spotify: ({ size }) => <SpotifyIcon size={size} />,
   youtube: ({ size }) => <YouTubeIcon size={size} />,
 };

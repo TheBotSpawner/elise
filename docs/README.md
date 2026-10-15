@@ -40,6 +40,7 @@ These documents are the source of truth for product and architecture decisions. 
 | `22-mvp-readiness.md`              | MVP readiness: deploy, QA, gaps |
 | `23-music-setup.md`                | Music providers setup (ADR-042) |
 | `24-microsoft-setup.md`            | Microsoft / Outlook setup (ADR-058) |
+| `25-slack-setup.md`                | Slack setup and app manifest (ADR-062) |
 
 ## roadmap/
 

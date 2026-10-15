@@ -11,7 +11,11 @@ export default async function GoalsPage({ searchParams }: PageProps<"/my-elise/g
   const data = await goalsWorkspace(auth, raw.archived === "1");
   return (
     <PageContainer wide>
-      <PageHeader title={t.native.goals.title} icon={MY_ELISE_ICONS.goals} />
+      <PageHeader
+        title={t.native.goals.title}
+        icon={MY_ELISE_ICONS.goals}
+        info={[t.native.goals.subtitle]}
+      />
       <GoalsView key={String(data.archived)} data={data} workspaceId={auth.workspaceId} />
     </PageContainer>
   );

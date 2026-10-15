@@ -36,6 +36,7 @@ export function SchedulesView({
   workspaceId,
   timezone,
   spaces,
+  slackWorkspaces = [],
   methods = [],
   backgroundAvailable,
   draft,
@@ -47,6 +48,8 @@ export function SchedulesView({
   timezone: string;
   /** Knowledge Spaces, for tasks that summarize one. */
   spaces: { id: string; path: string }[];
+  /** Connected Slack workspaces, for briefs that read some of their channels. */
+  slackWorkspaces?: { id: string; name: string }[];
   backgroundAvailable: boolean;
   /** A proposal from chat opened for editing. */
   draft: ScheduleInput | null;
@@ -88,6 +91,7 @@ export function SchedulesView({
           initial={editing.input}
           scheduleId={editing.id}
           spaces={spaces}
+          slackWorkspaces={slackWorkspaces}
           methods={methods}
           onDone={done}
         />

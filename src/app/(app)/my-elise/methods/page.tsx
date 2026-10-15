@@ -40,7 +40,11 @@ export default async function MethodsPage({ searchParams }: PageProps<"/my-elise
   }
   return (
     <PageContainer>
-      <PageHeader title={t.methods.title} icon={MY_ELISE_ICONS.methods} />
+      <PageHeader
+        title={t.methods.title}
+        icon={MY_ELISE_ICONS.methods}
+        info={[t.methods.subtitle]}
+      />
       <MethodsPanel
         methods={methods}
         spaces={spaces}

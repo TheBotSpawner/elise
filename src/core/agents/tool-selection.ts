@@ -47,6 +47,10 @@ const SIGNALS: readonly [string, RegExp][] = [
     "finance",
     /\b(gast\w*|plata|dinero|finanz\w*|presupuest\w*|ingres\w*|expens\w*|budget|spend\w*|money|pesos|d[oó]lar\w*|transacci\w*|pagu[eé]|pag[oó]|cobr\w*|sueldo|salary)\b|\$/i,
   ],
+  [
+    "teamMessaging",
+    /\b(slack|canal(es)?|channels?|threads?|hilos?|dijeron|dijo|habl[oó]|hablaron|hablamos|coment[oó]|mensajes?|mand[aá]le|escribile|avisale|reacci[oó]n|reaccion[aá]|workspace|equipo|team)\b|#[\w-]+|👍|✅/i,
+  ],
   ["structured", /\b(base de datos|database|registros?|records?|crm|tablas?|notion)\b/i],
   [
     "contexts",
@@ -125,6 +129,8 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   goal: "goals",
   goals_overview: "goals",
   vision: "goals",
+  team_messages: "teamMessaging",
+  team_thread: "teamMessaging",
 };
 
 export interface ToolSelection {
@@ -176,5 +182,7 @@ export function selectTools(
 
 /** Tool names a turn's notes mention ("email.search ✓ 3 messages" → "email.search"). */
 export function toolsInNotes(notes: readonly string[]): string[] {
-  return notes.map((n) => n.split(" ")[0] ?? "").filter((n) => /^[a-z]+\.[A-Za-z]+$/.test(n));
+  return notes
+    .map((n) => n.split(" ")[0] ?? "")
+    .filter((n) => /^[a-z][A-Za-z]*\.[A-Za-z]+$/.test(n));
 }

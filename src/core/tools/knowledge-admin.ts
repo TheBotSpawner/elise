@@ -27,7 +27,7 @@ const spaceRef = z
   .describe('A Space or Section by name ("Francés", "Francés › Gramática") or id.');
 
 /** Resolves a Space/Section the user named; ambiguity is a question, not a guess. */
-async function resolveSpace(env: ToolRunEnv, ref: string): Promise<SpaceOverview> {
+export async function resolveSpace(env: ToolRunEnv, ref: string): Promise<SpaceOverview> {
   const spaces = await km(env).listSpaces();
   const byId = spaces.find((s) => s.id === ref);
   if (byId) return byId;

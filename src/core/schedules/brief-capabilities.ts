@@ -9,12 +9,21 @@ type BriefCapability =
   | "finance"
   | "web_search"
   | "knowledge"
-  | "weather";
+  | "weather"
+  | "team_messaging";
 
 /** Capabilities a Morning Brief uses, for validation and display (no schema code: the UI imports it). */
 export function briefCapabilities(config: MorningBriefConfig): BriefCapability[] {
   const caps = new Set<BriefCapability>();
   for (const b of config.blocks)
-    caps.add(b === "needs_reply" ? "email" : b === "news" ? "web_search" : b);
+    caps.add(
+      b === "needs_reply"
+        ? "email"
+        : b === "news"
+          ? "web_search"
+          : b === "slack"
+            ? "team_messaging"
+            : b,
+    );
   return [...caps];
 }

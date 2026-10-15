@@ -1419,3 +1419,23 @@ Remember this as my default
 > Accounts can multiply.
 >
 > Context determines which one matters.
+
+
+---
+
+# 52. Implemented: Team Messaging (ADR-062)
+
+`Messaging` for workspaces is the `team_messaging` capability, separate from Email. Slack is its
+first provider (`SlackProvider`); Microsoft Teams can be another behind the same contract.
+
+```text
+Team Messaging
+└── Slack   (one connection per user and workspace; several workspaces side by side)
+```
+
+- **Tools:** the model sees only `teamMessaging.*` (search, listChannels, findUser, getRecent,
+  getThread, getMessage, draftMessage, sendMessage, reply, addReaction, removeReaction,
+  saveToKnowledge).
+- **Live, not synced:** the provider is queried live; nothing of the workspace is synced.
+- **One workspace per read or write:** named → conversation context / "use this workspace for"
+  → the only one → ask. All workspaces only when the user asks.

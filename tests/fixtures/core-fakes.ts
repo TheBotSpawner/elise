@@ -35,6 +35,7 @@ import { SHORTCUT_TOOLS } from "@/core/tools/shortcuts";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { STUDY_TOOLS } from "@/core/tools/study";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { TEAM_MESSAGING_TOOLS } from "@/core/tools/team-messaging";
 import { TIME_TOOLS } from "@/core/tools/time";
 import { WEATHER_TOOLS } from "@/core/tools/weather";
 import { WEB_TOOLS } from "@/core/tools/web";
@@ -163,7 +164,7 @@ export class InMemoryActionLog implements ActionLog {
     payload: unknown;
   }[] = [];
   executions: { toolName: string; status: string }[] = [];
-  auditEvents: { eventType: string; result: string }[] = [];
+  auditEvents: { eventType: string; result: string; metadata?: Record<string, unknown> }[] = [];
 
   async recordAction(_ctx: ToolContext, action: Parameters<ActionLog["recordAction"]>[1]) {
     const existing = [...this.actions.values()].find(
@@ -211,7 +212,7 @@ export class InMemoryActionLog implements ActionLog {
     this.executions.push({ toolName: e.toolName, status: e.status });
   }
   async audit(_ctx: ToolContext, e: Parameters<ActionLog["audit"]>[1]) {
-    this.auditEvents.push({ eventType: e.eventType, result: e.result });
+    this.auditEvents.push({ eventType: e.eventType, result: e.result, metadata: e.metadata });
   }
 }
 
@@ -260,6 +261,7 @@ export function makePorts(
       ...METHOD_TOOLS,
       ...MUSIC_TOOLS,
       ...TIME_TOOLS,
+      ...TEAM_MESSAGING_TOOLS,
     ),
     providers: {
       get: ((_capability: string, b: CapabilityBinding) =>

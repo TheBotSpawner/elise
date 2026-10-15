@@ -2,6 +2,7 @@ import { ChevronRight, Database, Plus } from "lucide-react";
 import Link from "next/link";
 
 import type { SourceView } from "@/application/structured-service";
+import { LabelWithInfo } from "@/components/shared/info-tip";
 import { buttonVariants } from "@/components/ui/button";
 import type { Dictionary } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -28,8 +29,10 @@ export function StructuredSourcesSection({
     <section className="mt-10 flex flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="type-label text-faint">{s.title}</h2>
-          <p className="mt-1 max-w-2xl text-[13.5px] text-muted">{s.subtitle}</p>
+          <LabelWithInfo
+            title={s.title}
+            info={{ label: t.common.aboutSection(s.title), body: [s.subtitle] }}
+          />
         </div>
         {hasNotion && (
           <Link

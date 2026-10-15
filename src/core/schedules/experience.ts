@@ -9,6 +9,7 @@ import {
   type BriefHabit,
   type BriefKnowledge,
   type BriefNews,
+  type BriefSlack,
   type BriefTask,
   type BriefTopic,
   type BriefWarning,
@@ -48,6 +49,7 @@ export type ExperienceBlock =
   | { kind: "finance"; finance: NonNullable<MorningBrief["finance"]> }
   | { kind: "news"; news: BriefNews[] }
   | { kind: "knowledge"; knowledge: BriefKnowledge }
+  | { kind: "slack"; slack: BriefSlack }
   | { kind: "focus"; focus: BriefFocus[] }
   | { kind: "issues"; warnings: BriefWarning[] };
 
@@ -104,6 +106,7 @@ const LABELS: Record<Locale, Record<BriefTopic | "attention", string>> = {
     tasks: "Tareas",
     weather: "Clima",
     inbox: "Correo",
+    slack: "Slack",
     habits: "Hábitos",
     goals: "Objetivos",
     finance: "Finanzas",
@@ -117,6 +120,7 @@ const LABELS: Record<Locale, Record<BriefTopic | "attention", string>> = {
     tasks: "Tasks",
     weather: "Weather",
     inbox: "Email",
+    slack: "Slack",
     habits: "Habits",
     goals: "Goals",
     finance: "Finance",
@@ -233,6 +237,13 @@ function fallbackLine(topic: BriefTopic, b: MorningBrief, locale: Locale): strin
       return es
         ? `${plural(b.news!.length, "novedad", "novedades")} de tus temas.`
         : `${plural(b.news!.length, "update", "updates")} on your topics.`;
+    case "slack": {
+      const n = b.slack!.channels.reduce((sum, c) => sum + c.messages.length, 0);
+      const where = b.slack!.channels.filter((c) => c.messages.length).map((c) => c.channel);
+      return es
+        ? `${plural(n, "mensaje", "mensajes")} en ${where.join(", ")}.`
+        : `${plural(n, "message", "messages")} in ${where.join(", ")}.`;
+    }
     case "knowledge":
       return b.knowledge!.changes.length
         ? es
@@ -293,6 +304,8 @@ function blocksFor(topic: BriefTopic, b: MorningBrief): ExperienceBlock[] {
       return [{ kind: "news", news: b.news! }];
     case "knowledge":
       return [{ kind: "knowledge", knowledge: b.knowledge! }];
+    case "slack":
+      return [{ kind: "slack", slack: b.slack! }];
   }
 }
 

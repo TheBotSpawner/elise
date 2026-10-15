@@ -60,6 +60,26 @@ export function nextOccurrence(
   return null;
 }
 
+/**
+ * The latest occurrence strictly before `before` (null for a one-time schedule): where "since
+ * the previous brief" starts. Computed from the definition, like the next one.
+ */
+export function previousOccurrence(
+  def: ScheduleDefinition,
+  timezone: string,
+  before: Date,
+): Date | null {
+  if (def.kind === "once") return null;
+  const today = todayIn(timezone, before);
+  for (let i = 0; i <= 7; i++) {
+    const date = addDays(today, -i);
+    if (!def.days.includes(weekday(date))) continue;
+    const at = zonedDateTimeToUtc(`${date}T${def.time}`, timezone);
+    if (at < before) return at;
+  }
+  return null;
+}
+
 export type ActionType = "morning_brief";
 
 /**
@@ -87,11 +107,34 @@ export const BRIEF_BLOCKS = [
   "news",
   "knowledge",
   "weather",
+  "slack",
 ] as const;
-/** Finance is personal, News needs topics and Knowledge a Space: all three are opt-in. */
+/**
+ * Finance is personal, News needs topics, Knowledge a Space and Slack its channels: all opt-in.
+ */
 export const DEFAULT_BRIEF_BLOCKS = BRIEF_BLOCKS.filter(
-  (b) => b !== "finance" && b !== "news" && b !== "knowledge",
+  (b) => b !== "finance" && b !== "news" && b !== "knowledge" && b !== "slack",
 );
+
+/** Channels a brief may read in one run: Slack's history limits make every read count. */
+export const MAX_BRIEF_CHANNELS = 5;
+
+const slackConfigSchema = z
+  .object({
+    /** The workspace connection (a Slack account); never "all". */
+    connectionId: z.uuid().nullable().default(null),
+    channels: z
+      .array(
+        z
+          .object({ id: z.string().min(1).max(500), name: z.string().trim().min(1).max(120) })
+          .strict(),
+      )
+      .max(MAX_BRIEF_CHANNELS)
+      .default([]),
+    /** Since the previous run of this schedule, or the last 24 hours. */
+    window: z.enum(["since_previous", "24h"]).default("since_previous"),
+  })
+  .strict();
 export type BriefBlock = (typeof BRIEF_BLOCKS)[number];
 
 /**
@@ -145,6 +188,15 @@ export const morningBriefConfigSchema = z
     /** Weather block (ADR-038): a city; null → the city of the schedule's timezone. */
     weatherLocation: z.string().trim().min(2).max(120).nullable().default(null),
     /**
+     * Slack block (ADR-062): only these channels of this workspace, for a bounded window — never a
+     * crawl of the workspace and never Real-time Search in the background.
+     */
+    slack: slackConfigSchema.default({
+      connectionId: null,
+      channels: [],
+      window: "since_previous",
+    }),
+    /**
      * The Method that says HOW to do this run (ADR-040 §O): the schedule says when, the Method
      * how. Shapes the narration only; what is gathered and every permission stay the same.
      */
@@ -156,6 +208,10 @@ export const morningBriefConfigSchema = z
   .refine((c) => !c.blocks.includes("knowledge") || c.knowledgeSpaceId, {
     message: "Choose which Knowledge Space to summarize",
     path: ["knowledgeSpaceId"],
+  })
+  .refine((c) => !c.blocks.includes("slack") || (c.slack.connectionId && c.slack.channels.length), {
+    message: "Choose a Slack workspace and at least one channel",
+    path: ["slack"],
   });
 
 export type MorningBriefConfig = z.infer<typeof morningBriefConfigSchema>;

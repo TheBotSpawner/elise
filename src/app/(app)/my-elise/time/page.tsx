@@ -8,7 +8,11 @@ export default async function TimePage() {
   const { t } = await getT();
   return (
     <PageContainer>
-      <PageHeader title={t.time.settings.title} icon={MY_ELISE_ICONS.time} />
+      <PageHeader
+        title={t.time.settings.title}
+        icon={MY_ELISE_ICONS.time}
+        info={[t.time.settings.subtitle]}
+      />
       <TimeSettings />
     </PageContainer>
   );

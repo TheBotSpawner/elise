@@ -191,3 +191,26 @@ export function YouTubeIcon({ size = 32, ...props }: Props) {
     </svg>
   );
 }
+
+export function SlackIcon({ size = 32, ...props }: Props) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden {...props}>
+      <path
+        fill="#E01E5A"
+        d="M5.04 15.17a2.52 2.52 0 1 1-2.52-2.52h2.52zm1.27 0a2.52 2.52 0 0 1 5.04 0v6.31a2.52 2.52 0 1 1-5.04 0z"
+      />
+      <path
+        fill="#36C5F0"
+        d="M8.83 5.04a2.52 2.52 0 1 1 2.52-2.52v2.52zm0 1.27a2.52 2.52 0 0 1 0 5.04H2.52a2.52 2.52 0 1 1 0-5.04z"
+      />
+      <path
+        fill="#2EB67D"
+        d="M18.96 8.83a2.52 2.52 0 1 1 2.52 2.52h-2.52zm-1.27 0a2.52 2.52 0 0 1-5.04 0V2.52a2.52 2.52 0 1 1 5.04 0z"
+      />
+      <path
+        fill="#ECB22E"
+        d="M15.17 18.96a2.52 2.52 0 1 1-2.52 2.52v-2.52zm0-1.27a2.52 2.52 0 0 1 0-5.04h6.31a2.52 2.52 0 1 1 0 5.04z"
+      />
+    </svg>
+  );
+}

@@ -50,6 +50,23 @@ import {
   isNotionConfigured,
   notionOAuthConfig,
 } from "@/infrastructure/providers/notion/oauth";
+import {
+  getSlackOAuthConfig,
+  isSlackConfigured,
+  slackSetup,
+} from "@/infrastructure/providers/slack/config";
+import {
+  buildAuthorizationUrl as buildSlackAuthorizationUrl,
+  exchangeCode as exchangeSlackCode,
+  fetchIdentity as fetchSlackIdentity,
+  grantedPermissions as slackGrantedPermissions,
+  isSlackPermission,
+  revokeToken as revokeSlackToken,
+  scopesFor as slackScopesFor,
+  SLACK_PERMISSION_KEYS,
+  slackAuthError,
+  type SlackPermission,
+} from "@/infrastructure/providers/slack/oauth";
 import { SpotifyTokenProvider } from "@/infrastructure/providers/spotify/music";
 import {
   buildSpotifyAuthorizationUrl,
@@ -624,6 +641,290 @@ export async function completeMicrosoftConnection(
   return { connectionId, enabled, missing: requested.filter((c) => !granted.includes(c)) };
 }
 
+// ── Slack (ADR-062) ──────────────────────────────────────────────────────────
+
+/** What the Connections card shows of a Slack connection (no tokens; names and booleans). */
+export interface SlackConnectionDetails {
+  team: string | null;
+  icon: string | null;
+  user: string | null;
+  permissions: { key: SlackPermission; granted: boolean }[];
+}
+
+/**
+ * Starts Slack consent for the chosen permissions (public channels always). With `connectionId`
+ * it extends or reconnects that exact workspace connection (progressive authorization): Slack
+ * adds the new scopes to the same grant, so it never becomes a second connection.
+ */
+export async function startSlackConnection(
+  auth: AuthContext,
+  params: {
+    permissions: readonly string[];
+    connectionId?: string | null;
+    origin: string;
+    returnPath?: string | null;
+  },
+): Promise<string> {
+  rateLimit(`oauth.start:${auth.userId}`, 10, 60_000);
+  const setup = slackSetup();
+  logger.info("slack.oauth.start", {
+    configured: setup.ready,
+    ...(setup.ready
+      ? { unlisted: setup.unlisted }
+      : { missing: setup.missing, vaultMissing: setup.vaultMissing }),
+  });
+  const config = getSlackOAuthConfig(params.origin);
+  const wanted = new Set(params.permissions.filter(isSlackPermission));
+  let team: string | null = null;
+  if (params.connectionId) {
+    const { data } = await auth.db
+      .from("provider_connections")
+      .select("id, auth_metadata")
+      .eq("id", params.connectionId)
+      .eq("workspace_id", auth.workspaceId)
+      .eq("provider_key", "slack")
+      .maybeSingle();
+    if (!data) throw new AppError("NOT_FOUND", "Connection not found");
+    team = slackMeta(data.auth_metadata).teamId;
+    // Reconnecting asks again for everything this connection already had.
+    const { data: cap } = await auth.db
+      .from("connection_capabilities")
+      .select("authorized_scopes")
+      .eq("connection_id", data.id)
+      .eq("capability_key", "team_messaging")
+      .maybeSingle();
+    for (const k of slackGrantedPermissions(cap?.authorized_scopes ?? [])) wanted.add(k);
+  }
+  const permissions = SLACK_PERMISSION_KEYS.filter((k) => k === "public" || wanted.has(k));
+  const { state, hash } = createState();
+  await auth.db
+    .from("oauth_states")
+    .delete()
+    .eq("user_id", auth.userId)
+    .lt("expires_at", new Date().toISOString());
+  const { error } = await auth.db.from("oauth_states").insert({
+    state_hash: hash,
+    workspace_id: auth.workspaceId,
+    user_id: auth.userId,
+    provider_key: "slack",
+    capabilities: permissions,
+    connection_id: params.connectionId ?? null,
+    return_path: safeReturnPath(params.returnPath),
+    // Slack's flow uses the client secret server-side, no PKCE: an encrypted placeholder.
+    code_verifier_ciphertext: encrypt("none", `oauth_state:${hash}`),
+  });
+  // 23503: the "slack" provider row (migration 046) isn't in this database yet.
+  if (error?.code === "23503")
+    throw new AppError("SERVER_NOT_CONFIGURED", "This needs the latest ELISE database update", {
+      recovery: "configure",
+      cause: error,
+      details: { setup: "database_update", missing: ["migration 20261027000046"] },
+    });
+  if (error)
+    throw new AppError("INTERNAL_ERROR", "Could not start the connection", { cause: error });
+  return buildSlackAuthorizationUrl(config, {
+    userScopes: slackScopesFor(permissions, setup.unlisted),
+    state,
+    team,
+  });
+}
+
+interface SlackMeta {
+  teamId: string | null;
+  teamName: string | null;
+  teamIcon: string | null;
+  userName: string | null;
+}
+
+function slackMeta(raw: unknown): SlackMeta {
+  const m = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const str = (k: string) => (typeof m[k] === "string" ? (m[k] as string) : null);
+  return {
+    teamId: str("teamId"),
+    teamName: str("teamName"),
+    teamIcon: str("teamIcon"),
+    userName: str("userName"),
+  };
+}
+
+/**
+ * Slack's callback. A connection is one user in one workspace (team id + user id): the same pair
+ * reconnecting updates it; another workspace — or another user of the same workspace — is a new
+ * connection. Tokens go straight into the encrypted vault; the browser never sees them.
+ */
+export async function completeSlackConnection(
+  auth: AuthContext,
+  params: {
+    code: string | null;
+    state: string | null;
+    error: string | null;
+    origin: string;
+    onReturnPath?: (path: ReturnPath) => void;
+  },
+  deps: {
+    exchange?: typeof exchangeSlackCode;
+    identity?: typeof fetchSlackIdentity;
+    revoke?: typeof revokeSlackToken;
+  } = {},
+): Promise<ConnectionResult> {
+  if (!params.state) throw new AppError("VALIDATION_ERROR", "Missing authorization state");
+  const stateHash = hashState(params.state);
+  const { data: pending, error: consumeError } = await auth.db
+    .from("oauth_states")
+    .delete()
+    .eq("state_hash", stateHash)
+    .eq("user_id", auth.userId)
+    .eq("workspace_id", auth.workspaceId)
+    .select("*")
+    .maybeSingle();
+  if (consumeError)
+    throw new AppError("INTERNAL_ERROR", "Could not verify the connection", {
+      cause: consumeError,
+    });
+  validatePendingAuthorization(pending, {
+    userId: auth.userId,
+    workspaceId: auth.workspaceId,
+    providerKey: "slack",
+    now: new Date(),
+  });
+  params.onReturnPath?.(safeReturnPath(pending!.return_path));
+  const row = pending!;
+  if (params.error || !params.code) throw slackAuthError(params.error ?? "access_denied");
+
+  const config = getSlackOAuthConfig(params.origin);
+  const grant = await (deps.exchange ?? exchangeSlackCode)(config, params.code);
+  const external = `${grant.teamId}:${grant.userId}`;
+
+  let connectionId: string | null = null;
+  if (row.connection_id) {
+    const { data: existing } = await auth.db
+      .from("provider_connections")
+      .select("id, external_account_id")
+      .eq("id", row.connection_id)
+      .eq("workspace_id", auth.workspaceId)
+      .eq("provider_key", "slack")
+      .maybeSingle();
+    if (!existing) throw new AppError("NOT_FOUND", "Connection not found");
+    if (existing.external_account_id !== external) {
+      // Never let another workspace or user replace this connection's grant.
+      await (deps.revoke ?? revokeSlackToken)(grant.tokens.accessToken);
+      throw new AppError(
+        "CONFLICT",
+        "You chose a different Slack workspace or user than this connection. Add it as a new connection instead.",
+        { recovery: "review" },
+      );
+    }
+    connectionId = existing.id;
+  } else {
+    const { data: same } = await auth.db
+      .from("provider_connections")
+      .select("id")
+      .eq("workspace_id", auth.workspaceId)
+      .eq("provider_key", "slack")
+      .eq("external_account_id", external)
+      .maybeSingle();
+    connectionId = same?.id ?? null;
+  }
+
+  const identity = await (deps.identity ?? fetchSlackIdentity)(grant.tokens.accessToken, grant);
+  const teamName = identity.teamName ?? grant.teamName ?? "Slack";
+  const metadata = {
+    teamId: grant.teamId,
+    teamName,
+    teamDomain: identity.teamDomain,
+    teamIcon: identity.teamIcon,
+    enterpriseId: grant.enterpriseId,
+    enterpriseName: grant.enterpriseName,
+    userId: grant.userId,
+    userName: identity.userName,
+    handle: identity.handle,
+    tokenRotation: grant.rotating,
+  };
+  const accountLabel = `${identity.userName} · ${teamName}`;
+  const admin = createAdminClient();
+  if (connectionId) {
+    const { error } = await admin
+      .from("provider_connections")
+      .update({
+        status: "connected",
+        account_label: accountLabel,
+        auth_metadata: metadata,
+        last_connected_at: new Date().toISOString(),
+        last_error_code: null,
+        last_error_at: null,
+        disconnected_at: null,
+      })
+      .eq("id", connectionId)
+      .eq("workspace_id", auth.workspaceId);
+    if (error)
+      throw new AppError("INTERNAL_ERROR", "Could not update the connection", { cause: error });
+  } else {
+    const { data: created, error } = await admin
+      .from("provider_connections")
+      .insert({
+        workspace_id: auth.workspaceId,
+        provider_key: "slack",
+        created_by_user_id: auth.userId,
+        external_account_id: external,
+        display_name: await uniqueAlias(auth, teamName, `${teamName} (${identity.userName})`),
+        account_label: accountLabel,
+        status: "connected",
+        auth_metadata: metadata,
+      })
+      .select("id")
+      .single();
+    if (error)
+      throw new AppError("INTERNAL_ERROR", "Could not save the connection", { cause: error });
+    connectionId = created.id;
+  }
+
+  // Slack accumulates scopes across consents: keep every scope this grant has.
+  const ref = { connectionId, workspaceId: auth.workspaceId };
+  const vault = new SupabaseCredentialVault(admin, "slack");
+  const previous = await vault.read(ref);
+  const scopes = [...new Set([...(previous?.scopes ?? []), ...grant.tokens.scopes])];
+  await vault.write(ref, { ...credentialFromTokens(grant.tokens, previous), scopes });
+
+  const granted = slackGrantedPermissions(scopes);
+  const usable = granted.includes("public");
+  await auth.db.from("connection_capabilities").upsert(
+    {
+      workspace_id: auth.workspaceId,
+      connection_id: connectionId,
+      capability_key: "team_messaging",
+      enabled: usable,
+      permission_level: "write",
+      authorized_scopes: usable ? scopes : [],
+    },
+    { onConflict: "connection_id,capability_key" },
+  );
+  if (usable) await ensureBinding(auth, connectionId, "team_messaging");
+
+  const requested = row.capabilities.filter(isSlackPermission);
+  await auth.db.from("audit_events").insert({
+    workspace_id: auth.workspaceId,
+    user_id: auth.userId,
+    event_type: row.connection_id || previous ? "connection.reauthorized" : "connection.created",
+    resource_type: "provider_connection",
+    resource_id: connectionId,
+    provider_key: "slack",
+    connection_id: connectionId,
+    origin: "user_ui",
+    result: "success",
+    metadata: { permissions: granted, tokenRotation: grant.rotating },
+  });
+  logger.info("connection.slack_connected", {
+    connection_id: connectionId,
+    permissions: granted,
+    token_rotation: grant.rotating,
+  });
+  return {
+    connectionId,
+    enabled: usable ? ["team_messaging"] : [],
+    missing: usable && requested.every((r) => granted.includes(r)) ? [] : ["team_messaging"],
+  };
+}
+
 /** First account for a capability becomes its default; ELISE Tasks stays default for tasks. */
 async function ensureBinding(auth: AuthContext, connectionId: string, capability: CapabilityKey) {
   const { data: bindings } = await auth.db
@@ -669,6 +970,8 @@ export interface ConnectionView {
   /** Product-level health with one obvious remedy (core/providers/health.ts). */
   health: ConnectionHealth;
   capabilities: { key: CapabilityKey; enabled: boolean; granted: boolean; isDefault: boolean }[];
+  /** Slack only: the workspace, who connected and which permissions the grant has. */
+  slack?: SlackConnectionDetails;
 }
 
 export async function listConnections(auth: AuthContext): Promise<{
@@ -678,12 +981,13 @@ export async function listConnections(auth: AuthContext): Promise<{
   notionAvailable: boolean;
   spotifyAvailable: boolean;
   youtubeAvailable: boolean;
+  slackAvailable: boolean;
 }> {
   const [conns, caps, bindings] = await Promise.all([
     auth.db
       .from("provider_connections")
       .select(
-        "id, provider_key, display_name, account_label, context_label, status, last_error_code",
+        "id, provider_key, display_name, account_label, context_label, status, last_error_code, auth_metadata",
       )
       .eq("workspace_id", auth.workspaceId)
       .neq("status", "disconnected")
@@ -703,8 +1007,9 @@ export async function listConnections(auth: AuthContext): Promise<{
     notion: isNotionConfigured(),
     spotify: isSpotifyConfigured(),
     youtube: isYouTubeConfigured(),
+    slack: isSlackConfigured(),
   };
-  const connections = (conns.data ?? []).map((c) => {
+  const connections = (conns.data ?? []).map((c): ConnectionView => {
     const capabilities = (caps.data ?? [])
       .filter((cap) => cap.connection_id === c.id)
       .map((cap) => ({
@@ -733,6 +1038,9 @@ export async function listConnections(auth: AuthContext): Promise<{
         capabilities,
       }),
       capabilities,
+      ...(c.provider_key === "slack"
+        ? { slack: slackDetails(c.auth_metadata, caps.data ?? [], c.id) }
+        : {}),
     };
   });
   return {
@@ -742,6 +1050,25 @@ export async function listConnections(auth: AuthContext): Promise<{
     notionAvailable: available.notion ?? false,
     spotifyAvailable: available.spotify ?? false,
     youtubeAvailable: available.youtube ?? false,
+    slackAvailable: available.slack ?? false,
+  };
+}
+
+function slackDetails(
+  metadata: unknown,
+  caps: { connection_id: string; capability_key: string; authorized_scopes: string[] }[],
+  connectionId: string,
+): SlackConnectionDetails {
+  const m = slackMeta(metadata);
+  const scopes =
+    caps.find((x) => x.connection_id === connectionId && x.capability_key === "team_messaging")
+      ?.authorized_scopes ?? [];
+  const granted = new Set(slackGrantedPermissions(scopes));
+  return {
+    team: m.teamName,
+    icon: m.teamIcon?.startsWith("https://") ? m.teamIcon : null,
+    user: m.userName,
+    permissions: SLACK_PERMISSION_KEYS.map((key) => ({ key, granted: granted.has(key) })),
   };
 }
 
@@ -840,10 +1167,13 @@ export async function disconnectConnection(auth: AuthContext, connectionId: stri
   const credential = await vault.read(ref).catch(() => null);
   // Microsoft, Notion and Spotify have no token revocation endpoint: deleting the credential ends ELISE's
   // access here, and the user can remove the app in the provider's settings.
-  const revoked =
-    credential && connection.provider_key === "google"
+  const revoked = !credential
+    ? false
+    : connection.provider_key === "google"
       ? await revokeToken(credential.refreshToken ?? credential.accessToken)
-      : false;
+      : connection.provider_key === "slack"
+        ? await revokeSlackToken(credential.accessToken)
+        : false;
   await vault.remove(ref);
   // Sync stops now, and what ELISE indexed through this account is deleted.
   await purgeConnectionKnowledge(auth.workspaceId, connectionId);
@@ -1303,8 +1633,10 @@ export function configuredProviders(list: {
   notionAvailable: boolean;
   spotifyAvailable: boolean;
   youtubeAvailable: boolean;
+  slackAvailable: boolean;
 }): Record<string, boolean> {
   return {
+    slack: list.slackAvailable,
     google: list.googleAvailable,
     microsoft: list.microsoftAvailable,
     notion: list.notionAvailable,

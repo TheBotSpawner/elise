@@ -12,7 +12,11 @@ export default async function ListsPage({ searchParams }: PageProps<"/my-elise/l
   return (
     // Wide: lists sit side by side as columns (ADR-051).
     <div className="mx-auto w-full max-w-[1800px] px-4 pt-6 pb-10 md:px-10 md:pt-10">
-      <PageHeader title={t.native.lists.title} icon={MY_ELISE_ICONS.lists} />
+      <PageHeader
+        title={t.native.lists.title}
+        icon={MY_ELISE_ICONS.lists}
+        info={[t.native.lists.subtitle]}
+      />
       <ListsWorkspace lists={lists} workspaceId={auth.workspaceId} focus={focus} />
     </div>
   );

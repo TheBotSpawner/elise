@@ -17,6 +17,7 @@ import type { ActionHandler } from "@/core/schedules/runner";
 import {
   morningBriefConfigSchema,
   newsTopics,
+  previousOccurrence,
   type MorningBriefConfig,
 } from "@/core/schedules/schedule";
 import { scopeOf } from "@/core/skills/model";
@@ -42,6 +43,8 @@ export async function gatherBrief(
   ports: ExecutorPorts,
   ctx: ToolContext,
   config: MorningBriefConfig,
+  /** Where "since the previous run" starts (scheduled runs); otherwise the last 24 hours. */
+  previousRunAt: Date | null = null,
 ): Promise<{
   data: BriefData;
   approvalId: string | null;
@@ -192,6 +195,45 @@ export async function gatherBrief(
         : undefined,
     ]);
 
+  // Slack (ADR-062): only the channels the schedule names, in its one workspace, for a bounded
+  // window — one history read per channel, one after another (Slack's history limits are
+  // per minute). Never Real-time Search in the background, never a crawl of the workspace.
+  const slack = want.has("slack") ? await gatherSlack() : undefined;
+  async function gatherSlack(): Promise<BriefData["slack"]> {
+    const s = config.slack;
+    if (!s.connectionId || !s.channels.length) return undefined;
+    const day = 86_400_000;
+    const since =
+      s.window === "since_previous" &&
+      previousRunAt &&
+      ctx.now.getTime() - previousRunAt.getTime() <= 8 * day
+        ? previousRunAt
+        : new Date(ctx.now.getTime() - day);
+    const after = toLocalDateTime(since, ctx.timezone).slice(0, 16);
+    const channels: NonNullable<BriefData["slack"]>["channels"] = [];
+    for (const c of s.channels) {
+      const d = await call(
+        "slack",
+        "teamMessaging.getRecent",
+        { channel: c.id, after, limit: 10 },
+        s.connectionId,
+      );
+      if (d?.kind !== "team_messages") continue;
+      channels.push({
+        channel: d.channel ?? c.name,
+        workspace: d.messages[0]?.provenance.source ?? "Slack",
+        messages: d.messages.map((m) => ({
+          author: m.author.name,
+          text: m.text,
+          date: m.date,
+          url: m.url,
+          replies: m.replyCount,
+        })),
+      });
+    }
+    return { since: since.toISOString(), channels };
+  }
+
   // News (ADR-015): recent events for the user's own topics only; no topics, no news.
   const topics = want.has("news") ? newsTopics(config) : [];
   if (want.has("news") && !topics.length) warnings.push({ block: "news", code: "NEEDS_TOPICS" });
@@ -244,6 +286,7 @@ export async function gatherBrief(
       ...(topics.length ? { news } : {}),
       ...(range.days > 1 || range.from !== today ? { range } : {}),
       ...(knowledge ? { knowledge: knowledge as BriefData["knowledge"] } : {}),
+      ...(slack ? { slack } : {}),
       ...(sky?.kind === "weather" && sky.weather.mode !== "needs_location"
         ? { weather: sky.weather }
         : {}),
@@ -386,7 +429,12 @@ export function morningBriefHandler(deps: {
     const ctx: ToolContext = { ...toolContext(auth, "schedule"), timezone: schedule.timezone, now };
 
     const [gathered, contexts] = await Promise.all([
-      gatherBrief(ports, ctx, config),
+      gatherBrief(
+        ports,
+        ctx,
+        config,
+        previousOccurrence(schedule.definition, schedule.timezone, run.scheduledFor),
+      ),
       briefContexts(auth),
     ]);
     if (contexts) gathered.data.contexts = contexts;

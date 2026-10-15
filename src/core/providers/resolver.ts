@@ -16,6 +16,16 @@ export interface ResolutionRequest {
    * when several accounts could send it: ELISE asks which one.
    */
   strict?: boolean;
+  /**
+   * Reads that must use one account (one Slack workspace): when several fit, ask instead of
+   * reading them all. Writes are always single.
+   */
+  single?: boolean;
+  /**
+   * The conversation's area (its Section or context, by name): a soft preference among several
+   * candidates when nothing was named. Never authority, never a fallback to another account.
+   */
+  hint?: string | null;
 }
 
 export type ResolutionReason =
@@ -45,6 +55,7 @@ const PROVIDER_NAMES: Record<ProviderKey, string[]> = {
   spotify: ["spotify"],
   youtube: ["youtube", "you tube"],
   deezer: ["deezer"],
+  slack: ["slack"],
 };
 
 /**
@@ -94,7 +105,7 @@ export function resolveBindings(
 
   if (named) {
     const connections = uniqueByConnection(usable);
-    if (req.operationKind === "read" || connections.length === 1) {
+    if ((req.operationKind === "read" && !req.single) || connections.length === 1) {
       return { kind: "resolved", bindings: connections, reason: "destination" };
     }
     const preferred = req.strict ? undefined : usable.find((b) => b.isDefault);
@@ -110,11 +121,20 @@ export function resolveBindings(
       )
     : [];
 
+  const candidates = uniqueByConnection(usable);
+  const hinted = candidates.length > 1 && req.hint ? bestMatch(candidates, req.hint) : null;
+
   if (req.operationKind === "read") {
-    if (inContext.length > 0) {
-      return { kind: "resolved", bindings: uniqueByConnection(inContext), reason: "context_match" };
+    const matching = uniqueByConnection(inContext);
+    if (matching.length > 0 && (!req.single || matching.length === 1)) {
+      return { kind: "resolved", bindings: matching, reason: "context_match" };
     }
-    const connections = uniqueByConnection(usable);
+    const connections = candidates;
+    if (req.single && connections.length > 1) {
+      return hinted
+        ? { kind: "resolved", bindings: [hinted], reason: "context_match" }
+        : { kind: "clarify", candidates: connections };
+    }
     return {
       kind: "resolved",
       bindings: connections,
@@ -129,7 +149,7 @@ export function resolveBindings(
     return { kind: "resolved", bindings: [inContext[0]!], reason: "context_match" };
   }
 
-  const candidates = uniqueByConnection(usable);
+  if (hinted) return { kind: "resolved", bindings: [hinted], reason: "context_match" };
   if (req.strict && candidates.length > 1) return { kind: "clarify", candidates };
 
   const globalDefault = usable.find((b) => b.isDefault && b.contextType === null);
@@ -165,6 +185,14 @@ export function destinationScore(binding: CapabilityBinding, destination: string
   return new Set(
     names.filter((name) => name === wanted || words.includes(name) || name.includes(wanted)),
   ).size;
+}
+
+/** The one candidate a name points to best, or null when none or several tie. */
+function bestMatch(candidates: CapabilityBinding[], name: string): CapabilityBinding | null {
+  const scored = candidates.map((b) => ({ b, score: destinationScore(b, name) }));
+  const best = Math.max(...scored.map((x) => x.score));
+  const top = scored.filter((x) => x.score === best);
+  return best > 0 && top.length === 1 ? top[0]!.b : null;
 }
 
 function uniqueByConnection(bindings: readonly CapabilityBinding[]): CapabilityBinding[] {

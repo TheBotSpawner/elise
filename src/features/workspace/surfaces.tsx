@@ -11,6 +11,7 @@ import {
   Mic,
   ListChecks,
   Mail,
+  MessagesSquare,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -55,6 +56,7 @@ import {
   GoalsOverviewBody,
   VisionSurfaceBody,
 } from "@/features/native/goal-surfaces";
+import { TeamMessagesBody, TeamThreadBody } from "@/features/team-messaging/cards";
 import { ClockSurfaceBody, TimerSurfaceBody } from "@/features/time/time-view";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -115,6 +117,8 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   goal: Target,
   goals_overview: Target,
   vision: Eye,
+  team_messages: MessagesSquare,
+  team_thread: MessagesSquare,
   result: Sparkles,
 };
 
@@ -937,6 +941,10 @@ export function SurfaceBody({
       return <EmailListBody surface={surface} p={p} timezone={timezone} handlers={handlers} />;
     case "email_thread":
       return <EmailThreadBody p={p} timezone={timezone} />;
+    case "team_messages":
+      return <TeamMessagesBody p={p} timezone={timezone} />;
+    case "team_thread":
+      return <TeamThreadBody p={p} timezone={timezone} />;
     case "knowledge_source":
       return <KnowledgeSourceBody p={p} />;
     case "knowledge_result":

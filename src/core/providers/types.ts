@@ -8,7 +8,8 @@ export type ProviderKey =
   | "web_search"
   | "spotify"
   | "youtube"
-  | "deezer";
+  | "deezer"
+  | "slack";
 
 export interface ProviderDefinition {
   key: ProviderKey;

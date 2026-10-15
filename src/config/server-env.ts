@@ -70,6 +70,14 @@ const serverEnvSchema = z.object({
   MICROSOFT_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   MICROSOFT_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
   MICROSOFT_OAUTH_TENANT: z.string().min(1).optional(),
+  /** Slack app (team messaging, ADR-062). Per-workspace tokens live encrypted in the database. */
+  SLACK_CLIENT_ID: z.string().min(1).optional(),
+  SLACK_CLIENT_SECRET: z.string().min(1).optional(),
+  /**
+   * "true" only for an unlisted, distributed Slack app, where Real-time Search is not allowed:
+   * asks for the legacy `search:read` scope and searches with search.messages (ADR-062).
+   */
+  SLACK_LEGACY_SEARCH: z.enum(["true", "false"]).optional(),
   /** 32 random bytes, base64. Encrypts OAuth credentials at rest. */
   ELISE_ENCRYPTION_KEY: z.string().min(1).optional(),
   ELISE_ENCRYPTION_KEY_PREVIOUS: z.string().min(1).optional(),

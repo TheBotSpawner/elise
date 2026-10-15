@@ -39,6 +39,7 @@ import { SHORTCUT_TOOLS } from "@/core/tools/shortcuts";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { STUDY_TOOLS } from "@/core/tools/study";
 import { TASK_TOOLS } from "@/core/tools/tasks";
+import { TEAM_MESSAGING_TOOLS } from "@/core/tools/team-messaging";
 import { TIME_TOOLS } from "@/core/tools/time";
 import { WEATHER_TOOLS } from "@/core/tools/weather";
 import { WEB_TOOLS } from "@/core/tools/web";
@@ -73,6 +74,10 @@ import { NotionClient } from "@/infrastructure/providers/notion/client";
 import { NotionHttp } from "@/infrastructure/providers/notion/http";
 import { NotionStructuredApi } from "@/infrastructure/providers/notion/structured";
 import { NotionStructuredProvider } from "@/infrastructure/providers/notion/structured-provider";
+import { getSlackOAuthConfig, slackSetup } from "@/infrastructure/providers/slack/config";
+import { SlackHttp } from "@/infrastructure/providers/slack/http";
+import { refreshAccessToken as refreshSlackToken } from "@/infrastructure/providers/slack/oauth";
+import { SlackProvider } from "@/infrastructure/providers/slack/team-messaging";
 import {
   SpotifyMusicProvider,
   SpotifyTokenProvider,
@@ -136,6 +141,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...METHOD_TOOLS,
   ...MUSIC_TOOLS,
   ...TIME_TOOLS,
+  ...TEAM_MESSAGING_TOOLS,
 );
 
 /**
@@ -222,6 +228,48 @@ export function microsoftHttpFor(auth: AuthContext, connectionId: string): Graph
       },
     }),
     { onUnauthorized: (reason) => reauthorize(ref, reason) },
+  );
+}
+
+/**
+ * Slack (Team Messaging, ADR-062) for one connection of this workspace, with the user's own token.
+ * Tokens stay server-side. With token rotation on, refreshes are serialized by a lease (Slack's
+ * refresh tokens work once). Without client settings on this server or worker, it is a setup
+ * problem (SERVER_NOT_CONFIGURED), never "Slack isn't connected".
+ */
+export function slackProviderFor(auth: AuthContext, binding: CapabilityBinding): SlackProvider {
+  const config = getSlackOAuthConfig();
+  const ref = { connectionId: binding.connectionId, workspaceId: auth.workspaceId };
+  const vault = new SupabaseCredentialVault(createAdminClient(), "slack");
+  const reauthorize = (r: ConnectionRef, code: string) =>
+    markNeedsReauthorization(auth, r, code, "Slack");
+  const tokens = new GoogleTokenProvider(ref, {
+    vault,
+    providerName: "Slack",
+    onReauthorizationRequired: reauthorize,
+    refresh: (refreshToken) => refreshSlackToken(config, refreshToken),
+    lease: {
+      acquire: (r) => vault.acquireRefreshLease(r),
+      release: (r) => vault.releaseRefreshLease(r),
+    },
+  });
+  const http = new SlackHttp(tokens, {
+    onUnauthorized: (reason) => reauthorize(ref, reason),
+    // Which call, how many tries, how long, whether Slack throttled: never arguments or content.
+    log: (e) =>
+      logger[e.ok ? "info" : "warn"]("slack.api", {
+        method: e.method,
+        connection_id: binding.connectionId,
+        attempts: e.attempts,
+        latency_ms: e.latencyMs,
+        rate_limited: e.rateLimited,
+        ...(e.error ? { error: e.error } : {}),
+      }),
+  });
+  return new SlackProvider(
+    { connectionId: binding.connectionId, label: binding.label, unlisted: slackSetup().unlisted },
+    http,
+    async () => (await vault.read(ref))?.scopes ?? [],
   );
 }
 
@@ -480,6 +528,10 @@ function providerFactory(
         return new YouTubeMusicProvider(key);
       }
       throw unsupported("music", binding);
+    },
+    team_messaging(binding) {
+      if (binding.providerKey !== "slack") throw unsupported("team_messaging", binding);
+      return slackProviderFor(auth, binding);
     },
     // The user's own timers (ADR-045): personal, through RLS.
     time() {

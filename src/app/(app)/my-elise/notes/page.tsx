@@ -16,7 +16,11 @@ export default async function NotesPage({ searchParams }: PageProps<"/my-elise/n
   const { notes, spaces } = await notesOverview(auth, query || null);
   return (
     <PageContainer wide>
-      <PageHeader title={t.native.notes.title} icon={MY_ELISE_ICONS.notes} />
+      <PageHeader
+        title={t.native.notes.title}
+        icon={MY_ELISE_ICONS.notes}
+        info={[t.native.notes.subtitle]}
+      />
       <Suspense>
         <NotesView
           notes={notes}

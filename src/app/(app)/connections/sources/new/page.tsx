@@ -20,10 +20,7 @@ export default async function NewStructuredSourcePage({
       <Link href="/connections" className="text-[13px] text-muted hover:text-fg">
         {t.structured.back}
       </Link>
-      <PageHeader
-        title={edit ? edit.name : t.structured.connect}
-        subtitle={t.structured.subtitle}
-      />
+      <PageHeader title={edit ? edit.name : t.structured.connect} info={[t.structured.subtitle]} />
       <StructuredSetup workspaces={workspaces} edit={edit} />
     </PageContainer>
   );

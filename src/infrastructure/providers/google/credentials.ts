@@ -56,6 +56,15 @@ export class GoogleTokenProvider {
       now?: () => number;
       /** Shown in errors and logs ("Google", "Microsoft"). */
       providerName?: string;
+      /**
+       * Single-use refresh tokens (Slack rotation): only the lease holder refreshes; everyone
+       * else waits for the token it stores. Without it, concurrent refreshes are harmless.
+       */
+      lease?: {
+        acquire(ref: ConnectionRef): Promise<boolean>;
+        release(ref: ConnectionRef): Promise<void>;
+      };
+      sleep?: (ms: number) => Promise<void>;
     } & (
       | { config: GoogleOAuthConfig }
       // Another OAuth provider (Microsoft) brings its own refresh; the lifecycle is the same.
@@ -89,10 +98,48 @@ export class GoogleTokenProvider {
         recovery: "reconnect",
       });
     }
+    if (this.deps.lease) return this.refreshUnderLease(current, now);
+    return this.refresh(current);
+  }
+
+  /**
+   * Google and Microsoft keep earlier tokens valid after a refresh, so concurrent refreshes are
+   * harmless there. A single-use refresh token (Slack) is redeemed by the lease holder only; the
+   * others wait for the replacement it stores.
+   */
+  private async refreshUnderLease(stale: StoredCredential, now: number): Promise<string> {
+    const lease = this.deps.lease!;
+    const sleep = this.deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+    const fresh = (c: StoredCredential | null): c is StoredCredential =>
+      Boolean(c) &&
+      c!.accessToken !== stale.accessToken &&
+      new Date(c!.accessTokenExpiresAt).getTime() - REFRESH_MARGIN_MS > now;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (await lease.acquire(this.ref)) {
+        try {
+          // Someone may have refreshed between our read and taking the lease.
+          const latest = await this.deps.vault.read(this.ref);
+          if (fresh(latest)) return (this.cached = latest).accessToken;
+          return await this.refresh(latest ?? stale);
+        } finally {
+          await lease.release(this.ref);
+        }
+      }
+      await sleep(500);
+      const latest = await this.deps.vault.read(this.ref);
+      if (fresh(latest)) return (this.cached = latest).accessToken;
+    }
+    throw new AppError("PROVIDER_UNAVAILABLE", `${this.name} is busy renewing access. Try again.`);
+  }
+
+  private async refresh(current: StoredCredential): Promise<string> {
+    if (!current.refreshToken) {
+      await this.deps.onReauthorizationRequired(this.ref, "no_refresh_token");
+      throw new AppError("AUTH_EXPIRED", `This ${this.name} account needs to be reconnected`, {
+        recovery: "reconnect",
+      });
+    }
     try {
-      // ponytail: concurrent requests may both refresh; Google and Microsoft keep earlier tokens
-      // valid after a refresh (Microsoft's rotation doesn't revoke the previous refresh token), so
-      // the last write wins harmlessly. Add a per-connection lock if that changes.
       const tokens =
         "refresh" in this.deps
           ? await this.deps.refresh(current.refreshToken)

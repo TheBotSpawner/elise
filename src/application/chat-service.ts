@@ -31,6 +31,7 @@ import { stepsToCalls } from "@/core/shortcuts/model";
 import { planTurnMethods, scopeOf } from "@/core/skills/model";
 import { todayIn } from "@/core/time";
 import { loadMethod, scopeLabel } from "@/core/tools/methods";
+import { teamDisplayForStorage } from "@/core/tools/team-messaging";
 import { bindVoiceApproval } from "@/core/voice/approval";
 import { SpokenSplitter } from "@/core/voice/speech-text";
 import { approvalDecidedOps, intentForTool } from "@/core/workspace/from-results";
@@ -967,6 +968,8 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
         async function persistAssistant(text: string, metadata: AssistantMessageMetadata) {
           const messageId = await thread.addAssistantTurn(text, modality, {
             ...metadata,
+            // Team messages are live external context: what was said stays in Slack (ADR-062).
+            ...(metadata.tools ? { tools: metadata.tools.map(storableTrace) } : {}),
             ...(ranShortcut ? { shortcut: { id: ranShortcut.id, name: ranShortcut.name } } : {}),
           });
           if (!failure) send({ type: "done", messageId });
@@ -1287,4 +1290,11 @@ async function prefetchRecall(
     });
     return null;
   }
+}
+
+/** A tool trace as stored with its turn: Team Messaging results keep provenance, not text. */
+function storableTrace(t: ClientToolTrace): ClientToolTrace {
+  return t.outcome?.status === "succeeded"
+    ? { ...t, outcome: { ...t.outcome, display: teamDisplayForStorage(t.outcome.display) } }
+    : t;
 }

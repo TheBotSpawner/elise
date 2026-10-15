@@ -257,6 +257,8 @@ export function Block({ block, timezone }: { block: ExperienceBlock; timezone: s
       return <NewsBlock block={block} />;
     case "knowledge":
       return <KnowledgeBlock block={block} />;
+    case "slack":
+      return <SlackBlock block={block} timezone={timezone} />;
     case "focus":
       return <FocusBlock block={block} timezone={timezone} />;
     case "issues":
@@ -546,6 +548,44 @@ function KnowledgeBlock({ block }: { block: Of<"knowledge"> }) {
         </ul>
       )}
     </>
+  );
+}
+
+/** Slack (ADR-062): the chosen channels' recent messages, each linking back to Slack. */
+function SlackBlock({ block, timezone }: { block: Of<"slack">; timezone: string }) {
+  const f = useTime(timezone);
+  return (
+    <div className="flex flex-col gap-3">
+      {block.slack.channels
+        .filter((c) => c.messages.length)
+        .map((c) => (
+          <div key={`${c.workspace}:${c.channel}`} className="flex flex-col gap-1">
+            <p className="text-[12.5px] text-faint">
+              {c.channel} · {c.workspace}
+            </p>
+            <ul className="flex flex-col gap-1.5 text-[14px]">
+              {c.messages.map((m) => (
+                <li key={`${m.date}:${m.author}`} className="min-w-0">
+                  <span className="font-medium">{m.author}</span>{" "}
+                  <span className="font-mono text-[12px] text-faint">{f.time(m.date)}</span>{" "}
+                  {m.url ? (
+                    <a
+                      href={m.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted hover:text-fg"
+                    >
+                      {m.text}
+                    </a>
+                  ) : (
+                    <span className="text-muted">{m.text}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+    </div>
   );
 }
 

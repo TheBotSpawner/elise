@@ -49,6 +49,12 @@ export const SURFACE_TYPES = [
   "goal",
   "goals_overview",
   "vision",
+  /**
+   * Team Messaging (ADR-062): one results Surface and one thread Surface per interaction — a new
+   * search or thread updates them in place, never a window per message.
+   */
+  "team_messages",
+  "team_thread",
   "result",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];

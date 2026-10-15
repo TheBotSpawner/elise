@@ -13,7 +13,7 @@ export default async function ContextsPage() {
   const profiles = await listContextProfiles(auth, true);
   return (
     <PageContainer>
-      <PageHeader title={t.myElise.contexts.title} subtitle={t.myElise.contexts.subtitle} />
+      <PageHeader title={t.myElise.contexts.title} info={[t.myElise.contexts.subtitle]} />
       <ContextsIndex
         contexts={profiles
           .filter((p) => !p.section)

@@ -81,4 +81,19 @@ export interface KnowledgeManager {
   syncSource(sourceId: string): Promise<"started" | "already_syncing" | "not_syncable">;
   /** A chat attachment saved into Knowledge: same bytes, its extraction reused. */
   saveAttachment(attachmentId: string, spaceId: string): Promise<{ itemId: string; title: string }>;
+  /**
+   * An explicit snapshot of live external content the user asked to keep (a Slack thread),
+   * stored as a document with its provenance. Never called on ELISE's own initiative.
+   */
+  saveSnapshot(
+    spaceId: string,
+    snapshot: {
+      title: string;
+      url: string | null;
+      /** Markdown, provenance included. */
+      text: string;
+      /** Where it came from: stored in the item's metadata, never content. */
+      origin: { kind: string } & Record<string, string | number | null>;
+    },
+  ): Promise<{ itemId: string }>;
 }

@@ -1,12 +1,21 @@
 "use client";
 
-import { BookOpenCheck, Download, FileUp, Plus, RotateCcw, Sparkles, X } from "lucide-react";
+import {
+  BookOpenCheck,
+  ChevronDown,
+  Download,
+  FileUp,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { MethodCard, MethodDetail } from "@/application/methods-service";
-import { InfoTip } from "@/components/shared/info-tip";
+import { InfoTip, LabelWithInfo } from "@/components/shared/info-tip";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Select } from "@/components/ui/input";
@@ -136,30 +145,31 @@ export function MethodsPanel({
   return (
     <section className="flex flex-col gap-3" aria-label={tm.title}>
       <div className="flex flex-col gap-2">
-        {space ? (
-          // In Knowledge the hierarchy and examples live behind ⓘ.
-          heading && (
-            <div className="flex items-center gap-1">
-              <h2 className="type-label text-faint">{tm.title}</h2>
-              <InfoTip
-                label={tm.about}
-                body={[
-                  space.general
-                    ? tm.infoGeneral
-                    : parent
-                      ? tm.infoSection(parent.name)
-                      : tm.infoSpace,
-                ]}
-                examples={tm.examples}
+        {space
+          ? // In Knowledge the hierarchy and examples live behind ⓘ.
+            heading && (
+              <div className="flex items-center gap-1">
+                <h2 className="type-label text-faint">{tm.title}</h2>
+                <InfoTip
+                  label={tm.about}
+                  body={[
+                    space.general
+                      ? tm.infoGeneral
+                      : parent
+                        ? tm.infoSection(parent.name)
+                        : tm.infoSpace,
+                  ]}
+                  examples={tm.examples}
+                />
+              </div>
+            )
+          : // My Elise: what Methods are lives behind the page title's ⓘ.
+            heading && (
+              <LabelWithInfo
+                title={tm.title}
+                info={{ label: tm.about, body: [tm.subtitle], examples: tm.examples }}
               />
-            </div>
-          )
-        ) : (
-          <div className="flex flex-col gap-1">
-            {heading && <h2 className="type-label text-faint">{tm.title}</h2>}
-            <p className="text-[13px] text-muted">{tm.subtitle}</p>
-          </div>
-        )}
+            )}
         <div className="flex flex-wrap gap-2">
           <input
             ref={importInput}
@@ -284,8 +294,9 @@ export function MethodsPanel({
         // General Knowledge's Methods are the workspace-wide ones (ADR-047).
         defaultSpaceId={space?.general ? null : (space?.id ?? null)}
         onClose={() => setEditing(null)}
-        onSaved={(id) => {
-          void open(id);
+        // Saved: the editor closes and the card list shows the change (new or edited).
+        onSaved={() => {
+          setEditing(null);
           router.refresh();
         }}
       />
@@ -316,7 +327,7 @@ function MethodEditor({
   spaces: SpaceRef[];
   defaultSpaceId: string | null;
   onClose: () => void;
-  onSaved: (id: string) => void;
+  onSaved: () => void;
 }) {
   const { t } = useI18n();
   const tm = t.methods;
@@ -337,7 +348,12 @@ function MethodEditor({
   const [summary, setSummary] = useState("");
   const [tell, setTell] = useState("");
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // Guards a second click in the same tick, before `saving` re-renders.
+  const savingNow = useRef(false);
   const [uploading, setUploading] = useState(false);
+  // Optional, so it starts closed: the name, purpose and instructions are what matter first.
+  const [materialOpen, setMaterialOpen] = useState(false);
   const [paste, setPaste] = useState<{ kind: ReferenceKind; title: string; content: string }>({
     kind: "example",
     title: "",
@@ -365,18 +381,23 @@ function MethodEditor({
     return r.value;
   }
 
+  /**
+   * A successful save closes the editor (the parent refreshes the cards). A failed one keeps it
+   * open with everything typed, so nothing is lost. One save at a time.
+   */
   async function save() {
+    if (savingNow.current) return;
+    savingNow.current = true;
     const input = { ...form };
-    if (methodId) {
-      const r = await act(() => updateMethodAction(methodId, input, summary), tm.saved);
-      if (r) {
-        setSummary("");
-        await reload(methodId);
-        router.refresh();
-      }
-    } else {
-      const r = await act(() => createMethodAction(input, initial?.itemId), tm.saved);
-      if (r) onSaved(r.id);
+    setSaving(true);
+    try {
+      const r = methodId
+        ? await act(() => updateMethodAction(methodId, input, summary), tm.saved)
+        : await act(() => createMethodAction(input, initial?.itemId), tm.saved);
+      if (r) onSaved();
+    } finally {
+      savingNow.current = false;
+      setSaving(false);
     }
   }
 
@@ -545,120 +566,144 @@ function MethodEditor({
         )}
 
         <section className="flex flex-col gap-2 border-t border-border pt-4">
-          <h3 className="text-[13px] font-medium">{tm.material}</h3>
-          <p className="text-[12.5px] text-muted">{methodId ? tm.materialHint : tm.saveFirst}</p>
-          {detail && detail.references.length > 0 && (
-            <ul className="flex flex-col gap-1">
-              {detail.references.map((r) => (
-                <li
-                  key={r.id}
-                  className="flex items-center justify-between gap-2 rounded-xl bg-surface-2/50 px-3 py-2 text-[13px]"
-                >
-                  <span className="min-w-0 truncate">
-                    <span className="text-faint">{tm.kinds[r.kind]} · </span>
-                    {r.title}
-                  </span>
+          <h3>
+            <button
+              type="button"
+              aria-expanded={materialOpen}
+              aria-controls="method-material"
+              onClick={() => setMaterialOpen((o) => !o)}
+              className="-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-2 rounded-xl px-2 py-1.5 text-left text-[13px] font-medium transition-colors hover:bg-active focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            >
+              <span>
+                {tm.material}
+                {detail?.references.length ? (
+                  <span className="font-normal text-faint"> · {detail.references.length}</span>
+                ) : null}
+              </span>
+              <ChevronDown
+                className={cn(
+                  "size-4 text-faint transition-transform duration-[var(--dur-xs)]",
+                  materialOpen && "rotate-180",
+                )}
+                aria-hidden
+              />
+            </button>
+          </h3>
+          <div id="method-material" hidden={!materialOpen} className="flex flex-col gap-2">
+            <p className="text-[12.5px] text-muted">{methodId ? tm.materialHint : tm.saveFirst}</p>
+            {detail && detail.references.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {detail.references.map((r) => (
+                  <li
+                    key={r.id}
+                    className="flex items-center justify-between gap-2 rounded-xl bg-surface-2/50 px-3 py-2 text-[13px]"
+                  >
+                    <span className="min-w-0 truncate">
+                      <span className="text-faint">{tm.kinds[r.kind]} · </span>
+                      {r.title}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label={tm.remove}
+                      disabled={busy}
+                      onClick={() =>
+                        void act(() => removeReferenceAction(methodId!, r.id)).then(
+                          (x) => x !== null && reload(methodId!),
+                        )
+                      }
+                    >
+                      <X />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {methodId && (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select
+                    aria-label={tm.material}
+                    className="h-8 w-auto text-[13px]"
+                    value={refKind}
+                    onChange={(e) => setRefKind(e.target.value as ReferenceKind)}
+                  >
+                    {REFERENCE_KINDS.map((k) => (
+                      <option key={k} value={k}>
+                        {tm.kinds[k]}
+                      </option>
+                    ))}
+                  </Select>
+                  <input
+                    ref={fileInput}
+                    type="file"
+                    accept={MATERIAL_ACCEPT}
+                    className="sr-only"
+                    tabIndex={-1}
+                    onChange={(e) => {
+                      void addFile(e.target.files?.[0]);
+                      e.target.value = "";
+                    }}
+                  />
                   <Button
-                    size="icon"
+                    size="sm"
                     variant="ghost"
-                    aria-label={tm.remove}
-                    disabled={busy}
-                    onClick={() =>
-                      void act(() => removeReferenceAction(methodId!, r.id)).then(
-                        (x) => x !== null && reload(methodId!),
-                      )
+                    disabled={uploading || busy}
+                    onClick={() => fileInput.current?.click()}
+                  >
+                    <FileUp />
+                    {uploading ? tm.uploading : tm.addFile}
+                  </Button>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <Input
+                    aria-label={tm.pasteTitle}
+                    placeholder={tm.pasteTitle}
+                    value={paste.title}
+                    maxLength={200}
+                    onChange={(e) => setPaste((p) => ({ ...p, title: e.target.value }))}
+                  />
+                  <Select
+                    aria-label={tm.material}
+                    value={paste.kind}
+                    onChange={(e) =>
+                      setPaste((p) => ({ ...p, kind: e.target.value as ReferenceKind }))
                     }
                   >
-                    <X />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {methodId && (
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Select
-                  aria-label={tm.material}
-                  className="h-8 w-auto text-[13px]"
-                  value={refKind}
-                  onChange={(e) => setRefKind(e.target.value as ReferenceKind)}
-                >
-                  {REFERENCE_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {tm.kinds[k]}
-                    </option>
-                  ))}
-                </Select>
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept={MATERIAL_ACCEPT}
-                  className="sr-only"
-                  tabIndex={-1}
-                  onChange={(e) => {
-                    void addFile(e.target.files?.[0]);
-                    e.target.value = "";
-                  }}
+                    {REFERENCE_KINDS.map((k) => (
+                      <option key={k} value={k}>
+                        {tm.kinds[k]}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <textarea
+                  aria-label={tm.pasteText}
+                  placeholder={tm.pasteText}
+                  rows={3}
+                  value={paste.content}
+                  onChange={(e) => setPaste((p) => ({ ...p, content: e.target.value }))}
+                  className={TEXTAREA}
                 />
                 <Button
                   size="sm"
                   variant="ghost"
-                  disabled={uploading || busy}
-                  onClick={() => fileInput.current?.click()}
-                >
-                  <FileUp />
-                  {uploading ? tm.uploading : tm.addFile}
-                </Button>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                <Input
-                  aria-label={tm.pasteTitle}
-                  placeholder={tm.pasteTitle}
-                  value={paste.title}
-                  maxLength={200}
-                  onChange={(e) => setPaste((p) => ({ ...p, title: e.target.value }))}
-                />
-                <Select
-                  aria-label={tm.material}
-                  value={paste.kind}
-                  onChange={(e) =>
-                    setPaste((p) => ({ ...p, kind: e.target.value as ReferenceKind }))
+                  className="self-start"
+                  disabled={busy || !paste.title.trim() || !paste.content.trim()}
+                  onClick={() =>
+                    void act(() => addTextReferenceAction(methodId, paste)).then(async (x) => {
+                      if (x === null) return;
+                      setPaste({ kind: "example", title: "", content: "" });
+                      await reload(methodId);
+                    })
                   }
                 >
-                  {REFERENCE_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {tm.kinds[k]}
-                    </option>
-                  ))}
-                </Select>
+                  <Plus />
+                  {tm.addText}
+                </Button>
               </div>
-              <textarea
-                aria-label={tm.pasteText}
-                placeholder={tm.pasteText}
-                rows={3}
-                value={paste.content}
-                onChange={(e) => setPaste((p) => ({ ...p, content: e.target.value }))}
-                className={TEXTAREA}
-              />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="self-start"
-                disabled={busy || !paste.title.trim() || !paste.content.trim()}
-                onClick={() =>
-                  void act(() => addTextReferenceAction(methodId, paste)).then(async (x) => {
-                    if (x === null) return;
-                    setPaste({ kind: "example", title: "", content: "" });
-                    await reload(methodId);
-                  })
-                }
-              >
-                <Plus />
-                {tm.addText}
-              </Button>
-            </div>
-          )}
+            )}
+          </div>
         </section>
 
         {detail && detail.versions.length > 0 && (
@@ -740,12 +785,17 @@ function MethodEditor({
               {tm.cancel}
             </Button>
             <Button
+              aria-busy={saving}
               disabled={
-                busy || !form.name.trim() || !form.description.trim() || !form.instructions.trim()
+                busy ||
+                saving ||
+                !form.name.trim() ||
+                !form.description.trim() ||
+                !form.instructions.trim()
               }
               onClick={() => void save()}
             >
-              {tm.save}
+              {saving ? tm.saving : tm.save}
             </Button>
           </div>
         </div>

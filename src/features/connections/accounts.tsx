@@ -123,7 +123,7 @@ function setExpanded(id: string, open: boolean) {
   expandedListeners.forEach((l) => l());
 }
 /** `openOnce`: shown expanded in this view only (just connected), not remembered. */
-function useExpanded(id: string, openOnce = false): [boolean, (open: boolean) => void] {
+export function useExpanded(id: string, openOnce = false): [boolean, (open: boolean) => void] {
   const raw = useSyncExternalStore(subscribeExpanded, readExpanded, () => "[]");
   const [override, setOverride] = useState<boolean | null>(openOnce ? true : null);
   return [
@@ -656,7 +656,9 @@ export function DisconnectButton({ connection: c }: { connection: ConnectionView
         ? t.connections.disconnectMusicConsequences
         : c.providerKey === "microsoft"
           ? t.connections.disconnectMicrosoftConsequences
-          : t.connections.disconnectGoogleConsequences;
+          : c.providerKey === "slack"
+            ? t.connections.disconnectSlackConsequences
+            : t.connections.disconnectGoogleConsequences;
   return (
     <>
       <Button

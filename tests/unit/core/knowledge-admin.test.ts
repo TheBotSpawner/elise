@@ -187,6 +187,10 @@ function fakeKnowledge() {
       rec("saveAttachment", id, to),
       { itemId: `i-${id}`, title: "chapter.pdf" }
     ),
+    saveSnapshot: async (to, snapshot) => (
+      rec("saveSnapshot", to, snapshot.title),
+      { itemId: "i-snapshot" }
+    ),
   };
   const { ports, log } = makePorts(undefined, { internal: impl });
   const call = (name: string, args: unknown) => executeToolCall(ports, makeCtx(), { name, args });

@@ -434,6 +434,8 @@ export type ConnectionSecretRow = {
   provider_key: string;
   ciphertext: string;
   access_token_expires_at: Ts | null;
+  /** One refresher at a time for single-use refresh tokens (migration 046). */
+  refresh_lease_until: Ts | null;
   created_at: Ts;
   updated_at: Ts;
 };

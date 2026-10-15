@@ -36,6 +36,13 @@ import type {
   StructuredSource,
 } from "../capabilities/structured";
 import type { Task, TaskList, TaskProvider } from "../capabilities/tasks";
+import type {
+  TeamAccess,
+  TeamFile,
+  TeamMessage,
+  TeamMessagingProvider,
+  TeamThread,
+} from "../capabilities/team-messaging";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { ContextKind, ContextStore } from "../contexts/model";
 import type { FinanceReport } from "../finance/report";
@@ -155,6 +162,8 @@ export interface CapabilityProviders {
   music: MusicProvider;
   /** The user's own timers, Pomodoros and stopwatches (ADR-045). */
   time: TimerStore;
+  /** Workspace messaging (Slack), read live (ADR-062). */
+  team_messaging: TeamMessagingProvider;
 }
 
 export type ImplementedCapability = keyof CapabilityProviders;
@@ -231,6 +240,47 @@ export type ToolDisplay =
       kind: "email_followups";
       followUp: "needs_reply" | "waiting_on_others";
       items: FollowUp[];
+    }
+  /**
+   * Team Messaging (ADR-062): live results with provenance and permalinks. Message text is
+   * third-party data shown now; it is stripped before a turn is stored (teamDisplayForStorage).
+   */
+  | {
+      kind: "team_messages";
+      /** What was searched ("propuesta RSFA"), or null for a channel's recent messages. */
+      query: string | null;
+      /** The channel these come from, when it was one channel ("#sales"). */
+      channel: string | null;
+      messages: TeamMessage[];
+      files: TeamFile[];
+      /** Kinds of conversations the connection isn't allowed to read (not searched). */
+      notSearched: TeamAccess[];
+      /** Workspaces that couldn't be searched (cross-workspace search). */
+      unavailable?: string[];
+    }
+  | { kind: "team_thread"; thread: TeamThread }
+  | {
+      kind: "team_draft";
+      /** "drafted": prepared, not sent. "preview": what the approval covers. "sent": confirmed. */
+      change: "drafted" | "preview" | "sent";
+      draft: {
+        /** Destination ref (channel or person) and how the user sees it ("Rod Díaz", "#sales"). */
+        to: string;
+        toLabel: string;
+        text: string;
+        /** Replying in this thread, if any. */
+        threadId: string | null;
+        workspace: string;
+        source: string;
+      };
+      /** The posted message, once the provider confirmed it. */
+      sent?: { id: string; url: string | null; date: string };
+    }
+  | {
+      kind: "team_reaction";
+      emoji: string;
+      on: boolean;
+      workspace: string;
     }
   /** Native data, computed by ELISE (progress is never the model's arithmetic). */
   | { kind: "habits"; progress: HabitProgress[] }
@@ -469,6 +519,8 @@ export interface ToolRunResult<TOutput> {
   output: TOutput;
   display?: ToolDisplay;
   target?: { type: string; id: string };
+  /** Value-free facts a write adds to its audit event (destination, provider ids, permalink). */
+  audit?: Record<string, string | null>;
 }
 
 export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
@@ -495,6 +547,11 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
   pin?(input: TInput, env: ToolRunEnv): Promise<TInput>;
   /** New outbound writes: ask which account instead of using the global default. */
   strictDestination?: boolean;
+  /**
+   * A read that should use one account, not every one: ask when several fit instead of searching
+   * them all (e.g. one Slack workspace unless the user asked for all of them). Default: no.
+   */
+  singleAccount?(input: TInput): boolean;
   /**
    * A complete answer for a successful result that needs no interpretation ("Listo, ahora uso
    * verde."), in the user's language. When every call of a model turn has one, the runtime

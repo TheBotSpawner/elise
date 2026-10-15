@@ -236,6 +236,10 @@ export async function executeToolCall(
         // An existing item already names its account; a named destination only picks new ones.
         destination: route ? null : readDestination(input),
         strict: operation.kind !== "read" && Boolean(tool.strictDestination),
+        // Opt-in (Team Messaging): one account, preferring the one the conversation is about.
+        ...(tool.singleAccount
+          ? { single: tool.singleAccount(input), hint: ctx.context?.name ?? null }
+          : {}),
       });
   if (resolution.kind === "unavailable") {
     return trace(
@@ -437,7 +441,7 @@ async function aggregateRead(
   if (unavailable.length === 0) return merged;
   // Partial failures stay visible to the model and the user, never silently dropped.
   const display =
-    merged.display?.kind === "email_list"
+    merged.display?.kind === "email_list" || merged.display?.kind === "team_messages"
       ? { ...merged.display, unavailable: unavailable.map((u) => u.account) }
       : merged.display;
   return { ...merged, display, output: { ...(merged.output as object), unavailable } };
@@ -610,6 +614,7 @@ async function runWrite(
       providerKey: binding.providerKey,
       connectionId: binding.connectionId,
       result: "success",
+      ...(result.audit ? { metadata: result.audit } : {}),
     });
     return trace(binding, actionId, {
       status: "succeeded",

@@ -5,6 +5,7 @@ import { invalidEnvKeys, serverEnv } from "@/config/server-env";
 import { isGoogleConfigured } from "@/infrastructure/providers/google/config";
 import { isMicrosoftConfigured } from "@/infrastructure/providers/microsoft/config";
 import { isNotionConfigured } from "@/infrastructure/providers/notion/oauth";
+import { isSlackConfigured } from "@/infrastructure/providers/slack/config";
 
 /**
  * Internal health model (ADR-019). One place that knows which parts of ELISE can work right
@@ -21,6 +22,7 @@ export type HealthDomain =
   | "google"
   | "microsoft"
   | "notion"
+  | "slack"
   | "encryption";
 
 export type DomainState = "ready" | "not_configured" | "down";
@@ -42,6 +44,7 @@ export function configuredDomains(): Record<HealthDomain, DomainState> {
     google: state(isGoogleConfigured()),
     microsoft: state(isMicrosoftConfigured()),
     notion: state(isNotionConfigured()),
+    slack: state(isSlackConfigured()),
     encryption: state(Boolean(env.ELISE_ENCRYPTION_KEY && env.SUPABASE_SECRET_KEY)),
   };
 }

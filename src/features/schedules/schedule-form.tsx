@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import {
   BRIEF_BLOCKS,
   BRIEF_HORIZONS,
   DEFAULT_BRIEF_BLOCKS,
+  MAX_BRIEF_CHANNELS,
   type BriefBlock,
   type BriefHorizon,
   type ScheduleInput,
@@ -20,7 +21,7 @@ import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-import { createScheduleAction, updateScheduleAction } from "./actions";
+import { createScheduleAction, slackChannelsAction, updateScheduleAction } from "./actions";
 import { BrowserNotificationsPrompt } from "./browser-notifications";
 import { describeWhen } from "./format";
 
@@ -40,6 +41,7 @@ export function blankTask(timezone: string): ScheduleInput {
       horizon: "today",
       knowledgeSpaceId: null,
       weatherLocation: null,
+      slack: { connectionId: null, channels: [], window: "since_previous" },
       methodId: null,
       preset: null,
     },
@@ -78,9 +80,12 @@ export function ScheduleForm({
   initial,
   scheduleId,
   spaces,
+  slackWorkspaces = [],
   methods = [],
   onDone,
 }: {
+  /** Connected Slack workspaces: the Slack block is offered only when there is one. */
+  slackWorkspaces?: { id: string; name: string }[];
   /** Methods the task can follow: the schedule says when, the Method how (ADR-040 §O). */
   methods?: { id: string; name: string }[];
   initial: ScheduleInput;
@@ -139,6 +144,11 @@ export function ScheduleForm({
   const days = v.definition.kind === "weekly" ? v.definition.days : [];
   const blocks = v.configuration.blocks;
   const needsSpace = blocks.includes("knowledge") && !v.configuration.knowledgeSpaceId;
+  const slack = v.configuration.slack;
+  const needsSlack = blocks.includes("slack") && (!slack.connectionId || !slack.channels.length);
+  const offered = BRIEF_BLOCKS.filter(
+    (b) => b !== "slack" || slackWorkspaces.length > 0 || blocks.includes("slack"),
+  );
   const setConfig = (patch: Partial<ScheduleInput["configuration"]>) =>
     setV((s) => ({ ...s, configuration: { ...s.configuration, ...patch } }));
 
@@ -290,7 +300,7 @@ export function ScheduleForm({
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1.5 text-sm font-medium">{t.schedules.form.looksAt}</legend>
         <div className="grid gap-2 sm:grid-cols-2">
-          {BRIEF_BLOCKS.map((b) => (
+          {offered.map((b) => (
             <label
               key={b}
               className="flex h-11 cursor-pointer items-center gap-3 rounded-xl border border-border-strong px-3.5 text-sm has-[:checked]:border-accent has-[:checked]:bg-accent-soft"
@@ -361,6 +371,13 @@ export function ScheduleForm({
             <p className="text-[12.5px] text-faint">{t.schedules.form.newsTopicsHint}</p>
           </div>
         )}
+        {blocks.includes("slack") && (
+          <SlackBriefSettings
+            workspaces={slackWorkspaces}
+            value={slack}
+            onChange={(next) => setConfig({ slack: next })}
+          />
+        )}
         {blocks.includes("weather") && (
           <div className="mt-2 flex flex-col gap-1.5">
             <Label htmlFor="schedule-weather-location">{t.schedules.form.weatherLocation}</Label>
@@ -416,6 +433,7 @@ export function ScheduleForm({
             !v.name.trim() ||
             blocks.length === 0 ||
             needsSpace ||
+            needsSlack ||
             (!once && days.length === 0)
           }
         >
@@ -423,5 +441,126 @@ export function ScheduleForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+type SlackConfig = ScheduleInput["configuration"]["slack"];
+
+/**
+ * Which Slack conversations a brief reads (ADR-062): one workspace, a few chosen channels and a
+ * window. ELISE reads only these, live, at run time — never the whole workspace.
+ */
+function SlackBriefSettings({
+  workspaces,
+  value,
+  onChange,
+}: {
+  workspaces: { id: string; name: string }[];
+  value: SlackConfig;
+  onChange: (next: SlackConfig) => void;
+}) {
+  const { t } = useI18n();
+  const f = t.schedules.form;
+  const [channels, setChannels] = useState<{ id: string; name: string }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const connectionId = value.connectionId;
+
+  useEffect(() => {
+    if (!connectionId) return;
+    let live = true;
+    void slackChannelsAction(connectionId).then((r) => {
+      if (!live) return;
+      if (r.ok) setChannels(r.value);
+      else setError(errorText(t, r.error));
+    });
+    return () => {
+      live = false;
+    };
+  }, [connectionId, t]);
+
+  const chosen = new Set(value.channels.map((c) => c.id));
+  // Channels already chosen stay visible even before the list loads (or if it can't).
+  const shown = [...value.channels, ...(channels ?? []).filter((c) => !chosen.has(c.id))];
+  const toggle = (c: { id: string; name: string }) =>
+    onChange({
+      ...value,
+      channels: chosen.has(c.id)
+        ? value.channels.filter((x) => x.id !== c.id)
+        : [...value.channels, c].slice(0, MAX_BRIEF_CHANNELS),
+    });
+
+  return (
+    <div className="mt-2 flex flex-col gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="schedule-slack-workspace">{f.slackWorkspace}</Label>
+          <Select
+            id="schedule-slack-workspace"
+            value={connectionId ?? ""}
+            required
+            onChange={(e) => {
+              setChannels(null);
+              setError(null);
+              onChange({ ...value, connectionId: e.target.value || null, channels: [] });
+            }}
+          >
+            <option value="">{f.slackWorkspacePlaceholder}</option>
+            {workspaces.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="schedule-slack-window">{f.slackWindow}</Label>
+          <Select
+            id="schedule-slack-window"
+            value={value.window}
+            onChange={(e) =>
+              onChange({ ...value, window: e.target.value as SlackConfig["window"] })
+            }
+          >
+            <option value="since_previous">{f.slackWindows.since_previous}</option>
+            <option value="24h">{f.slackWindows["24h"]}</option>
+          </Select>
+        </div>
+      </div>
+      {connectionId && (
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="mb-1 text-[13px] text-muted">
+            {f.slackChannels(MAX_BRIEF_CHANNELS)}
+          </legend>
+          {error ? (
+            <p className="text-[12.5px] text-approval-text">{error}</p>
+          ) : channels === null && !shown.length ? (
+            <p className="text-[12.5px] text-faint">{f.slackLoading}</p>
+          ) : (
+            <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto">
+              {shown.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-pressed={chosen.has(c.id)}
+                  disabled={!chosen.has(c.id) && value.channels.length >= MAX_BRIEF_CHANNELS}
+                  onClick={() => toggle(c)}
+                  className={cn(
+                    "h-8 rounded-full border px-3 text-[13px] transition-colors disabled:opacity-40",
+                    chosen.has(c.id)
+                      ? "border-accent bg-accent-soft text-accent-text"
+                      : "border-border-strong text-muted hover:text-fg",
+                  )}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {!value.channels.length && (
+            <p className="text-[12.5px] text-approval-text">{f.slackChannelRequired}</p>
+          )}
+        </fieldset>
+      )}
+    </div>
   );
 }

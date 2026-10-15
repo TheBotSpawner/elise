@@ -2069,3 +2069,22 @@ Confirm to User
 > Approvals keep important decisions with the user.
 >
 > Execution results define what actually happened.
+
+
+---
+
+# 100. Implemented: Team Messaging actions (ADR-062)
+
+| Operation | Kind | Default |
+| --- | --- | --- |
+| search, listChannels, findUser, getRecent, getThread, getMessage | read | automatic |
+| draftMessage | write (nothing leaves ELISE) | automatic |
+| sendMessage, reply | external_communication | always asks |
+| addReaction, removeReaction | write | automatic, audited |
+| saveToKnowledge | write | automatic, only on request |
+
+- **What the approval covers:** a send's destination is resolved before approval (exactly one
+  person or channel; several matches → ELISE asks). The approval covers that destination and the
+  exact text.
+- **After approval:** any change is a CONFLICT and nothing is sent.
+- **Audit:** provider, workspace, destination, message ref, time and permalink, never the text.

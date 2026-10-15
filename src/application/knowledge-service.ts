@@ -1358,19 +1358,72 @@ export async function saveWebPageToKnowledge(
     text: string;
   },
 ): Promise<{ itemId: string }> {
+  const title = (page.title || page.domain).slice(0, 500);
+  return saveMarkdownToKnowledge(auth, spaceId, {
+    title,
+    url: page.url,
+    markdown: [
+      `# ${title}`,
+      "",
+      `Source: ${page.url}`,
+      `Retrieved: ${page.retrievedAt.slice(0, 10)}${page.publishedAt ? ` · Published: ${page.publishedAt.slice(0, 10)}` : ""}`,
+      "",
+      page.text,
+    ].join("\n"),
+    fileName: `${page.domain}.md`,
+    metadata: {
+      web: {
+        url: page.url,
+        domain: page.domain,
+        retrievedAt: page.retrievedAt,
+        publishedAt: page.publishedAt,
+      },
+    },
+    audit: { event: "knowledge.web_saved", metadata: { domain: page.domain } },
+  });
+}
+
+/**
+ * An explicit snapshot of live external content (a Slack thread, ADR-062), saved only because the
+ * user asked: a Markdown document whose metadata says exactly where it came from.
+ */
+export async function saveSnapshotToKnowledge(
+  auth: AuthContext,
+  spaceId: string,
+  snapshot: {
+    title: string;
+    url: string | null;
+    text: string;
+    origin: { kind: string } & Record<string, string | number | null>;
+  },
+): Promise<{ itemId: string }> {
+  return saveMarkdownToKnowledge(auth, spaceId, {
+    title: snapshot.title.slice(0, 500),
+    url: snapshot.url,
+    markdown: snapshot.text,
+    fileName: `${snapshot.origin.kind}-snapshot.md`,
+    metadata: { snapshot: { ...snapshot.origin, savedAt: new Date().toISOString() } },
+    // Provenance only: the audit trail never carries the content.
+    audit: { event: "knowledge.snapshot_saved", metadata: { origin: snapshot.origin.kind } },
+  });
+}
+
+async function saveMarkdownToKnowledge(
+  auth: AuthContext,
+  spaceId: string,
+  doc: {
+    title: string;
+    url: string | null;
+    markdown: string;
+    fileName: string;
+    metadata: Record<string, unknown>;
+    audit: { event: string; metadata: Record<string, string> };
+  },
+): Promise<{ itemId: string }> {
   await ownSpace(auth, spaceId);
   const sourceId = await uploadSource(auth, spaceId);
   const admin = createAdminClient();
-  const title = (page.title || page.domain).slice(0, 500);
-  const markdown = [
-    `# ${title}`,
-    "",
-    `Source: ${page.url}`,
-    `Retrieved: ${page.retrievedAt.slice(0, 10)}${page.publishedAt ? ` · Published: ${page.publishedAt.slice(0, 10)}` : ""}`,
-    "",
-    page.text,
-  ].join("\n");
-  const bytes = new TextEncoder().encode(markdown);
+  const bytes = new TextEncoder().encode(doc.markdown);
   const { data: item, error } = await admin
     .from("knowledge_items")
     .insert({
@@ -1379,30 +1432,23 @@ export async function saveWebPageToKnowledge(
       source_id: sourceId,
       item_type: "file",
       external_id: crypto.randomUUID(),
-      title,
-      source_url: page.url,
+      title: doc.title,
+      source_url: doc.url,
       mime_type: "text/markdown",
-      metadata: json({
-        web: {
-          url: page.url,
-          domain: page.domain,
-          retrievedAt: page.retrievedAt,
-          publishedAt: page.publishedAt,
-        },
-      }),
+      metadata: json(doc.metadata),
       created_by_user_id: auth.userId,
     })
     .select("id")
     .single();
-  if (error) throw new AppError("INTERNAL_ERROR", "Could not save the page", { cause: error });
+  if (error) throw new AppError("INTERNAL_ERROR", "Could not save the document", { cause: error });
   const target = await newUploadVersion(auth, item.id, 1, {
-    name: `${page.domain}.md`,
+    name: doc.fileName,
     size: bytes.length,
     mimeType: "text/markdown",
   });
   await uploadOriginal(auth.workspaceId, target.path, bytes, "text/markdown");
   await completeUploads(auth, [target.versionId]);
-  await audit(auth, "knowledge.web_saved", "knowledge_item", item.id, { domain: page.domain });
+  await audit(auth, doc.audit.event, "knowledge_item", item.id, doc.audit.metadata);
   return { itemId: item.id };
 }
 

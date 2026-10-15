@@ -11,7 +11,11 @@ export default async function HabitsPage({ searchParams }: PageProps<"/my-elise/
   const data = await habitsWorkspace(auth, parseHabitParams(raw));
   return (
     <PageContainer wide>
-      <PageHeader title={t.native.habits.title} icon={MY_ELISE_ICONS.habits} />
+      <PageHeader
+        title={t.native.habits.title}
+        icon={MY_ELISE_ICONS.habits}
+        info={[t.native.habits.subtitle]}
+      />
       <HabitsView data={data} workspaceId={auth.workspaceId} />
     </PageContainer>
   );

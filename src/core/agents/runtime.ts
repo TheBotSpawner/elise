@@ -444,6 +444,19 @@ function emailNote(display: ToolDisplay): string | null {
         .slice(0, 5)
         .map((f) => `"${f.subject}" (thread ${f.threadId})`)
         .join("; ")}`;
+    // Team messages: refs and provenance only (never the text) for "ese thread", "ese mensaje".
+    case "team_messages":
+      return `${display.messages.length} team messages: ${display.messages
+        .slice(0, 6)
+        .map(
+          (m) =>
+            `${m.author.name} in ${m.channel.name ?? "?"} ${m.date.slice(0, 16)} (message ${m.id}${m.threadId ? `, thread ${m.threadId}` : ""})`,
+        )
+        .join("; ")}`;
+    case "team_thread":
+      return `thread in ${display.thread.channel.name ?? "?"} (thread ${display.thread.id}, ${display.thread.messages.length} messages, latest message ${display.thread.messages.at(-1)?.id ?? "?"})`;
+    case "team_draft":
+      return `team message ${display.change} to ${display.draft.toLabel} (to ${display.draft.to}${display.sent ? `, message ${display.sent.id}` : ""})`;
     // The Method a turn followed or changed: the next turn can correct or update it.
     case "method":
       return methodNote(display);

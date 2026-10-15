@@ -14,7 +14,7 @@ export default async function FinanceReportPage({
   const [report, books] = await Promise.all([financeReport(auth, input), financeBooks(auth)]);
   return (
     <PageContainer wide>
-      <PageHeader title={t.finance.title} subtitle={t.finance.reports.subtitle} />
+      <PageHeader title={t.finance.title} info={[t.finance.reports.subtitle]} />
       <div className="mb-5">
         <FinanceNav active="reports" reportsHref="/my-elise/finance/reports" />
       </div>

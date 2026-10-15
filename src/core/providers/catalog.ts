@@ -112,10 +112,10 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
     id: "slack",
     name: "Slack",
     category: "communication",
-    capabilities: [],
-    keywords: ["mensajes", "messages", "canales", "channels", "chat", "equipo"],
+    capabilities: ["team_messaging"],
+    keywords: ["mensajes", "messages", "canales", "channels", "chat", "equipo", "threads", "hilos"],
     multiAccount: true,
-    availability: "planned",
+    availability: "live",
   },
   {
     id: "github",

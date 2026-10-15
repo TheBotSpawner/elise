@@ -15,6 +15,7 @@ import {
   startGoogleConnection,
   startMicrosoftConnection,
   startNotionConnection,
+  startSlackConnection,
   startSpotifyConnection,
   enableYouTubeMusic,
 } from "@/application/connections-service";
@@ -23,7 +24,7 @@ import { logger } from "@/infrastructure/observability/logger";
 
 export type ConnectionActionResult = { ok: true } | { ok: false; error: PublicError };
 
-const capability = z.enum(["tasks", "calendar", "email", "knowledge", "finance"]);
+const capability = z.enum(["tasks", "calendar", "email", "knowledge", "finance", "team_messaging"]);
 
 async function origin(): Promise<string> {
   const h = await headers();
@@ -90,6 +91,41 @@ export async function connectMicrosoft(form: FormData): Promise<void> {
       reference: e.referenceId,
     });
     const q = new URLSearchParams({ provider: "microsoft", error: e.code, ref: e.referenceId });
+    if (setup) q.set("reason", setup);
+    redirect(`${returnPath}?${q}`);
+  }
+  redirect(url);
+}
+
+/**
+ * Starts Slack consent for the chosen permissions (ADR-062). With a connectionId it reconnects
+ * or extends that exact workspace connection (progressive authorization).
+ */
+export async function connectSlack(form: FormData): Promise<void> {
+  const auth = await requireAuthContext();
+  const connectionId = z
+    .uuid()
+    .optional()
+    .parse(form.get("connectionId") || undefined);
+  const returnPath = safeReturnPath(form.get("returnTo"));
+  let url: string;
+  try {
+    url = await startSlackConnection(auth, {
+      permissions: form.getAll("permission").map(String),
+      connectionId,
+      origin: await origin(),
+      returnPath,
+    });
+  } catch (error) {
+    const e = toAppError(error);
+    const setup = typeof e.details?.setup === "string" ? e.details.setup : null;
+    logger.warn("slack.oauth.start_failed", {
+      code: e.code,
+      setup,
+      missing: e.details?.missing,
+      reference: e.referenceId,
+    });
+    const q = new URLSearchParams({ provider: "slack", error: e.code, ref: e.referenceId });
     if (setup) q.set("reason", setup);
     redirect(`${returnPath}?${q}`);
   }

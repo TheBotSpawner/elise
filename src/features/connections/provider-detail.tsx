@@ -22,6 +22,7 @@ import {
 } from "./accounts";
 import { connectNotion, connectSpotify, enableYouTubeAction, setDefaultAction } from "./actions";
 import { ProviderIcon } from "./provider-icon";
+import { ConnectSlackAction, SlackConnectionCard } from "./slack";
 
 /**
  * Provider Detail (ADR-043): one provider and its accounts — each account compact until
@@ -52,7 +53,7 @@ export function ProviderDetail({
   const summary = summarize(entry, connections, configured);
   const multi = (key: string) => selectableFor(connections, key) > 1;
   const count =
-    providerId === "notion"
+    providerId === "notion" || providerId === "slack"
       ? h.workspaces(mine.length)
       : entry.multiAccount
         ? h.accounts(mine.length)
@@ -119,6 +120,14 @@ export function ProviderDetail({
                   multi={multi}
                   openOnce={c.id === opened || c.health !== "connected"}
                 />
+              ) : providerId === "slack" ? (
+                <SlackConnectionCard
+                  key={c.id}
+                  connection={c}
+                  available={configured}
+                  multi={multi("team_messaging")}
+                  openOnce={c.id === opened || c.health !== "connected"}
+                />
               ) : providerId === "notion" ? (
                 <NotionConnectionCard key={c.id} connection={c} notionAvailable={configured} />
               ) : (
@@ -169,6 +178,8 @@ function ConnectAction({
       return <ConnectGoogleAction label={label} />;
     case "microsoft":
       return <ConnectMicrosoftAction label={label} />;
+    case "slack":
+      return <ConnectSlackAction label={label} />;
     case "notion":
       return (
         <form action={connectNotion}>

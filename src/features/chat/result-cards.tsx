@@ -12,6 +12,12 @@ import { addDays, todayIn } from "@/core/time";
 import { agendaGroups, calendarItem, localRange } from "@/core/workspace/calendar";
 import { MethodLine } from "@/features/methods/method-line";
 import { ScheduleProposalCard } from "@/features/schedules/proposal-card";
+import {
+  TeamDraftCard,
+  TeamMessagesCard,
+  TeamReactionLine,
+  TeamThreadCard,
+} from "@/features/team-messaging/cards";
 import { WeatherView } from "@/features/workspace/canvas/weather";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -350,6 +356,14 @@ export function DisplayCard({
       return <FollowUpsCard display={display} timezone={timezone} rise={rise} />;
     case "email_changed":
       return <EmailChangedCard display={display} rise={rise} />;
+    case "team_messages":
+      return <TeamMessagesCard display={display} timezone={timezone} rise={rise} />;
+    case "team_thread":
+      return <TeamThreadCard display={display} timezone={timezone} rise={rise} />;
+    case "team_draft":
+      return <TeamDraftCard display={display} rise={rise} embedded={embedded} />;
+    case "team_reaction":
+      return <TeamReactionLine display={display} />;
     case "habits":
       return <HabitsCard display={display} rise={rise} />;
     case "habit_stats":

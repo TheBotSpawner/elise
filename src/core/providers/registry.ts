@@ -61,6 +61,15 @@ export const PROVIDERS: readonly ProviderDefinition[] = [
     status: "planned",
     sourceOfTruth: "external",
   },
+  // Slack (ADR-062): Team Messaging, searched live; one connection per user and workspace.
+  {
+    key: "slack",
+    authType: "oauth2",
+    supportsMultipleAccounts: true,
+    capabilities: ["team_messaging"],
+    status: "available",
+    sourceOfTruth: "external",
+  },
   {
     key: "web_search",
     authType: "api_key",

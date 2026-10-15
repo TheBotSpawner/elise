@@ -48,6 +48,31 @@ export class SupabaseCredentialVault implements CredentialVault {
     if (error) throw error;
   }
 
+  /**
+   * One refresher at a time per connection, across instances (single-use refresh tokens): a
+   * short lease taken only if free or expired. Returns whether this caller holds it.
+   */
+  async acquireRefreshLease(ref: ConnectionRef, ms = 30_000): Promise<boolean> {
+    const now = new Date();
+    const { data, error } = await this.admin
+      .from("connection_secrets")
+      .update({ refresh_lease_until: new Date(now.getTime() + ms).toISOString() })
+      .eq("connection_id", ref.connectionId)
+      .eq("workspace_id", ref.workspaceId)
+      .or(`refresh_lease_until.is.null,refresh_lease_until.lt.${now.toISOString()}`)
+      .select("connection_id");
+    if (error) throw error;
+    return (data ?? []).length === 1;
+  }
+
+  async releaseRefreshLease(ref: ConnectionRef): Promise<void> {
+    await this.admin
+      .from("connection_secrets")
+      .update({ refresh_lease_until: null })
+      .eq("connection_id", ref.connectionId)
+      .eq("workspace_id", ref.workspaceId);
+  }
+
   async remove(ref: ConnectionRef): Promise<void> {
     const { error } = await this.admin
       .from("connection_secrets")

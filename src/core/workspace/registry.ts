@@ -24,6 +24,7 @@ import { clockPayload, timerFromPayload, timerPayload, type TimerPayload } from 
 import { visualizationSpec, type VisualizationSpec } from "./visualization";
 import { weatherPayload, type WeatherPayload } from "./weather";
 import { TASK_STATUSES } from "../capabilities/tasks";
+import { TEAM_ACCESS } from "../capabilities/team-messaging";
 import { CONTEXT_KINDS, LINK_TYPES } from "../contexts/model";
 import { toLocalDateTime } from "../time";
 import { clockText, currentPhase, elapsedMs, remainingMs } from "../timers/model";
@@ -74,6 +75,19 @@ const emailItem = z.object({
   unread: z.boolean(),
   needsReply: z.boolean().optional(),
   account: text(200),
+});
+
+const teamMessage = z.object({
+  messageId: text(500),
+  threadId: text(500).nullable(),
+  channel: text(200),
+  author: text(200),
+  date: text(40),
+  /** Third-party text, shown as text only; clipped. */
+  text: text(800),
+  replyCount: z.number().int().nullable(),
+  url: href.nullable(),
+  workspace: text(200),
 });
 
 const taskItem = z.object({
@@ -709,6 +723,36 @@ export const PAYLOADS = {
     total: z.number().int(),
     today: isoDay,
   }),
+  team_messages: z.object({
+    query: text(300).nullable(),
+    channel: text(200).nullable(),
+    items: z.array(teamMessage).max(10),
+    files: z
+      .array(
+        z.object({
+          title: text(300),
+          fileType: text(40).nullable(),
+          url: href.nullable(),
+          date: text(40).nullable(),
+          author: text(200).nullable(),
+          workspace: text(200),
+        }),
+      )
+      .max(6),
+    notSearched: z.array(z.enum(TEAM_ACCESS)).max(7),
+    unavailable: z.array(text(200)).max(10).optional(),
+  }),
+  team_thread: z.object({
+    threadId: text(500),
+    channel: text(200),
+    workspace: text(200),
+    url: href.nullable(),
+    total: z.number().int(),
+    hasMore: z.boolean(),
+    messages: z
+      .array(teamMessage.pick({ messageId: true, author: true, date: true, text: true, url: true }))
+      .max(30),
+  }),
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
 } satisfies Record<SurfaceType, z.ZodType>;
 
@@ -788,6 +832,36 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
             `${i + 1}) ${q(m.subject)} — ${m.from?.name ?? m.from?.email ?? "?"} ${m.date.slice(0, 10)} (thread ${m.threadId}, message ${m.messageId})`,
         )
         .join("; "),
+  },
+  team_messages: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 62,
+    actions: () => [expand],
+    describe: (p, tz) =>
+      [
+        p.query ? `search ${q(p.query)}` : p.channel ? `recent in ${p.channel}` : "",
+        ...p.items.map(
+          (m, i) =>
+            `${i + 1}) ${m.author} in ${m.channel} ${local(m.date, tz)} · ${m.workspace} (message ${m.messageId}${m.threadId ? `, thread ${m.threadId}` : ""})`,
+        ),
+        p.items.length ? "" : "no messages",
+      ]
+        .filter(Boolean)
+        .join("; "),
+  },
+  team_thread: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "large",
+    priority: 68,
+    actions: (p) => [
+      ...link("open", p.url),
+      { id: "summarize", kind: "prompt" },
+      { id: "draft_reply", kind: "prompt" },
+      expand,
+    ],
+    describe: (p) =>
+      `thread in ${p.channel} · ${p.workspace} · ${p.total} messages (thread ${p.threadId}, latest message ${p.messages.at(-1)?.messageId ?? "?"})`,
   },
   email_thread: {
     sizes: ["small", "medium", "large", "expanded"],

@@ -63,6 +63,28 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       markUnread: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
     },
   },
+  // Team Messaging (ADR-062): read live from the provider, nothing synced. Drafts stay in ELISE;
+  // anything other people will read — a message, a reply — waits for the user's approval of the
+  // exact text and destination. Reactions are reversible one-emoji writes: they run, audited.
+  team_messaging: {
+    key: "team_messaging",
+    status: "available",
+    operations: {
+      search: READ,
+      listChannels: READ,
+      getRecent: READ,
+      getThread: READ,
+      getMessage: READ,
+      findUser: READ,
+      draftMessage: WRITE,
+      sendMessage: { kind: "external_communication", risk: "high", defaultApproval: "always_ask" },
+      reply: { kind: "external_communication", risk: "high", defaultApproval: "always_ask" },
+      addReaction: WRITE,
+      removeReaction: WRITE,
+      // Only when the user asks: a snapshot with its Slack provenance (never automatic indexing).
+      saveToKnowledge: WRITE,
+    },
+  },
   calendar: {
     key: "calendar",
     status: "available",

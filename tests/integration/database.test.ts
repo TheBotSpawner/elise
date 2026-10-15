@@ -317,6 +317,75 @@ describe("google connections", () => {
   });
 });
 
+describe("slack connections (ADR-062)", () => {
+  async function slackConnection(workspaceId: string, external: string) {
+    const res = await db.query<{ id: string }>(
+      `insert into public.provider_connections (workspace_id, provider_key, external_account_id, display_name, account_label)
+       values ($1, 'slack', $2, 'Firbot', 'Leo · Firbot') returning id`,
+      [workspaceId, external],
+    );
+    return res.rows[0]!.id;
+  }
+
+  it("one connection per workspace and user; several workspaces side by side", async () => {
+    await slackConnection(alice.workspaceId, "T1:U1");
+    await slackConnection(alice.workspaceId, "T2:U1");
+    await slackConnection(alice.workspaceId, "T1:U9");
+    await expect(slackConnection(alice.workspaceId, "T1:U1")).rejects.toThrow(/duplicate key/);
+    const caps = await db.query(
+      "select 1 from public.provider_capabilities where provider_key = 'slack' and capability_key = 'team_messaging'",
+    );
+    expect(caps.rows).toHaveLength(1);
+  });
+
+  it("keeps Slack credentials and the refresh lease out of reach of API users", async () => {
+    const id = await slackConnection(alice.workspaceId, "T3:U1");
+    await db.query(
+      "insert into public.connection_secrets (connection_id, workspace_id, provider_key, ciphertext) values ($1, $2, 'slack', 'v1.x')",
+      [id, alice.workspaceId],
+    );
+    await expect(
+      asUser(db, alice.userId, () =>
+        db.query("select refresh_lease_until from public.connection_secrets"),
+      ),
+    ).rejects.toThrow(/permission denied/);
+
+    // The lease is taken once until it expires or is released (service role only).
+    const take = () =>
+      db.query(
+        `update public.connection_secrets set refresh_lease_until = now() + interval '30 seconds'
+         where connection_id = $1 and (refresh_lease_until is null or refresh_lease_until < now())
+         returning connection_id`,
+        [id],
+      );
+    await db.exec("set role service_role");
+    expect((await take()).rows).toHaveLength(1);
+    expect((await take()).rows).toHaveLength(0);
+    await db.query(
+      "update public.connection_secrets set refresh_lease_until = null where connection_id = $1",
+      [id],
+    );
+    expect((await take()).rows).toHaveLength(1);
+    await db.exec("reset role");
+  });
+
+  it("another user can't read or bind a Slack connection", async () => {
+    const id = await slackConnection(alice.workspaceId, "T4:U1");
+    const bobReads = await asUser(db, bob.userId, () =>
+      db.query("select id from public.provider_connections where id = $1", [id]),
+    );
+    expect(bobReads.rows).toHaveLength(0);
+    await expect(
+      asUser(db, bob.userId, () =>
+        db.query(
+          "insert into public.capability_bindings (workspace_id, connection_id, capability_key) values ($1, $2, 'team_messaging')",
+          [bob.workspaceId, id],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/);
+  });
+});
+
 describe("schedules, runs and results", () => {
   async function schedule(owner: { userId: string; workspaceId: string }) {
     const res = await asUser(db, owner.userId, () =>

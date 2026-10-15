@@ -10,22 +10,30 @@ const WIDTH = 300;
 const GUTTER = 16;
 
 /**
- * A small ⓘ with a compact explanation card: secondary product copy, available when wanted
- * instead of always on the page. Hover (with a pointer) or click/tap opens it; Esc, a click
- * outside or scrolling closes it. The card is placed next to the icon and kept on screen.
- * Never for warnings or errors — those stay visible.
+ * ELISE's one contextual-help pattern: a small ⓘ with a compact card anchored to it — never a
+ * modal, never a page overlay. Secondary product copy, available when wanted instead of always
+ * on the page. Hover (with a pointer) or click/tap opens it; Esc, a click outside or scrolling
+ * closes it. The card sits below (or above) the icon and is kept inside the viewport.
+ * Only for explanations: warnings and errors stay visible, and anything the user must act on is
+ * a Dialog.
  */
 export function InfoTip({
   label,
+  title,
   body,
   examples,
+  size = "sm",
   className,
 }: {
   /** Accessible name, e.g. "Acerca de los Métodos". */
   label: string;
+  /** Optional small heading inside the card. */
+  title?: string;
   body: string[];
   /** Optional short examples, listed under the text. */
   examples?: string[];
+  /** "lg" next to a page title; "sm" next to a section label. */
+  size?: "sm" | "lg";
   className?: string;
 }) {
   const id = useId();
@@ -103,11 +111,16 @@ export function InfoTip({
         onPointerEnter={hoverIn}
         onPointerLeave={hoverOut}
         className={cn(
-          "inline-grid size-6 shrink-0 place-items-center rounded-full text-faint transition-colors hover:bg-active hover:text-fg focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none aria-expanded:text-fg",
+          "inline-grid shrink-0 place-items-center rounded-full text-faint transition-colors hover:bg-active hover:text-fg focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none aria-expanded:text-fg",
+          size === "lg" ? "size-8" : "size-6",
           className,
         )}
       >
-        <Info className="size-3.5" strokeWidth={1.9} aria-hidden />
+        <Info
+          className={size === "lg" ? "size-[18px]" : "size-3.5"}
+          strokeWidth={size === "lg" ? 1.75 : 1.9}
+          aria-hidden
+        />
       </button>
       {open &&
         createPortal(
@@ -124,6 +137,7 @@ export function InfoTip({
             }
             className="fixed z-50 flex flex-col gap-2 rounded-2xl border border-border-strong bg-[var(--overlay-bg)] px-4 py-3 text-left text-[13.5px] leading-relaxed font-normal tracking-normal text-muted normal-case shadow-[0_12px_32px_-12px_rgba(0,0,0,0.35)] backdrop-blur-xl"
           >
+            {title && <p className="text-[13.5px] font-medium text-fg">{title}</p>}
             {body.map((p) => (
               <p key={p}>{p}</p>
             ))}

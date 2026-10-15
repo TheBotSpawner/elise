@@ -51,6 +51,10 @@ export function briefCanvas(brief: MorningBrief, reads: readonly BriefRead[]): B
   const meetings = brief.today?.events.filter((e) => !e.allDay) ?? [];
   const withOthers = meetings.filter((e) => e.withOthers > 0).length;
 
+  // Slack channels read one by one become one Slack Surface, newest first (ADR-062).
+  const slack = reads.filter(
+    (r) => r.display.kind === "team_messages" && r.display.messages.length,
+  );
   for (const r of reads) {
     const d = r.display;
     switch (d.kind) {
@@ -96,6 +100,13 @@ export function briefCanvas(brief: MorningBrief, reads: readonly BriefRead[]): B
       default:
         break;
     }
+  }
+  const first = slack[0];
+  if (first?.display.kind === "team_messages") {
+    const messages = slack
+      .flatMap((r) => (r.display.kind === "team_messages" ? r.display.messages : []))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    add(first, { ...first.display, channel: null, messages }, 50);
   }
   return items;
 }

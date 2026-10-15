@@ -1,4 +1,5 @@
 import { requireAuthContext } from "@/application/auth-context";
+import { listConnections } from "@/application/connections-service";
 import { spaceOptions } from "@/application/knowledge-service";
 import { methodStore } from "@/application/methods-service";
 import { listSchedules } from "@/application/schedules-service";
@@ -23,13 +24,18 @@ function parseDraft(value: string | string[] | undefined): ScheduleInput | null 
 
 export default async function SchedulesPage({ searchParams }: PageProps<"/schedules">) {
   const [auth, { t }, params] = await Promise.all([requireAuthContext(), getT(), searchParams]);
-  const [{ schedules, backgroundAvailable }, spaces, methods] = await Promise.all([
+  const [{ schedules, backgroundAvailable }, spaces, methods, connections] = await Promise.all([
     listSchedules(auth),
     spaceOptions(auth).catch(() => []),
     methodStore(auth)
       .index()
       .catch(() => []),
+    listConnections(auth).catch(() => null),
   ]);
+  // Slack workspaces a brief can read (ADR-062); none connected → the Slack block isn't offered.
+  const slackWorkspaces = (connections?.connections ?? [])
+    .filter((c) => c.providerKey === "slack" && c.capabilities.some((x) => x.enabled))
+    .map((c) => ({ id: c.id, name: c.displayName }));
   return (
     <PageContainer>
       <PageHeader
@@ -42,6 +48,7 @@ export default async function SchedulesPage({ searchParams }: PageProps<"/schedu
         workspaceId={auth.workspaceId}
         timezone={auth.profile.timezone}
         spaces={spaces}
+        slackWorkspaces={slackWorkspaces}
         methods={methods.map((m) => ({ id: m.id, name: m.name }))}
         backgroundAvailable={backgroundAvailable}
         draft={parseDraft(params.draft)}

@@ -345,7 +345,9 @@ function useConnectionReturn() {
             ? t.connections.connectedSpotifyToast
             : provider === "microsoft"
               ? t.connections.connectedMicrosoftToast
-              : t.connections.connectedToast,
+              : provider === "slack"
+                ? t.connections.slack.connectedToast
+                : t.connections.connectedToast,
       );
     if (missing) {
       const names = missing

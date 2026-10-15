@@ -1128,3 +1128,19 @@ Advanced secret management
 > Autonomy is configurable.
 >
 > Sensitive actions remain controlled.
+
+
+---
+
+# 51. Implemented: Slack connections (ADR-062)
+
+- **What a connection is:** one Slack user in one workspace (`external_account_id =
+  team:user`). Its grant is stored as exact user scopes in `connection_capabilities`
+  (`team_messaging`).
+- **Permissions:** Connections shows public channels, private channels, direct messages, files,
+  send and reactions. Each shows as allowed only when its scopes were granted.
+- **Allowing one more:** runs Slack's consent again on the same connection. Slack accumulates
+  scopes, so it is never a second connection.
+- **Tokens:** they live only in the encrypted vault. Rotating tokens refresh under a
+  per-connection lease, because Slack's refresh tokens are single-use. Setup:
+  docs/engineering/25-slack-setup.md.

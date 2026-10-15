@@ -15,7 +15,7 @@ export default async function MyElisePage() {
   const { t } = await getT();
   return (
     <PageContainer>
-      <PageHeader title={t.myElise.title} subtitle={t.myElise.subtitle} />
+      <PageHeader title={t.myElise.title} info={[t.myElise.subtitle]} />
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {MODULES.map(({ key, icon: Icon, href }) => {
           const available = getCapability(key).status === "available";
