@@ -49,7 +49,6 @@ const proposeInput = z
       .uuid()
       .optional()
       .describe("For the knowledge block: the Space id from knowledge.listSpaces."),
-    notify: z.enum(["none", "in_app", "browser"]).default("in_app"),
     instructions: z
       .string()
       .trim()
@@ -104,7 +103,7 @@ export const proposeScheduleTool: ToolDefinition = {
         methodId: method?.id ?? null,
       },
       instructions: p.instructions ?? null,
-      delivery: { notify: p.notify },
+      delivery: { notify: "in_app" },
     });
     if (!parsed.success) {
       throw new AppError("VALIDATION_ERROR", parsed.error.issues.map((i) => i.message).join("; "), {

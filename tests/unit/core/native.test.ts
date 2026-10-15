@@ -542,7 +542,7 @@ describe("native tools", () => {
     });
     const out = await executeToolCall(ports, ctx, { name: "lists.get", args: { list: "japan" } });
     expect(out).toMatchObject({
-      output: { list: { open: ["charger", "headphones"], checked: ["passport"] } },
+      output: { list: { open: ["Charger", "Headphones"], checked: ["Passport"] } },
     });
   });
 
@@ -594,13 +594,13 @@ describe("native tools", () => {
           icon: "🛩️",
           open: [
             {
-              item: "cargador",
+              item: "Cargador",
               description: "llevar también adaptador europeo",
               labels: ["Importante"],
             },
-            "anteojos",
+            "Anteojos",
           ],
-          checked: ["pasaporte"],
+          checked: ["Pasaporte"],
         },
       },
     });
@@ -608,7 +608,7 @@ describe("native tools", () => {
       name: "lists.get",
       args: { list: "compras" },
     });
-    expect(shopping).toMatchObject({ output: { list: { open: ["protector solar"] } } });
+    expect(shopping).toMatchObject({ output: { list: { open: ["Protector solar"] } } });
     const cleared = await executeToolCall(ports, ctx, {
       name: "lists.clearChecked",
       args: { list: "viaje" },
@@ -633,7 +633,7 @@ describe("native tools", () => {
     expect(sa[0]?.id).toBe(sb[0]?.id);
     expect(
       (sb[0]?.payload as { items: { content: string }[] }).items.map((i) => i.content),
-    ).toEqual(["pasaporte", "cargador"]);
+    ).toEqual(["Pasaporte", "Cargador"]);
   });
 
   it("archiving asks for approval when ELISE proposes it, not for check-ins", async () => {

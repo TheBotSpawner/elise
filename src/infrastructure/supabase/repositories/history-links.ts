@@ -32,6 +32,12 @@ export class SupabaseHistoryLinks implements HistoryLinksPort {
       .select("id, context")
       .eq("workspace_id", this.workspaceId);
     const contextOf = new Map((contexts ?? []).map((r) => [r.id, r.context]));
+    // Its Knowledge look (icon, accent), read apart too: a Space without one gets the default.
+    const { data: looks } = await this.db
+      .from("knowledge_spaces")
+      .select("id, icon, color")
+      .eq("workspace_id", this.workspaceId);
+    const lookOf = new Map((looks ?? []).map((r) => [r.id, r]));
     const names = new Map(rows.map((r) => [r.id, r.name]));
     return rows.map((r) => ({
       id: r.id,
@@ -39,6 +45,8 @@ export class SupabaseHistoryLinks implements HistoryLinksPort {
       parentId: r.parent_space_id,
       parentName: r.parent_space_id ? (names.get(r.parent_space_id) ?? null) : null,
       archived: r.status !== "active",
+      icon: lookOf.get(r.id)?.icon ?? null,
+      color: lookOf.get(r.id)?.color ?? null,
       aliases: [r.description, contextOf.get(r.id)?.split(/\r?\n/)[0]].filter((x): x is string =>
         Boolean(x?.trim()),
       ),

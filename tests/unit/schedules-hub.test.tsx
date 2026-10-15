@@ -177,4 +177,31 @@ describe("Scheduled hub (ADR-037)", () => {
     expect(screen.getAllByText("Pausado").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Reanudar" })).toBeInTheDocument();
   });
+
+  it("no delivery choice anywhere; editing a legacy 'browser' schedule saves in_app and keeps the rest", async () => {
+    actions.updateScheduleAction.mockResolvedValue({ ok: true, value: undefined });
+    const legacy: ScheduleView = {
+      ...legacyBrief,
+      input: { ...legacyBrief.input, delivery: { notify: "browser" } },
+    };
+    view([legacy]);
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    expect(screen.getByText("Editar “Morning Brief”")).toBeInTheDocument();
+    for (const gone of ["Cuando esté listo", "En ELISE", "Notificación del navegador", "Sin aviso"])
+      expect(screen.queryByText(gone)).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    });
+    expect(actions.updateScheduleAction).toHaveBeenCalledWith(legacy.id, {
+      ...legacy.input,
+      delivery: { notify: "in_app" },
+    });
+  });
+
+  it("a new scheduled task offers no delivery choice either", () => {
+    view([]);
+    fireEvent.click(screen.getByRole("button", { name: "Nueva tarea programada" }));
+    expect(screen.queryByText("Cuando esté listo")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: /listo|ready/i })).toBeNull();
+  });
 });

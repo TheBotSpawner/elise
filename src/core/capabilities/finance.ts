@@ -25,6 +25,7 @@ import {
   type PeriodPreset,
 } from "../periods";
 import type { ProviderKey } from "../providers/types";
+import { normalizeEntityTitle } from "../text";
 import { addDays, isIsoDate } from "../time";
 
 /**
@@ -1306,7 +1307,7 @@ export const updateTransactionInput = z
 
 export const createAccountInput = z
   .object({
-    name: text(80),
+    name: text(80).overwrite(normalizeEntityTitle),
     type: z
       .enum(["cash", "bank", "credit_card", "debit_card", "digital_wallet", "business", "other"])
       .default("other"),
@@ -1317,7 +1318,7 @@ export const createAccountInput = z
 export const updateAccountInput = z
   .object({
     account: text(80).describe("The account's current name."),
-    name: text(80).optional(),
+    name: text(80).overwrite(normalizeEntityTitle).optional(),
     type: z
       .enum(["cash", "bank", "credit_card", "debit_card", "digital_wallet", "business", "other"])
       .optional(),
@@ -1340,7 +1341,7 @@ const emojiField = z.string().trim().refine(isSingleEmoji, "Expected one emoji")
 export const updateCategoryInput = z
   .object({
     category: text(80).describe("The category's current name."),
-    name: text(80).optional(),
+    name: text(80).overwrite(normalizeEntityTitle).optional(),
     icon: emojiField.nullable().optional().describe("One emoji; null removes it."),
     parent: z.string().trim().max(80).nullable().optional(),
     archived: z
@@ -1383,7 +1384,7 @@ export function suggestCategoryIcon(name: string): string | null {
 
 export const createCategoryInput = z
   .object({
-    name: text(80),
+    name: text(80).overwrite(normalizeEntityTitle),
     type: z.enum(["income", "expense", "both"]).default("expense"),
     parent: text(80).optional().describe("Parent category name, for a sub-category."),
     books: z.array(text(60)).max(10).optional().describe("Only offer it in these Books."),
@@ -1394,7 +1395,7 @@ export const createCategoryInput = z
 export const saveBookInput = z
   .object({
     book: text(60).optional().describe("Existing Book to change (omit to create)."),
-    name: text(60).optional(),
+    name: text(60).overwrite(normalizeEntityTitle).optional(),
     type: z.enum(["personal", "business", "other"]).optional(),
     icon: z.string().trim().max(16).nullable().optional(),
     description: z.string().trim().max(300).nullable().optional(),

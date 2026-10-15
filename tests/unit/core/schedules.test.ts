@@ -282,6 +282,19 @@ describe("execution", () => {
     expect([...store.notifications]).toEqual([`${run.id}:schedule.result_ready`]);
   });
 
+  it("a legacy 'no notification' or 'browser' schedule still delivers its result in ELISE (ADR-063)", async () => {
+    for (const notify of ["none", "browser"] as const) {
+      const { ports, schedule, store } = setup();
+      schedule.delivery = { notify };
+      const run = await runNow(ports, schedule);
+      expect(await executeRun(ports, { workspaceId: WS, scheduleRunId: run.id, attempt: 1 })).toBe(
+        "completed",
+      );
+      expect(store.results.size).toBe(1);
+      expect([...store.notifications]).toEqual([`${run.id}:schedule.result_ready`]);
+    }
+  });
+
   it("is idempotent: a duplicate delivery neither re-runs nor re-notifies", async () => {
     const { ports, schedule, handle, store } = setup();
     const run = await runNow(ports, schedule);

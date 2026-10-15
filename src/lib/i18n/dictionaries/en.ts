@@ -1920,7 +1920,6 @@ export const en = {
       date: "Date",
       time: "Time",
       timezone: "Timezone",
-      notify: "When it's ready",
       instructions: "Your instructions (optional)",
       save: "Save",
       create: "Create",
@@ -1954,10 +1953,6 @@ export const en = {
       weather: "Weather (today's forecast)",
       slack: "Slack (chosen channels)",
     },
-    notify: { none: "Don't notify", in_app: "In ELISE", browser: "Browser notification" },
-    enableBrowser: "Enable browser notifications",
-    browserHint: "Your Morning Brief can notify you when it's ready.",
-    browserBlocked: "Notifications are blocked in this browser's settings.",
     runs: {
       queued: "Queued",
       running: "Running",
@@ -2968,7 +2963,7 @@ export const en = {
     passages: (n: number) => `${n} ${n === 1 ? "passage" : "passages"}`,
     loadingDetail: "Loading…",
     noDetail: "Nothing more to show here.",
-    resume: (d: string) => `Continue: ${d}`,
+    resume: "Continue:",
     resumeLabel: "Workspace",
     approvalPending: "Waiting for your approval",
     web: {

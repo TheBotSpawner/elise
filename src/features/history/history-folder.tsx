@@ -57,8 +57,11 @@ export function HistoryFolder({
   count,
   meta,
   nested = false,
+  icon,
   children,
 }: {
+  /** The Space's glyph, as in Knowledge (or a neutral one for "Sin Espacio"). */
+  icon?: React.ReactNode;
   id: string;
   label: string;
   count: number;
@@ -90,6 +93,7 @@ export function HistoryFolder({
             open && "rotate-90",
           )}
         />
+        {icon}
         <span className="min-w-0 flex-1">
           <span
             className={cn(

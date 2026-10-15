@@ -426,21 +426,6 @@ describe("self-control tools", () => {
     expect(settings.prefs.timezone).toBe(ba);
   });
 
-  it("updates notifications with the per-schedule settings", async () => {
-    const settings = new FakeSettings();
-    const { ports } = withProviders({ settings });
-    await executeToolCall(ports, makeCtx(), {
-      name: "notifications.updatePreferences",
-      args: { browser: false },
-    });
-    expect(settings.list.map((s) => s.notify)).toEqual(["in_app", "in_app"]);
-    await executeToolCall(ports, makeCtx(), {
-      name: "notifications.updatePreferences",
-      args: { schedule: "morning brief", notify: "browser" },
-    });
-    expect(settings.list[0]!.notify).toBe("browser");
-  });
-
   it("pauses a schedule by name", async () => {
     const settings = new FakeSettings();
     const { ports } = withProviders({ settings });

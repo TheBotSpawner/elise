@@ -1949,7 +1949,6 @@ export const es: Dictionary = {
       date: "Fecha",
       time: "Hora",
       timezone: "Zona horaria",
-      notify: "Cuando esté listo",
       instructions: "Tus instrucciones (opcional)",
       save: "Guardar",
       create: "Crear",
@@ -1983,10 +1982,6 @@ export const es: Dictionary = {
       weather: "Clima (pronóstico del día)",
       slack: "Slack (canales elegidos)",
     },
-    notify: { none: "Sin aviso", in_app: "En ELISE", browser: "Notificación del navegador" },
-    enableBrowser: "Activar notificaciones del navegador",
-    browserHint: "Tu Morning Brief puede avisarte cuando esté listo.",
-    browserBlocked: "Las notificaciones están bloqueadas en la configuración del navegador.",
     runs: {
       queued: "En cola",
       running: "En curso",
@@ -2995,7 +2990,7 @@ export const es: Dictionary = {
     passages: (n: number) => `${n} ${n === 1 ? "fragmento" : "fragmentos"}`,
     loadingDetail: "Cargando…",
     noDetail: "No hay más para mostrar.",
-    resume: (d: string) => `Continuar: ${d}`,
+    resume: "Continuar:",
     resumeLabel: "Espacio de trabajo",
     approvalPending: "Esperando tu aprobación",
     web: {

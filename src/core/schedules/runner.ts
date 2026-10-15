@@ -313,14 +313,14 @@ export async function executeRun(
     errorCode: null,
     errorMessage: null,
   });
-  if (schedule.delivery.notify !== "none") {
-    await ports.store.notify(run, schedule, {
-      type: "schedule.result_ready",
-      title: schedule.name,
-      // The result's stable link: it opens the run's conversation (or the legacy view).
-      url: `/schedules/results/${resultId}`,
-    });
-  }
+  // Delivery choice is postponed (docs/decisions/ADR-063): every result is announced in ELISE,
+  // whatever a legacy schedule stored ("none", "browser").
+  await ports.store.notify(run, schedule, {
+    type: "schedule.result_ready",
+    title: schedule.name,
+    // The result's stable link: it opens the run's conversation (or the legacy view).
+    url: `/schedules/results/${resultId}`,
+  });
   ports.log?.("schedule.run_completed", {
     schedule_run_id: run.id,
     status,

@@ -22,7 +22,6 @@ import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 import { createScheduleAction, slackChannelsAction, updateScheduleAction } from "./actions";
-import { BrowserNotificationsPrompt } from "./browser-notifications";
 import { describeWhen } from "./format";
 
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -130,9 +129,11 @@ export function ScheduleForm({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     startTransition(async () => {
+      // Results are always delivered in ELISE (ADR-063); a legacy choice isn't carried over.
+      const input = { ...v, delivery: { notify: "in_app" as const } };
       const result = scheduleId
-        ? await updateScheduleAction(scheduleId, v)
-        : await createScheduleAction(v);
+        ? await updateScheduleAction(scheduleId, input)
+        : await createScheduleAction(input);
       if (!result.ok) {
         toast.error(errorText(t, result.error));
         return;
@@ -400,27 +401,6 @@ export function ScheduleForm({
           </div>
         )}
       </fieldset>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="schedule-notify">{t.schedules.form.notify}</Label>
-        <Select
-          id="schedule-notify"
-          value={v.delivery.notify}
-          onChange={(e) =>
-            setV({
-              ...v,
-              delivery: { notify: e.target.value as ScheduleInput["delivery"]["notify"] },
-            })
-          }
-        >
-          {(["in_app", "browser", "none"] as const).map((n) => (
-            <option key={n} value={n}>
-              {t.schedules.notify[n]}
-            </option>
-          ))}
-        </Select>
-        {v.delivery.notify === "browser" && <BrowserNotificationsPrompt />}
-      </div>
 
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onDone} disabled={pending}>

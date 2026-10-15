@@ -216,6 +216,10 @@ export const morningBriefConfigSchema = z
 
 export type MorningBriefConfig = z.infer<typeof morningBriefConfigSchema>;
 
+/**
+ * Kept so schedules saved with "none" or "browser" still load; nothing reads it (ADR-063): every
+ * result is delivered in ELISE, and new or edited schedules store in_app.
+ */
 export const deliverySchema = z
   .object({ notify: z.enum(["none", "in_app", "browser"]).default("in_app") })
   .strict();

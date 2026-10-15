@@ -49,8 +49,6 @@ export function ScheduleProposalCard({ display, rise }: { display: Proposal; ris
             .map((c) => t.capabilities[c])
             .join(", ")}
         </dd>
-        <dt className="text-faint">{t.schedules.form.notify}</dt>
-        <dd>{t.schedules.notify[input.delivery.notify]}</dd>
         {input.instructions && (
           <>
             <dt className="text-faint">{t.schedules.form.instructions}</dt>

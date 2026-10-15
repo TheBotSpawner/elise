@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { isSingleEmoji } from "../emoji";
+import { normalizeEntityTitle } from "../text";
 import { addDays, isIsoDate, todayIn } from "../time";
 
 /**
@@ -296,7 +297,7 @@ const days = z
 
 export const createHabitInput = z
   .object({
-    name: z.string().trim().min(1).max(120),
+    name: z.string().trim().min(1).max(120).overwrite(normalizeEntityTitle),
     description: z.string().trim().max(2000).optional(),
     frequency: z.enum(["daily", "weekly", "specific_days"]),
     target: z
@@ -339,7 +340,7 @@ export const createHabitInput = z
 export const updateHabitInput = z
   .object({
     habit: habitRef,
-    name: z.string().trim().min(1).max(120).optional(),
+    name: z.string().trim().min(1).max(120).overwrite(normalizeEntityTitle).optional(),
     description: z.string().trim().max(2000).nullable().optional(),
     frequency: z.enum(["daily", "weekly", "specific_days"]).optional(),
     target: z.number().positive().max(100000).optional(),

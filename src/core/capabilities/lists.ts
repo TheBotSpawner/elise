@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { EntrySource } from "./habits";
+import { normalizeEntityTitle } from "../text";
 
 /**
  * Lists (docs/architecture/10 §17-19, ADR-051): ordered, checkable items. Deliberately NOT a
@@ -245,13 +246,13 @@ const listRef = z
   .min(1)
   .max(200)
   .describe('The list\'s id or name, e.g. "compras".');
-const itemText = z.string().trim().min(1).max(500);
+const itemText = z.string().trim().min(1).max(500).overwrite(normalizeEntityTitle);
 const itemNotes = z.string().trim().max(1000);
 const labelNames = z.array(z.string().trim().min(1).max(60)).max(20);
 
 export const createListInput = z
   .object({
-    name: z.string().trim().min(1).max(120),
+    name: z.string().trim().min(1).max(120).overwrite(normalizeEntityTitle),
     description: z.string().trim().max(1000).optional(),
     icon: z.string().trim().max(16).optional().describe("An emoji for the list, e.g. 🛩️"),
     items: z.array(itemText).max(100).optional(),
@@ -260,12 +261,15 @@ export const createListInput = z
 
 export const listRefInput = z.object({ list: listRef }).strict();
 export const renameListInput = z
-  .object({ list: listRef, name: z.string().trim().min(1).max(120) })
+  .object({
+    list: listRef,
+    name: z.string().trim().min(1).max(120).overwrite(normalizeEntityTitle),
+  })
   .strict();
 export const updateListInput = z
   .object({
     list: listRef,
-    name: z.string().trim().min(1).max(120).optional(),
+    name: z.string().trim().min(1).max(120).overwrite(normalizeEntityTitle).optional(),
     description: z.string().trim().max(1000).nullable().optional(),
     icon: z.string().trim().max(16).nullable().optional(),
     sort: z.enum(LIST_ITEM_SORTS).optional().describe("How its items are shown."),

@@ -271,7 +271,8 @@ export class SupabaseScheduleStore implements ScheduleStore {
       source_type: "schedule_run",
       source_id: run.id,
       action_url: n.url,
-      metadata: json({ scheduleId: schedule.id, browser: schedule.delivery.notify === "browser" }),
+      // No browser notifications for now (ADR-063): the in-app notice is the delivery.
+      metadata: json({ scheduleId: schedule.id, browser: false }),
     });
     if (error && error.code !== "23505") {
       throw new AppError("INTERNAL_ERROR", "Could not notify", { cause: error });

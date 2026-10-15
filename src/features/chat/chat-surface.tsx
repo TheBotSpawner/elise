@@ -10,6 +10,7 @@ import type { VoicePreferences } from "@/application/auth-context";
 import { useOrbPresence } from "@/components/elise/orb/orb-presence";
 import { resolveOrbState, type OrbState } from "@/components/elise/orb/orb-states";
 import { threadUrl, type ThreadRef } from "@/core/interaction";
+import { clipText } from "@/core/text";
 import { WORKSPACE_LIMITS, type WorkspaceState } from "@/core/workspace/model";
 import { ContextIndicator, type ContextOption } from "@/features/contexts/context-indicator";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
@@ -521,7 +522,7 @@ function HomeStatus({
 }
 
 /** Real, quiet context under the input — never a dashboard (docs/product/05 §14). */
-function Ambient({ ambient }: { ambient: HomeAmbient }) {
+export function Ambient({ ambient }: { ambient: HomeAmbient }) {
   const { t } = useI18n();
   const items = [
     ambient.dueToday > 0 && {
@@ -539,20 +540,25 @@ function Ambient({ ambient }: { ambient: HomeAmbient }) {
       text: t.home.pending(ambient.pendingApprovals),
       href: "/approvals",
     },
-  ].filter(Boolean) as { label: string; text: string; href: string }[];
+  ].filter(Boolean) as { label: string; text: string; href: string; preview?: string }[];
   const brief = ambient.brief;
   const resume = ambient.resume;
   if (resume)
     items.unshift({
       label: t.workspace.resumeLabel,
-      text: t.workspace.resume(resume.description),
+      text: t.workspace.resume,
+      // A preview only: the row's width decides how much shows (CSS ellipsis). The clip just
+      // keeps an extreme transcript out of the HTML; the conversation itself is untouched.
+      preview: clipText(resume.description.replace(/\s+/g, " ").trim(), 300),
       href: threadUrl(resume.thread),
     });
   if (items.length === 0 && !brief) return null;
   return (
     // One row model: every item is a 32px cell centred on the row; inside it, label and value
     // share a baseline (the small mono eyebrow sits on the text's line, not above or below it).
-    <ul className="mt-6 flex flex-col items-center gap-1 text-[13px] leading-5 text-muted md:flex-row md:flex-wrap md:justify-center md:gap-x-10">
+    // On wide screens the row never wraps: fixed items keep their size and the "continue" preview
+    // takes only the room left, ending in an ellipsis.
+    <ul className="mt-6 flex max-w-full min-w-0 flex-col items-center gap-1 text-[13px] leading-5 text-muted md:flex-row md:flex-nowrap md:justify-center md:gap-x-10">
       {brief && (
         <li className="flex h-8 items-center">
           <span className="flex items-baseline gap-3">
@@ -577,12 +583,23 @@ function Ambient({ ambient }: { ambient: HomeAmbient }) {
         </li>
       )}
       {items.map((item) => (
-        <li key={item.label} className="flex h-8 items-center">
-          <Link href={item.href} className="flex items-baseline gap-2.5 hover:text-fg">
-            <span className="font-mono text-[10.5px] tracking-[0.16em] text-faint uppercase">
+        <li
+          key={item.label}
+          className={cn(
+            "flex h-8 items-center",
+            item.preview ? "max-w-full min-w-0 md:shrink" : "shrink-0",
+          )}
+        >
+          <Link
+            href={item.href}
+            title={item.preview}
+            className="flex max-w-full min-w-0 items-baseline gap-2.5 hover:text-fg"
+          >
+            <span className="shrink-0 font-mono text-[10.5px] tracking-[0.16em] text-faint uppercase">
               {item.label}
             </span>
-            <span>{item.text}</span>
+            <span className={cn(item.preview && "shrink-0")}>{item.text}</span>
+            {item.preview && <span className="min-w-0 truncate text-faint">{item.preview}</span>}
           </Link>
         </li>
       ))}

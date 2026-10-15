@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { Select } from "@/components/ui/input";
 import type { KnowledgeNode } from "@/core/history/links";
+import { NoSpaceGlyph, SpaceGlyph } from "@/features/knowledge/appearance";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +46,7 @@ function FilterChip({
       href={to}
       aria-current={active ? "true" : undefined}
       className={cn(
-        "inline-flex h-9 shrink-0 items-center rounded-full border px-3.5 text-[13px] transition-colors",
+        "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition-colors has-[>span:first-child]:pl-2",
         active
           ? "border-accent bg-accent-soft text-fg"
           : "border-border text-muted hover:border-border-strong hover:text-fg",
@@ -91,6 +92,7 @@ export function HistoryControls({
                   to={href(params, { space: s.id, section: null })}
                   active={params.space === s.id}
                 >
+                  <SpaceGlyph icon={s.icon} color={s.color} size="xs" />
                   {s.name}
                 </FilterChip>
               ))}
@@ -98,6 +100,7 @@ export function HistoryControls({
                 to={href(params, { space: "untagged", section: null })}
                 active={params.space === "untagged"}
               >
+                <NoSpaceGlyph size="xs" />
                 {h.untagged}
               </FilterChip>
             </>

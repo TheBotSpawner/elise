@@ -25,3 +25,31 @@ export function wellFormed<T>(value: T): T {
   }
   return value;
 }
+
+/**
+ * A name or title as people expect to see it (a task, a list item, a habit…), from however it
+ * arrived — often a voice transcript in lowercase: "huevos" → "Huevos", "comprar huevos para la
+ * semana" → "Comprar huevos para la semana". Sentence case, never Title Case, and never more:
+ * - trims and collapses repeated spaces;
+ * - upper-cases only the first letter, and only when the text starts with a word (leading emoji
+ *   or punctuation are skipped: "🛍️ comprar leche" → "🛍️ Comprar leche"; a leading number
+ *   already starts the sentence: "3 huevos" stays);
+ * - leaves a first word the user capitalized on purpose alone: "iPhone", "eBay", "eLearning",
+ *   "make.com", "ChatGPT", "RSFA";
+ * - never lower-cases anything, never fixes spelling.
+ * For names and titles only — never descriptions, notes or long text.
+ */
+export function normalizeEntityTitle(text: string): string {
+  const s = text.trim().replace(/[ \t]+/g, " ");
+  const first = s.search(/[\p{L}\p{N}]/u);
+  if (first < 0) return s;
+  const word = s.slice(first).split(" ")[0]!;
+  const intended =
+    /^\p{N}/u.test(word) || // "3 huevos": the sentence starts with the number
+    /\p{Lu}/u.test(word) || // any capital already there: "iPhone", "eBay", "RSFA"
+    /[.@/:]\p{L}/u.test(word); // "make.com", an address or a path
+  if (intended) return s;
+  const letter = s[first]!;
+  const upper = letter.toLocaleUpperCase();
+  return upper === letter ? s : s.slice(0, first) + upper + s.slice(first + 1);
+}

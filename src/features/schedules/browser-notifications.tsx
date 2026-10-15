@@ -1,47 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
 import { createClient } from "@/infrastructure/supabase/client";
 import { useI18n } from "@/lib/i18n/client";
 
 const supported = () => typeof window !== "undefined" && "Notification" in window;
-const noop = () => () => undefined;
-
-function usePermission(): [NotificationPermission | "unsupported", () => Promise<void>] {
-  const initial = useSyncExternalStore(
-    noop,
-    () => (supported() ? Notification.permission : "unsupported"),
-    () => "default" as const,
-  );
-  const [asked, setAsked] = useState<NotificationPermission | null>(null);
-  return [
-    asked ?? initial,
-    async () => {
-      if (supported()) setAsked(await Notification.requestPermission());
-    },
-  ];
-}
-
-/** Asked only in context (when the user picks browser notifications), never on load. */
-export function BrowserNotificationsPrompt() {
-  const { t } = useI18n();
-  const [permission, request] = usePermission();
-  if (permission === "granted" || permission === "unsupported") return null;
-  if (permission === "denied")
-    return <p className="text-[13px] text-approval-text">{t.schedules.browserBlocked}</p>;
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-surface-2 px-3.5 py-2.5">
-      <p className="text-[13px] text-muted">{t.schedules.browserHint}</p>
-      <Button size="sm" variant="secondary" onClick={() => void request()}>
-        {t.schedules.enableBrowser}
-      </Button>
-    </div>
-  );
-}
 
 /**
  * Tells the user a scheduled result is ready while ELISE is open: a quiet toast, plus a

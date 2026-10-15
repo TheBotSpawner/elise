@@ -3,6 +3,7 @@ import { z } from "zod";
 import { isSingleEmoji } from "../emoji";
 import type { EntrySource } from "./habits";
 import { GOAL_PERIODS } from "../goals/periods";
+import { normalizeEntityTitle } from "../text";
 import { isIsoDate } from "../time";
 
 /**
@@ -461,7 +462,7 @@ const measureFields = {
 
 export const createGoalInput = z
   .object({
-    title: z.string().trim().min(1).max(300),
+    title: z.string().trim().min(1).max(300).overwrite(normalizeEntityTitle),
     description: z.string().trim().max(5000).optional(),
     icon: icon.optional().describe("One emoji (🎯 💰 📚 🏋). Omit to let ELISE suggest one."),
     area: area.optional().describe('Optional area: "Salud", "Marketing", "Firbot Academy".'),
@@ -490,7 +491,7 @@ export const createGoalInput = z
 export const updateGoalInput = z
   .object({
     goal: goalRef,
-    title: z.string().trim().min(1).max(300).optional(),
+    title: z.string().trim().min(1).max(300).overwrite(normalizeEntityTitle).optional(),
     description: z.string().trim().max(5000).nullable().optional(),
     icon: icon.nullable().optional(),
     area: area.nullable().optional(),
@@ -595,6 +596,7 @@ export const createVisionInput = z
       .trim()
       .min(1)
       .max(500)
+      .overwrite(normalizeEntityTitle)
       .describe('The Vision statement: "Firbot Academy es la academia de referencia…".'),
     description: z.string().trim().max(5000).optional(),
     icon: icon.optional(),
@@ -605,7 +607,7 @@ export const createVisionInput = z
 export const updateVisionInput = z
   .object({
     vision: visionRef,
-    title: z.string().trim().min(1).max(500).optional(),
+    title: z.string().trim().min(1).max(500).overwrite(normalizeEntityTitle).optional(),
     description: z.string().trim().max(5000).nullable().optional(),
     icon: icon.nullable().optional(),
     area: area.nullable().optional(),

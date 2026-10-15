@@ -198,24 +198,8 @@ const scheduleForModel = (s: ScheduleSummary) => ({
   schedule: s.id,
   name: s.name,
   status: s.status,
-  notifications: s.notify,
   ...(s.nextRunAt ? { nextRunAt: s.nextRunAt } : {}),
 });
-
-export const getNotificationsTool: ToolDefinition = {
-  name: "notifications.getPreferences",
-  capability: "settings",
-  operation: "getNotifications",
-  description:
-    "How each Schedule (e.g. the Morning Brief) notifies the user: none, in ELISE, or browser notification.",
-  input: z.object({}).strict(),
-  async describe() {
-    return { summary: "Read notification preferences" };
-  },
-  async run(_raw, env) {
-    return { output: { schedules: (await store(env).schedules()).map(scheduleForModel) } };
-  },
-};
 
 async function pickSchedule(env: ToolRunEnv, ref: string): Promise<ScheduleSummary> {
   const all = await store(env).schedules();
@@ -231,72 +215,6 @@ async function pickSchedule(env: ToolRunEnv, ref: string): Promise<ScheduleSumma
     { recovery: "review" },
   );
 }
-
-const notifyInput = z
-  .object({
-    browser: z
-      .boolean()
-      .optional()
-      .describe("false: no browser notifications from any schedule (they stay in ELISE)."),
-    schedule: z
-      .string()
-      .trim()
-      .min(1)
-      .max(120)
-      .optional()
-      .describe("One schedule by name, e.g. Morning Brief."),
-    notify: z.enum(["none", "in_app", "browser"]).optional(),
-  })
-  .strict();
-
-export const updateNotificationsTool: ToolDefinition = {
-  name: "notifications.updatePreferences",
-  capability: "settings",
-  operation: "updateNotifications",
-  description:
-    '"Turn off browser notifications" → {browser:false}. "Keep Morning Brief notifications" → {schedule:"Morning Brief", notify:"in_app"}. Uses the existing per-schedule notification settings.',
-  input: notifyInput,
-  async describe(raw) {
-    const u = notifyInput.parse(raw);
-    return {
-      summary: u.schedule
-        ? `${u.schedule} notifications → ${u.notify ?? "in_app"}`
-        : `Browser notifications ${u.browser ? "on" : "off"}`,
-    };
-  },
-  async run(raw, env) {
-    const u = notifyInput.parse(raw);
-    const s = store(env);
-    if (u.schedule) {
-      if (!u.notify)
-        throw new AppError("VALIDATION_ERROR", "Say how it should notify", { recovery: "review" });
-      const target = await pickSchedule(env, u.schedule);
-      await s.setScheduleNotify(target.id, u.notify);
-    } else if (u.browser !== undefined) {
-      for (const sc of await s.schedules()) {
-        if (!u.browser && sc.notify === "browser") await s.setScheduleNotify(sc.id, "in_app");
-        if (u.browser && sc.notify === "in_app") await s.setScheduleNotify(sc.id, "browser");
-      }
-    } else {
-      throw new AppError("VALIDATION_ERROR", "Nothing to change", { recovery: "review" });
-    }
-    const after = await s.schedules();
-    return {
-      output: { updated: true, schedules: after.map(scheduleForModel) },
-      display: {
-        kind: "setting_changed",
-        changes: [
-          {
-            setting: "notifications",
-            from: null,
-            to: u.schedule ? (u.notify ?? "in_app") : u.browser ? "browser" : "in_app",
-            ...(u.schedule ? { subject: u.schedule } : {}),
-          },
-        ],
-      },
-    };
-  },
-};
 
 export const listSchedulesTool: ToolDefinition = {
   name: "schedules.list",
@@ -457,8 +375,6 @@ export const SETTINGS_TOOLS = [
   getAppearanceTool,
   setThemeTool,
   setAccentTool,
-  getNotificationsTool,
-  updateNotificationsTool,
   listSchedulesTool,
   pauseTool("pause"),
   pauseTool("resume"),

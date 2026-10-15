@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { destinationField } from "../providers/destination";
 import type { ProviderKey } from "../providers/types";
+import { normalizeEntityTitle } from "../text";
 import { addDays, isIsoDate, todayIn } from "../time";
 
 /** Canonical Tasks model. Every provider (ELISE Native, Google Tasks...) maps into this. */
@@ -152,6 +153,7 @@ export const createTaskInput = z
       .describe(
         "What the user said the task is, in their words. Never a placeholder: if they didn't say, ask.",
       )
+      .overwrite(normalizeEntityTitle)
       // A generic word is not a task: the user never said what to do (ask, don't invent).
       .refine((t) => !isPlaceholderTitle(t), {
         message: "That isn't what the task is: ask the user what the task should say.",
@@ -180,12 +182,14 @@ export const createTaskInput = z
   })
   .strict();
 
-export const createTaskListInput = z.object({ name: z.string().trim().min(1).max(120) }).strict();
+export const createTaskListInput = z
+  .object({ name: z.string().trim().min(1).max(120).overwrite(normalizeEntityTitle) })
+  .strict();
 
 export const updateTaskInput = z
   .object({
     taskId,
-    title: z.string().trim().min(1).max(500).optional(),
+    title: z.string().trim().min(1).max(500).overwrite(normalizeEntityTitle).optional(),
     description: z.string().trim().max(5000).nullable().optional(),
     notes: z.string().trim().max(5000).nullable().optional(),
     status: z.enum(["pending", "in_progress", "cancelled"]).optional(),

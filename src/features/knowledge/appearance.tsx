@@ -14,6 +14,7 @@ import {
   Home,
   Landmark,
   Leaf,
+  MessagesSquare,
   Plane,
   Rocket,
   Sparkles,
@@ -67,6 +68,24 @@ export const SPACE_HEX: Record<SpaceColor, string> = {
   violet: "#8b6cf0",
 };
 
+/**
+ * Conversations outside every Space ("Sin Espacio"): the same tile, neutral — never a Space of
+ * its own.
+ */
+export function NoSpaceGlyph({ size = "sm" }: { size?: "xs" | "sm" }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "grid shrink-0 place-items-center bg-surface-2 text-faint",
+        size === "xs" ? "size-[18px] rounded-[5px]" : "size-6 rounded-md",
+      )}
+    >
+      <MessagesSquare className={size === "xs" ? "size-3" : "size-3.5"} />
+    </span>
+  );
+}
+
 /** The Space's icon on a faintly tinted tile. */
 export function SpaceGlyph({
   icon,
@@ -76,18 +95,28 @@ export function SpaceGlyph({
 }: {
   icon: string | null | undefined;
   color: string | null | undefined;
-  size?: "sm" | "md" | "lg";
+  /** "xs" sits inside a chip; "sm" beside a row's title; "md"/"lg" on cards. */
+  size?: "xs" | "sm" | "md" | "lg";
   className?: string;
 }) {
   const Icon = SPACE_GLYPHS[spaceIcon(icon)];
   const hex = SPACE_HEX[spaceColor(color)];
   const box =
-    size === "sm"
-      ? "size-6 rounded-md"
-      : size === "lg"
-        ? "size-11 rounded-xl"
-        : "size-9 rounded-lg";
-  const glyph = size === "sm" ? "size-3.5" : size === "lg" ? "size-5" : "size-[18px]";
+    size === "xs"
+      ? "size-[18px] rounded-[5px]"
+      : size === "sm"
+        ? "size-6 rounded-md"
+        : size === "lg"
+          ? "size-11 rounded-xl"
+          : "size-9 rounded-lg";
+  const glyph =
+    size === "xs"
+      ? "size-3"
+      : size === "sm"
+        ? "size-3.5"
+        : size === "lg"
+          ? "size-5"
+          : "size-[18px]";
   return (
     <span
       aria-hidden

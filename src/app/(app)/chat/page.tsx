@@ -23,6 +23,7 @@ import { DeleteConversationButton } from "@/features/history/delete-conversation
 import { HistoryControls, type HistoryParams } from "@/features/history/history-controls";
 import { HistoryFolder } from "@/features/history/history-folder";
 import { TagChips, TagEditor } from "@/features/history/history-tags";
+import { NoSpaceGlyph, SpaceGlyph } from "@/features/knowledge/appearance";
 import type { Dictionary } from "@/lib/i18n";
 import { getT } from "@/lib/i18n/server";
 
@@ -106,6 +107,10 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
           <HistoryFolder
             key={f.id}
             id={`space:${f.id}`}
+            // The same glyph and accent the Space has in Knowledge.
+            icon={
+              <SpaceGlyph icon={byId.get(f.id)?.icon} color={byId.get(f.id)?.color} size="sm" />
+            }
             label={f.archived ? `${f.label} · ${h.archived}` : f.label}
             count={f.count}
             meta={[
@@ -147,6 +152,7 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
         {tree.untagged.length > 0 && (
           <HistoryFolder
             id="untagged"
+            icon={<NoSpaceGlyph />}
             label={h.untagged}
             count={tree.untagged.length}
             meta={day.format(new Date(tree.untagged[0]!.at))}

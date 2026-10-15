@@ -19,6 +19,9 @@ export interface KnowledgeNode {
    * "Análisis Matemático II"). Written by the user, never invented.
    */
   aliases?: string[];
+  /** Its look in Knowledge (icon and accent keys), so History shows the same glyph. */
+  icon?: string | null;
+  color?: string | null;
 }
 
 export type LinkSource = "automatic" | "manual";
