@@ -92,7 +92,8 @@ export const planTodayTool: ToolDefinition = {
               (t.priority === "high" && (t.dueDate === null || t.dueDate <= soon)),
           )
           .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"));
-        present(env, [taskListSurface(priorities, opts("tasks", 75))]);
+        if (outcome.status === "succeeded")
+          present(env, [taskListSurface(priorities, opts("tasks", 75))]);
         return { value: priorities, outcome };
       }),
       runStep(env, "habits", "habits.list", async () => {

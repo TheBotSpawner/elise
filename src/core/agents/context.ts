@@ -51,6 +51,8 @@ export interface ContextInput {
   rules?: readonly string[];
   /** Connected accounts per capability, by user-facing name (never ids or credentials). */
   accounts?: readonly AccountSummary[];
+  /** Mi ELISE modules this person turned off (ADR-064): offered back only when asked for. */
+  inactiveModules?: readonly string[];
   /** Knowledge Space the conversation is in ("Work › Acme"), if any. */
   activeSpace?: string | null;
   /** The user's Spaces and Sections with the names they gave them, for resolving what they mean. */
@@ -392,6 +394,10 @@ export function buildContextPackage(input: ContextInput): ContextPackage {
 - ${input.user.displayName ? `The user's name is ${input.user.displayName}.` : "The user's name is unknown."}
 - Capabilities available right now: ${capabilities}.`,
   ];
+  if (input.inactiveModules?.length)
+    dynamic.push(
+      `Mi ELISE modules turned off: ${input.inactiveModules.join(", ")}. Their tools aren't loaded and their data stays saved. If the user asks for one of these ("quiero registrar mis gastos", "volver a usar hábitos"), say it isn't active in Mi ELISE and ask whether to turn it on (modules.enable) — never turn one on or off without a clear yes, and never because something only sounds related ("no uso mucho finanzas" is not a request).`,
+    );
   const accountLines = summarizeAccounts(input.accounts ?? []);
   if (accountLines) {
     dynamic.push(

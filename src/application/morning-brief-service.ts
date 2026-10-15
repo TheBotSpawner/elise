@@ -13,6 +13,7 @@ import {
   type MorningBrief,
 } from "@/core/briefs/morning-brief";
 import { AppError, toAppError } from "@/core/errors";
+import { moduleOfBriefBlock } from "@/core/modules/registry";
 import type { ActionHandler } from "@/core/schedules/runner";
 import {
   morningBriefConfigSchema,
@@ -52,6 +53,8 @@ export async function gatherBrief(
   attempted: number;
   /** Every read that answered, with its arguments: the Canvas presents and refreshes them. */
   reads: BriefRead[];
+  /** Blocks left out on purpose (their Mi ELISE module is off): not errors, never warnings. */
+  skipped: { block: string; reason: "module_disabled" }[];
 }> {
   const warnings: BriefWarning[] = [];
   const reads: BriefRead[] = [];
@@ -106,7 +109,16 @@ export async function gatherBrief(
     (await invoke(block, name, args, source))?.display;
 
   const today = toLocalDateTime(ctx.now, ctx.timezone).slice(0, 10);
-  const want = new Set(config.blocks);
+  // A block whose Mi ELISE module is off is skipped quietly (ADR-064); the schedule keeps it and
+  // uses it again once the module is back on.
+  const states = ports.moduleStates ? await ports.moduleStates() : null;
+  const skipped = config.blocks
+    .filter((b) => {
+      const m = moduleOfBriefBlock(b);
+      return Boolean(m && states && !states[m]);
+    })
+    .map((block) => ({ block, reason: "module_disabled" as const }));
+  const want = new Set(config.blocks.filter((b) => !skipped.some((s) => s.block === b)));
   // Which days the calendar covers (ADR-037): today, tomorrow, or the next seven days.
   const range =
     config.horizon === "tomorrow"
@@ -296,6 +308,7 @@ export async function gatherBrief(
     failed,
     attempted,
     reads,
+    skipped,
   };
 }
 
@@ -375,7 +388,7 @@ function logBrief(
   run: { origin: "interactive" | "schedule"; scheduleId: string | null },
   config: MorningBriefConfig,
   brief: MorningBrief,
-  gathered: { failed: number; attempted: number },
+  gathered: { failed: number; attempted: number; skipped?: { block: string }[] },
 ) {
   const sections = Object.entries({
     calendar: brief.today?.events.length,
@@ -396,6 +409,8 @@ function logBrief(
     blocks: config.blocks,
     calls: gathered.attempted,
     failed_calls: gathered.failed,
+    // Blocks whose Mi ELISE module is off (reason module_disabled): left out, not failures.
+    skipped_blocks: gathered.skipped?.map((x) => x.block) ?? [],
     produced: sections.filter(([, n]) => n! > 0).map(([k]) => k),
     empty: sections.filter(([, n]) => n === 0).map(([k]) => k),
     issues: issues.map(

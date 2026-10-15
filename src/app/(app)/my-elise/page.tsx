@@ -1,21 +1,36 @@
 import Link from "next/link";
 
+import { requireAuthContext } from "@/application/auth-context";
+import { enabledModules } from "@/application/modules-service";
 import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { getCapability } from "@/core/capabilities/registry";
 import { getT } from "@/lib/i18n/server";
 import { cn } from "@/lib/utils";
 
-const MODULES = (
-  ["tasks", "habits", "lists", "goals", "notes", "finance", "shortcuts", "methods", "time"] as const
-).map((key) => ({ key, icon: MY_ELISE_ICONS[key], href: `/my-elise/${key}` }));
-
 /** ELISE Native modules, grouped so the primary navigation stays small. */
 export default async function MyElisePage() {
-  const { t } = await getT();
+  const [{ t }, modules] = await Promise.all([getT(), requireAuthContext().then(enabledModules)]);
+  // The person's Mi ELISE modules (ADR-064), then the tools that aren't modules.
+  const MODULES = [...modules, "methods" as const, "time" as const].map((key) => ({
+    key,
+    icon: MY_ELISE_ICONS[key],
+    href: `/my-elise/${key}`,
+  }));
   return (
     <PageContainer>
       <PageHeader title={t.myElise.title} info={[t.myElise.subtitle]} />
+      {modules.length === 0 && (
+        <p className="mb-4 text-sm text-muted">
+          {t.myEliseModules.none}{" "}
+          <Link
+            href="/connections#mi-elise"
+            className="text-accent-text underline-offset-2 hover:underline"
+          >
+            {t.myEliseModules.choose}
+          </Link>
+        </p>
+      )}
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {MODULES.map(({ key, icon: Icon, href }) => {
           const available = getCapability(key).status === "available";

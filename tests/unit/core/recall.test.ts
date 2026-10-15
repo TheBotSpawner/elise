@@ -318,6 +318,13 @@ describe("context builder", () => {
 });
 
 class FakeSettings implements SettingsStore {
+  moduleState: Record<string, boolean> = { tasks: true, habits: false, finance: true };
+  async modules() {
+    return Object.entries(this.moduleState).map(([key, enabled]) => ({ key, enabled }));
+  }
+  async setModules(changes: Record<string, boolean>) {
+    Object.assign(this.moduleState, changes);
+  }
   prefs: ElisePreferences = {
     displayName: "Leo",
     language: "es",

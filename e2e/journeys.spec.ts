@@ -249,7 +249,7 @@ test("a failed turn gives the typed text back", async ({ page }) => {
 
 test("a Shortcut reads as “when I say… ELISE will…”", async ({ page }) => {
   await signIn(page);
-  await page.goto("/my-elise/shortcuts");
+  await page.goto("/settings/shortcuts");
   await expect(page.getByText("Tus propias frases para ELISE")).toBeVisible();
   await page.getByRole("button", { name: "Nuevo atajo" }).first().click();
   await page.getByLabel("Nombre").fill("Arranque E2E");

@@ -6,11 +6,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { GoogleMark, NotionIcon } from "@/components/elise/brand-icons";
+import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { Orb } from "@/components/elise/orb/orb";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Input, Label, Select } from "@/components/ui/input";
 import type { CapabilityKey } from "@/core/capabilities/types";
+import { availableModules, type NativeModuleKey } from "@/core/modules/registry";
 import type { ConnectionHealth } from "@/core/providers/health";
 import { connectGoogle, connectNotion } from "@/features/connections/actions";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
@@ -20,7 +22,12 @@ import { useI18n } from "@/lib/i18n/client";
 import { timezoneOptions } from "@/lib/timezones";
 import { cn } from "@/lib/utils";
 
-import { completeOnboarding, createFirstSpace, saveOnboardingProgress } from "./actions";
+import {
+  chooseModulesAction,
+  completeOnboarding,
+  createFirstSpace,
+  saveOnboardingProgress,
+} from "./actions";
 import {
   ONBOARDING_STEPS,
   PRESET_APPEARANCE,
@@ -62,7 +69,10 @@ export function OnboardingFlow({
   notionAvailable,
   spaces,
   returned,
+  modules,
 }: {
+  /** Mi ELISE modules shown as chosen at first (their saved choice, or the suggestions). */
+  modules: NativeModuleKey[];
   initial: OnboardingProgress;
   profile: { displayName: string; language: Locale; timezone: string };
   accounts: OnboardingAccount[];
@@ -136,11 +146,11 @@ export function OnboardingFlow({
           )}
 
           {step === "profile" && (
-            <ProfileStep
-              profile={profile}
-              onBack={() => go("welcome")}
-              onDone={() => go("connect")}
-            />
+            <ProfileStep profile={profile} onBack={() => go("welcome")} onDone={() => go("uses")} />
+          )}
+
+          {step === "uses" && (
+            <UsesStep initial={modules} onBack={() => go("profile")} onDone={() => go("connect")} />
           )}
 
           {step === "connect" && (
@@ -149,7 +159,7 @@ export function OnboardingFlow({
               googleAvailable={googleAvailable}
               notionAvailable={notionAvailable}
               returned={returned}
-              onBack={() => go("profile")}
+              onBack={() => go("uses")}
               onNext={() => go("space")}
             />
           )}
@@ -191,6 +201,108 @@ export function OnboardingFlow({
           )}
         </motion.section>
       </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * "¿Para qué te gustaría usar ELISE?" (ADR-064): what people want to do, never "modules". Each
+ * choice turns on its Mi ELISE module; continuing with none is fine — ELISE still works.
+ */
+function UsesStep({
+  initial,
+  onBack,
+  onDone,
+}: {
+  initial: NativeModuleKey[];
+  onBack: () => void;
+  onDone: () => void;
+}) {
+  const { t } = useI18n();
+  const o = t.onboarding;
+  const m = t.myEliseModules;
+  const [chosen, setChosen] = useState<Set<NativeModuleKey>>(new Set(initial));
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const save = (keys: NativeModuleKey[]) =>
+    start(async () => {
+      setError(null);
+      const r = await chooseModulesAction(keys);
+      if (!r.ok) return setError(errorText(t, r.error));
+      onDone();
+    });
+  return (
+    <div className="flex w-full flex-col items-center">
+      <Orb size={88} state="thinking" />
+      <h1 id="onboarding-uses" className="mt-6 text-2xl font-semibold tracking-tight">
+        {m.onboardingTitle}
+      </h1>
+      <p className="mt-2 max-w-md text-sm text-muted">{m.onboardingBody}</p>
+      <div className="mt-6 grid w-full gap-2 sm:grid-cols-2">
+        {availableModules().map((def) => {
+          const key = def.key as NativeModuleKey;
+          const Icon = MY_ELISE_ICONS[key];
+          const on = chosen.has(key);
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={on}
+              onClick={() =>
+                setChosen((s) => {
+                  const next = new Set(s);
+                  if (on) next.delete(key);
+                  else next.add(key);
+                  return next;
+                })
+              }
+              className={cn(
+                "flex min-h-14 items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",
+                on
+                  ? "border-accent bg-accent-soft"
+                  : "border-border text-muted hover:border-border-strong",
+              )}
+            >
+              <Icon
+                className={cn("size-[18px] shrink-0", on ? "text-accent-text" : "text-faint")}
+                aria-hidden
+              />
+              <span className="min-w-0 flex-1">
+                <span className={cn("block", on && "text-fg")}>{m.intents[key]}</span>
+                <span className="block text-[12.5px] text-faint">{t.capabilities[key]}</span>
+              </span>
+              <span
+                aria-hidden
+                className={cn(
+                  "grid size-5 shrink-0 place-items-center rounded-full",
+                  on ? "bg-accent text-accent-fg" : "border border-border-strong",
+                )}
+              >
+                {on && <Check className="size-3" />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {error && (
+        <p role="alert" className="mt-4 text-sm text-danger-text">
+          {error}
+        </p>
+      )}
+      <div className="mt-8 flex flex-wrap justify-center gap-2">
+        <Button variant="ghost" onClick={onBack} disabled={pending}>
+          {o.back}
+        </Button>
+        {chosen.size === 0 ? (
+          <Button onClick={() => save([])} disabled={pending}>
+            {m.onboardingNone}
+          </Button>
+        ) : (
+          <Button onClick={() => save([...chosen])} disabled={pending}>
+            {pending ? t.common.loading : o.next}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

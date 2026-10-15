@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireAuthContext } from "@/application/auth-context";
 import { createExecutorPorts, toolContext } from "@/application/elise";
 import { createSpace } from "@/application/knowledge-service";
+import { chooseModules } from "@/application/modules-service";
 import { toPublicError, type PublicError } from "@/core/errors";
 import { trackEvent } from "@/infrastructure/observability/analytics";
 
@@ -79,4 +80,22 @@ export async function completeOnboarding(input: { skipped: boolean }): Promise<v
   });
   trackEvent(auth, skipped ? "onboarding_skipped" : "onboarding_completed");
   redirect("/?welcome=1");
+}
+
+/**
+ * "¿Para qué te gustaría usar ELISE?": the chosen Mi ELISE modules on, the rest off — the same
+ * setting Connections → Mi ELISE changes (ADR-064). Choosing none is fine.
+ */
+export async function chooseModulesAction(
+  modules: string[],
+): Promise<{ ok: true } | { ok: false; error: PublicError }> {
+  try {
+    await chooseModules(
+      await requireAuthContext(),
+      z.array(z.string().max(40)).max(40).parse(modules),
+    );
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: toPublicError(error) };
+  }
 }

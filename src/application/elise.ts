@@ -103,6 +103,7 @@ import { knowledgeManager } from "./knowledge-admin";
 import { liveKnowledge } from "./knowledge-live";
 import { locationCapability } from "./location-service";
 import { methodStore } from "./methods-service";
+import { moduleStates } from "./modules-service";
 import { syncNoteToKnowledge } from "./notes-knowledge";
 import { catchUpRecall } from "./recall-service";
 import { settingsStore } from "./settings-service";
@@ -574,6 +575,7 @@ export function createExecutorPorts(
     log: new SupabaseActionLog(auth.db),
     bindings,
     loadBindings: async () => (await bindings()).bindings,
+    moduleStates: () => moduleStates(auth),
     permissionFor: async (binding: CapabilityBinding) =>
       (await bindings()).permissions.get(`${binding.connectionId}:${binding.capability}`) ??
       "understand",

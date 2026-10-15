@@ -401,7 +401,8 @@ export const prepareMeetingTool: ToolDefinition = {
               )
             : relatedTasks(all, keywords)
         ).slice(0, 8);
-        present(taskListSurface(related, { key: `${intentId}:tasks`, intentId, priority: 65 }));
+        if (outcome.status === "succeeded")
+          present(taskListSurface(related, { key: `${intentId}:tasks`, intentId, priority: 65 }));
         return { value: related, outcome };
       }),
     ]);

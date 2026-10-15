@@ -391,7 +391,7 @@ export type ToolDisplay =
   | {
       kind: "setting_changed";
       changes: {
-        setting: "timezone" | "language" | "notifications" | "schedule" | "wake_phrase";
+        setting: "timezone" | "language" | "notifications" | "schedule" | "wake_phrase" | "module";
         from: string | null;
         to: string;
         subject?: string;

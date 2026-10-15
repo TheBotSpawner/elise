@@ -2,7 +2,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MY_ELISE, MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
+import { MY_ELISE_ICONS, myEliseItems } from "@/components/elise/navigation/nav-items";
+import { NATIVE_MODULES } from "@/core/modules/registry";
 import { GoalDialog } from "@/features/native/goal-form";
 import { I18nProvider } from "@/lib/i18n/client";
 
@@ -119,7 +120,8 @@ describe("goal form", () => {
 
 describe("My Elise icons", () => {
   it("one mapping feeds the menu and the page headers", () => {
-    for (const item of MY_ELISE) expect(item.icon).toBe(MY_ELISE_ICONS[item.key]);
+    for (const item of myEliseItems(NATIVE_MODULES.map((m) => m.key)))
+      expect(item.icon).toBe(MY_ELISE_ICONS[item.key]);
     expect(Object.keys(MY_ELISE_ICONS)).toEqual(
       expect.arrayContaining(["tasks", "habits", "goals", "lists", "notes", "finance"]),
     );

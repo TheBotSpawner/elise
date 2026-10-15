@@ -6,6 +6,7 @@ import { contextOptions } from "@/application/contexts-service";
 import { loadVoiceSession } from "@/application/interaction-thread";
 import { listSpaces } from "@/application/knowledge-service";
 import { liveVoiceEnabled } from "@/application/live-voice-service";
+import { isModuleEnabled } from "@/application/modules-service";
 import { latestBrief } from "@/application/schedules-service";
 import { shortcutStore } from "@/application/shortcuts-service";
 import { openTasks } from "@/application/tasks-service";
@@ -53,7 +54,8 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
     : null;
   const [tasks, approvals, brief, resume, contexts] = await Promise.all([
     // Same service and definitions as the Tasks screen, so the counts match what it lists.
-    openTasks(auth).catch(() => null) /* ambient context never blocks Home */,
+    // Only when Tasks is on in Mi ELISE (ADR-064); ambient context never blocks Home.
+    isModuleEnabled(auth, "tasks").then((on) => (on ? openTasks(auth).catch(() => null) : null)),
     // Ambient context never blocks Home: any source failing just hides its line.
     listPendingApprovals(auth).catch(() => []),
     latestBrief(auth).catch(() => null),

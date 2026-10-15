@@ -13,7 +13,8 @@ import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 import { ChevronDownIcon, SettingsIcon } from "../icons";
-import { activeSection, MY_ELISE, SECTIONS } from "./nav-items";
+import { useMyEliseModules } from "./modules-context";
+import { activeSection, myEliseItems, SECTIONS } from "./nav-items";
 import { Orb } from "../orb/orb";
 import { ORB_FLIGHT, ORB_LAYOUT_ID, useOrbPresence } from "../orb/orb-presence";
 
@@ -173,7 +174,7 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
   );
 }
 
-function MyEliseMenu({
+export function MyEliseMenu({
   open,
   onOpenChange,
   current,
@@ -185,6 +186,7 @@ function MyEliseMenu({
   const { t } = useI18n();
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  const items = myEliseItems(useMyEliseModules());
 
   useEffect(() => {
     if (open)
@@ -247,34 +249,33 @@ function MyEliseMenu({
             <div className="flex h-7.5 items-center px-3 type-label text-faint">
               {t.nav.myElise}
             </div>
-            {MY_ELISE.map((m) =>
-              m.href ? (
-                <Link
-                  key={m.key}
-                  href={m.href}
-                  role="menuitem"
-                  onClick={() => close(false)}
-                  className="flex h-10 items-center gap-2.5 rounded-[10px] px-3 text-[13.5px] text-fg hover:bg-active focus-visible:bg-active"
-                >
-                  <m.icon className="size-4 text-muted" aria-hidden />
-                  {t.capabilities[m.key]}
-                </Link>
-              ) : (
-                <span
-                  key={m.key}
-                  role="menuitem"
-                  aria-disabled="true"
-                  tabIndex={-1}
-                  className="flex h-10 items-center justify-between rounded-[10px] px-3 text-[13.5px] text-muted"
-                >
-                  <span className="flex items-center gap-2.5">
-                    <m.icon className="size-4" aria-hidden />
-                    {t.capabilities[m.key]}
-                  </span>
-                  <span className="type-label text-faint">{t.nav.soon}</span>
-                </span>
-              ),
+            {items.map((m) => (
+              <Link
+                key={m.key}
+                href={m.href}
+                role="menuitem"
+                onClick={() => close(false)}
+                className="flex h-10 items-center gap-2.5 rounded-[10px] px-3 text-[13.5px] text-fg hover:bg-active focus-visible:bg-active"
+              >
+                <m.icon className="size-4 text-muted" aria-hidden />
+                {t.capabilities[m.key]}
+              </Link>
+            ))}
+            {items.length === 0 && (
+              <p className="px-3 pt-1 pb-1.5 text-[13px] text-muted">{t.myEliseModules.none}</p>
             )}
+            {/* Choosing modules lives in Connections → Mi ELISE (one place, ADR-064). */}
+            <Link
+              href="/connections#mi-elise"
+              role="menuitem"
+              onClick={() => close(false)}
+              className={cn(
+                "flex h-10 items-center rounded-[10px] px-3 text-[13px] hover:bg-active focus-visible:bg-active",
+                items.length ? "text-faint" : "text-accent-text",
+              )}
+            >
+              {items.length ? t.myEliseModules.manage : t.myEliseModules.choose}
+            </Link>
           </MenuPanel>
         )}
       </AnimatePresence>

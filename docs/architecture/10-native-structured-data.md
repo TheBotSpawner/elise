@@ -1570,6 +1570,8 @@ y protegido por:
 
 `My Elise` agrupa módulos Native.
 
+Los módulos son opcionales por persona (ADR-064): el registro `NATIVE_MODULES` los declara, cada uno se activa o desactiva en Conexiones → Mi ELISE o en el onboarding, y desactivarlo nunca borra datos. La navegación, las rutas, las tools, el contexto y los schedules respetan esa elección. Atajos vive en Configuración.
+
 ```text
 My Elise
 ├── Tasks

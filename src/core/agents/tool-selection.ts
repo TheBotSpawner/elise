@@ -18,6 +18,8 @@ export const CORE_GROUPS: ReadonlySet<string> = new Set([
   "notifications",
   "voice",
   "connections",
+  // "Activame Hábitos", "quiero registrar gastos" (a module that is off): always reachable.
+  "modules",
   "planning",
   "meeting",
   "work",

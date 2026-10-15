@@ -129,6 +129,7 @@ const change = z.object({
     "notifications",
     "schedule",
     "wake_phrase",
+    "module",
   ]),
   from: text(120).nullable(),
   to: text(120),

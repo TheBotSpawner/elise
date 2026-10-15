@@ -999,7 +999,8 @@ export const workBriefTool: ToolDefinition = {
           const tasks = (displayOf(outcome, "task_list")?.tasks ?? []).filter((t) =>
             taskMatches(signals, t),
           );
-          present(env, [taskListSurface(tasks, { ...opts("tasks", 66), title: profile.name })]);
+          if (outcome.status === "succeeded")
+            present(env, [taskListSurface(tasks, { ...opts("tasks", 66), title: profile.name })]);
           return { value: tasks, outcome };
         }),
         runStep(env, "tasks", "tasks.list", async () => {
@@ -1203,10 +1204,12 @@ export const workBriefTool: ToolDefinition = {
 
     const status = (
       source: string,
-      r: { status: "ok" | "unavailable" | "failed" } | null,
+      r: { status: "ok" | "unavailable" | "failed" | "off" } | null,
       count: number,
     ): SourceStatus | null =>
-      r ? { source, status: r.status === "ok" ? (count ? "ok" : "empty") : r.status, count } : null;
+      r && r.status !== "off"
+        ? { source, status: r.status === "ok" ? (count ? "ok" : "empty") : r.status, count }
+        : null;
     const sources = [
       status("email", email, messages.length),
       status("calendar", calendar, (calendar.value ?? []).length),

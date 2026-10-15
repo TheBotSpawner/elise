@@ -428,6 +428,17 @@ export type OAuthStateRow = {
   expires_at: Ts;
 };
 
+/** Mi ELISE (ADR-064): one row per person, workspace and native module they chose. */
+export type UserModulePreferenceRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  module_key: string;
+  enabled: boolean;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
 export type ConnectionSecretRow = {
   connection_id: string;
   workspace_id: string;
@@ -1399,6 +1410,10 @@ export type Database = {
       workspaces: Table<WorkspaceRow, "name" | "owner_user_id">;
       workspace_members: Table<WorkspaceMemberRow, "workspace_id" | "user_id">;
       user_preferences: Table<UserPreferenceRow, "workspace_id" | "user_id" | "key" | "value_json">;
+      user_module_preferences: Table<
+        UserModulePreferenceRow,
+        "workspace_id" | "user_id" | "module_key" | "enabled"
+      >;
       /** The provider catalog (read-only for users; rows come from migrations). */
       provider_definitions: Table<ProviderDefinitionRow, "key" | "display_name" | "auth_type">;
       provider_connections: Table<

@@ -1,3 +1,5 @@
+import type { NativeModuleKey } from "@/core/modules/registry";
+
 import type { Dictionary } from "./en";
 
 export const es: Dictionary = {
@@ -606,6 +608,46 @@ export const es: Dictionary = {
     inThread: "En el hilo",
     reacted: (emoji: string) => `Reaccioné ${emoji}`,
     unreacted: (emoji: string) => `Saqué ${emoji}`,
+  },
+  myEliseModules: {
+    title: "Mi ELISE",
+    subtitle: "Elegí qué querés tener dentro de ELISE.",
+    about:
+      "Mi ELISE es la parte de ELISE que armás vos: activá solo lo que usás. Desactivar algo nunca borra nada: vuelve tal como estaba cuando lo activás otra vez.",
+    none: "Todavía no activaste módulos.",
+    choose: "Elegir módulos",
+    manage: "Administrar Mi ELISE",
+    on: "Activo",
+    off: "Desactivado",
+    enable: "Activar",
+    disable: "Desactivar",
+    tag: "Mi ELISE",
+    enabledToast: (name: string) => `${name} está activo en Mi ELISE.`,
+    disabledToast: (name: string) => `${name} se quitó de Mi ELISE. Tus datos siguen guardados.`,
+    toggle: (name: string) => `Usar ${name} en ELISE`,
+    descriptions: {
+      tasks: "Organizá lo que tenés que hacer.",
+      habits: "Registrá rutinas y seguí tu progreso.",
+      lists: "Listas simples para cualquier cosa.",
+      goals: "Definí metas y seguí su avance.",
+      notes: "Notas que ELISE puede consultar.",
+      finance: "Ingresos, gastos y presupuestos.",
+    } as Record<NativeModuleKey, string>,
+    intents: {
+      tasks: "Organizar mis tareas",
+      habits: "Crear hábitos y rutinas",
+      lists: "Guardar listas",
+      goals: "Seguir mis objetivos",
+      notes: "Tomar notas",
+      finance: "Ordenar mis finanzas",
+    } as Record<NativeModuleKey, string>,
+    guardTitle: (name: string) => `${name} no está activo en Mi ELISE`,
+    guardBody: "Podés activarlo cuando quieras. Tus datos anteriores siguen guardados.",
+    guardEnable: (name: string) => `Activar ${name}`,
+    back: "Volver",
+    onboardingTitle: "¿Para qué te gustaría usar ELISE?",
+    onboardingBody: "Elegí todo lo que quieras. Podés cambiarlo después.",
+    onboardingNone: "Seguir sin estas",
   },
   taskLists: "Listas de tareas",
   myElise: {
@@ -2976,6 +3018,7 @@ export const es: Dictionary = {
       notifications: "Notificaciones",
       schedule: "Programado",
       wake_phrase: "Frase de activación",
+      module: "Mi ELISE",
     },
     applied: "Aplicado",
     summaryKinds: {

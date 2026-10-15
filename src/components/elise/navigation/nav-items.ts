@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import type { CapabilityKey } from "@/core/capabilities/types";
+import { moduleDefinition, type NativeModuleKey } from "@/core/modules/registry";
 
 export type SectionKey = "home" | "chat" | "knowledge" | "connections" | "schedules";
 
@@ -54,14 +55,23 @@ export const MY_ELISE_ICONS = {
   shortcuts: Zap,
   methods: BookOpenCheck,
   time: Timer,
-} as const satisfies Partial<Record<CapabilityKey, LucideIcon>>;
+  // Every Mi ELISE module must have its icon (a new module fails to compile without one).
+} as const satisfies Partial<Record<CapabilityKey, LucideIcon>> &
+  Record<NativeModuleKey, LucideIcon>;
 
 export type MyEliseModule = keyof typeof MY_ELISE_ICONS;
 
-/** The modules in the My Elise menu, in order. */
-export const MY_ELISE: { key: MyEliseModule; href: string | null; icon: LucideIcon }[] = (
-  ["tasks", "habits", "lists", "goals", "notes", "finance", "shortcuts"] as const
-).map((key) => ({ key, href: `/my-elise/${key}`, icon: MY_ELISE_ICONS[key] }));
+/**
+ * The Mi ELISE menu: the modules this person uses, in registry order (ADR-064) — never a fixed
+ * list. Each links to its route; the label is its capability name.
+ */
+export function myEliseItems(enabled: readonly NativeModuleKey[]) {
+  return enabled.map((key) => ({
+    key,
+    href: moduleDefinition(key).route,
+    icon: MY_ELISE_ICONS[key] as LucideIcon,
+  }));
+}
 
 export type ActiveSection = SectionKey | "myElise" | "settings" | "approvals" | null;
 

@@ -1660,7 +1660,7 @@ function ShortcutBody({
             <Check className="size-4" aria-hidden />
             {sc.saved}
           </p>
-          <ActionLink href="/my-elise/shortcuts">{t.workspace.actions.open}</ActionLink>
+          <ActionLink href="/settings/shortcuts">{t.workspace.actions.open}</ActionLink>
         </div>
       ) : (
         <div className="flex justify-end pt-1">

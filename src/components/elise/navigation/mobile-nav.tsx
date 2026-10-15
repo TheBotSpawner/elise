@@ -12,7 +12,8 @@ import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 import { ChevronDownIcon, CloseIcon, MenuIcon, SettingsIcon } from "../icons";
-import { activeSection, MY_ELISE, SECTIONS } from "./nav-items";
+import { useMyEliseModules } from "./modules-context";
+import { activeSection, myEliseItems, SECTIONS } from "./nav-items";
 import type { NavUser } from "./top-nav";
 import { Orb } from "../orb/orb";
 import { useOrbPresence } from "../orb/orb-presence";
@@ -119,6 +120,7 @@ function MobileNavOverlay({
   const homeClick = useHomeNavClick(active === "home");
   const closeRef = useRef<HTMLButtonElement>(null);
   const [modulesOpen, setModulesOpen] = useState(active === "myElise");
+  const items = myEliseItems(useMyEliseModules());
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -211,28 +213,29 @@ function MobileNavOverlay({
             />
           </button>
           {modulesOpen && (
-            <div className="grid grid-cols-3 gap-2 px-3.5 pt-1 pb-2.5">
-              {MY_ELISE.map((m) =>
-                m.href ? (
-                  <Link
-                    key={m.key}
-                    href={m.href}
-                    className="flex h-11 items-center justify-center gap-2 rounded-xl border border-border text-sm"
-                  >
-                    <m.icon className="size-4 text-muted" aria-hidden />
-                    {t.capabilities[m.key]}
-                  </Link>
-                ) : (
-                  <span
-                    key={m.key}
-                    aria-disabled="true"
-                    className="flex h-11 items-center justify-center gap-2 rounded-xl border border-border text-sm text-muted"
-                  >
-                    <m.icon className="size-4" aria-hidden />
-                    {t.capabilities[m.key]}
-                  </span>
-                ),
+            <div className="flex flex-col gap-2 px-3.5 pt-1 pb-2.5">
+              {items.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2 min-[400px]:grid-cols-3">
+                  {items.map((m) => (
+                    <Link
+                      key={m.key}
+                      href={m.href}
+                      className="flex h-11 min-w-0 items-center justify-center gap-2 rounded-xl border border-border px-2 text-sm"
+                    >
+                      <m.icon className="size-4 shrink-0 text-muted" aria-hidden />
+                      <span className="truncate">{t.capabilities[m.key]}</span>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[13.5px] text-muted">{t.myEliseModules.none}</p>
               )}
+              <Link
+                href="/connections#mi-elise"
+                className={cn("text-[13px]", items.length ? "text-faint" : "text-accent-text")}
+              >
+                {items.length ? t.myEliseModules.manage : t.myEliseModules.choose}
+              </Link>
             </div>
           )}
         </motion.div>

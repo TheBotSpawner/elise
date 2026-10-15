@@ -62,6 +62,10 @@ export interface SettingsStore {
   connections(): Promise<ConnectionSummary[]>;
   voice(): Promise<VoiceSettings>;
   updateVoice(patch: Partial<VoiceSettings>): Promise<VoiceSettings>;
+  /** Mi ELISE (ADR-064): which native modules this person uses, in Mi ELISE order. */
+  modules(): Promise<{ key: string; enabled: boolean }[]>;
+  /** Turns modules on or off (audited); data is never touched. */
+  setModules(changes: Record<string, boolean>): Promise<void>;
 }
 
 const norm = (s: string) =>

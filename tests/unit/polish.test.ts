@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { MY_ELISE, SECTIONS } from "@/components/elise/navigation/nav-items";
+import { myEliseItems, SECTIONS } from "@/components/elise/navigation/nav-items";
 import { spaceColor, spaceIcon, suggestAppearance } from "@/core/knowledge/appearance";
+import { NATIVE_MODULES } from "@/core/modules/registry";
 import { resolveBindings } from "@/core/providers/resolver";
 import { en } from "@/lib/i18n/dictionaries/en";
 import { es } from "@/lib/i18n/dictionaries/es";
@@ -17,7 +18,8 @@ describe("navigation", () => {
   });
 
   it("gives every My Elise module an icon", () => {
-    expect(MY_ELISE.every((m) => typeof m.icon === "object" || typeof m.icon === "function")).toBe(
+    const items = myEliseItems(NATIVE_MODULES.map((m) => m.key));
+    expect(items.every((m) => typeof m.icon === "object" || typeof m.icon === "function")).toBe(
       true,
     );
   });

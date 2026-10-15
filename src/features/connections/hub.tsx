@@ -7,6 +7,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import type { ErrorCode } from "@/core/errors";
+import type { ModuleStates } from "@/core/modules/registry";
 import {
   PROVIDER_CATALOG,
   PROVIDER_CATEGORIES,
@@ -16,6 +17,7 @@ import {
   type ProviderCatalogEntry,
   type ProviderSummary,
 } from "@/core/providers/catalog";
+import { MyEliseSection, matchModules } from "@/features/modules/my-elise-section";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -31,10 +33,13 @@ type Filter = "all" | "connected" | "available";
 export function ConnectionsHub({
   accounts,
   configured,
+  modules,
 }: {
   accounts: HubAccount[];
   /** Providers set up on this server (e.g. Spotify needs its client id). */
   configured: Record<string, boolean>;
+  /** Mi ELISE (ADR-064): which native modules this person uses. */
+  modules: ModuleStates;
 }) {
   const { t } = useI18n();
   const h = t.connectionsHub;
@@ -50,8 +55,8 @@ export function ConnectionsHub({
       ),
     [accounts, configured],
   );
+  // ELISE's own modules are Mi ELISE (above), never a "connection" in the catalog.
   const external = PROVIDER_CATALOG.filter((e) => !e.builtIn);
-  const native = PROVIDER_CATALOG.find((e) => e.builtIn);
   const connected = external.filter((e) => summaries.get(e.id)!.accounts > 0);
 
   const results = searchCatalog(
@@ -71,6 +76,7 @@ export function ConnectionsHub({
         : true;
   });
   const grouped = !query && filter === "all";
+  const moduleMatches = query ? matchModules(query, t) : [];
 
   return (
     <div className="flex flex-col gap-8">
@@ -117,6 +123,11 @@ export function ConnectionsHub({
         </div>
       </div>
 
+      {grouped && <MyEliseSection states={modules} />}
+      {query && moduleMatches.length > 0 && (
+        <MyEliseSection states={modules} only={moduleMatches} />
+      )}
+
       {grouped && connected.length > 0 && (
         <section aria-labelledby="hub-connected" className="flex flex-col gap-2">
           <h2 id="hub-connected" className="type-label text-faint">
@@ -150,36 +161,13 @@ export function ConnectionsHub({
         </section>
       ) : results.length ? (
         <section aria-live="polite" className="flex flex-col gap-2">
+          {moduleMatches.length > 0 && <h2 className="type-label text-faint">{h.allTitle}</h2>}
           <ProviderGrid entries={results} summaries={summaries} />
         </section>
-      ) : (
+      ) : moduleMatches.length ? null : (
         <p aria-live="polite" className="text-[14px] text-muted">
           {h.noResults(query)}
         </p>
-      )}
-
-      {native && grouped && (
-        <section
-          aria-labelledby="hub-native"
-          className="flex flex-col gap-2 border-t border-border pt-6"
-        >
-          <h2 id="hub-native" className="type-label text-faint">
-            {h.categories.native}
-          </h2>
-          <Link
-            href={`/connections/${native.id}`}
-            className="flex items-center gap-3 rounded-2xl px-2 py-2 transition-colors hover:bg-active focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-          >
-            <ProviderIcon id={native.id} name={native.name} size={36} />
-            <span className="min-w-0 flex-1">
-              <span className="block text-[14.5px] font-medium">{native.name}</span>
-              <span className="block truncate text-[13px] text-muted">
-                {native.capabilities.map((c) => t.capabilities[c]).join(" · ")}
-              </span>
-            </span>
-            <span className="text-[12.5px] text-faint">{h.builtIn}</span>
-          </Link>
-        </section>
       )}
     </div>
   );

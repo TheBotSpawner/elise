@@ -431,6 +431,9 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       // The wake phrase and voice behavior (ADR-017 §9): allowlisted values only.
       updateVoice: WRITE,
       listConnections: READ,
+      // Mi ELISE (ADR-064): the person's own choice of modules; reversible, audited.
+      listModules: READ,
+      setModules: WRITE,
     },
   },
   // Live Workspace (ADR-013): presentation only — no user data changes, so reads. Meeting

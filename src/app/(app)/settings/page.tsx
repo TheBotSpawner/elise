@@ -3,6 +3,7 @@ import { speechStatus } from "@/application/voice-service";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { isEnabled } from "@/config/flags";
 import { LocationSettings } from "@/features/settings/location-settings";
+import { PersonalCard } from "@/features/settings/personal-card";
 import { PrivacyCard } from "@/features/settings/privacy-card";
 import { SettingsForm } from "@/features/settings/settings-form";
 import { StartupSettings } from "@/features/settings/startup-settings";
@@ -30,6 +31,9 @@ export default async function SettingsPage() {
           wakeAllowed={isEnabled("wakePhrase", auth)}
           speech={speechStatus()}
         />
+      </div>
+      <div className="mt-6">
+        <PersonalCard t={t} />
       </div>
       <div className="mt-6">
         <StartupSettings />

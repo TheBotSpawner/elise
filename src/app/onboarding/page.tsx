@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getAuthContext } from "@/application/auth-context";
 import { listConnections } from "@/application/connections-service";
 import { listSpaces } from "@/application/knowledge-service";
+import { hasChosenModules, enabledModules } from "@/application/modules-service";
+import { NATIVE_MODULES } from "@/core/modules/registry";
 import {
   ONBOARDING_STEPS,
   SPACE_PRESETS,
@@ -21,7 +23,7 @@ export default async function OnboardingPage({ searchParams }: PageProps<"/onboa
   if (auth.profile.onboardingStatus !== "pending" && !again && !params.connected && !params.error)
     redirect("/");
 
-  const [progressRow, connections, spaces] = await Promise.all([
+  const [progressRow, connections, spaces, chosen, enabled] = await Promise.all([
     auth.db
       .from("user_preferences")
       .select("value_json")
@@ -31,7 +33,12 @@ export default async function OnboardingPage({ searchParams }: PageProps<"/onboa
       .maybeSingle(),
     listConnections(auth).catch(() => null),
     listSpaces(auth).catch(() => []),
+    hasChosenModules(auth),
+    enabledModules(auth),
   ]);
+  // Their own choice when they made one (seeing onboarding again); otherwise a few suggestions,
+  // never everything (ADR-064).
+  const modules = chosen ? enabled : NATIVE_MODULES.filter((m) => m.suggested).map((m) => m.key);
   const stored = (progressRow.data?.value_json ?? null) as Partial<OnboardingProgress> | null;
   const progress: OnboardingProgress = {
     step:
@@ -58,6 +65,7 @@ export default async function OnboardingPage({ searchParams }: PageProps<"/onboa
     <main className="elise-halo flex min-h-dvh items-center justify-center px-4 py-12">
       <OnboardingFlow
         initial={progress}
+        modules={modules}
         profile={{
           displayName: auth.profile.displayName ?? "",
           language: auth.profile.locale,

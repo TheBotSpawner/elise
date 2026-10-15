@@ -13,7 +13,8 @@ import type { SurfaceDraft, WorkspaceOp } from "../workspace/model";
 export interface StepResult<T> {
   value: T | null;
   problem: string | null;
-  status: "ok" | "unavailable" | "failed";
+  /** "off": the source's Mi ELISE module is off — not a gap to report (ADR-064). */
+  status: "ok" | "unavailable" | "failed" | "off";
 }
 
 const UNAVAILABLE = ["CAPABILITY_UNAVAILABLE", "AUTH_ERROR", "AUTH_EXPIRED", "PERMISSION_DENIED"];
@@ -31,6 +32,10 @@ export async function runStep<T>(
   workspace?.activity({ id, tool, status: "running" });
   try {
     const { value, outcome } = await run();
+    if (outcome?.status === "failed" && outcome.moduleDisabled) {
+      workspace?.activity({ id, tool, status: "done" });
+      return { value: null, problem: null, status: "off" };
+    }
     if (outcome && outcome.status !== "succeeded") {
       const unavailable =
         outcome.status === "failed" ? UNAVAILABLE.includes(outcome.error.code) : true;

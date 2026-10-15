@@ -54,7 +54,7 @@ const ROUTES = (process.env.AUDIT_ROUTES?.split(",") ?? null) || [
   "/my-elise/goals",
   "/my-elise/notes",
   "/my-elise/finance",
-  "/my-elise/shortcuts",
+  "/settings/shortcuts",
   "/approvals",
   "/settings",
 ];

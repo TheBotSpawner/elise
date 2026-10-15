@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { listPendingApprovals } from "@/application/approvals-service";
 import { getAuthContext } from "@/application/auth-context";
+import { enabledModules } from "@/application/modules-service";
 import { AppShell } from "@/components/elise/app-shell";
 import { ResultNotifier } from "@/features/schedules/browser-notifications";
 import { TimeController } from "@/features/time/time-view";
@@ -12,12 +13,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   if (!auth) redirect("/login");
   if (auth.profile.onboardingStatus === "pending") redirect("/onboarding");
 
-  const pending = await listPendingApprovals(auth);
+  const [pending, modules] = await Promise.all([listPendingApprovals(auth), enabledModules(auth)]);
   const name = auth.profile.displayName || auth.email?.split("@")[0] || "ELISE";
   return (
     <AppShell
       workspaceId={auth.workspaceId}
       pendingApprovals={pending.length}
+      modules={modules}
       user={{ name, initial: name.charAt(0).toUpperCase(), email: auth.email }}
     >
       <ResultNotifier userId={auth.userId} />

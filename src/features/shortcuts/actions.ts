@@ -19,7 +19,7 @@ type Result<T> = { ok: true; value: T } | { ok: false; error: PublicError };
 async function run<T>(fn: () => Promise<T>): Promise<Result<T>> {
   try {
     const value = await fn();
-    revalidatePath("/my-elise/shortcuts");
+    revalidatePath("/settings/shortcuts");
     return { ok: true, value };
   } catch (error) {
     return {

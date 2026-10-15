@@ -11,11 +11,13 @@ import {
   type VoiceSettings,
 } from "@/core/capabilities/settings";
 import { AppError } from "@/core/errors";
+import { availableModules, type NativeModuleKey } from "@/core/modules/registry";
 import { isValidTimezone } from "@/core/time";
 import { WAKE_PHRASES } from "@/core/voice/wake";
 
 import type { AuthContext } from "./auth-context";
 import { listConnections } from "./connections-service";
+import { moduleStates, setModules } from "./modules-service";
 import { listSchedules, setSchedulePaused, updateSchedule } from "./schedules-service";
 
 /**
@@ -100,6 +102,14 @@ const invalid = (what: string) =>
 /** The store ELISE's tools use; changes are audited with origin "ai". */
 export function settingsStore(auth: AuthContext): SettingsStore {
   return {
+    async modules() {
+      const states = await moduleStates(auth);
+      return availableModules().map((m) => ({
+        key: m.key,
+        enabled: states[m.key as NativeModuleKey],
+      }));
+    },
+    setModules: async (changes) => void (await setModules(auth, changes, "ai")),
     get: () => getPreferences(auth),
     update: (patch) => updatePreferences(auth, patch, "ai"),
     async schedules() {

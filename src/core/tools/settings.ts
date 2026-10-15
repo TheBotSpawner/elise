@@ -9,6 +9,7 @@ import {
   type SettingsStore,
 } from "../capabilities/settings";
 import { AppError } from "../errors";
+import { NATIVE_MODULES, type NativeModuleKey } from "../modules/registry";
 import { WAKE_LABELS, WAKE_PHRASES } from "../voice/wake";
 
 /**
@@ -369,6 +370,74 @@ export const setWakePhraseTool: ToolDefinition = {
   },
 };
 
+// ── Mi ELISE (ADR-064) ───────────────────────────────────────────────────────
+
+const moduleKeys = z
+  .array(z.enum(NATIVE_MODULES.map((m) => m.key) as [NativeModuleKey, ...NativeModuleKey[]]))
+  .min(1)
+  .max(NATIVE_MODULES.length);
+
+export const listModulesTool: ToolDefinition = {
+  name: "modules.list",
+  capability: "settings",
+  operation: "listModules",
+  description:
+    "Which Mi ELISE modules (Tareas, Hábitos, Listas, Objetivos, Notas, Finanzas) the user has on. Turning one off keeps its data.",
+  input: z.object({}).strict(),
+  async describe() {
+    return { summary: "List Mi ELISE modules" };
+  },
+  async run(_raw, env) {
+    return { output: { modules: await store(env).modules() } };
+  },
+};
+
+function moduleTool(on: boolean): ToolDefinition {
+  const input = z.object({ modules: moduleKeys }).strict();
+  return {
+    name: on ? "modules.enable" : "modules.disable",
+    capability: "settings",
+    operation: "setModules",
+    description: on
+      ? '"Activame Hábitos", "quiero empezar a usar Finanzas", or yes to your offer: turns Mi ELISE modules on. Their earlier data comes back as it was. Only when the user clearly asks or accepts.'
+      : '"Sacá Finanzas de Mi ELISE": turns modules off. Nothing is deleted; ELISE stops using them until they are turned on again. Only on a clear request — "no uso mucho finanzas" is not one.',
+    input,
+    async describe(raw) {
+      const { modules } = input.parse(raw);
+      return { summary: `${on ? "Turn on" : "Turn off"} ${modules.join(", ")} in Mi ELISE` };
+    },
+    confirm(output, locale) {
+      const names = (output as { modules: string[] }).modules.join(", ");
+      return locale === "es"
+        ? on
+          ? `Listo. Activé ${names} en Mi ELISE.`
+          : `Listo. Saqué ${names} de Mi ELISE. Tus datos siguen guardados.`
+        : on
+          ? `Done. ${names} is on in My ELISE.`
+          : `Done. ${names} is off in My ELISE. Your data is still saved.`;
+    },
+    async run(raw, env) {
+      const { modules } = input.parse(raw);
+      await store(env).setModules(Object.fromEntries(modules.map((m) => [m, on])));
+      return {
+        output: { modules, enabled: on },
+        display: {
+          kind: "setting_changed",
+          changes: modules.map((m) => ({
+            setting: "module" as const,
+            from: on ? "off" : "on",
+            to: on ? "on" : "off",
+            subject: m,
+          })),
+        },
+      };
+    },
+  };
+}
+
+export const enableModulesTool = moduleTool(true);
+export const disableModulesTool = moduleTool(false);
+
 export const SETTINGS_TOOLS = [
   getSettingsTool,
   updateSettingsTool,
@@ -380,4 +449,7 @@ export const SETTINGS_TOOLS = [
   pauseTool("resume"),
   listConnectionsTool,
   setWakePhraseTool,
+  listModulesTool,
+  enableModulesTool,
+  disableModulesTool,
 ];

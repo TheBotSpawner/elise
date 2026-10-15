@@ -1,3 +1,5 @@
+import type { NativeModuleKey } from "@/core/modules/registry";
+
 export const en = {
   meta: { tagline: "One intelligence. Everything under control." },
   nav: {
@@ -595,6 +597,46 @@ export const en = {
     inThread: "In thread",
     reacted: (emoji: string) => `Reacted ${emoji}`,
     unreacted: (emoji: string) => `Removed ${emoji}`,
+  },
+  myEliseModules: {
+    title: "My ELISE",
+    subtitle: "Choose what you want inside ELISE.",
+    about:
+      "My ELISE is the part of ELISE you choose: turn on only what you use. Turning something off never deletes anything — it comes back as it was when you turn it on again.",
+    none: "You haven't turned anything on yet.",
+    choose: "Choose modules",
+    manage: "Manage My ELISE",
+    on: "On",
+    off: "Off",
+    enable: "Enable",
+    disable: "Disable",
+    tag: "My ELISE",
+    enabledToast: (name: string) => `${name} is on in My ELISE.`,
+    disabledToast: (name: string) => `${name} was removed from My ELISE. Your data is still saved.`,
+    toggle: (name: string) => `Use ${name} in ELISE`,
+    descriptions: {
+      tasks: "Organize what you have to do.",
+      habits: "Track routines and see your progress.",
+      lists: "Simple lists for anything.",
+      goals: "Set goals and follow how they go.",
+      notes: "Notes ELISE can look up.",
+      finance: "Income, expenses and budgets.",
+    } as Record<NativeModuleKey, string>,
+    intents: {
+      tasks: "Organize my tasks",
+      habits: "Build habits and routines",
+      lists: "Keep lists",
+      goals: "Follow my goals",
+      notes: "Take notes",
+      finance: "Sort out my finances",
+    } as Record<NativeModuleKey, string>,
+    guardTitle: (name: string) => `${name} isn't on in My ELISE`,
+    guardBody: "You can turn it on whenever you want. Your earlier data is still saved.",
+    guardEnable: (name: string) => `Turn on ${name}`,
+    back: "Back",
+    onboardingTitle: "What would you like to use ELISE for?",
+    onboardingBody: "Choose everything you want. You can change it anytime.",
+    onboardingNone: "Continue without these",
   },
   taskLists: "Task lists",
   myElise: {
@@ -2949,6 +2991,7 @@ export const en = {
       notifications: "Notifications",
       schedule: "Schedule",
       wake_phrase: "Wake phrase",
+      module: "My ELISE",
     },
     applied: "Applied",
     summaryKinds: {

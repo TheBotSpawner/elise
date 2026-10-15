@@ -1,5 +1,15 @@
-/** First-run onboarding (ADR-019): five short steps, every one skippable after the welcome. */
-export const ONBOARDING_STEPS = ["welcome", "profile", "connect", "space", "ready"] as const;
+/**
+ * First-run onboarding (ADR-019): short steps, every one skippable after the welcome. "uses" is
+ * "¿Para qué te gustaría usar ELISE?" — it chooses Mi ELISE's modules (ADR-064).
+ */
+export const ONBOARDING_STEPS = [
+  "welcome",
+  "profile",
+  "uses",
+  "connect",
+  "space",
+  "ready",
+] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
 export const SPACE_PRESETS = ["work", "university", "personal", "business", "custom"] as const;

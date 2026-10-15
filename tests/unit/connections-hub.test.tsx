@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectionView } from "@/application/connections-service";
 import type { CapabilityKey } from "@/core/capabilities/types";
+import { effectiveModules, type ModuleStates } from "@/core/modules/registry";
 import {
   PROVIDER_CATALOG,
   searchCatalog,
@@ -32,6 +33,9 @@ vi.mock("@/features/connections/actions", () => ({
   setDefaultAction: vi.fn(),
   toggleCapabilityAction: vi.fn(),
 }));
+
+const modules = vi.hoisted(() => ({ set: vi.fn(async () => ({ ok: true })) }));
+vi.mock("@/features/modules/actions", () => ({ setModuleAction: modules.set }));
 
 const GOOGLE_CAPS: CapabilityKey[] = ["calendar", "tasks", "email", "knowledge", "finance"];
 
@@ -196,10 +200,10 @@ describe("provider catalog", () => {
   });
 });
 
-function hub(accounts = ACCOUNTS) {
+function hub(accounts = ACCOUNTS, modules: ModuleStates = effectiveModules([])) {
   return render(
     <I18nProvider locale="es">
-      <ConnectionsHub accounts={accounts} configured={CONFIGURED} />
+      <ConnectionsHub accounts={accounts} configured={CONFIGURED} modules={modules} />
     </I18nProvider>,
   );
 }
@@ -208,7 +212,9 @@ describe("Connections Hub", () => {
   it("shows providers, never account configuration", () => {
     hub();
     expect(screen.queryByText("lm@frba.utn.edu.ar")).toBeNull();
-    expect(screen.queryByRole("switch")).toBeNull();
+    // The only switches are Mi ELISE's own modules (ADR-064), never account configuration.
+    for (const sw of screen.queryAllByRole("switch"))
+      expect(sw.getAttribute("aria-label")).toMatch(/^Usar .+ en ELISE$/);
     const strip = screen.getByRole("heading", { name: "Conectadas" }).parentElement!;
     expect(
       within(strip).getByRole("link", {
@@ -226,11 +232,15 @@ describe("Connections Hub", () => {
     expect(screen.queryByRole("link", { name: /^Slack/ })).toBeNull();
     expect(screen.getByText("Slack")).toBeTruthy();
     // ELISE's built-in data is apart from external connections, with no Connect.
-    const native = screen
-      .getAllByRole("link")
-      .find((l) => l.getAttribute("href") === "/connections/elise_native")!;
-    expect(native.textContent).toContain("Integrado");
-    expect(native.textContent).not.toContain("Conectar");
+    // ELISE's own features are Mi ELISE, at the top — not an "Integrado en ELISE" connection.
+    expect(
+      screen
+        .queryAllByRole("link")
+        .some((l) => l.getAttribute("href") === "/connections/elise_native"),
+    ).toBe(false);
+    const mine = screen.getByRole("heading", { name: "Mi ELISE" });
+    const all = screen.getByRole("heading", { name: "Todas las conexiones" });
+    expect(mine.compareDocumentPosition(all) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("search is immediate, accent- and case-insensitive, and labelled", () => {
@@ -244,6 +254,17 @@ describe("Connections Hub", () => {
     expect(screen.getByRole("link", { name: /^Google:/ })).toBeTruthy();
     fireEvent.change(search, { target: { value: "zzz" } });
     expect(screen.getByText("Nada coincide con “zzz”.")).toBeTruthy();
+  });
+
+  it("Mi ELISE: searchable by everyday words, state in words, toggled in place", async () => {
+    hub(ACCOUNTS, { ...effectiveModules([]), habits: false });
+    const habits = screen.getByRole("switch", { name: "Usar Hábitos en ELISE" });
+    expect(habits.getAttribute("aria-checked")).toBe("false");
+    fireEvent.change(screen.getByLabelText("Buscar conexiones"), { target: { value: "gastos" } });
+    const finance = screen.getByRole("switch", { name: "Usar Finanzas en ELISE" });
+    expect(screen.queryByRole("switch", { name: "Usar Hábitos en ELISE" })).toBeNull();
+    fireEvent.click(finance);
+    expect(modules.set).toHaveBeenCalledWith("finance", false);
   });
 
   it("filters: connected and available", () => {

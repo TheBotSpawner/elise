@@ -3,6 +3,8 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { MyEliseModulesProvider } from "@/components/elise/navigation/modules-context";
+import type { NativeModuleKey } from "@/core/modules/registry";
 import { MusicController } from "@/features/music/music-view";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 
@@ -16,11 +18,14 @@ export function AppShell({
   workspaceId,
   pendingApprovals,
   user,
+  modules,
   children,
 }: {
   workspaceId: string;
   pendingApprovals: number;
   user: NavUser;
+  /** The Mi ELISE modules this person uses, in order (ADR-064). */
+  modules: readonly NativeModuleKey[];
   children: ReactNode;
 }) {
   useRealtimeRefresh(workspaceId, ["approvals", "notifications"]);
@@ -34,14 +39,16 @@ export function AppShell({
   }, []);
 
   return (
-    <OrbPresenceProvider>
-      <div className="relative flex min-h-dvh flex-col">
-        <TopNav user={user} pendingApprovals={pendingApprovals} />
-        <MobileHeader user={user} pendingApprovals={pendingApprovals} />
-        <div className="flex min-w-0 flex-1 flex-col">{children}</div>
-      </div>
-      {/* Music (ADR-042): one canonical player state for every page. */}
-      <MusicController />
-    </OrbPresenceProvider>
+    <MyEliseModulesProvider modules={modules}>
+      <OrbPresenceProvider>
+        <div className="relative flex min-h-dvh flex-col">
+          <TopNav user={user} pendingApprovals={pendingApprovals} />
+          <MobileHeader user={user} pendingApprovals={pendingApprovals} />
+          <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+        </div>
+        {/* Music (ADR-042): one canonical player state for every page. */}
+        <MusicController />
+      </OrbPresenceProvider>
+    </MyEliseModulesProvider>
   );
 }
