@@ -1919,3 +1919,11 @@ Avoid:
 > Policies determine what ELISE may do.
 >
 > Providers determine where the action happens.
+
+---
+
+# 93. Conversational Repair (ADR-065)
+
+Cuando el usuario corrige algo que ELISE acaba de escribir ("no, era Mi ELISE", "mejor 15"), la corrección es la autorización: ELISE corrige el mismo objeto con su tool de update y responde en una línea. El objetivo lo resuelve el código a partir de las referencias (`EntityReference`) que cada escritura deja en las notas del turno; el modelo nunca inventa ids. Si hay varios candidatos, pregunta cuál. La approval policy no cambia, y ningún Method se carga ni se mantiene durante una reparación.
+
+Los nombres conocidos (ELISE, Mi ELISE, marcas, y los Spaces, listas y contextos del usuario) se escriben en forma canónica, y una palabra mal transcripta que suena como uno de ellos se resuelve solo cuando el contexto lo respalda ("como tu nombre"). Los nombres literales se respetan.

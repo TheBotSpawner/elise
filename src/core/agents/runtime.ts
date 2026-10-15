@@ -1,6 +1,7 @@
 import { AppError, toPublicError, type PublicError } from "../errors";
 import type { AIInputItem, AIProvider, AITurnRequest, AIUsage, ModelTier } from "./ai-provider";
 import { executeToolCall, type ExecutorPorts, type ToolCallOutcome } from "./executor";
+import { entityRefs, refNote } from "./repair";
 import { ToolRegistry, type AnyToolDefinition, type ToolContext, type ToolDisplay } from "./tools";
 import { getCapability } from "../capabilities/registry";
 
@@ -374,28 +375,38 @@ function forModel(outcome: ToolCallOutcome): unknown {
   }
 }
 
-/** One-line notes stored with the assistant message so later turns keep continuity. */
+/**
+ * One-line notes stored with the assistant message so later turns keep continuity. A write also
+ * leaves its EntityReference ("(ref task:<id> …)"): a correction next turn fixes that same object
+ * (ADR-065).
+ */
 export function toolNotes(traces: readonly ToolTrace[]): string[] {
   return traces.map(({ name, outcome }) => {
-    if (outcome.status === "succeeded" && outcome.display?.kind === "task") {
-      return `${name} ✓ ${outcome.display.change} "${outcome.display.task.title}" (id ${outcome.display.task.id})`;
-    }
-    if (outcome.status === "succeeded" && outcome.display?.kind === "task_list") {
-      return `${name} ✓ ${outcome.display.tasks.length} tasks`;
-    }
-    if (outcome.status === "succeeded" && outcome.display?.kind === "event") {
-      const e = outcome.display.event;
-      return `${name} ✓ ${outcome.display.change} "${e.title}" ${e.start} (id ${e.id})`;
-    }
-    if (outcome.status === "succeeded" && outcome.display?.kind === "event_list") {
-      return `${name} ✓ ${outcome.display.events.length} events`;
-    }
-    if (outcome.status === "succeeded" && outcome.display) {
-      const note = emailNote(outcome.display);
-      if (note) return `${name} ✓ ${note}`;
-    }
-    return `${name} ${outcome.status}`;
+    const refs = entityRefs(name, outcome).map(refNote).join(" ");
+    const note = baseNote(name, outcome);
+    return refs ? `${note} ${refs}` : note;
   });
+}
+
+function baseNote(name: string, outcome: ToolCallOutcome): string {
+  if (outcome.status === "succeeded" && outcome.display?.kind === "task") {
+    return `${name} ✓ ${outcome.display.change} "${outcome.display.task.title}" (id ${outcome.display.task.id})`;
+  }
+  if (outcome.status === "succeeded" && outcome.display?.kind === "task_list") {
+    return `${name} ✓ ${outcome.display.tasks.length} tasks`;
+  }
+  if (outcome.status === "succeeded" && outcome.display?.kind === "event") {
+    const e = outcome.display.event;
+    return `${name} ✓ ${outcome.display.change} "${e.title}" ${e.start} (id ${e.id})`;
+  }
+  if (outcome.status === "succeeded" && outcome.display?.kind === "event_list") {
+    return `${name} ✓ ${outcome.display.events.length} events`;
+  }
+  if (outcome.status === "succeeded" && outcome.display) {
+    const note = emailNote(outcome.display);
+    if (note) return `${name} ✓ ${note}`;
+  }
+  return `${name} ${outcome.status}`;
 }
 
 /** `method "Crear propuesta" used (method <id> v3)`: parsed back by recentMethodId. */

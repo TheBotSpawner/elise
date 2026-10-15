@@ -16,6 +16,7 @@ import type {
   RiskLevel,
 } from "../capabilities/types";
 import { AppError, toPublicError, type PublicError } from "../errors";
+import { applyAliases } from "../lexicon";
 import { moduleOfCapability, type ModuleStates } from "../modules/registry";
 import { readDestination } from "../providers/destination";
 import { resolveBindings } from "../providers/resolver";
@@ -202,7 +203,13 @@ export async function executeToolCall(
   if (off) return trace(null, null, offOutcome(off));
   let operation = baseOperation;
 
-  const parsed = tool.input.safeParse(call.args);
+  // Names the user's words resolved to known ones ("Mielist" → "Mi ELISE", ADR-065) reach a
+  // write's text clean, whatever the model wrote. Reads keep the user's wording.
+  const args =
+    ctx.aliases?.length && baseOperation.kind !== "read"
+      ? withAliases(call.args, ctx.aliases)
+      : call.args;
+  const parsed = tool.input.safeParse(args);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
@@ -700,6 +707,14 @@ function nestedReads(ports: ExecutorPorts, ctx: ToolContext) {
       );
     return executeToolCall(ports, ctx, { name, args });
   };
+}
+
+function withAliases(value: unknown, aliases: readonly { from: string; to: string }[]): unknown {
+  if (typeof value === "string") return applyAliases(value, aliases);
+  if (Array.isArray(value)) return value.map((v) => withAliases(v, aliases));
+  if (value && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, withAliases(v, aliases)]));
+  return value;
 }
 
 function offOutcome(error: AppError): ToolCallOutcome {

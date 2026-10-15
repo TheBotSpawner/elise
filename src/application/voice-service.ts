@@ -2,6 +2,7 @@ import "server-only";
 
 import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
+import { BRAND_TERMS } from "@/core/lexicon";
 import type { VoiceDelivery } from "@/core/voice/delivery";
 import { ELEVEN_PROFILES, OPENAI_PROFILES, PREVIEW_TEXT } from "@/core/voice/profiles";
 import { VOICE_LIMITS, type VoiceChoice, type VoiceLanguage } from "@/core/voice/providers";
@@ -74,10 +75,9 @@ export async function transcribeUtterance(
                 audio: bytes,
                 mimeType: audio.type,
                 language,
-                // Recognition hints only (names), never instructions.
-                context: auth.profile.displayName
-                  ? `Speaker: ${auth.profile.displayName}. Assistant: ELISE.`
-                  : "Assistant: ELISE.",
+                // Recognition hints only (names), never instructions. ELISE's own names are
+                // easy to mishear ("mielist" for "Mi ELISE"); the resolver still checks after.
+                context: `${auth.profile.displayName ? `Speaker: ${auth.profile.displayName}. ` : ""}Assistant: ELISE. Names: ${BRAND_TERMS.join(", ")}.`,
               },
               AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
             )) {

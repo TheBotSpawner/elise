@@ -359,6 +359,11 @@ export function planTurnMethods(input: {
   /** Where the turn is: active Section, conversation Space, Space named in the message. */
   spaceIds: readonly (string | null | undefined)[];
   recentId?: string | null;
+  /**
+   * The message corrects an object ELISE just wrote (ADR-065): the correction comes first, so no
+   * Method is loaded or kept and nothing suggests updating one. The index stays available.
+   */
+  repair?: boolean;
 }): TurnMethods {
   const parents = new Map(input.spaces.map((s) => [s.id, s.parentId]));
   const chain = scopeChain(input.spaceIds, parents);
@@ -368,23 +373,23 @@ export function planTurnMethods(input: {
     parents,
     // Only a message about the work just done keeps its Method ("hacela más corta", a
     // correction, "a partir de ahora…"); an unrelated question in the same thread doesn't.
-    recentId: followsUp(input.message) ? (input.recentId ?? null) : null,
+    recentId: !input.repair && followsUp(input.message) ? (input.recentId ?? null) : null,
   });
-  const picked = selection.selected;
+  const picked = input.repair ? null : selection.selected;
   const desktop = picked && needsDesktop(picked.method) ? picked : null;
   const load = picked && !desktop ? picked : null;
   const index = indexFor({ ...selection, selected: load });
   const recent = input.recentId ? (input.index.find((m) => m.id === input.recentId) ?? null) : null;
   const active = load?.method ?? recent;
   const hints = [
-    selection.ambiguous
+    !input.repair && selection.ambiguous
       ? `Several Methods fit this request about equally (${selection.ambiguous.map((c) => `"${c.method.name}"`).join(", ")}): unless the user's words make it clear, ask which one to follow before working. Never merge them.`
       : null,
     desktop
       ? `The Method "${desktop.method.name}" fits, but it runs on the user's computer: say it requires the Desktop Companion, which isn't available yet, and offer what can be done here.`
       : null,
     teachingHint(
-      teachingSignal(input.message),
+      input.repair ? null : teachingSignal(input.message),
       active ? { name: active.name, id: active.id } : null,
       input.message,
     ),

@@ -115,6 +115,11 @@ export interface ToolContext {
   userMessage?: string | null;
   /** Files sent with this turn (count only): their content is data, never a destination. */
   attachmentCount?: number;
+  /**
+   * Names the user's words resolved to known ones in this conversation ("Mielist" → "Mi ELISE",
+   * ADR-065): applied to a write's text arguments before validation.
+   */
+  aliases?: readonly { from: string; to: string }[];
   /** Structured, value-free telemetry from a tool's own decisions (names, ids, counts). */
   log?: (level: "info" | "warn", event: string, fields: Record<string, unknown>) => void;
   /**

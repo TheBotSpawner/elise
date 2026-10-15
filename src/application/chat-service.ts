@@ -5,6 +5,13 @@ import { serverEnv } from "@/config/server-env";
 import { buildContextPackage } from "@/core/agents/context";
 import { executeToolCall, type ToolCallOutcome } from "@/core/agents/executor";
 import { escalateAfter, MODEL_POLICY, routeTurn } from "@/core/agents/model-policy";
+import {
+  canonicalHint,
+  detectRepair,
+  repairHint,
+  repairTool,
+  resolveRepairTarget,
+} from "@/core/agents/repair";
 import { methodNote, recentMethodId, runElise, toolNotes } from "@/core/agents/runtime";
 import { selectTools, toolsInNotes } from "@/core/agents/tool-selection";
 import type { ToolContext } from "@/core/agents/tools";
@@ -23,6 +30,7 @@ import { AppError, toPublicError } from "@/core/errors";
 import { knowledgeMap, resolveMentioned } from "@/core/history/links";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
 import { generalContextApplies } from "@/core/knowledge/model";
+import { findCanonicalReferences } from "@/core/lexicon";
 import { coarse, type LatLng } from "@/core/location/model";
 import { disabledCapabilities, NATIVE_MODULES } from "@/core/modules/registry";
 import { TurnPerf } from "@/core/perf";
@@ -383,8 +391,63 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
         today: todayIn(auth.profile.timezone),
       })
     : null;
+  // Conversational repair (ADR-065): a correction of what ELISE just wrote fixes that same
+  // object; which object is decided here, from the previous turn's references.
+  const repairIntent = shortcut.kind === "none" ? detectRepair(input.message) : null;
+  const repairTarget = repairIntent
+    ? resolveRepairTarget(history, input.message)
+    : ({ kind: "none" } as const);
+  if (repairIntent)
+    logger.info(repairTarget.kind === "ambiguous" ? "repair.ambiguous" : "repair.detected", {
+      run_id: runId,
+      intent: repairIntent.kind,
+      target: repairTarget.kind,
+      target_type: repairTarget.kind === "one" ? repairTarget.ref.type : null,
+      candidates: repairTarget.kind === "ambiguous" ? repairTarget.refs.length : undefined,
+    });
+  if (repairTarget.kind === "one")
+    logger.info("repair.target_resolved", {
+      run_id: runId,
+      target_type: repairTarget.ref.type,
+      source_action: repairTarget.ref.sourceAction,
+      tool: repairTool(repairTarget.ref.type),
+    });
+  // Known names heard wrong ("Mielist" → "Mi ELISE"): the user's own names, and ELISE's. A name
+  // resolved earlier in the conversation stays resolved; this message can add more.
+  const vocabulary = [
+    ...nodes.map((n) => n.name),
+    ...listNames,
+    ...contexts.profiles.map((p) => p.name),
+  ];
+  const canonical = findCanonicalReferences(input.message, vocabulary);
+  const aliases = [
+    ...new Map(
+      [
+        ...history
+          .filter((m) => m.role === "user")
+          .slice(-10)
+          .flatMap((m) => findCanonicalReferences(m.content, vocabulary)),
+        ...canonical,
+      ]
+        .flatMap((m) => (m.kind === "resolved" ? [m.ref] : []))
+        .map((r) => [r.raw.toLowerCase(), { from: r.raw, to: r.resolved }]),
+    ).values(),
+  ];
+  for (const m of canonical)
+    logger.info(
+      m.kind === "ambiguous" ? "canonical_reference.unresolved" : "canonical_reference.resolved",
+      {
+        run_id: runId,
+        kind: m.kind,
+        source: m.kind === "ambiguous" ? null : m.ref.source,
+        confidence: m.kind === "ambiguous" ? null : Math.floor(m.ref.confidence * 10) / 10,
+        candidates: m.kind === "ambiguous" ? m.candidates.length : 1,
+      },
+    );
   const turnHints = [
     contextHint,
+    repairIntent ? repairHint(repairIntent, repairTarget, auth.profile.locale) : null,
+    canonicalHint(canonical),
     approval.kind === "ask"
       ? `The user answered "${input.message.slice(0, 40)}" but ${approval.count} approvals are pending in this interaction. Approve nothing: ask which one (by what it does).`
       : null,
@@ -431,6 +494,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     message: input.message,
     spaceIds: [activeProfile?.section?.spaceId, activeSpace?.id, mentioned?.id],
     recentId: recentMethodId(recentNotes),
+    repair: repairTarget.kind !== "none",
   });
   const methodParents = new Map(methods.spaces.map((s) => [s.id, s.parentId]));
   const loadedMethod = methodPlan.load
@@ -536,6 +600,8 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
           recentTools: [
             ...toolsInNotes(recentNotes),
             ...(loadedMethod || methodPlan.hint ? ["methods.get"] : []),
+            // A repair needs its update tool, whatever the message's words select.
+            ...(repairTarget.kind === "one" ? [repairTool(repairTarget.ref.type) ?? ""] : []),
           ],
           contextKind: activeProfile?.kind ?? null,
           listNames: modules.lists ? listNames : [],
@@ -703,6 +769,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
               // The conversation's Space, else the Section this message named.
               knowledgeSpaceId: activeSpace?.id ?? mentioned?.id ?? null,
               userMessage: input.message,
+              aliases,
               attachmentCount: attached?.sent.length ?? 0,
               log: (level, event, fields) =>
                 logger[level](event, { run_id: runId, modality, ...fields }),
@@ -889,6 +956,20 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                   tools: [...traces.values()],
                   toolNotes: [...methodNotes, ...toolNotes(event.tools)],
                 });
+                if (repairTarget.kind === "one") {
+                  const tool = repairTool(repairTarget.ref.type);
+                  const fix = event.tools.find((t) => t.name === tool);
+                  logger.info("repair.executed", {
+                    run_id: runId,
+                    target_type: repairTarget.ref.type,
+                    tool,
+                    status: fix?.outcome.status ?? "not_called",
+                    error: fix?.outcome.status === "failed" ? fix.outcome.error.code : undefined,
+                    tools: event.tools.map((t) => t.name),
+                    aliases: aliases.length,
+                    method_loaded: Boolean(loadedMethod),
+                  });
+                }
                 break;
               case "error":
                 {

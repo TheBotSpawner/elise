@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { executeToolCall } from "@/core/agents/executor";
+import { repairTool, resolveRepairTarget } from "@/core/agents/repair";
+import { toolNotes } from "@/core/agents/runtime";
 import type { ProviderFactory } from "@/core/agents/tools";
 import { assembleBrief } from "@/core/briefs/morning-brief";
 import { goalProgress, type Goal, type GoalsProvider } from "@/core/capabilities/goals";
@@ -819,5 +821,56 @@ describe("check-in mode default (ADR-053)", () => {
       ["2026-10-14", 20],
       ["2026-10-15", 25],
     ]);
+  });
+});
+
+describe("conversational repair on native data (ADR-065)", () => {
+  const notesOf = (name: string, out: Awaited<ReturnType<typeof executeToolCall>>) => [
+    { role: "assistant", toolNotes: toolNotes([{ callId: "c", name, outcome: out }]) },
+  ];
+
+  it("“No, eran mandarinas” fixes the item just added — one item, not two", async () => {
+    const { ports, lists } = nativePorts();
+    const ctx = makeCtx();
+    await executeToolCall(ports, ctx, { name: "lists.create", args: { name: "Compras" } });
+    const added = await executeToolCall(ports, ctx, {
+      name: "lists.addItem",
+      args: { list: "compras", items: ["bananas"] },
+    });
+    const target = resolveRepairTarget(notesOf("lists.addItem", added), "No, eran mandarinas.");
+    expect(target).toMatchObject({
+      kind: "one",
+      ref: { type: "list_item", parent: "Compras", displayName: "Bananas" },
+    });
+    const fixed = await executeToolCall(ports, ctx, {
+      name: repairTool("list_item")!,
+      args: { list: "Compras", item: "Bananas", content: "mandarinas" },
+    });
+    expect(lists.lists[0]!.items.map((i) => i.content)).toEqual(["Mandarinas"]);
+    // Chained: the next correction points at "Mandarinas".
+    expect(resolveRepairTarget(notesOf("lists.updateItem", fixed), "No, limones.")).toMatchObject({
+      kind: "one",
+      ref: { displayName: "Mandarinas" },
+    });
+  });
+
+  it("“Mejor 15” renames the habit just created — still one habit", async () => {
+    const { ports, habits } = nativePorts();
+    const ctx = makeCtx();
+    const created = await executeToolCall(ports, ctx, {
+      name: "habits.create",
+      args: { name: "meditar 10 minutos", frequency: "daily", target: 1 },
+    });
+    const target = resolveRepairTarget(notesOf("habits.create", created), "Mejor 15.");
+    expect(target).toMatchObject({
+      kind: "one",
+      ref: { type: "habit", displayName: "Meditar 10 minutos" },
+    });
+    if (target.kind !== "one") throw new Error("no target");
+    await executeToolCall(ports, ctx, {
+      name: repairTool("habit")!,
+      args: { habit: target.ref.id, name: "meditar 15 minutos" },
+    });
+    expect(habits.habits.map((h) => h.name)).toEqual(["Meditar 15 minutos"]);
   });
 });

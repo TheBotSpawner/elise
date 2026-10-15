@@ -1,3 +1,5 @@
+import { applyCanonicalCasing } from "./lexicon";
+
 /**
  * Text that is safe to store. Mathematical and emoji characters are two UTF-16 units; cutting
  * between them leaves a lone surrogate, which Postgres jsonb rejects — and the whole row (an
@@ -36,11 +38,13 @@ export function wellFormed<T>(value: T): T {
  *   already starts the sentence: "3 huevos" stays);
  * - leaves a first word the user capitalized on purpose alone: "iPhone", "eBay", "eLearning",
  *   "make.com", "ChatGPT", "RSFA";
- * - never lower-cases anything, never fixes spelling.
+ * - never lower-cases anything, never fixes spelling;
+ * - writes product and brand names as they are written (ADR-065): "mi elise" → "Mi ELISE",
+ *   "whatsapp" → "WhatsApp".
  * For names and titles only — never descriptions, notes or long text.
  */
 export function normalizeEntityTitle(text: string): string {
-  const s = text.trim().replace(/[ \t]+/g, " ");
+  const s = applyCanonicalCasing(text.trim().replace(/[ \t]+/g, " "));
   const first = s.search(/[\p{L}\p{N}]/u);
   if (first < 0) return s;
   const word = s.slice(first).split(" ")[0]!;

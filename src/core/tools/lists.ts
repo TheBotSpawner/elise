@@ -289,7 +289,8 @@ export const updateItemTool: ToolDefinition = {
       addLabels: u.addLabels,
       removeLabels: u.removeLabels,
     });
-    return show((await provider(env).get(list.id))!);
+    // The item as it reads now: a correction right after can point at it (ADR-065).
+    return show((await provider(env).get(list.id))!, { updated: u.content ?? it.content });
   },
 };
 
