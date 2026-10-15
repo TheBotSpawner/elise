@@ -558,9 +558,9 @@ export function Ambient({ ambient }: { ambient: HomeAmbient }) {
     // share a baseline (the small mono eyebrow sits on the text's line, not above or below it).
     // On wide screens the row never wraps: fixed items keep their size and the "continue" preview
     // takes only the room left, ending in an ellipsis.
-    <ul className="mt-6 flex max-w-full min-w-0 flex-col items-center gap-1 text-[13px] leading-5 text-muted md:flex-row md:flex-nowrap md:justify-center md:gap-x-10">
+    <ul className="mx-auto mt-6 flex w-full max-w-[66rem] min-w-0 flex-col items-center gap-1 px-4 text-[13px] leading-5 text-muted md:flex-row md:flex-nowrap md:justify-center md:gap-x-8">
       {brief && (
-        <li className="flex h-8 items-center">
+        <li className="flex h-8 shrink-0 items-center whitespace-nowrap">
           <span className="flex items-baseline gap-3">
             <span
               className={cn("flex items-baseline gap-2", brief.read ? "text-faint" : "text-fg")}
@@ -587,7 +587,7 @@ export function Ambient({ ambient }: { ambient: HomeAmbient }) {
           key={item.label}
           className={cn(
             "flex h-8 items-center",
-            item.preview ? "max-w-full min-w-0 md:shrink" : "shrink-0",
+            item.preview ? "max-w-full min-w-0 md:shrink" : "shrink-0 whitespace-nowrap",
           )}
         >
           <Link
