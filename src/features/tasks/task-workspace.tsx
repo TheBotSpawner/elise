@@ -41,6 +41,7 @@ import {
   type TaskPriority,
 } from "@/core/capabilities/tasks";
 import { addDays } from "@/core/time";
+import { completionFeedback } from "@/features/feedback/completion";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { useRefreshWhenStale } from "@/hooks/use-refresh-when-stale";
 import { errorText } from "@/lib/i18n";
@@ -157,6 +158,9 @@ export function TaskWorkspace({
     setUrlKey(selectionQuery(fromUrl));
     setSelection(fromUrl);
   }
+  // A task completed here stays in its row a moment, checked, so the pop is seen before it
+  // leaves the view. The write itself is never delayed.
+  const [settling, setSettling] = useState<ReadonlySet<string>>(new Set());
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<TaskFilters>({});
   const sort = usePref(SORT, "manual") as SortKey;
@@ -181,7 +185,9 @@ export function TaskWorkspace({
 
   // Searching spans every task (all views); otherwise the selected view.
   const searching = search.trim().length > 0;
-  const scoped = searching ? tasks : tasks.filter((x) => inSelection(x, selection, today, inbox));
+  const scoped = searching
+    ? tasks
+    : tasks.filter((x) => inSelection(x, selection, today, inbox) || settling.has(x.id));
   const visible = sortTasks(applyFilters(scoped, filters, today, search), sort);
   const groups = searching
     ? [{ key: "all", tasks: visible }]
@@ -221,8 +227,21 @@ export function TaskWorkspace({
   );
 
   const toggle = useCallback(
-    (task: Task) => {
+    (task: Task, element?: Element) => {
       const done = task.status === "completed";
+      if (!done) {
+        completionFeedback({ kind: "task", key: `task:${task.id}`, element });
+        setSettling((s) => new Set(s).add(task.id));
+        window.setTimeout(
+          () =>
+            setSettling((s) => {
+              const next = new Set(s);
+              next.delete(task.id);
+              return next;
+            }),
+          450,
+        );
+      }
       void mutate(
         done ? "reopen" : "complete",
         { taskId: task.id },
@@ -566,7 +585,7 @@ export function TaskWorkspace({
                         setSelectedId(task.id);
                         setDetailOpen(true);
                       }}
-                      onToggle={() => toggle(task)}
+                      onToggle={(el) => toggle(task, el)}
                     />
                   ))}
                 </ul>
@@ -1036,7 +1055,7 @@ function TaskRow({
   subtasks: number;
   selected: boolean;
   onSelect: () => void;
-  onToggle: () => void;
+  onToggle: (element: Element) => void;
 }) {
   const { t } = useI18n();
   const done = task.status === "completed";
@@ -1057,7 +1076,7 @@ function TaskRow({
         aria-checked={done}
         aria-label={`${done ? t.tasks.reopen : t.tasks.complete}: ${task.title}`}
         disabled={pendingCreate}
-        onClick={onToggle}
+        onClick={(e) => onToggle(e.currentTarget)}
         className={cn(
           "touch-hit mt-[2px] grid size-5 shrink-0 place-items-center rounded-full border transition-colors md:mt-[3px] md:size-[17px]",
           done

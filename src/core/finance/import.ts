@@ -147,7 +147,7 @@ const SYNONYMS: Record<FinanceField, string[]> = {
     "factura",
     "invoice",
   ],
-  // ADR-052: who the row belongs to (Personal, Firbot…), when the file says it.
+  // ADR-052: who the row belongs to (Personal, Empresa…), when the file says it.
   book: ["ambito", "ámbito", "book", "libro", "unidad"],
 };
 

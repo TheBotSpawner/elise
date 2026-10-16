@@ -17,7 +17,7 @@ const CARD =
 
 const name = (a: EmailAddress | null) => a?.name ?? a?.email ?? "?";
 
-/** Which mailbox an item lives in: "Outlook · Firbot", "Gmail · Personal". */
+/** Which mailbox an item lives in: "Outlook · Trabajo", "Gmail · Personal". */
 const origin = (p: EmailProvenance) =>
   p.providerKey === "microsoft"
     ? `Outlook · ${p.source}`

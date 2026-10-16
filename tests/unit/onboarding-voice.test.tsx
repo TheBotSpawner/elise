@@ -57,7 +57,8 @@ describe("onboarding: continuous conversation (ADR-068)", () => {
   it("asks, without promising background listening on the web, and saves the choice", async () => {
     flow();
     expect(screen.getByRole("heading", { name: "Conversaciones por voz" })).toBeInTheDocument();
-    expect(screen.getByText(/futura app móvil/)).toBeInTheDocument();
+    // No roadmap promises in onboarding.
+    expect(screen.queryByText(/futura app móvil/)).toBeNull();
     expect(screen.queryByText(/pantalla bloqueada/)).toBeNull();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Activar conversación continua" }));

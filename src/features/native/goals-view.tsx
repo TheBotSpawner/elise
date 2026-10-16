@@ -257,7 +257,9 @@ function GoalDetailPanel({
       )}
 
       <div className="flex items-center gap-4">
-        <ProgressRing percent={card.percent} size={76} tone={ringTone(card)} />
+        <span data-goal-ring={goal.id} className="rounded-full">
+          <ProgressRing percent={card.percent} size={76} tone={ringTone(card)} />
+        </span>
         <div className="flex min-w-0 flex-col gap-1">
           <span className="font-mono text-[20px]">{fmt.value(card) || g.health[card.health]}</span>
           <span className="text-[12.5px] text-muted">{d.basis[card.basis]}</span>

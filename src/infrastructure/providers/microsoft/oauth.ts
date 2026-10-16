@@ -258,7 +258,7 @@ export async function fetchIdentity(
   return { id: json.id, email, name: json.displayName ?? null };
 }
 
-/** A friendly default alias: outlook.com/hotmail → "Personal", firbot.com → "Firbot". */
+/** A friendly default alias: outlook.com/hotmail → "Personal", acme.com → "Acme". */
 export function suggestAlias(email: string): string {
   const domain = email.split("@")[1]?.toLowerCase() ?? "";
   if (!domain || /^(outlook|hotmail|live|msn)\.[a-z.]+$/.test(domain)) return "Personal";

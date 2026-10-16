@@ -63,7 +63,7 @@ const SIGNALS: readonly [string, RegExp][] = [
     "study",
     /\b(estudi\w*|study|quiz|ex[aá]men\w*|exams?|oral|repas\w*|tomame|preguntame|practic\w*|flashcards?|parcial\w*|evaluame)\b/i,
   ],
-  // "¿Cómo vengo con Firbot Solutions?" names a Vision, not the word "objetivo" (ADR-055).
+  // "¿Cómo vengo con Vida saludable?" names a Vision, not the word "objetivo" (ADR-055).
   [
     "goals",
     /\b(metas?|objetivos?|goals?|visi[oó]n(es)?|visions?|logros?|c[oó]mo (vengo|voy)|how am i doing|progreso|avance)\b/i,

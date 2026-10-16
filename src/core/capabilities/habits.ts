@@ -113,6 +113,20 @@ export function dayMet(habit: Habit, entry: HabitEntry | undefined): boolean {
   return entry.value >= habit.target;
 }
 
+/**
+ * Whether writing `value` for a day (null: undo) turns it from not met into met — the one
+ * moment that deserves completion feedback (ADR-072). Undoing, lowering, or a day already met
+ * never does.
+ */
+export function completesDay(
+  habit: Habit,
+  before: HabitEntry | undefined,
+  value: number | null,
+): boolean {
+  if (value === null || dayMet(habit, before)) return false;
+  return dayMet(habit, { ...(before as HabitEntry), status: "done", value });
+}
+
 export interface WeekDay {
   date: string;
   scheduled: boolean;

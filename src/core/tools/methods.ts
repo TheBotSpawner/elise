@@ -42,7 +42,7 @@ const spaceRef = z
   .min(1)
   .max(200)
   .describe(
-    'Where it applies: a Space or Section by name ("Firbot", "Firbot › Cliente X") or id, or "General" for everywhere (cross-domain).',
+    'Where it applies: a Space or Section by name ("Trabajo", "Trabajo › Cliente X") or id, or "General" for everywhere (cross-domain).',
   );
 
 const GLOBAL = new Set([
@@ -57,7 +57,7 @@ const GLOBAL = new Set([
 ]);
 
 /**
- * "Firbot › Cliente X" for a Space id; "General Knowledge" for the workspace-wide Methods
+ * "Trabajo › Cliente X" for a Space id; "General Knowledge" for the workspace-wide Methods
  * (space_id null), which are General Knowledge's Methods (ADR-047).
  */
 export function scopeLabel(spaceId: string | null, spaces: readonly SpaceRef[]): string {
@@ -187,7 +187,7 @@ export const listMethodsTool: ToolDefinition = {
   capability: "methods",
   operation: "list",
   description:
-    '"¿Qué métodos tenés para Firbot?", "what Methods do I have?", "¿qué métodos generales tengo?" (space: "General" — only those): the user\'s Methods (how they want kinds of work done) with where each applies. Names and descriptions only.',
+    '"¿Qué métodos tenés para Trabajo?", "what Methods do I have?", "¿qué métodos generales tengo?" (space: "General" — only those): the user\'s Methods (how they want kinds of work done) with where each applies. Names and descriptions only.',
   input: listInput,
   async describe() {
     return { summary: "List methods" };
@@ -370,7 +370,7 @@ const createInput = z
     space: spaceRef
       .optional()
       .describe(
-        'The narrowest scope that matches what the user means (ADR-047): a Section ("UTN › Legislación") for work of that subject/client/project, its Space for work across it, "General" for cross-domain ways of working (planning the day, writing for me, deciding — "siempre", "en general", "para cualquier proyecto", "sin importar el espacio"), even when the conversation is in a Space. Omit to use the Space/Section this conversation is in (General Knowledge when none).',
+        'The narrowest scope that matches what the user means (ADR-047): a Section ("Facultad › Historia") for work of that subject/client/project, its Space for work across it, "General" for cross-domain ways of working (planning the day, writing for me, deciding — "siempre", "en general", "para cualquier proyecto", "sin importar el espacio"), even when the conversation is in a Space. Omit to use the Space/Section this conversation is in (General Knowledge when none).',
       ),
     ...sections,
     instructions: z
@@ -400,7 +400,7 @@ export const createMethodTool: ToolDefinition = {
   capability: "methods",
   operation: "create",
   description:
-    '"Creá un método para preparar propuestas en Firbot", "aprendé este procedimiento", "guardá esta forma de hacerlo": saves how the user wants a kind of work done. Write a reusable procedure (purpose, steps, checks, output) — never facts about clients or prices (those are Knowledge), never a transcript. Search first: if a Method for that work exists, update it instead.',
+    '"Creá un método para preparar propuestas en Trabajo", "aprendé este procedimiento", "guardá esta forma de hacerlo": saves how the user wants a kind of work done. Write a reusable procedure (purpose, steps, checks, output) — never facts about clients or prices (those are Knowledge), never a transcript. Search first: if a Method for that work exists, update it instead.',
   input: createInput,
   async describe(raw, env) {
     const q = createInput.parse(raw);

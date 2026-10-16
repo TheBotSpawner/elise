@@ -38,7 +38,7 @@ const PEOPLE_PAGES = 5;
 
 export interface SlackConnection {
   connectionId: string;
-  /** The connection's alias in ELISE ("Firbot"). */
+  /** The connection's alias in ELISE ("Trabajo"). */
   label: string;
   /** Distributed but not Marketplace-listed: legacy search and small history pages. */
   unlisted: boolean;

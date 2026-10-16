@@ -65,7 +65,7 @@ async function resolveScope(
   const spaces = await reader(env).spaces();
   if (opts.space) {
     // Same identity rules as History tags: case, accents and II/2 don't matter, and a Section
-    // is also found by its description ("Análisis Matemático II" → UTN › AMII).
+    // is also found by its description ("Análisis Matemático II" → Facultad › Matemática).
     const wanted = matchKey(opts.space);
     const names = (s: SpaceInfo) =>
       [s.name, s.path, ...(s.aliases ?? []).filter(usableAlias)].map(matchKey);

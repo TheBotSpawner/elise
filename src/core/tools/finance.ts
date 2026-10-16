@@ -448,7 +448,7 @@ function resolveCategory(
   return findByName(compatible, name, (c) => c.name);
 }
 
-/** A Book by name ("Firbot", "personal"); several or none → the model asks, never guesses. */
+/** A Book by name ("Empresa", "personal"); several or none → the model asks, never guesses. */
 async function resolveBook(p: FinanceProvider, name: string): Promise<FinanceBook> {
   const books = (await p.listBooks?.()) ?? [];
   const matches = findByName(books, name, (b) => b.name);
@@ -594,7 +594,7 @@ export const createTransactionTool: ToolDefinition = {
   capability: "finance",
   operation: "createTransaction",
   description:
-    'Record an expense, income or internal transfer (bookkeeping only: no money moves). "Gasté 42 lucas en Meta Ads con la tarjeta de Firbot" → expense, 42000, book Firbot, counterparty Meta, category Publicidad, subcategory Meta Ads, account "tarjeta de Firbot" (categoryInferred). "lucas" = thousands. Omit currency/book when not said: ELISE uses the account or default, or tells you to ask. Transfers need account and toAccount. Amount uses "." for decimals ("$48.000" → "48000").',
+    'Record an expense, income or internal transfer (bookkeeping only: no money moves). "Gasté 42 lucas en Meta Ads con la tarjeta de la empresa" → expense, 42000, book Empresa, counterparty Meta, category Publicidad, subcategory Meta Ads, account "tarjeta de la empresa" (categoryInferred). "lucas" = thousands. Omit currency/book when not said: ELISE uses the account or default, or tells you to ask. Transfers need account and toAccount. Amount uses "." for decimals ("$48.000" → "48000").',
   input: createTransactionInput,
   async describe(raw, env) {
     const c = createTransactionInput.parse(raw);
@@ -923,7 +923,7 @@ export const listBooksTool: ToolDefinition = {
   capability: "finance",
   operation: "listBooks",
   description:
-    'The user\'s Ámbitos (Books): who money belongs to — "Personal", "Firbot"… Not categories. Use their names in `book`.',
+    'The user\'s Ámbitos (Books): who money belongs to — "Personal", "Empresa"… Not categories. Use their names in `book`.',
   input: z.object({}).strict(),
   route: nativeOnly,
   async describe() {
@@ -943,7 +943,7 @@ export const saveBookTool: ToolDefinition = {
   capability: "finance",
   operation: "saveBook",
   description:
-    'Create or change an Ámbito ("creá un ámbito para mi empresa Firbot" → name Firbot, type business). Pass `book` to change an existing one.',
+    'Create or change an Ámbito ("creá un ámbito para mi empresa Acme" → name Acme, type business). Pass `book` to change an existing one.',
   input: saveBookInput,
   route: nativeOnly,
   async describe(raw) {
@@ -1111,7 +1111,7 @@ export const reportTool: ToolDefinition = {
   capability: "finance",
   operation: "createReport",
   description:
-    '"Preparame un reporte de gastos de Firbot de septiembre", "un PDF sin listar cada transacción": prepares the financial report (same filters as everything else) and returns its preview and PDF links. Numbers come from ELISE, never from you.',
+    '"Preparame un reporte de gastos de la empresa de septiembre", "un PDF sin listar cada transacción": prepares the financial report (same filters as everything else) and returns its preview and PDF links. Numbers come from ELISE, never from you.',
   input: reportInput,
   route: nativeOnly,
   async describe() {

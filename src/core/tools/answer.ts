@@ -77,7 +77,7 @@ const answerInput = z
       .describe(
         "The shape of the answer: entities (competitors, people, tools, clients), list, ranking (top N, ordered), comparison (options × criteria), metrics (a few key figures), checklist (steps to take), summary (grouped key points).",
       ),
-    title: z.string().trim().min(1).max(120).describe('What it is: "Mapa competitivo · Firbot".'),
+    title: z.string().trim().min(1).max(120).describe('What it is: "Competidores principales".'),
     summary: z
       .string()
       .trim()

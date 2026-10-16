@@ -344,8 +344,8 @@ describe("canonical names", () => {
     ["Mi elise", "Mi ELISE"],
     ["mi ELISE", "Mi ELISE"],
     ["cargar finanzas en mi elise", "Cargar finanzas en Mi ELISE"],
-    ["revisar rsfa", "Revisar RSFA"],
-    ["mandar whatsapp a la utn", "Mandar WhatsApp a la UTN"],
+    ["preguntale a chatgpt", "Preguntale a ChatGPT"],
+    ["mandar whatsapp a uipath", "Mandar WhatsApp a UiPath"],
     ["armar flujo en power automate y uipath", "Armar flujo en Power Automate y UiPath"],
     ["make dinner", "Make dinner"],
   ])("“%s” → “%s”", (raw, title) => {

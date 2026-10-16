@@ -229,7 +229,7 @@ export const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toL
 /**
  * Search (client-side, immediate): provider name, its description, its capabilities in the
  * user's language, everyday aliases ("gmail", "correo", "música"), and the names of connected
- * accounts ("UTN" finds Google). Every word must match something.
+ * accounts ("Facultad" finds Google). Every word must match something.
  */
 export function searchCatalog(
   entries: readonly ProviderCatalogEntry[],

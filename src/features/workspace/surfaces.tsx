@@ -50,6 +50,7 @@ import { isOpen } from "@/core/workspace/model";
 import type { SurfacePayloads } from "@/core/workspace/registry";
 import { ApprovalCard, type ApprovalPhase } from "@/features/chat/approval-card";
 import { DisplayCard } from "@/features/chat/result-cards";
+import { completionFeedback } from "@/features/feedback/completion";
 import { MusicSurfaceBody } from "@/features/music/music-view";
 import {
   GoalSurfaceBody,
@@ -659,7 +660,10 @@ function TaskRow({
         aria-checked={!open}
         aria-label={`${t.workspace.actions.complete}: ${task.title}`}
         disabled={!open || pending || handlers.pending !== null || handlers.busy}
-        onClick={() => handlers.onAction(surface, "complete", task.id)}
+        onClick={(e) => {
+          completionFeedback({ kind: "task", key: `task:${task.id}`, element: e.currentTarget });
+          handlers.onAction(surface, "complete", task.id);
+        }}
         className={cn(
           "grid size-5 shrink-0 place-items-center rounded-full border transition-colors",
           open

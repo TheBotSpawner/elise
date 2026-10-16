@@ -44,7 +44,7 @@ export const HISTORY_LINKS = {
   maxAutomatic: 3,
   /** Below this, evidence is not enough to link. */
   threshold: 0.7,
-  /** A name the user says must be at least this long to count as a mention ("UTN"). */
+  /** A name the user says must be at least this long to count as a mention ("IBM"). */
   minMentionChars: 3,
   /** Chips shown on a History row before "+N". */
   visibleChips: 2,
@@ -117,7 +117,7 @@ export function scoreEvidence(e: ThreadEvidence, nodes: KnowledgeNode[]): Scored
       c = 0.8;
       if (!why.includes("knowledge")) why.push("knowledge");
     }
-    // The user naming a Space/Section exactly ("UTN", "Client A") says what the conversation is
+    // The user naming a Space/Section exactly ("Facultad", "Client A") says what the conversation is
     // about: once is enough. Generic names ("Personal", "Trabajo") need it said twice.
     const mentions = e.mentionTurns.get(node.id) ?? 0;
     if (mentions >= (isGenericName(node.name) ? 2 : 1)) {
@@ -475,7 +475,7 @@ export function historyFolders<T extends { primary: string | null; at: string }>
   };
 }
 
-/** Where a thread is filed, for search results: "UTN › AMII". */
+/** Where a thread is filed, for search results: "Facultad › Matemática". */
 export function locationOf(
   primary: string | null,
   nodes: Map<string, KnowledgeNode>,

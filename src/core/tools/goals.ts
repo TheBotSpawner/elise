@@ -667,7 +667,7 @@ export const linkResourceTool: ToolDefinition = {
   capability: "goals",
   operation: "linkResource",
   description:
-    'Relate a goal to an existing habit, ELISE task, note, Vision or another goal ("relacioná Workout con mi objetivo de entrenar", "eso pertenece a la visión Firbot Solutions"). Nothing is copied. Habits count toward progress only with useForProgress (and only for numeric goals that go up); otherwise they are context. For "contribuye a otro objetivo" use goals.update parentGoal.',
+    'Relate a goal to an existing habit, ELISE task, note, Vision or another goal ("relacioná Workout con mi objetivo de entrenar", "eso pertenece a la visión Vida saludable"). Nothing is copied. Habits count toward progress only with useForProgress (and only for numeric goals that go up); otherwise they are context. For "contribuye a otro objetivo" use goals.update parentGoal.',
   input: linkInput,
   async describe(raw) {
     const l = linkInput.parse(raw);
@@ -870,7 +870,7 @@ export const getVisionTool: ToolDefinition = {
   capability: "goals",
   operation: "getVision",
   description:
-    '"¿Cómo vengo con Firbot Solutions?" when it names a Vision: the Vision, the goals advancing it with their progress and health, and the habits behind them. Shows the Vision.',
+    '"¿Cómo vengo con Vida saludable?" when it names a Vision: the Vision, the goals advancing it with their progress and health, and the habits behind them. Shows the Vision.',
   input: visionRefInput,
   async describe() {
     return { summary: "Vision" };
@@ -885,7 +885,7 @@ export const createVisionTool: ToolDefinition = {
   capability: "goals",
   operation: "createVision",
   description:
-    'Create a Vision: a long-term, qualitative direction ("Firbot Academy es la academia de bots de referencia en habla hispana"). No metric or deadline. Concrete measurable outcomes are goals instead.',
+    'Create a Vision: a long-term, qualitative direction ("Construir un negocio sostenible"). No metric or deadline. Concrete measurable outcomes are goals instead.',
   input: createVisionInput,
   async describe(raw) {
     return { summary: `Create Vision “${createVisionInput.parse(raw).title.slice(0, 80)}”` };

@@ -48,7 +48,7 @@ export interface TriagedEmail {
 export interface MailboxIdentity {
   connectionId: string;
   providerKey: ProviderKey;
-  /** The name the user gave the account in ELISE ("Firbot", "Personal"). */
+  /** The name the user gave the account in ELISE ("Empresa", "Personal"). */
   label: string;
   /** The account's address, secondary metadata. */
   address: string | null;

@@ -378,7 +378,7 @@ function Row({
   t: Dictionary;
   place: string | null | "list";
   when: string;
-  /** Search results say where they are filed ("UTN › AMII"). */
+  /** Search results say where they are filed ("Facultad › Matemática"). */
   location: string | null;
 }) {
   const title = titleOf(r, t);

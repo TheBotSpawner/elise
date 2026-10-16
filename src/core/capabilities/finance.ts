@@ -57,7 +57,7 @@ export interface FinanceProvenance {
   row: number | null;
 }
 
-/** Who the money belongs to (ADR-052): Personal, Firbot… — never a category. */
+/** Who the money belongs to (ADR-052): Personal, Empresa… — never a category. */
 export interface FinanceBook {
   id: string;
   name: string;
@@ -1191,7 +1191,7 @@ export const filterFields = {
   book: text(60)
     .optional()
     .describe(
-      'Ámbito: who the money belongs to ("Personal", "Firbot"). "¿Cuánto gastamos en Firbot?" → book Firbot. Not a category.',
+      'Ámbito: who the money belongs to ("Personal", "Empresa"). "¿Cuánto gastamos en la empresa?" → book Empresa. Not a category.',
     ),
   currency: z.array(currencyField).max(10).optional(),
   category: text(80).optional().describe("Category name; includes its sub-categories."),
@@ -1254,7 +1254,7 @@ export const createTransactionInput = z
     book: text(60)
       .optional()
       .describe(
-        'Ámbito ("Personal", "Firbot"). Omit when unclear: the account default Book or the default Book applies.',
+        'Ámbito ("Personal", "Empresa"). Omit when unclear: the account default Book or the default Book applies.',
       ),
     toAccount: text(80).optional().describe("Transfers: the account the money went to."),
     receipt: text(500).optional().describe("Comprobante: a link or an id (invoice number)."),
@@ -1330,7 +1330,7 @@ export const updateAccountInput = z
       .nullable()
       .optional()
       .describe(
-        'Default Ámbito for its records ("la tarjeta de Firbot es de Firbot"); null clears it.',
+        'Default Ámbito for its records ("la tarjeta de la empresa es de Empresa"); null clears it.',
       ),
     archived: z.boolean().optional().describe("true hides it from new records; history stays."),
   })

@@ -20,8 +20,6 @@ export const BRAND_TERMS = [
   "WhatsApp",
   "Power Automate",
   "UiPath",
-  "RSFA",
-  "UTN",
   "GPT",
 ] as const;
 
@@ -114,7 +112,7 @@ const MIN_LENGTH = 5;
 
 /**
  * Words in a message that are probably a known name heard wrong ("Mielist" for "Mi ELISE"), or
- * that name several known things ("Firbot": Firbot Solutions or Firbot Academy?). A word the user
+ * that name several known things ("Acme": Acme Studio or Acme Labs?). A word the user
  * says is literal is left alone, and so is anything that is already exactly a known name.
  * Sound and spelling alike are not enough on their own for an automatic fix: context ("como tu
  * nombre") has to back it.

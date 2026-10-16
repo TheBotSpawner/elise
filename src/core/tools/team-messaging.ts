@@ -688,7 +688,7 @@ export const saveToKnowledgeTool: ToolDefinition = {
   capability: "team_messaging",
   operation: "saveToKnowledge",
   description:
-    '"Guardá este thread en el Knowledge de Firbot": saves a thread (or one message) as a Knowledge document with its provenance — workspace, channel, authors, dates, permalinks. Only when the user asks; team messages are never saved on their own.',
+    '"Guardá este thread en el Knowledge de Trabajo": saves a thread (or one message) as a Knowledge document with its provenance — workspace, channel, authors, dates, permalinks. Only when the user asks; team messages are never saved on their own.',
   input: saveInput,
   route: (input) => routeTo(saveInput.parse(input).id, KIND.thread, "thread"),
   async describe(input) {

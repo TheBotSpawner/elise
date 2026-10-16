@@ -53,7 +53,7 @@ const THREAD_MAX = 50;
 
 export interface OutlookConnectionInfo {
   connectionId: string;
-  /** User-facing account name ("Personal", "Firbot"). */
+  /** User-facing account name ("Personal", "Empresa"). */
   label: string;
   /** The connected Microsoft address. */
   account: string | null;

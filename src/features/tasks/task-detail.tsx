@@ -47,7 +47,7 @@ export function TaskDetail({
   position: { at: number; total: number };
   onClose: () => void;
   onStep: (delta: number) => void;
-  onToggle: (task: Task) => void;
+  onToggle: (task: Task, element?: Element) => void;
   mutate: (
     op: TaskOp,
     args: Record<string, unknown>,
@@ -131,7 +131,7 @@ export function TaskDetail({
               role="checkbox"
               aria-checked={done}
               aria-label={done ? t.tasks.reopen : t.tasks.complete}
-              onClick={() => onToggle(task)}
+              onClick={(e) => onToggle(task, e.currentTarget)}
               className={cn(
                 "mt-2 grid size-5 shrink-0 place-items-center rounded-full border transition-colors",
                 done
@@ -302,7 +302,7 @@ export function TaskDetail({
                       role="checkbox"
                       aria-checked={c.status === "completed"}
                       aria-label={`${t.tasks.complete}: ${c.title}`}
-                      onClick={() => onToggle(c)}
+                      onClick={(e) => onToggle(c, e.currentTarget)}
                       className={cn(
                         "grid size-4 shrink-0 place-items-center rounded-full border",
                         c.status === "completed"

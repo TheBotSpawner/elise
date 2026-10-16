@@ -259,7 +259,7 @@ export type ToolDisplay =
    */
   | {
       kind: "team_messages";
-      /** What was searched ("propuesta RSFA"), or null for a channel's recent messages. */
+      /** What was searched ("propuesta Acme"), or null for a channel's recent messages. */
       query: string | null;
       /** The channel these come from, when it was one channel ("#sales"). */
       channel: string | null;

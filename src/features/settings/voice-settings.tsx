@@ -10,6 +10,10 @@ import { VOICE_CATALOG, type VoiceKey } from "@/core/voice/catalog";
 import type { WakeAvailability } from "@/core/voice/device";
 import { VOICE_LANGUAGES, type VoiceLanguage } from "@/core/voice/preferences";
 import { setStartupSoundEnabled, startupSoundEnabled } from "@/features/boot/startup-sound";
+import {
+  interactionSoundsEnabled,
+  setInteractionSoundsEnabled,
+} from "@/features/feedback/completion";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { WebSpeechWakeEngine } from "@/features/voice/wake-engine";
 import { useI18n } from "@/lib/i18n/client";
@@ -214,11 +218,13 @@ export function VoiceSettings({
 const listeners = new Set<() => void>();
 const subscribe = (l: () => void) => (listeners.add(l), () => void listeners.delete(l));
 
-/** ELISE's sounds: the startup chime, a per-device choice (ADR-046). */
+/** ELISE's sounds: the startup chime and the completion tone, per-device choices (ADR-046, 072). */
 function SoundsCard() {
   const { t } = useI18n();
   const s = t.settings.startup;
+  const i = t.settings.interaction;
   const on = useSyncExternalStore(subscribe, startupSoundEnabled, () => true);
+  const interaction = useSyncExternalStore(subscribe, interactionSoundsEnabled, () => true);
   return (
     <SettingsCard title={t.settingsHub.voice.sounds}>
       <SettingRow id="sounds" label={s.sound} hint={s.soundHint}>
@@ -227,6 +233,16 @@ function SoundsCard() {
           aria-label={s.sound}
           onCheckedChange={(next) => {
             setStartupSoundEnabled(next);
+            listeners.forEach((l) => l());
+          }}
+        />
+      </SettingRow>
+      <SettingRow id="interaction-sounds" label={i.sound} hint={i.soundHint}>
+        <Switch
+          checked={interaction}
+          aria-label={i.sound}
+          onCheckedChange={(next) => {
+            setInteractionSoundsEnabled(next);
             listeners.forEach((l) => l());
           }}
         />

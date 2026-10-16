@@ -465,7 +465,7 @@ export const createGoalInput = z
     title: z.string().trim().min(1).max(300).overwrite(normalizeEntityTitle),
     description: z.string().trim().max(5000).optional(),
     icon: icon.optional().describe("One emoji (🎯 💰 📚 🏋). Omit to let ELISE suggest one."),
-    area: area.optional().describe('Optional area: "Salud", "Marketing", "Firbot Academy".'),
+    area: area.optional().describe('Optional area: "Salud", "Trabajo", "Personal".'),
     ...period,
     targetDate: date
       .optional()
@@ -597,7 +597,7 @@ export const createVisionInput = z
       .min(1)
       .max(500)
       .overwrite(normalizeEntityTitle)
-      .describe('The Vision statement: "Firbot Academy es la academia de referencia…".'),
+      .describe('The Vision statement: "Construir un negocio sostenible…".'),
     description: z.string().trim().max(5000).optional(),
     icon: icon.optional(),
     area: area.optional(),

@@ -11,6 +11,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
+  completesDay,
   habitProgress,
   isHabitIcon,
   type Habit,
@@ -38,6 +39,7 @@ import {
 } from "@/core/habits/analytics";
 import { addDays } from "@/core/time";
 import type { VisualizationSpec } from "@/core/workspace/visualization";
+import { completionFeedback } from "@/features/feedback/completion";
 import { Visualization } from "@/features/workspace/viz/visualization";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
@@ -385,7 +387,7 @@ function HabitForm({
 
 // ── Day cells and the quantity editor ────────────────────────────────────────
 
-type Write = (habit: Habit, date: string, value: number | null) => void;
+type Write = (habit: Habit, date: string, value: number | null, element?: Element) => void;
 
 function DayButton({
   habit,
@@ -403,7 +405,7 @@ function DayButton({
   compact?: boolean;
   readOnly: boolean;
   today: string;
-  onBinary: () => void;
+  onBinary: (el: HTMLElement) => void;
   onEdit: (el: HTMLElement) => void;
 }) {
   const { t } = useI18n();
@@ -417,7 +419,7 @@ function DayButton({
     <button
       type="button"
       disabled={readOnly || future}
-      onClick={(e) => (measured ? onEdit(e.currentTarget) : onBinary())}
+      onClick={(e) => (measured ? onEdit(e.currentTarget) : onBinary(e.currentTarget))}
       aria-pressed={measured ? undefined : cell.met}
       aria-label={w.dayLabel(
         `${habit.name}, ${fmt.long(cell.date)}`,
@@ -616,7 +618,7 @@ function CalendarGrid({
           today={today}
           readOnly={readOnly}
           label={<span className="font-mono">{Number(c.date.slice(8))}</span>}
-          onBinary={() => write(habit, c.date, c.met ? null : 1)}
+          onBinary={(el) => write(habit, c.date, c.met ? null : 1, el)}
           onEdit={(el) => edit(habit, c, el)}
         />
       ))}
@@ -802,7 +804,7 @@ function HabitRow({
                 cell={c}
                 today={today}
                 readOnly={readOnly}
-                onBinary={() => write(habit, c.date, c.met ? null : 1)}
+                onBinary={(el) => write(habit, c.date, c.met ? null : 1, el)}
                 onEdit={(el) => edit(habit, c, el)}
                 label={
                   <>
@@ -1146,9 +1148,13 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
   const [to, setTo] = useState(range.to);
   const [editor, setEditor] = useState<{ habit: Habit; cell: DayCell; rect: DOMRect } | null>(null);
 
-  const write: Write = (habit, date, value) => {
+  const write: Write = (habit, date, value, element) => {
     if (date > today) return;
     const before = entries;
+    // Not met → met, by this tap: the completion feedback (never on undo or a lower value).
+    const was = entries.find((e) => e.habitId === habit.id && e.date === date);
+    if (completesDay(habit, was, value))
+      completionFeedback({ kind: "habit", key: `habit:${habit.id}:${date}`, element });
     setEntries((cur) => {
       const rest = cur.filter((e) => !(e.habitId === habit.id && e.date === date));
       return value === null

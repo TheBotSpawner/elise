@@ -37,7 +37,7 @@ export function wellFormed<T>(value: T): T {
  *   or punctuation are skipped: "🛍️ comprar leche" → "🛍️ Comprar leche"; a leading number
  *   already starts the sentence: "3 huevos" stays);
  * - leaves a first word the user capitalized on purpose alone: "iPhone", "eBay", "eLearning",
- *   "make.com", "ChatGPT", "RSFA";
+ *   "make.com", "ChatGPT", "NASA";
  * - never lower-cases anything, never fixes spelling;
  * - writes product and brand names as they are written (ADR-065): "mi elise" → "Mi ELISE",
  *   "whatsapp" → "WhatsApp".
@@ -50,7 +50,7 @@ export function normalizeEntityTitle(text: string): string {
   const word = s.slice(first).split(" ")[0]!;
   const intended =
     /^\p{N}/u.test(word) || // "3 huevos": the sentence starts with the number
-    /\p{Lu}/u.test(word) || // any capital already there: "iPhone", "eBay", "RSFA"
+    /\p{Lu}/u.test(word) || // any capital already there: "iPhone", "eBay", "NASA"
     /[.@/:]\p{L}/u.test(word); // "make.com", an address or a path
   if (intended) return s;
   const letter = s[first]!;

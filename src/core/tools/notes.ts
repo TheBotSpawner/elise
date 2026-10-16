@@ -110,7 +110,7 @@ export const createNoteTool: ToolDefinition = {
   capability: "notes",
   operation: "create",
   description:
-    'Save a note ("save this as a note in Acme"). Write a short title and the content in the user\'s words, as Markdown (headings, **bold**, lists) when structure helps. Set `spaces` with every Knowledge Space they name ("guardala en General y Firbot Solutions") so it becomes searchable there — one note, never one per Space. Confirm where it was saved.',
+    'Save a note ("save this as a note in Acme"). Write a short title and the content in the user\'s words, as Markdown (headings, **bold**, lists) when structure helps. Set `spaces` with every Knowledge Space they name ("guardala en General y Trabajo") so it becomes searchable there — one note, never one per Space. Confirm where it was saved.',
   input: createNoteInput,
   async describe(raw) {
     return { summary: `Save note “${createNoteInput.parse(raw).title}”` };
@@ -167,7 +167,7 @@ export const setNoteSpacesTool: ToolDefinition = {
   capability: "notes",
   operation: "setKnowledgeSpaces",
   description:
-    'Which Knowledge Spaces a note belongs to (ONE note, searchable in each). "Guardala también en Firbot Solutions" / "sumala a Marketing" → add. "Sacala de Marketing" → remove (it stays in the others). "Guardala fuera de Conocimiento" → spaces []. "Agregala a General" → add ["General"]. The note itself is never deleted.',
+    'Which Knowledge Spaces a note belongs to (ONE note, searchable in each). "Guardala también en Trabajo" / "sumala a Marketing" → add. "Sacala de Marketing" → remove (it stays in the others). "Guardala fuera de Conocimiento" → spaces []. "Agregala a General" → add ["General"]. The note itself is never deleted.',
   input: setNoteSpacesInput,
   async describe(raw) {
     return { summary: `Knowledge Spaces of note “${setNoteSpacesInput.parse(raw).note}”` };

@@ -29,9 +29,9 @@ export type TeamAccess = (typeof TEAM_ACCESS)[number];
 export interface TeamProvenance {
   providerKey: ProviderKey;
   connectionId: string;
-  /** The connection's alias ("Firbot"). */
+  /** The connection's alias ("Trabajo"). */
   source: string;
-  /** The provider's own workspace name ("Firbot Solutions"). */
+  /** The provider's own workspace name ("Acme Inc"). */
   workspace: string;
 }
 
@@ -50,7 +50,7 @@ export type TeamChannelKind = "public" | "private" | "direct" | "group";
 export interface TeamChannel {
   /** Canonical channel ref. */
   id: string;
-  /** "firbot-dev", or the person's name for a direct conversation. */
+  /** "marketing", or the person's name for a direct conversation. */
   name: string;
   kind: TeamChannelKind;
   topic: string | null;
@@ -211,7 +211,7 @@ export const searchInput = z
       .min(1)
       .max(120)
       .optional()
-      .describe('Only this channel ("#firbot-dev", "firbot-dev" or a channel id).'),
+      .describe('Only this channel ("#marketing", "marketing" or a channel id).'),
     ...windowFields,
     includeFiles: z.boolean().default(false).describe("Also search shared files."),
     sort: z
@@ -315,7 +315,7 @@ export const saveInput = z
       .trim()
       .min(1)
       .max(200)
-      .describe('The Knowledge Space or Section the user named ("Firbot").'),
+      .describe('The Knowledge Space or Section the user named ("Trabajo").'),
     title: z.string().trim().min(1).max(200).optional(),
   })
   .strict();
@@ -361,7 +361,7 @@ export function searchWindow(
 export const channelLabel = (c: { name: string | null; kind: TeamChannelKind | null }) =>
   !c.name ? "?" : c.kind === "direct" || c.kind === "group" ? c.name : `#${c.name}`;
 
-/** Channel names as people write them: "#Firbot-Dev" and "firbot-dev" are the same. */
+/** Channel names as people write them: "#Marketing" and "marketing" are the same. */
 export const channelKey = (name: string) => name.trim().replace(/^#/, "").toLowerCase();
 
 /** Person names without accents, case or @: "@Martín" finds "martin". */

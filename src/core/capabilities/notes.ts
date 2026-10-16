@@ -12,7 +12,7 @@ import type { EntrySource } from "./habits";
  */
 export interface NoteSpace {
   id: string;
-  /** "Firbot Solutions › RSFA" (Sections are child Spaces). */
+  /** "Trabajo › Cliente A" (Sections are child Spaces). */
   path: string;
 }
 
@@ -70,7 +70,7 @@ const space = z
   .trim()
   .min(1)
   .max(200)
-  .describe('A Knowledge Space or Section by name ("Firbot Solutions", "General").');
+  .describe('A Knowledge Space or Section by name ("Trabajo", "General").');
 const spaceList = z.array(space).max(20);
 
 export const createNoteInput = z

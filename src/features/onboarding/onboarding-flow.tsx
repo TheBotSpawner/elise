@@ -331,7 +331,6 @@ function VoiceStep({ onBack, onDone }: { onBack: () => void; onDone: () => void 
         {o.voiceTitle}
       </h1>
       <p className="mt-2 max-w-md text-sm text-muted">{o.voiceBody}</p>
-      <p className="mt-4 max-w-md text-[13px] text-faint">{o.voiceFuture}</p>
       {error && (
         <p role="alert" className="mt-4 text-sm text-danger-text">
           {error}

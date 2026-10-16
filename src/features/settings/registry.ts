@@ -112,6 +112,12 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
     hint: (t) => t.settingsHub.voice.sounds,
   },
   {
+    section: "voice",
+    anchor: "interaction-sounds",
+    label: (t) => t.settings.interaction.sound,
+    hint: (t) => t.settings.interaction.soundHint,
+  },
+  {
     section: "memory",
     anchor: "use-memory",
     label: (t) => t.settingsHub.memory.use,
