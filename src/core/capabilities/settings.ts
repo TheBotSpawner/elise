@@ -1,6 +1,7 @@
 import { AppError } from "../errors";
 import type { MemoryFact, RememberInput, RememberResult } from "../memory/model";
 import { isValidTimezone } from "../time";
+import type { VoiceKey } from "../voice/catalog";
 import type { VoiceLanguage } from "../voice/preferences";
 
 /**
@@ -64,6 +65,10 @@ export interface SettingsStore {
   connections(): Promise<ConnectionSummary[]>;
   voice(): Promise<VoiceSettings>;
   updateVoice(patch: Partial<VoiceSettings>): Promise<VoiceSettings>;
+  /** The curated voice in use and the ones that can be chosen now (ADR-030), by stable key. */
+  voices(): Promise<{ current: VoiceKey; available: VoiceKey[] }>;
+  /** Sets the voice: the same preference Settings writes; validated and audited. */
+  setVoice(key: VoiceKey): Promise<VoiceKey>;
   /** Mi ELISE (ADR-064): which native modules this person uses, in Mi ELISE order. */
   modules(): Promise<{ key: string; enabled: boolean }[]>;
   /** Turns modules on or off (audited); data is never touched. */

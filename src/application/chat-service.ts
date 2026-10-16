@@ -32,7 +32,6 @@ import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction"
 import { generalContextApplies } from "@/core/knowledge/model";
 import { findCanonicalReferences } from "@/core/lexicon";
 import { coarse, type LatLng } from "@/core/location/model";
-import { disabledCapabilities, NATIVE_MODULES } from "@/core/modules/registry";
 import { TurnPerf } from "@/core/perf";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
 import { matchShortcut } from "@/core/shortcuts/match";
@@ -47,7 +46,7 @@ import { approvalDecidedOps, intentForTool } from "@/core/workspace/from-results
 import { changeOf } from "@/core/workspace/lifecycle";
 import { beforePresenting, overBudget, type TurnPresentation } from "@/core/workspace/presentation";
 import { describeWorkspace } from "@/core/workspace/registry";
-import { getAIProvider } from "@/infrastructure/ai";
+import { availableVoiceKeys, getAIProvider } from "@/infrastructure/ai";
 import { trackEvent } from "@/infrastructure/observability/analytics";
 import { logger } from "@/infrastructure/observability/logger";
 import { withUsageScope } from "@/infrastructure/observability/usage";
@@ -76,7 +75,6 @@ import { syncDueSources } from "./knowledge-background";
 import { locationConfigured } from "./location-service";
 import { memoryForContext } from "./memory-service";
 import { methodStore, methodsForTurn, recordMethodUse } from "./methods-service";
-import { moduleStates } from "./modules-service";
 import { queueRecallIndex, searchRecall } from "./recall-service";
 import { presentBriefing } from "./scheduled-conversation";
 import { enabledShortcuts, shortcutStore } from "./shortcuts-service";
@@ -174,7 +172,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
 
   // Setup in dependency phases (ADR-025): independent reads share one round trip. Nothing is
   // written before the rate limit passes; history is read before this turn's message is saved.
-  const [, { bindings }, contexts, shortcuts, nodes, methods, listNames, modules] = await perf.time(
+  const [, { bindings }, contexts, shortcuts, nodes, methods, listNames] = await perf.time(
     "setup.reads",
     Promise.all([
       perf.time("rate_limit", enforceRateLimit(auth)),
@@ -204,12 +202,10 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
           () => [] as string[],
         ),
       ),
-      // Mi ELISE (ADR-064): modules this person turned off bring no tools or context.
-      perf.time("modules", moduleStates(auth)),
     ]),
   );
-  const off = disabledCapabilities(modules);
-  const capabilities = new Set([...availableCapabilities(bindings)].filter((c) => !off.has(c)));
+  // Hiding a module from Mi ELISE never removes its tools or context (ADR-070).
+  const capabilities = availableCapabilities(bindings);
   // Attachments are verified before anything is written: a turn never goes out without a file
   // the user saw in the draft (ADR-031).
   const attached = input.attachments?.length
@@ -516,9 +512,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     user: auth.profile,
     now: new Date(),
     availableCapabilities: [...capabilities],
-    // Accounts of a module that's off aren't offered as destinations either.
-    accounts: accountSummaries(bindings.filter((b) => !off.has(b.capability))),
-    inactiveModules: NATIVE_MODULES.filter((m) => !modules[m.key]).map((m) => m.key),
+    accounts: accountSummaries(bindings),
     memory: await perf.time("memory", memoryForContext(auth)),
     history,
     userMessage: input.message,
@@ -554,6 +548,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
       .map((p) => ({ name: p.name, kind: p.kind })),
     contextHint: turnHints || null,
     studySession: describeStudy(studySession, contexts.profiles),
+    voice: { current: auth.profile.voice.voice, available: availableVoiceKeys() },
     methods:
       loadedMethod || methodPlan.index.length || methodPlan.hint
         ? {
@@ -606,7 +601,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
             ...(repairTarget.kind === "one" ? [repairTool(repairTarget.ref.type) ?? ""] : []),
           ],
           contextKind: activeProfile?.kind ?? null,
-          listNames: modules.lists ? listNames : [],
+          listNames,
         })
       : { tools: allTools, rest: [] };
   perf.mark("context_built");

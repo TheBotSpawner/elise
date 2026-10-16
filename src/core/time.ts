@@ -2,6 +2,33 @@
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Legacy aliases some runtimes still list (Chrome's Intl lists "America/Buenos_Aires"), mapped
+ * to the canonical IANA id ELISE stores (ADR-069). Both are valid; only one is saved.
+ */
+const TZ_ALIASES: Record<string, string> = {
+  "America/Buenos_Aires": "America/Argentina/Buenos_Aires",
+  "America/Catamarca": "America/Argentina/Catamarca",
+  "America/Cordoba": "America/Argentina/Cordoba",
+  "America/Jujuy": "America/Argentina/Jujuy",
+  "America/Mendoza": "America/Argentina/Mendoza",
+  "America/Rosario": "America/Argentina/Cordoba",
+  "Asia/Calcutta": "Asia/Kolkata",
+  "Asia/Katmandu": "Asia/Kathmandu",
+  "Asia/Rangoon": "Asia/Yangon",
+  "Asia/Saigon": "Asia/Ho_Chi_Minh",
+  "Europe/Kiev": "Europe/Kyiv",
+  "America/Godthab": "America/Nuuk",
+  "Atlantic/Faeroe": "Atlantic/Faroe",
+  "Pacific/Truk": "Pacific/Chuuk",
+  "Pacific/Ponape": "Pacific/Pohnpei",
+  "Pacific/Enderbury": "Pacific/Kanton",
+};
+
+export function canonicalTimezone(zone: string): string {
+  return TZ_ALIASES[zone] ?? zone;
+}
+
 export function isValidTimezone(timezone: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone });

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { requireAuthContext } from "@/application/auth-context";
-import { enabledModules } from "@/application/modules-service";
+import { visibleModules } from "@/application/modules-service";
 import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { getCapability } from "@/core/capabilities/registry";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 /** ELISE Native modules, grouped so the primary navigation stays small. */
 export default async function MyElisePage() {
-  const [{ t }, modules] = await Promise.all([getT(), requireAuthContext().then(enabledModules)]);
+  const [{ t }, modules] = await Promise.all([getT(), requireAuthContext().then(visibleModules)]);
   // The person's Mi ELISE modules (ADR-064), then the tools that aren't modules.
   const MODULES = [...modules, "methods" as const, "time" as const].map((key) => ({
     key,

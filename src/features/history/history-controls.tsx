@@ -1,5 +1,6 @@
 "use client";
 
+import { Archive } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -11,12 +12,16 @@ import { NoSpaceGlyph, SpaceGlyph } from "@/features/knowledge/appearance";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { DropTarget } from "./organize";
+
 export interface HistoryParams {
   q: string;
   space: string | null;
   section: string | null;
   group: "none" | "space" | "section";
   sort: "newest" | "oldest";
+  /** "Archivadas" (ADR-070). */
+  archived: boolean;
 }
 
 /** Up to this many Spaces show as chips; more become a select. */
@@ -30,6 +35,7 @@ function href(p: HistoryParams, patch: Partial<HistoryParams>) {
   if (next.section) s.set("section", next.section);
   if (next.group !== "space") s.set("group", next.group);
   if (next.sort !== "newest") s.set("sort", next.sort);
+  if (next.archived) s.set("view", "archived");
   const qs = s.toString();
   return qs ? `/chat?${qs}` : "/chat";
 }
@@ -94,23 +100,27 @@ export function HistoryControls({
               <FilterChip to={href(params, allSpace)} active={!params.space}>
                 {h.all}
               </FilterChip>
+              {/* While a conversation is dragged, each Space chip is also a place to drop it. */}
               {spaces.map((s) => (
-                <FilterChip
-                  key={s.id}
-                  to={href(params, { space: s.id, section: null })}
-                  active={params.space === s.id}
-                >
-                  <SpaceGlyph icon={s.icon} color={s.color} size="xs" />
-                  {s.name}
-                </FilterChip>
+                <DropTarget key={s.id} spaceId={s.id} className="shrink-0 rounded-full">
+                  <FilterChip
+                    to={href(params, { space: s.id, section: null })}
+                    active={params.space === s.id}
+                  >
+                    <SpaceGlyph icon={s.icon} color={s.color} size="xs" />
+                    {s.name}
+                  </FilterChip>
+                </DropTarget>
               ))}
-              <FilterChip
-                to={href(params, { space: "untagged", section: null })}
-                active={params.space === "untagged"}
-              >
-                <NoSpaceGlyph size="xs" />
-                {h.untagged}
-              </FilterChip>
+              <DropTarget spaceId={null} className="shrink-0 rounded-full">
+                <FilterChip
+                  to={href(params, { space: "untagged", section: null })}
+                  active={params.space === "untagged"}
+                >
+                  <NoSpaceGlyph size="xs" />
+                  {h.untagged}
+                </FilterChip>
+              </DropTarget>
             </>
           ) : (
             <label className="flex items-center gap-2 text-[13px] text-muted">
@@ -167,8 +177,26 @@ export function HistoryControls({
       </FilterSheet>
       <div className="flex flex-wrap items-center gap-4 text-[13px] text-muted max-md:hidden">
         {sortControls}
+        <ArchivedLink params={params} />
+      </div>
+      <div className="md:hidden">
+        <ArchivedLink params={params} />
       </div>
     </div>
+  );
+}
+
+/** "Archivadas": out of the way, one link; and back. */
+function ArchivedLink({ params }: { params: HistoryParams }) {
+  const { t } = useI18n();
+  return (
+    <Link
+      href={href(params, { archived: !params.archived, space: null, section: null })}
+      className="ml-auto inline-flex min-h-11 items-center gap-1.5 text-[13px] text-muted hover:text-fg md:min-h-0"
+    >
+      <Archive className="size-3.5" aria-hidden />
+      {params.archived ? t.history.archivedBack : t.history.archivedView}
+    </Link>
   );
 }
 

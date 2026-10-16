@@ -1,33 +1,33 @@
 import type { CapabilityKey } from "../capabilities/types";
 
 /**
- * Mi ELISE (ADR-064): the native modules a person chooses to use. This is the one place a native
- * module is declared; navigation, Connections, onboarding, route guards, tool/context gating,
- * the Morning Brief and search all derive from it. The database only stores each user's choice.
+ * Mi ELISE (ADR-064, ADR-070): the native modules. This is the one place a native module is
+ * declared; navigation (desktop and phone), Connections, onboarding and search derive from it.
  *
- * A module is product experience, not a provider: turning Tasks off hides Mi ELISE → Tareas and
- * stops ELISE from using tasks on its own, but never touches ELISE Tasks or Google Tasks data,
- * bindings or connections.
+ * Three separate things (ADR-070):
+ * - module data — the person's goals, tasks… never touched by any of this;
+ * - module capability — ELISE's tools for it, always available;
+ * - module visibility — whether it shows in Mi ELISE. The only thing the person's choice
+ *   ("Conexiones › Mi ELISE", onboarding, "mostrá / ocultá Objetivos") changes.
+ * Hiding a module is UX, never revocation: data, tools, the Morning Brief and its pages stay.
  */
 
 export interface NativeModuleDefinition {
   key: string;
-  /** The capability whose tools and context the module gates (canonical, provider-independent). */
+  /** The capability its data belongs to (canonical, provider-independent). Never gated. */
   capability: CapabilityKey;
-  /** Its pages: everything under this path is behind the module guard. */
+  /** Its pages. They keep working when the module is hidden (bookmarks, links from ELISE). */
   route: string;
   /** Position in Mi ELISE (navigation, Connections, onboarding). */
   order: number;
-  /** Exists in this version (a future plan or rollout can turn this off). */
+  /** Exists in this version (a future rollout can leave it out entirely). */
   available: boolean;
-  /** For people who used ELISE before this module existed. */
+  /** Shown for people who chose before this module existed. */
   defaultForExistingUsers: boolean;
-  /** For people who never chose (e.g. skipped onboarding). */
+  /** Shown for people who never chose (e.g. skipped onboarding). */
   defaultForNewUsers: boolean;
   /** Preselected in onboarding's "¿Para qué querés usar ELISE?" (a suggestion, never forced). */
   suggested: boolean;
-  /** Morning Brief blocks that read this module (skipped while it is off). */
-  briefBlocks: readonly string[];
   /** Everyday words people search for, both languages (Connections search). */
   searchTerms: readonly string[];
 }
@@ -42,7 +42,6 @@ export const NATIVE_MODULES = [
     defaultForExistingUsers: true,
     defaultForNewUsers: true,
     suggested: true,
-    briefBlocks: ["tasks"],
     searchTerms: ["tareas", "pendientes", "to do", "todo", "tasks", "google tasks"],
   },
   {
@@ -54,7 +53,6 @@ export const NATIVE_MODULES = [
     defaultForExistingUsers: true,
     defaultForNewUsers: true,
     suggested: false,
-    briefBlocks: ["habits"],
     searchTerms: ["habitos", "rutinas", "rachas", "habits", "routines", "streaks"],
   },
   {
@@ -66,7 +64,6 @@ export const NATIVE_MODULES = [
     defaultForExistingUsers: true,
     defaultForNewUsers: true,
     suggested: true,
-    briefBlocks: [],
     searchTerms: ["listas", "compras", "checklist", "lists", "shopping"],
   },
   {
@@ -78,7 +75,6 @@ export const NATIVE_MODULES = [
     defaultForExistingUsers: true,
     defaultForNewUsers: true,
     suggested: false,
-    briefBlocks: ["goals"],
     searchTerms: ["objetivos", "metas", "visiones", "goals", "visions"],
   },
   {
@@ -90,7 +86,6 @@ export const NATIVE_MODULES = [
     defaultForExistingUsers: true,
     defaultForNewUsers: true,
     suggested: true,
-    briefBlocks: [],
     searchTerms: ["notas", "apuntes", "notes"],
   },
   {
@@ -102,7 +97,6 @@ export const NATIVE_MODULES = [
     defaultForExistingUsers: true,
     defaultForNewUsers: true,
     suggested: false,
-    briefBlocks: ["finance"],
     searchTerms: [
       "finanzas",
       "gastos",
@@ -117,7 +111,9 @@ export const NATIVE_MODULES = [
 ] as const satisfies readonly NativeModuleDefinition[];
 
 export type NativeModuleKey = (typeof NATIVE_MODULES)[number]["key"];
+/** Whether each module shows in Mi ELISE (visibility only, ADR-070). */
 export type ModuleStates = Record<NativeModuleKey, boolean>;
+export type ModuleVisibility = ModuleStates;
 
 const BY_KEY = new Map<string, NativeModuleDefinition>(NATIVE_MODULES.map((m) => [m.key, m]));
 
@@ -137,56 +133,38 @@ export function availableModules(): NativeModuleDefinition[] {
 }
 
 /**
- * The effective state of every module, from the rows a person saved. The one rule:
- * - unavailable → off;
+ * Which modules show in Mi ELISE, from the person's saved choices (null: never chose):
+ * - unavailable → not shown;
  * - a saved choice wins;
- * - no choice for this module: someone who never chose anything (no rows at all) gets the
- *   new-user default; someone who chose before this module existed gets the existing-user default.
- * Existing accounts were given explicit rows when Mi ELISE became modular (migration 047), so a
- * module added later follows `defaultForExistingUsers` for them without another backfill.
+ * - no choice for this module: someone who never chose gets the new-user default; someone who
+ *   chose before this module existed gets the existing-user default.
  */
 export function effectiveModules(
-  saved: readonly { module_key: string; enabled: boolean }[],
+  saved: Readonly<Partial<Record<string, boolean>>> | null,
 ): ModuleStates {
-  const choice = new Map(
-    saved.filter((r) => isModuleKey(r.module_key)).map((r) => [r.module_key, r.enabled]),
-  );
-  const neverChose = saved.length === 0;
   const out = {} as ModuleStates;
   for (const m of NATIVE_MODULES) {
+    const choice = saved?.[m.key];
     out[m.key] = !m.available
       ? false
-      : (choice.get(m.key) ?? (neverChose ? m.defaultForNewUsers : m.defaultForExistingUsers));
+      : typeof choice === "boolean"
+        ? choice
+        : saved
+          ? m.defaultForExistingUsers
+          : m.defaultForNewUsers;
   }
   return out;
 }
 
-export const enabledModuleKeys = (states: ModuleStates): NativeModuleKey[] =>
+export const visibleModuleKeys = (states: ModuleStates): NativeModuleKey[] =>
   availableModules()
     .map((m) => m.key as NativeModuleKey)
     .filter((k) => states[k]);
-
-/** The module a capability belongs to (null: not a Mi ELISE capability — never gated). */
-export function moduleOfCapability(capability: string): NativeModuleKey | null {
-  return NATIVE_MODULES.find((m) => m.capability === capability)?.key ?? null;
-}
-
-/** Capabilities ELISE must not use on its own right now (their modules are off). */
-export function disabledCapabilities(states: ModuleStates): Set<CapabilityKey> {
-  return new Set(NATIVE_MODULES.filter((m) => !states[m.key]).map((m) => m.capability));
-}
 
 /** The module whose pages a path belongs to ("/my-elise/finance/reports" → finance). */
 export function moduleOfPath(pathname: string): NativeModuleKey | null {
   return (
     NATIVE_MODULES.find((m) => pathname === m.route || pathname.startsWith(`${m.route}/`))?.key ??
     null
-  );
-}
-
-/** The module a Morning Brief block reads, if any. */
-export function moduleOfBriefBlock(block: string): NativeModuleKey | null {
-  return (
-    NATIVE_MODULES.find((m) => (m.briefBlocks as readonly string[]).includes(block))?.key ?? null
   );
 }

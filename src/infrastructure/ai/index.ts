@@ -4,11 +4,8 @@ import { serverEnv } from "@/config/server-env";
 import type { AIProvider } from "@/core/agents/ai-provider";
 import { AppError } from "@/core/errors";
 import type { EmbeddingProvider } from "@/core/knowledge/model";
-import {
-  VOICES,
-  type SpeechInputProvider,
-  type SpeechOutputProvider,
-} from "@/core/voice/providers";
+import { openaiVoiceFor } from "@/core/voice/catalog";
+import type { SpeechInputProvider, SpeechOutputProvider } from "@/core/voice/providers";
 
 import { ElevenLabsSpeechOutput } from "./elevenlabs/speech";
 import { FailoverSpeechOutput } from "./failover-speech";
@@ -16,8 +13,10 @@ import { OpenAIEmbeddingProvider } from "./openai/embeddings";
 import { OpenAIProvider } from "./openai/provider";
 import { OpenAISpeechInput, OpenAISpeechOutput } from "./openai/speech";
 import { resolveProfiles } from "./profiles";
+import { elevenVoices, speaksElevenLabs } from "./voices";
 
 export { createLiveWebRtcSession } from "./openai/live";
+export { availableVoiceKeys, elevenVoices } from "./voices";
 
 let provider: AIProvider | undefined;
 let embeddings: EmbeddingProvider | undefined;
@@ -63,32 +62,20 @@ export function getSpeechOutputProvider(): SpeechOutputProvider {
   if (speechOut) return speechOut;
   const env = serverEnv();
   const openai = new OpenAISpeechOutput(apiKey(), env.OPENAI_TTS_MODEL);
-  const voices = elevenVoices();
-  speechOut =
-    env.SPEECH_PROVIDER === "elevenlabs" && env.ELEVENLABS_API_KEY && Object.keys(voices).length
-      ? new FailoverSpeechOutput(
-          new ElevenLabsSpeechOutput(
-            env.ELEVENLABS_API_KEY,
-            env.ELEVENLABS_MODEL_ID,
-            voices,
-            ELISE_VOICE_SETTINGS,
-          ),
-          openai,
-          () => VOICES[0],
-        )
-      : openai;
+  speechOut = speaksElevenLabs()
+    ? new FailoverSpeechOutput(
+        new ElevenLabsSpeechOutput(
+          env.ELEVENLABS_API_KEY!,
+          env.ELEVENLABS_MODEL_ID,
+          elevenVoices(),
+          ELISE_VOICE_SETTINGS,
+        ),
+        openai,
+        // The chosen voice keeps its identity in the fallback: Martín → a male OpenAI voice.
+        (request) => openaiVoiceFor(request.voice),
+      )
+    : openai;
   return speechOut;
-}
-
-/** Curated ELISE profiles → configured ElevenLabs voice ids (server-only). */
-export function elevenVoices(): Record<string, string> {
-  const env = serverEnv();
-  return Object.fromEntries(
-    [
-      ["elise", env.ELEVENLABS_VOICE_ID],
-      ["elise-alt", env.ELEVENLABS_VOICE_ID_ALT],
-    ].filter((e): e is [string, string] => Boolean(e[1])),
-  );
 }
 
 /**

@@ -12,13 +12,15 @@ import {
 } from "@/core/capabilities/settings";
 import { AppError } from "@/core/errors";
 import { availableModules, type NativeModuleKey } from "@/core/modules/registry";
-import { isValidTimezone } from "@/core/time";
+import { canonicalTimezone, isValidTimezone } from "@/core/time";
+import { isVoiceKey, type VoiceKey } from "@/core/voice/catalog";
 import { VOICE_LANGUAGES } from "@/core/voice/preferences";
+import { availableVoiceKeys } from "@/infrastructure/ai/voices";
 
-import type { AuthContext } from "./auth-context";
+import { VOICE_PREFERENCE_KEY, type AuthContext } from "./auth-context";
 import { listConnections } from "./connections-service";
 import { forgetFact, getMemory, rememberFact } from "./memory-service";
-import { moduleStates, setModules } from "./modules-service";
+import { moduleVisibility, setModuleVisibility } from "./modules-service";
 import { listSchedules, setSchedulePaused, updateSchedule } from "./schedules-service";
 
 /**
@@ -78,6 +80,8 @@ export async function updatePreferences(
   if (patch.timezone && !isValidTimezone(patch.timezone)) throw invalid("time zone");
   if (patch.theme && !THEMES.includes(patch.theme as Theme)) throw invalid("theme");
   if (patch.accent && !ACCENTS.includes(patch.accent as Accent)) throw invalid("accent");
+  // Aliases ("America/Buenos_Aires") are saved as the canonical id (ADR-069).
+  if (patch.timezone) patch = { ...patch, timezone: canonicalTimezone(patch.timezone) };
   const before = await getPreferences(auth);
   const { error } = await auth.db
     .from("user_profiles")
@@ -104,13 +108,13 @@ const invalid = (what: string) =>
 export function settingsStore(auth: AuthContext): SettingsStore {
   return {
     async modules() {
-      const states = await moduleStates(auth);
+      const states = await moduleVisibility(auth);
       return availableModules().map((m) => ({
         key: m.key,
         enabled: states[m.key as NativeModuleKey],
       }));
     },
-    setModules: async (changes) => void (await setModules(auth, changes, "ai")),
+    setModules: async (changes) => void (await setModuleVisibility(auth, changes, "ai")),
     get: () => getPreferences(auth),
     update: (patch) => updatePreferences(auth, patch, "ai"),
     async schedules() {
@@ -153,6 +157,8 @@ export function settingsStore(auth: AuthContext): SettingsStore {
       });
       return v;
     },
+    voices: async () => ({ current: auth.profile.voice.voice, available: availableVoiceKeys() }),
+    setVoice: (key) => setPreferredVoice(auth, key, "ai"),
     memory: () => getMemory(auth),
     async remember(input) {
       const r = await rememberFact(auth, input);
@@ -169,6 +175,36 @@ export function settingsStore(auth: AuthContext): SettingsStore {
       return n;
     },
   };
+}
+
+/**
+ * The voice (ADR-030): one preference whoever changes it — Settings, chat or voice. Only a
+ * curated key that's configured now is accepted; the provider's own voice id is never stored.
+ * The request's context follows at once, so the rest of this turn already uses it; every later
+ * request (each spoken sentence) reads it again.
+ */
+export async function setPreferredVoice(
+  auth: AuthContext,
+  key: VoiceKey,
+  origin: Origin,
+): Promise<VoiceKey> {
+  if (!isVoiceKey(key) || !availableVoiceKeys().includes(key))
+    throw new AppError("VALIDATION_ERROR", "That voice isn't available", { recovery: "review" });
+  const from = auth.profile.voice.voice;
+  const { error } = await auth.db.from("user_preferences").upsert(
+    {
+      workspace_id: auth.workspaceId,
+      user_id: auth.userId,
+      key: VOICE_PREFERENCE_KEY,
+      value_json: key,
+      source: "user",
+    },
+    { onConflict: "workspace_id,user_id,key" },
+  );
+  if (error) throw new AppError("INTERNAL_ERROR", "Could not save the voice", { cause: error });
+  auth.profile.voice.voice = key;
+  if (from !== key) await audit(auth, origin, "settings.voice_changed", { from, voice: key });
+  return key;
 }
 
 /** Voice behavior (ADR-068): the same columns the Settings page writes. */

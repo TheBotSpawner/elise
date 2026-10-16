@@ -2,11 +2,11 @@
 
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { TimezonePicker } from "@/components/shared/timezone-picker";
 import { Button } from "@/components/ui/button";
-import { Combobox } from "@/components/ui/combobox";
 import { Input, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -16,7 +16,6 @@ import {
 } from "@/features/location/shared-location";
 import { LOCALES, type Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
-import { timezoneOptions } from "@/lib/timezones";
 
 import { updateProfile } from "./actions";
 import { SettingRow, SettingsCard } from "./shell";
@@ -31,11 +30,6 @@ export function ProfileSettings({
   const g = t.settingsHub.general;
   const [pending, startTransition] = useTransition();
   const [values, setValues] = useState(profile);
-  // Canonical IANA ids stored; friendly, searchable labels shown ("Buenos Aires, Argentina").
-  const timezones = useMemo(() => {
-    const zones = Intl.supportedValuesOf("timeZone");
-    return timezoneOptions(zones.includes(profile.timezone) ? zones : [profile.timezone, ...zones]);
-  }, [profile.timezone]);
   const dirty = JSON.stringify(values) !== JSON.stringify(profile);
 
   function save(event: React.FormEvent) {
@@ -78,12 +72,9 @@ export function ProfileSettings({
         </SettingRow>
         <SettingRow id="timezone" label={g.timezone} hint={g.timezoneHint} stack>
           <div className="sm:w-72">
-            <Combobox
+            <TimezonePicker
               id="timezone"
               value={values.timezone}
-              options={timezones}
-              placeholder={t.settings.timezoneSearch}
-              emptyText={t.settings.timezoneNone}
               onChange={(timezone) => setValues({ ...values, timezone })}
             />
           </div>

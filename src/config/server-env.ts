@@ -41,9 +41,12 @@ const serverEnvSchema = z.object({
     .regex(/^projects\/[^/]+\/locations\/[a-z0-9-]+\/processors\/[^/]+$/)
     .optional(),
   GOOGLE_SERVICE_ACCOUNT_JSON: z.string().min(1).optional(),
-  /** The "ELISE" voice profile (and an optional alternative). */
+  /** Curated voices (ADR-030): 1 = ELISE, 2 = Martín, 3 = Adriana. Server-only ids. */
+  ELEVENLABS_VOICE_ID_1: z.string().min(1).optional(),
+  ELEVENLABS_VOICE_ID_2: z.string().min(1).optional(),
+  ELEVENLABS_VOICE_ID_3: z.string().min(1).optional(),
+  /** Legacy single "ELISE" voice: used for ELISE only when ELEVENLABS_VOICE_ID_1 is unset. */
   ELEVENLABS_VOICE_ID: z.string().min(1).optional(),
-  ELEVENLABS_VOICE_ID_ALT: z.string().min(1).optional(),
   /** eleven_v4_turbo (Text to Dialogue WebSocket) or an HTTP model such as eleven_flash_v2_5. */
   ELEVENLABS_MODEL_ID: z.string().min(1).default("eleven_v4_turbo"),
   /** Web (ADR-015): "openai" (hosted web search) or "tavily"; default: tavily if its key is set. */

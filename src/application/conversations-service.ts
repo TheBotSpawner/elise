@@ -30,12 +30,15 @@ export interface StoredChatMessage {
 export async function listConversations(
   auth: AuthContext,
   limit = 50,
+  /** Archived (ADR-070) are out of the normal views; "Archivadas" lists only them. */
+  status: "active" | "archived" = "active",
 ): Promise<ConversationSummary[]> {
   const { data, error } = await auth.db
     .from("conversations")
     .select("id, title, last_message_at, origin")
     .eq("workspace_id", auth.workspaceId)
     .eq("user_id", auth.userId)
+    .eq("status", status)
     .is("archived_at", null)
     .order("last_message_at", { ascending: false })
     .limit(limit);

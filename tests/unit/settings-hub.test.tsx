@@ -144,13 +144,13 @@ describe("settings shell", () => {
 });
 
 describe("voice settings", () => {
-  const profiles = [{ id: "elise" as const, displayName: "ELISE" }];
+  const profiles = ["elise", "martin"] as const;
 
   it("only continuous conversation, voice language and voice", () => {
     wrap(
       <VoiceSettings
         initial={{ continuous: true, language: "auto", voice: "elise" }}
-        profiles={profiles}
+        voices={profiles}
       />,
     );
     expect(screen.getByRole("switch", { name: "Conversación continua" })).toBeChecked();
@@ -160,8 +160,11 @@ describe("voice settings", () => {
       "Español",
       "English",
     ]);
-    expect(screen.getByRole("combobox", { name: "Voz" })).toHaveValue("elise");
-    expect(screen.getByRole("button", { name: "Escuchar" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /^ELISE/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /^Martín/ })).not.toBeChecked();
+    // Only the configured voices are offered.
+    expect(screen.queryByRole("radio", { name: /^Adriana/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Escuchar Martín" })).toBeInTheDocument();
     for (const gone of [
       "Frase de activación",
       "Responder en voz alta",
@@ -180,7 +183,7 @@ describe("voice settings", () => {
     wrap(
       <VoiceSettings
         initial={{ continuous: true, language: "auto", voice: "elise" }}
-        profiles={profiles}
+        voices={profiles}
       />,
     );
     await act(async () => {
@@ -207,7 +210,7 @@ describe("voice settings", () => {
     wrap(
       <VoiceSettings
         initial={{ continuous: false, language: "es", voice: "elise" }}
-        profiles={profiles}
+        voices={profiles}
       />,
     );
     expect(screen.getByText("Sonidos de ELISE")).toBeInTheDocument();

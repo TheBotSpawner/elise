@@ -12,12 +12,16 @@ import {
   rememberFact,
   setMemoryEnabled,
 } from "@/application/memory-service";
-import { updatePreferences, updateVoiceSettings } from "@/application/settings-service";
+import {
+  setPreferredVoice,
+  updatePreferences,
+  updateVoiceSettings,
+} from "@/application/settings-service";
 import { deleteStoredFile } from "@/application/storage-service";
 import { toPublicError, type PublicError } from "@/core/errors";
 import { isValidTimezone } from "@/core/time";
+import { VOICE_KEYS } from "@/core/voice/catalog";
 import { VOICE_LANGUAGES } from "@/core/voice/preferences";
-import { VOICE_CHOICES } from "@/core/voice/providers";
 import { LOCALE_COOKIE, LOCALES } from "@/lib/i18n";
 import { ACCENTS, THEME_COOKIE, THEMES } from "@/lib/theme";
 
@@ -70,7 +74,7 @@ const voiceSchema = z
   .object({
     continuous: z.boolean(),
     language: z.enum(VOICE_LANGUAGES),
-    voice: z.enum(VOICE_CHOICES),
+    voice: z.enum(VOICE_KEYS),
   })
   .strict();
 
@@ -95,11 +99,8 @@ export async function setVoicePreferences(input: z.input<typeof voiceSchema>): P
     async () => {
       const v = voiceSchema.parse(input);
       const auth = await requireAuthContext();
-      const { error } = await auth.db
-        .from("user_profiles")
-        .update({ voice_name: v.voice })
-        .eq("id", auth.userId);
-      if (error) throw error;
+      // The same preference ELISE changes from chat (ADR-030): one voice, wherever it's set.
+      await setPreferredVoice(auth, v.voice, "user_ui");
       await updateVoiceSettings(auth, { continuous: v.continuous, language: v.language });
       await auth.db.from("audit_events").insert({
         workspace_id: auth.workspaceId,

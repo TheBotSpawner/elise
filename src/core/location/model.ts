@@ -85,6 +85,27 @@ export interface PlaceSearch {
   language: "es" | "en";
 }
 
+/** A city-level suggestion for a typed name (weather locations, ADR-069). */
+export interface CitySuggestion {
+  placeId: string;
+  /** "Buenos Aires" */
+  label: string;
+  /** "Argentina" */
+  detail: string | null;
+}
+
+/** A chosen city: unambiguous for a forecast, never a street address. */
+export interface CityPlace {
+  placeId: string;
+  displayName: string;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  countryCode: string | null;
+  lat: number;
+  lng: number;
+}
+
 /** A maps provider (Google Maps Platform…), isolated in infrastructure. */
 export interface LocationProvider {
   readonly id: string;
@@ -98,6 +119,20 @@ export interface LocationProvider {
     signal?: AbortSignal,
   ): Promise<Place[]>;
   reverseGeocode(at: LatLng, language: "es" | "en", signal?: AbortSignal): Promise<Place[]>;
+  /** Cities, localities and regions only — never businesses or addresses. */
+  suggestCities?(
+    input: string,
+    language: "es" | "en",
+    sessionToken: string,
+    signal?: AbortSignal,
+    regionCode?: string | null,
+  ): Promise<CitySuggestion[]>;
+  cityDetails?(
+    placeId: string,
+    language: "es" | "en",
+    sessionToken: string,
+    signal?: AbortSignal,
+  ): Promise<CityPlace | null>;
   route(
     r: {
       origin: Waypoint;

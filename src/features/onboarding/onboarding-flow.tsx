@@ -3,13 +3,13 @@
 import { Check } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { GoogleMark, NotionIcon } from "@/components/elise/brand-icons";
 import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { Orb } from "@/components/elise/orb/orb";
+import { TimezonePicker } from "@/components/shared/timezone-picker";
 import { Button } from "@/components/ui/button";
-import { Combobox } from "@/components/ui/combobox";
 import { Input, Label, Select } from "@/components/ui/input";
 import type { CapabilityKey } from "@/core/capabilities/types";
 import { availableModules, type NativeModuleKey } from "@/core/modules/registry";
@@ -19,7 +19,6 @@ import { SpaceGlyph } from "@/features/knowledge/appearance";
 import { chooseContinuousConversation, updateProfile } from "@/features/settings/actions";
 import { errorText, LOCALES, type Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
-import { timezoneOptions } from "@/lib/timezones";
 import { cn } from "@/lib/utils";
 
 import {
@@ -393,10 +392,6 @@ function ProfileStep({
         ? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
         : profile.timezone,
   }));
-  const timezones = useMemo(() => {
-    const zones = Intl.supportedValuesOf("timeZone");
-    return timezoneOptions(zones.includes(values.timezone) ? zones : [values.timezone, ...zones]);
-  }, [values.timezone]);
 
   function save(e: React.FormEvent) {
     e.preventDefault();
@@ -445,12 +440,9 @@ function ProfileStep({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ob-timezone">{t.settings.timezone}</Label>
-          <Combobox
+          <TimezonePicker
             id="ob-timezone"
             value={values.timezone}
-            options={timezones}
-            placeholder={t.settings.timezoneSearch}
-            emptyText={t.settings.timezoneNone}
             onChange={(timezone) => setValues({ ...values, timezone })}
           />
         </div>

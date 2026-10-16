@@ -4,18 +4,19 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
-import { setModules } from "@/application/modules-service";
+import { setModuleVisibility } from "@/application/modules-service";
 import { toPublicError, type PublicError } from "@/core/errors";
 
 export type ModuleActionResult = { ok: true } | { ok: false; error: PublicError };
 
 /**
- * Turns one Mi ELISE module on or off (ADR-064), through the one service that decides module
- * state. The whole app re-renders from the server: navigation, guards and Connections agree.
+ * Shows or hides one module in Mi ELISE (ADR-070), through the one service that decides it. The
+ * app re-renders from the server: desktop and phone navigation and Connections agree. Hiding
+ * never touches the module's data.
  */
 export async function setModuleAction(key: string, enabled: boolean): Promise<ModuleActionResult> {
   try {
-    await setModules(
+    await setModuleVisibility(
       await requireAuthContext(),
       { [z.string().max(40).parse(key)]: z.boolean().parse(enabled) },
       "user_ui",

@@ -96,3 +96,55 @@ A new voice alone would fix none of these.
 - ElevenLabs can be switched on and off with configuration, and Voice Mode survives its outages.
 - ElevenLabs bills per character. Usage is recorded per segment
   (`usage_events`: operation `speech`, provider `elevenlabs`, characters, latency).
+
+## Amendment (2026-10-16): curated voice catalog and switching voices from chat
+
+Supersedes the profile part of point 7 and the select in point 8. `elise-alt`, the OpenAI voices
+as user choices, and `ELEVENLABS_VOICE_ID_ALT` are gone.
+
+- **Catalog.** `core/voice/catalog.ts` is the only place voices are defined:
+  - `elise` (ELISE, default), `martin` (Martín), `adriana` (Adriana);
+  - each voice has a name, gender, relative pitch, compact traits, a short es/en summary and an
+    OpenAI stand-in (`marin`, `cedar`, `sage`).
+  - It holds no secrets or provider ids, so the client may import it for names and summaries.
+- **Server resolution.** `infrastructure/ai/voices.ts` (server-only) maps the keys to ids:
+  - `ELEVENLABS_VOICE_ID_1` → ELISE, `_2` → Martín, `_3` → Adriana;
+  - the legacy `ELEVENLABS_VOICE_ID` is used for ELISE only when `_1` is unset.
+- **Availability.** A voice is available when ElevenLabs speaks (`SPEECH_PROVIDER=elevenlabs`, a
+  key) and its id is configured. ELISE is always available. Availability depends on
+  configuration only, never on provider health.
+- **Preference.** A person's choice is stored in `user_preferences`
+  (`voice.preferred_voice_key`, a validated catalog key, under RLS, per person and workspace).
+  - Settings, chat and voice all write it through `settings-service.setPreferredVoice`, which is
+    audited as `settings.voice_changed`.
+  - `getAuthContext` reads it alongside the profile in parallel, so it adds no round trip, and
+    resolves it with `resolveVoice`.
+  - With nothing stored, or a voice that isn't configured now, the voice is ELISE. The stored
+    value is never rewritten, so the chosen voice resumes when it's configured again.
+  - No migration is needed. The legacy `voice_name` column is no longer read or written.
+- **Chat tools** (capability `settings`, no approval):
+  - `voice.getCurrent` and `voice.listAvailable` return keys, names and traits, never ids.
+  - `voice.set {voiceKey}` takes a catalog key.
+  - `voice.next {gender?, lower?}` is deterministic: the next available voice in catalog order,
+    optionally narrowed. "Más grave" means the closest lower voice.
+  - Results come with a fixed confirmation ("Listo, ahora uso la voz de Martín."), so no second
+    model call, and a `setting_changed` card ("Voz: ELISE → Martín").
+- **Turn context.** One compact JSON line (`currentVoice`, `availableVoices` with traits) plus
+  the selection policy:
+  - a name or "your original voice" → `voice.set`;
+  - traits → the best match;
+  - a bare "cambiá la voz" → `voice.next`, without asking.
+- **Identity vs. delivery.** Whisper, volume, speed and language are not voice changes. They stay
+  with ADR-049's delivery and the voice language. The tool descriptions say so explicitly.
+- **Applies immediately.** Every spoken sentence is its own `/api/voice/speak` request and reads
+  the preference again. The tool also updates the current request's context. The confirmation
+  sentence after a change is therefore already spoken in the new voice. Audio that is already
+  playing is never replayed. GPT-Live (ADR-026) gets the voice's OpenAI stand-in when its session
+  starts, so a change there applies from the next session.
+- **Fallback.** If ElevenLabs fails, `FailoverSpeechOutput` speaks with the chosen voice's
+  stand-in: Martín falls back to a male OpenAI voice. The preference is untouched, and Martín
+  resumes when ElevenLabs recovers.
+- **Preview.** `/api/voice/preview?voice=<key>` plays a short fixed line per voice ("Hola, soy
+  Martín. Esta es mi voz en ELISE."). It never changes the preference.
+- **Onboarding** keeps ELISE as the default and adds no voice step. The choice lives in Settings
+  and in chat.

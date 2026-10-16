@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-import { addDays, isLocalDateTime, isValidTimezone, todayIn, zonedDateTimeToUtc } from "../time";
+import {
+  addDays,
+  canonicalTimezone,
+  isLocalDateTime,
+  isValidTimezone,
+  todayIn,
+  zonedDateTimeToUtc,
+} from "../time";
 
 /**
  * Schedules ("Programados", docs/architecture/13 §21-61). A Schedule is structured data —
@@ -33,7 +40,13 @@ export const scheduleDefinitionSchema = z.discriminatedUnion("kind", [
 
 export type ScheduleDefinition = z.infer<typeof scheduleDefinitionSchema>;
 
-export const timezoneSchema = z.string().min(1).max(64).refine(isValidTimezone, "Unknown timezone");
+export const timezoneSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(isValidTimezone, "Unknown timezone")
+  // Aliases ("America/Buenos_Aires") are saved as the canonical id (ADR-069).
+  .transform(canonicalTimezone);
 
 const weekday = (isoDate: string) => new Date(`${isoDate}T00:00:00Z`).getUTCDay();
 
@@ -99,6 +112,10 @@ export function isMissed(actionType: ActionType, scheduledFor: Date, now: Date):
 export const BRIEF_BLOCKS = [
   "calendar",
   "email",
+  /**
+   * Legacy (ADR-069): "Para responder y en espera" is part of "Correos" now. Still accepted
+   * when reading a stored schedule, always normalized to "email".
+   */
   "needs_reply",
   "tasks",
   "habits",
@@ -113,8 +130,35 @@ export const BRIEF_BLOCKS = [
  * Finance is personal, News needs topics, Knowledge a Space and Slack its channels: all opt-in.
  */
 export const DEFAULT_BRIEF_BLOCKS = BRIEF_BLOCKS.filter(
-  (b) => b !== "finance" && b !== "news" && b !== "knowledge" && b !== "slack",
+  (b) =>
+    b !== "finance" && b !== "news" && b !== "knowledge" && b !== "slack" && b !== "needs_reply",
 );
+
+/** The blocks a person chooses from: one "Correos" for all email (ADR-069). */
+export const OFFERED_BRIEF_BLOCKS = BRIEF_BLOCKS.filter((b) => b !== "needs_reply");
+
+/** Old "needs_reply" (alone or with "email") is "email"; order and the rest are kept. */
+export function normalizeBlocks(blocks: readonly BriefBlock[]): BriefBlock[] {
+  return [...new Set(blocks.map((b) => (b === "needs_reply" ? "email" : b)))];
+}
+
+/**
+ * The weather block's place (ADR-069): a city chosen from suggestions, with its coordinates,
+ * so the forecast never depends on how a name was typed.
+ */
+export const weatherPlaceSchema = z
+  .object({
+    placeId: z.string().min(1).max(300),
+    displayName: z.string().trim().min(1).max(200),
+    city: z.string().max(120).nullable().default(null),
+    region: z.string().max(120).nullable().default(null),
+    country: z.string().max(120).nullable().default(null),
+    countryCode: z.string().max(4).nullable().default(null),
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+  })
+  .strict();
+export type WeatherPlace = z.infer<typeof weatherPlaceSchema>;
 
 /** Channels a brief may read in one run: Slack's history limits make every read count. */
 export const MAX_BRIEF_CHANNELS = 5;
@@ -164,7 +208,7 @@ export const morningBriefConfigSchema = z
       .array(z.enum(BRIEF_BLOCKS))
       .min(1)
       .default([...DEFAULT_BRIEF_BLOCKS])
-      .transform((b) => [...new Set(b)]),
+      .transform(normalizeBlocks),
     /**
      * Which accounts to read per capability: "all" resolves the enabled accounts at run time;
      * a connection id pins that account (and never falls back to another one).
@@ -185,8 +229,13 @@ export const morningBriefConfigSchema = z
     horizon: z.enum(BRIEF_HORIZONS).default("today"),
     /** Knowledge block: the Space (or Section) whose recent changes it summarizes. */
     knowledgeSpaceId: z.uuid().nullable().default(null),
-    /** Weather block (ADR-038): a city; null → the city of the schedule's timezone. */
+    /**
+     * Weather block (ADR-038): a city name; null → the city of the schedule's timezone. Older
+     * schedules have only this free text; it still works (geocoded at run time).
+     */
     weatherLocation: z.string().trim().min(2).max(120).nullable().default(null),
+    /** The chosen city with its coordinates (ADR-069); preferred over the name when present. */
+    weatherPlace: weatherPlaceSchema.nullable().default(null),
     /**
      * Slack block (ADR-062): only these channels of this workspace, for a bounded window — never a
      * crawl of the workspace and never Real-time Search in the background.

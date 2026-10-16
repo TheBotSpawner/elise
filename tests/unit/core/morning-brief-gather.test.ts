@@ -137,6 +137,30 @@ describe("Morning Brief gathering", () => {
   });
 });
 
+describe("“Correos” (ADR-069)", () => {
+  it("alone, it includes what you're waiting on as well as what needs your reply", async () => {
+    const { ports, ctx, personalMail } = setup();
+    // You wrote last, three days ago, and nobody answered.
+    personalMail.addMessage({
+      id: "w1",
+      threadId: "wt1",
+      fromMe: true,
+      from: { email: "leo@gmail.com", name: "Leo" },
+      to: [{ email: "ana@client.com", name: "Ana" }],
+      subject: "¿Pudiste ver el presupuesto?",
+      snippet: "¿Lo revisaste?",
+      date: "2026-09-26T12:00:00.000Z",
+    });
+    const { data } = await gatherBrief(
+      ports,
+      ctx,
+      morningBriefConfigSchema.parse({ blocks: ["email"] }),
+    );
+    const items = data.email!.triage.flatMap((g) => g.items);
+    expect(items.some((i) => i.reasons.includes("waiting"))).toBe(true);
+  });
+});
+
 describe("Morning Brief connection semantics", () => {
   it("an empty inbox is an empty section, not a disconnected source", async () => {
     const { ports, ctx } = setup();

@@ -8,6 +8,7 @@ import {
   type RunnerPorts,
 } from "@/core/schedules/runner";
 import type { RunStatus } from "@/core/schedules/schedule";
+import { DEFAULT_VOICE } from "@/core/voice/catalog";
 import { voicePreferences } from "@/core/voice/preferences";
 import { getAIProvider } from "@/infrastructure/ai";
 import { TriggerDevBackgroundRuntime } from "@/infrastructure/background/trigger/runtime";
@@ -28,7 +29,7 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
   const { data: profile } = await db
     .from("user_profiles")
     .select(
-      "display_name, preferred_language, timezone, onboarding_status, theme, accent, voice_enabled, voice_output, voice_language, voice_name, voice_continuous, voice_barge_in, voice_wake_enabled, voice_wake_phrase",
+      "display_name, preferred_language, timezone, onboarding_status, theme, accent, voice_enabled, voice_output, voice_language, voice_continuous, voice_barge_in, voice_wake_enabled, voice_wake_phrase",
     )
     .eq("id", userId)
     .maybeSingle();
@@ -45,7 +46,8 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
       onboardingStatus: profile.onboarding_status,
       theme: profile.theme,
       accent: profile.accent,
-      voice: voicePreferences(profile),
+      // Background work never speaks: the default voice is enough here.
+      voice: voicePreferences(profile, DEFAULT_VOICE),
     },
   };
 }

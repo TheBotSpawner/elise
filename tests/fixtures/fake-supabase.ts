@@ -78,6 +78,15 @@ class Query implements PromiseLike<{ data: unknown; error: null }> {
     this.filters.push((r) => v.includes(r[k]));
     return this;
   }
+  /** PostgREST `or`, for the `col.in.(a,b),col.eq.x` forms ELISE uses. */
+  or(expr: string) {
+    const conds = [...expr.matchAll(/(\w+)\.(in|eq)\.(\(([^)]*)\)|[^,]+)/g)].map((m) => ({
+      col: m[1]!,
+      values: m[2] === "in" ? m[4]!.split(",") : [m[3]!],
+    }));
+    this.filters.push((r) => conds.some((c) => c.values.includes(String(r[c.col]))));
+    return this;
+  }
   order() {
     return this;
   }

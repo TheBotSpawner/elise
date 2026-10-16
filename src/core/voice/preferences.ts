@@ -1,4 +1,4 @@
-import type { VoiceChoice } from "./providers";
+import type { VoiceKey } from "./catalog";
 import type { WakePhrase } from "./wake";
 
 /**
@@ -18,17 +18,20 @@ export type VoiceLanguage = (typeof VOICE_LANGUAGES)[number];
 /** The stored columns this reads (user_profiles). */
 export interface VoiceRow {
   voice_language: VoiceLanguage;
-  voice_name: VoiceChoice;
   voice_continuous: boolean | null;
 }
 
-export function voicePreferences(row: VoiceRow) {
+/**
+ * `voice` is the curated voice already resolved (ADR-030): stored in `user_preferences`
+ * (`voice.preferred_voice_key`), not in the legacy `voice_name` column.
+ */
+export function voicePreferences(row: VoiceRow, voice: VoiceKey) {
   const continuous = row.voice_continuous ?? false;
   return {
     enabled: true,
     speak: true,
     language: row.voice_language,
-    voice: row.voice_name,
+    voice,
     continuous,
     bargeIn: true,
     wakeEnabled: continuous,

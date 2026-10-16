@@ -412,6 +412,7 @@ export type ToolDisplay =
           | "module"
           | "continuous"
           | "voice_language"
+          | "voice"
           | "memory";
         from: string | null;
         to: string;

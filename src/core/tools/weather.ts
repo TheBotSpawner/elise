@@ -228,9 +228,21 @@ export const currentWeatherTool: ToolDefinition = {
 
 // ── Forecast (hours for part of a day, days for longer) ──────────────────────
 
+/** A city already chosen with its coordinates (a schedule's weather place, ADR-069). */
+const placeField = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+  })
+  .strict()
+  .optional()
+  .describe("Only for ELISE's own schedules; never set it yourself.");
+
 const forecastInput = z
   .object({
     location: locationField,
+    place: placeField,
     when: z
       .enum(WEATHER_PERIODS)
       .default("next_7_days")
@@ -258,7 +270,12 @@ export const forecastWeatherTool: ToolDefinition = {
   async run(raw, env) {
     const q = forecastInput.parse(raw);
     const period: WeatherPeriod | { date: string } = q.date ? { date: q.date } : q.when;
-    const place = await resolvePlace(env, q.location);
+    const place: Resolved = q.place
+      ? {
+          at: coarse({ lat: q.place.lat, lng: q.place.lng }),
+          location: { name: clip(q.place.name, 120), detail: null, source: "explicit" },
+        }
+      : await resolvePlace(env, q.location);
     if ("missing" in place) return needsLocation(env, place.query);
     // Days to fetch, from the user's clock (+1 for a place a day ahead); the range itself is
     // resolved again in the place's own timezone once the forecast says which one it is.

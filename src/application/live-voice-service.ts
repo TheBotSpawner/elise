@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { serverEnv } from "@/config/server-env";
 import type { ClientPlayback } from "@/core/capabilities/music";
 import { AppError } from "@/core/errors";
+import { openaiVoiceFor } from "@/core/voice/catalog";
 import {
   isCancellation,
   liveInstructions,
@@ -58,7 +59,8 @@ export async function createLiveSession(auth: AuthContext, sdp: string) {
       locale: auth.profile.locale,
       displayName: auth.profile.displayName,
     }),
-    voice: auth.profile.voice.voice,
+    // GPT-Live speaks with its own voices: the chosen voice's stand-in, fixed for the session.
+    voice: openaiVoiceFor(auth.profile.voice.voice),
     safetyIdentifier: safetyId(auth.userId),
   });
   logger.info("voice.live_session_created", {

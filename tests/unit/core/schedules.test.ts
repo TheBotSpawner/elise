@@ -230,7 +230,6 @@ describe("schedule timing", () => {
     expect(ok.success && ok.data.configuration.blocks).toEqual([
       "calendar",
       "email",
-      "needs_reply",
       "tasks",
       "habits",
       "goals",

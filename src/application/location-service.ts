@@ -4,12 +4,16 @@ import { serverEnv } from "@/config/server-env";
 import { AppError, toAppError } from "@/core/errors";
 import {
   LOCATION_LIMITS,
+  type CityPlace,
+  type CitySuggestion,
   type LocationCapability,
   type LocationProvider,
 } from "@/core/location/model";
+import { canonicalTimezone } from "@/core/time";
 import { GoogleMapsLocation, type MapsUsage } from "@/infrastructure/location/google-maps";
 import { logger } from "@/infrastructure/observability/logger";
 import { recordUsage } from "@/infrastructure/observability/usage";
+import { timezoneCountry } from "@/lib/timezones";
 
 import type { AuthContext } from "./auth-context";
 
@@ -120,4 +124,65 @@ export function locationCapability(
     route: (r) => step("route", JSON.stringify(r), route, (p, s) => p.route(r, s)),
     matrix: (m) => step("matrix", JSON.stringify(m), route, (p, s) => p.matrix(m, s)),
   };
+}
+
+/**
+ * Weather locations (ADR-069): city suggestions while typing, then the chosen city's
+ * coordinates. Server key only — it never reaches the browser. Without Maps configured the
+ * picker says so and the old free-text value keeps working.
+ */
+function serverMaps(): GoogleMapsLocation {
+  const key = serverKey();
+  if (!key)
+    throw new AppError("CAPABILITY_UNAVAILABLE", "Maps isn't configured", {
+      recovery: "configure",
+    });
+  return new GoogleMapsLocation(key, (u) =>
+    recordUsage({
+      operation: "maps",
+      provider: `google_maps.${u.api}`,
+      units: u.units,
+      unit: "queries",
+    }),
+  );
+}
+
+export async function suggestWeatherCities(
+  auth: AuthContext,
+  input: string,
+  sessionToken: string,
+): Promise<CitySuggestion[]> {
+  const maps = serverMaps();
+  return withTimeout((signal) =>
+    maps.suggestCities(
+      input,
+      auth.profile.locale,
+      sessionToken,
+      signal,
+      timezoneCountry(canonicalTimezone(auth.profile.timezone)),
+    ),
+  );
+}
+
+export async function weatherCity(
+  auth: AuthContext,
+  placeId: string,
+  sessionToken: string,
+): Promise<CityPlace | null> {
+  const maps = serverMaps();
+  return withTimeout((signal) =>
+    maps.cityDetails(placeId, auth.profile.locale, sessionToken, signal),
+  );
+}
+
+async function withTimeout<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LOCATION_LIMITS.timeoutMs);
+  try {
+    return await run(controller.signal);
+  } catch (error) {
+    throw toAppError(error);
+  } finally {
+    clearTimeout(timer);
+  }
 }

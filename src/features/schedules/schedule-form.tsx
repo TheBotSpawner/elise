@@ -3,30 +3,48 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { InfoTip } from "@/components/shared/info-tip";
+import { TimezonePicker } from "@/components/shared/timezone-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Select } from "@/components/ui/input";
 import { PRESETS } from "@/core/schedules/presets";
 import {
-  BRIEF_BLOCKS,
   BRIEF_HORIZONS,
   DEFAULT_BRIEF_BLOCKS,
+  normalizeBlocks,
   MAX_BRIEF_CHANNELS,
   type BriefBlock,
   type BriefHorizon,
   type ScheduleInput,
   type SchedulePreset,
 } from "@/core/schedules/schedule";
-import { addDays, todayIn } from "@/core/time";
+import { addDays, canonicalTimezone, todayIn } from "@/core/time";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
+import { timezoneLabel } from "@/lib/timezones";
 import { cn } from "@/lib/utils";
 
 import { createScheduleAction, slackChannelsAction, updateScheduleAction } from "./actions";
 import { describeWhen } from "./format";
 import { BLOCK_ICONS } from "./icons";
+import { WeatherPlacePicker } from "./weather-place";
 
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+/** "Qué mira ELISE", in reading order; one "Correos" for all email (ADR-069). */
+const FORM_ORDER: BriefBlock[] = [
+  "calendar",
+  "email",
+  "tasks",
+  "habits",
+  "goals",
+  "finance",
+  "news",
+  "weather",
+  "knowledge",
+  "slack",
+];
 
 /** A blank scheduled task: the user says what ELISE should do; nothing is assumed beyond it. */
 export function blankTask(timezone: string): ScheduleInput {
@@ -42,6 +60,7 @@ export function blankTask(timezone: string): ScheduleInput {
       horizon: "today",
       knowledgeSpaceId: null,
       weatherLocation: null,
+      weatherPlace: null,
       slack: { connectionId: null, channels: [], window: "since_previous" },
       methodId: null,
       preset: null,
@@ -190,11 +209,23 @@ export function ScheduleForm({
 }) {
   const { t, locale } = useI18n();
   const [pending, startTransition] = useTransition();
-  const [v, setV] = useState(initial);
-  const dirty = JSON.stringify(v) !== JSON.stringify(initial);
+  // Older schedules ("Para responder y en espera", alias time zones) open already normalized,
+  // so opening one isn't an unsaved change (ADR-069).
+  const start = useMemo(
+    () => ({
+      ...initial,
+      timezone: canonicalTimezone(initial.timezone),
+      configuration: {
+        ...initial.configuration,
+        blocks: normalizeBlocks(initial.configuration.blocks),
+      },
+    }),
+    [initial],
+  );
+  const [v, setV] = useState(start);
+  const dirty = JSON.stringify(v) !== JSON.stringify(start);
   useEffect(() => onDirty?.(dirty), [dirty, onDirty]);
   useEffect(() => onPending?.(pending), [pending, onPending]);
-  const timezones = useMemo(() => Intl.supportedValuesOf("timeZone"), []);
   const once = v.definition.kind === "once";
   const time = v.definition.kind === "once" ? v.definition.at.slice(11, 16) : v.definition.time;
   const date =
@@ -245,7 +276,7 @@ export function ScheduleForm({
   const needsSpace = blocks.includes("knowledge") && !v.configuration.knowledgeSpaceId;
   const slack = v.configuration.slack;
   const needsSlack = blocks.includes("slack") && (!slack.connectionId || !slack.channels.length);
-  const offered = BRIEF_BLOCKS.filter(
+  const offered = FORM_ORDER.filter(
     (b) => b !== "slack" || slackWorkspaces.length > 0 || blocks.includes("slack"),
   );
   const setConfig = (patch: Partial<ScheduleInput["configuration"]>) =>
@@ -370,20 +401,11 @@ export function ScheduleForm({
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
               <Label htmlFor="schedule-tz">{t.schedules.form.timezone}</Label>
-              <Select
+              <TimezonePicker
                 id="schedule-tz"
                 value={v.timezone}
-                onChange={(e) => setV({ ...v, timezone: e.target.value })}
-              >
-                {/* Aliases (UTC, America/Argentina/…) aren't in the canonical list: keep the saved one. */}
-                {(timezones.includes(v.timezone) ? timezones : [v.timezone, ...timezones]).map(
-                  (tz) => (
-                    <option key={tz} value={tz}>
-                      {tz}
-                    </option>
-                  ),
-                )}
-              </Select>
+                onChange={(timezone) => setV({ ...v, timezone })}
+              />
             </div>
           </div>
         </fieldset>
@@ -392,29 +414,40 @@ export function ScheduleForm({
         {(once || days.length > 0) && (
           <p className="-mt-2 text-[13px] text-muted">
             {t.schedules.form.preview}: {describeWhen(v.definition, t, locale)} ·{" "}
-            {t.schedules.form.timeIn(v.timezone)}
+            {t.schedules.form.timeIn(timezoneLabel(v.timezone, locale))}
           </p>
         )}
       </Section>
 
       <Section title={t.schedules.form.looksAt}>
+        {/* One column on phones; what each one includes lives behind its ⓘ, not in the label. */}
         <div className="grid gap-2 sm:grid-cols-2">
           {offered.map((b) => {
             const Icon = BLOCK_ICONS[b];
+            const info = b === "email" || b === "finance" ? t.schedules.blockInfo[b] : null;
             return (
-              <label
+              <div
                 key={b}
-                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-border-strong px-3.5 py-2 text-sm transition-colors has-[:checked]:border-accent has-[:checked]:bg-accent-soft"
+                className="flex min-h-12 items-center rounded-xl border border-border-strong pr-1.5 text-sm transition-colors hover:border-border-strong has-[:checked]:border-accent has-[:checked]:bg-accent-soft md:min-h-11"
               >
-                <input
-                  type="checkbox"
-                  checked={blocks.includes(b)}
-                  onChange={() => toggleBlock(b)}
-                  className="accent-[var(--accent)]"
-                />
-                <Icon className="size-4 shrink-0 text-muted" strokeWidth={1.6} aria-hidden />
-                {t.schedules.blocks[b]}
-              </label>
+                <label className="flex min-h-12 flex-1 cursor-pointer items-center gap-3 py-2 pl-3.5 md:min-h-11">
+                  <input
+                    type="checkbox"
+                    checked={blocks.includes(b)}
+                    onChange={() => toggleBlock(b)}
+                    className="size-4 accent-[var(--accent)]"
+                  />
+                  <Icon className="size-4 shrink-0 text-muted" strokeWidth={1.6} aria-hidden />
+                  {t.schedules.blocks[b]}
+                </label>
+                {info && (
+                  <InfoTip
+                    label={t.common.aboutSection(t.schedules.blocks[b])}
+                    title={t.schedules.blocks[b]}
+                    body={[info]}
+                  />
+                )}
+              </div>
             );
           })}
         </div>
@@ -491,19 +524,12 @@ export function ScheduleForm({
           {blocks.includes("weather") && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="schedule-weather-location">{t.schedules.form.weatherLocation}</Label>
-              <Input
+              <WeatherPlacePicker
                 id="schedule-weather-location"
-                value={v.configuration.weatherLocation ?? ""}
-                maxLength={120}
-                placeholder={t.schedules.form.weatherLocationPlaceholder}
-                onChange={(e) =>
-                  setV({
-                    ...v,
-                    configuration: {
-                      ...v.configuration,
-                      weatherLocation: e.target.value.trim() ? e.target.value : null,
-                    },
-                  })
+                place={v.configuration.weatherPlace}
+                legacy={v.configuration.weatherLocation}
+                onChange={({ place, text }) =>
+                  setConfig({ weatherPlace: place, weatherLocation: text })
                 }
               />
               <p className="text-[12.5px] text-faint">{t.schedules.form.weatherLocationHint}</p>

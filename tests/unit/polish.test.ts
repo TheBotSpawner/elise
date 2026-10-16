@@ -39,14 +39,15 @@ describe("Knowledge Space appearance", () => {
 describe("timezone picker", () => {
   it("shows friendly labels, searchable by country, stores the IANA id", () => {
     expect(timezoneLabel("America/Argentina/Buenos_Aires")).toBe("Buenos Aires, Argentina");
-    expect(timezoneLabel("Europe/London")).toBe("London, Europe");
+    expect(timezoneLabel("Europe/London", "en")).toBe("London, United Kingdom");
+    expect(timezoneLabel("Europe/Tirane")).toBe("Tirane, Europe");
     const [ba] = timezoneOptions(
       ["America/Argentina/Buenos_Aires"],
       new Date("2026-09-29T12:00:00Z"),
     );
     expect(ba).toMatchObject({ value: "America/Argentina/Buenos_Aires" });
     expect(ba!.keywords).toContain("Argentina");
-    expect(ba!.detail).toContain("GMT-3");
+    expect(ba!.detail).toContain("UTC-3");
   });
 });
 

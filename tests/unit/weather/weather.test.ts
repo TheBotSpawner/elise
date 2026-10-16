@@ -203,6 +203,20 @@ describe("weather tools", () => {
     expect(JSON.stringify(out)).not.toContain("34.601");
   });
 
+  it("a schedule's chosen city (ADR-069) is used by its coordinates, never re-geocoded", async () => {
+    const { weather, calls } = fakeWeather();
+    const { ports, ctx } = setup(weather);
+    const out = await run(ports, ctx, {
+      name: "weather.forecast",
+      args: { when: "today", place: { name: "Bariloche", lat: -41.1335, lng: -71.3103 } },
+    });
+    expect(calls.some((c) => c.op === "geocode")).toBe(false);
+    const fc = calls.find((c) => c.op === "forecast")!.arg as { at: unknown };
+    expect(fc.at).toEqual({ lat: -41.133, lng: -71.31 });
+    if (out.display?.kind !== "weather") throw new Error("no weather");
+    expect(out.display.weather.location).toMatchObject({ name: "Bariloche", source: "explicit" });
+  });
+
   it("no place and no position: the timezone's city, said as an assumption — no question", async () => {
     const { weather, calls } = fakeWeather();
     const { ports, ctx } = setup(weather);

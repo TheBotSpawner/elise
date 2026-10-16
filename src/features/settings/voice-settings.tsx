@@ -6,13 +6,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { VOICE_CATALOG, type VoiceKey } from "@/core/voice/catalog";
 import type { WakeAvailability } from "@/core/voice/device";
 import { VOICE_LANGUAGES, type VoiceLanguage } from "@/core/voice/preferences";
-import type { VoiceChoice } from "@/core/voice/providers";
 import { setStartupSoundEnabled, startupSoundEnabled } from "@/features/boot/startup-sound";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { WebSpeechWakeEngine } from "@/features/voice/wake-engine";
 import { useI18n } from "@/lib/i18n/client";
+import { cn } from "@/lib/utils";
 
 import { setVoicePreferences } from "./actions";
 import { SettingRow, SettingsCard } from "./shell";
@@ -20,7 +21,7 @@ import { SettingRow, SettingsCard } from "./shell";
 interface Prefs {
   continuous: boolean;
   language: VoiceLanguage;
-  voice: VoiceChoice;
+  voice: VoiceKey;
 }
 
 /**
@@ -30,12 +31,12 @@ interface Prefs {
  */
 export function VoiceSettings({
   initial,
-  profiles,
+  voices,
   wakeAllowed = true,
 }: {
   initial: Prefs;
-  /** The voices this deployment offers, by stable id (the provider is an implementation). */
-  profiles: { id: VoiceChoice; displayName: string }[];
+  /** The curated voices configured now, by stable key (ADR-030); never provider ids. */
+  voices: readonly VoiceKey[];
   /** The wake-phrase feature flag (ADR-019). */
   wakeAllowed?: boolean;
 }) {
@@ -44,9 +45,7 @@ export function VoiceSettings({
   const [prefs, setPrefs] = useState(initial);
   const [, startTransition] = useTransition();
   const lang: "es" | "en" = prefs.language === "auto" ? locale : prefs.language;
-  const voice = profiles.some((p) => p.id === prefs.voice)
-    ? prefs.voice
-    : (profiles[0]?.id ?? prefs.voice);
+  const offered = VOICE_CATALOG.filter((c) => voices.includes(c.key));
   const [wake, setWake] = useState<WakeAvailability | "installing" | "checking">("checking");
   useEffect(() => {
     let live = true;
@@ -82,10 +81,10 @@ export function VoiceSettings({
     });
   }
 
-  const [previewing, setPreviewing] = useState(false);
-  /** A fixed ELISE sample in the selected voice (never the user's own content). */
-  async function preview() {
-    setPreviewing(true);
+  const [previewing, setPreviewing] = useState<VoiceKey | null>(null);
+  /** A short fixed sample in that voice; listening never changes the chosen voice. */
+  async function preview(voice: VoiceKey) {
+    setPreviewing(voice);
     try {
       const res = await fetch(`/api/voice/preview?voice=${voice}&language=${lang}`);
       if (!res.ok) throw new Error("preview failed");
@@ -104,7 +103,7 @@ export function VoiceSettings({
     } catch {
       toast.error(v.previewFailed);
     } finally {
-      setPreviewing(false);
+      setPreviewing(null);
     }
   }
 
@@ -158,28 +157,52 @@ export function VoiceSettings({
           </Select>
         </SettingRow>
         <SettingRow id="voice-name" label={v.voice} hint={v.voiceHint} stack>
-          <div className="flex gap-2">
-            <Select
-              aria-label={v.voice}
-              value={voice}
-              onChange={(e) => change({ voice: e.target.value as VoiceChoice })}
-              className="max-sm:flex-1 sm:w-44"
-            >
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.displayName.charAt(0).toUpperCase() + p.displayName.slice(1)}
-                </option>
-              ))}
-            </Select>
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-10 shrink-0"
-              disabled={previewing}
-              onClick={() => void preview()}
-            >
-              {previewing ? v.previewing : v.preview}
-            </Button>
+          <div role="radiogroup" aria-label={v.voice} className="flex flex-col gap-2">
+            {offered.map((c) => {
+              const on = c.key === prefs.voice;
+              return (
+                <div
+                  key={c.key}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors",
+                    on ? "border-accent bg-accent-soft" : "border-border hover:bg-surface-2",
+                  )}
+                >
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3">
+                    <input
+                      type="radio"
+                      name="voice"
+                      value={c.key}
+                      checked={on}
+                      onChange={() => change({ voice: c.key })}
+                      className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
+                    />
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-2 text-sm font-medium">
+                        {c.name}
+                        {on && (
+                          <span className="text-[11.5px] font-normal text-accent-text">
+                            {v.voiceInUse}
+                          </span>
+                        )}
+                      </span>
+                      <span className="block text-[12.5px] text-muted">{c.summary[locale]}</span>
+                    </span>
+                  </label>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0"
+                    aria-label={v.previewOf(c.name)}
+                    disabled={previewing !== null}
+                    onClick={() => void preview(c.key)}
+                  >
+                    {previewing === c.key ? v.previewing : v.preview}
+                  </Button>
+                </div>
+              );
+            })}
           </div>
         </SettingRow>
       </SettingsCard>

@@ -19,7 +19,7 @@ const WEEKDAYS = [1, 2, 3, 4, 5];
 export const PRESETS: readonly PresetSpec[] = [
   {
     id: "morning_brief",
-    blocks: ["calendar", "email", "needs_reply", "tasks", "habits", "goals", "weather"],
+    blocks: ["calendar", "email", "tasks", "habits", "goals", "weather"],
     horizon: "today",
     definition: { kind: "weekly", days: WEEKDAYS, time: "07:30" },
   },
@@ -49,7 +49,7 @@ export const PRESETS: readonly PresetSpec[] = [
   },
   {
     id: "email_follow_up",
-    blocks: ["needs_reply", "email"],
+    blocks: ["email"],
     horizon: "today",
     definition: { kind: "weekly", days: WEEKDAYS, time: "16:00" },
   },

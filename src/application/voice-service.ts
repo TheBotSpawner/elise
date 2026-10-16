@@ -1,15 +1,18 @@
 import "server-only";
 
-import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
 import { BRAND_TERMS } from "@/core/lexicon";
+import { previewText, type VoiceKey } from "@/core/voice/catalog";
 import type { VoiceDelivery } from "@/core/voice/delivery";
-import { ELEVEN_PROFILES, OPENAI_PROFILES, PREVIEW_TEXT } from "@/core/voice/profiles";
-import { VOICE_LIMITS, type VoiceChoice, type VoiceLanguage } from "@/core/voice/providers";
+import { VOICE_LIMITS, type VoiceLanguage } from "@/core/voice/providers";
 import { formatForSpeech } from "@/core/voice/speech-format";
 import { acknowledgements } from "@/core/voice/speech-plan";
 import { toSpeakable } from "@/core/voice/speech-text";
-import { elevenVoices, getSpeechInputProvider, getSpeechOutputProvider } from "@/infrastructure/ai";
+import {
+  availableVoiceKeys,
+  getSpeechInputProvider,
+  getSpeechOutputProvider,
+} from "@/infrastructure/ai";
 import { logger } from "@/infrastructure/observability/logger";
 import { withUsageScope } from "@/infrastructure/observability/usage";
 import { rateLimit } from "@/infrastructure/rate-limit";
@@ -228,45 +231,19 @@ export const ackKey = (
   `${ACK_CACHE_VERSION}|${provider.id}|${provider.model}|${voice}|${language}|${delivery}|${line}`;
 
 /**
- * What Settings shows about spoken replies (ADR-030): which provider speaks and the curated
- * voices to choose from — display names only, never provider ids, keys or model names.
+ * A short fixed sample in one of the curated voices (ADR-030): never the user's own content,
+ * and it never changes the chosen voice — only an explicit selection does.
  */
-export function speechStatus(): {
-  provider: "elevenlabs" | "openai";
-  profiles: { id: VoiceChoice; displayName: string }[];
-} {
-  const env = serverEnv();
-  const eleven = elevenVoices();
-  const active =
-    env.SPEECH_PROVIDER === "elevenlabs" && env.ELEVENLABS_API_KEY && Object.keys(eleven).length;
-  return active
-    ? {
-        provider: "elevenlabs",
-        profiles: ELEVEN_PROFILES.filter((p) => eleven[p.id]).map((p) => ({
-          id: p.id as VoiceChoice,
-          displayName: p.displayName,
-        })),
-      }
-    : {
-        provider: "openai",
-        profiles: OPENAI_PROFILES.map((p) => ({
-          id: p.id as VoiceChoice,
-          displayName: p.displayName,
-        })),
-      };
-}
-
-/** A short fixed sample in one of the selectable voices (never the user's own content). */
 export async function previewVoice(
   auth: AuthContext,
-  voice: VoiceChoice,
+  voice: VoiceKey,
   language: VoiceLanguage,
 ): Promise<{ stream: ReadableStream<Uint8Array>; sampleRate: number }> {
-  if (!speechStatus().profiles.some((p) => p.id === voice))
+  if (!availableVoiceKeys().includes(voice))
     throw new AppError("VALIDATION_ERROR", "That voice isn't available", { recovery: "review" });
   limit(auth, "speak");
   const provider = getSpeechOutputProvider();
-  const stream = await provider.synthesize({ text: PREVIEW_TEXT[language], language, voice });
+  const stream = await provider.synthesize({ text: previewText(voice, language), language, voice });
   return { stream, sampleRate: provider.format.sampleRate };
 }
 

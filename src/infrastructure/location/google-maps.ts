@@ -3,6 +3,8 @@ import "server-only";
 import { AppError } from "@/core/errors";
 import {
   distanceMeters,
+  type CityPlace,
+  type CitySuggestion,
   LOCATION_LIMITS,
   type LatLng,
   type LocationProvider,
@@ -16,7 +18,8 @@ import {
 
 /**
  * Google Maps Platform adapter (ADR-023), verified against the current APIs (2026-10):
- * - Places API (New): POST places:searchText, GET places/{id}, GET {photo}/media
+ * - Places API (New): POST places:searchText, POST places:autocomplete (city level, with a
+ *   session token), GET places/{id}, GET {photo}/media
  *   (skipHttpRedirect → a key-free photoUri). Never the legacy Places API.
  * - Routes API: directions/v2:computeRoutes and distanceMatrix/v2:computeRouteMatrix. Never
  *   the legacy Directions / Distance Matrix APIs.
@@ -303,6 +306,97 @@ export class GoogleMapsLocation implements LocationProvider {
       signal,
     );
     return (data.places ?? []).map((g) => toPlace(g, q.near)).filter((p): p is Place => Boolean(p));
+  }
+
+  /**
+   * Places Autocomplete (New), city level: localities and administrative areas — the types a
+   * forecast needs, never businesses, POIs or street addresses. One session token covers the
+   * typing and the details call that ends it.
+   */
+  async suggestCities(
+    input: string,
+    language: "es" | "en",
+    sessionToken: string,
+    signal?: AbortSignal,
+    /** Biases (never restricts) toward the person's country: "ar" → Córdoba, Argentina first. */
+    regionCode?: string | null,
+  ): Promise<CitySuggestion[]> {
+    const data = await this.call<{
+      suggestions?: {
+        placePrediction?: {
+          placeId: string;
+          text?: { text: string };
+          structuredFormat?: { mainText?: { text: string }; secondaryText?: { text: string } };
+        };
+      }[];
+    }>(
+      "places.autocomplete",
+      `${PLACES}/places:autocomplete`,
+      {
+        method: "POST",
+        body: {
+          input,
+          languageCode: language,
+          sessionToken,
+          ...(regionCode ? { regionCode: regionCode.toLowerCase() } : {}),
+          includedPrimaryTypes: [
+            "locality",
+            "administrative_area_level_1",
+            "administrative_area_level_2",
+            "sublocality",
+            "postal_town",
+          ],
+        },
+      },
+      signal,
+    );
+    return (data.suggestions ?? []).flatMap((s) => {
+      const p = s.placePrediction;
+      if (!p) return [];
+      return [
+        {
+          placeId: p.placeId,
+          label: p.structuredFormat?.mainText?.text ?? p.text?.text ?? "",
+          detail: p.structuredFormat?.secondaryText?.text ?? null,
+        },
+      ];
+    });
+  }
+
+  async cityDetails(
+    placeId: string,
+    language: "es" | "en",
+    sessionToken: string,
+    signal?: AbortSignal,
+  ): Promise<CityPlace | null> {
+    const url = new URL(`${PLACES}/places/${encodeURIComponent(placeId)}`);
+    url.searchParams.set("languageCode", language);
+    url.searchParams.set("sessionToken", sessionToken);
+    const p = await this.call<{
+      id: string;
+      displayName?: { text: string };
+      formattedAddress?: string;
+      location?: { latitude: number; longitude: number };
+      addressComponents?: { longText: string; shortText: string; types: string[] }[];
+    }>(
+      "places.details",
+      url.toString(),
+      { fields: "id,displayName,formattedAddress,location,addressComponents" },
+      signal,
+    );
+    if (!p.location) return null;
+    const part = (type: string) => p.addressComponents?.find((c) => c.types.includes(type));
+    const city = part("locality")?.longText ?? part("administrative_area_level_2")?.longText;
+    return {
+      placeId: p.id,
+      displayName: p.formattedAddress ?? p.displayName?.text ?? "",
+      city: city ?? p.displayName?.text ?? null,
+      region: part("administrative_area_level_1")?.longText ?? null,
+      country: part("country")?.longText ?? null,
+      countryCode: part("country")?.shortText ?? null,
+      lat: p.location.latitude,
+      lng: p.location.longitude,
+    };
   }
 
   async getPlace(id: string, language: "es" | "en", signal?: AbortSignal): Promise<Place | null> {

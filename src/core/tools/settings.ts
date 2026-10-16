@@ -10,6 +10,14 @@ import {
 } from "../capabilities/settings";
 import { AppError } from "../errors";
 import { NATIVE_MODULES, type NativeModuleKey } from "../modules/registry";
+import {
+  DEFAULT_VOICE,
+  nextVoice,
+  VOICE_KEYS,
+  voiceForModel,
+  voiceOf,
+  type VoiceKey,
+} from "../voice/catalog";
 import { VOICE_LANGUAGES } from "../voice/preferences";
 
 /**
@@ -352,6 +360,151 @@ export const updateVoiceTool: ToolDefinition = {
   },
 };
 
+// ── The voice (ADR-030) ──────────────────────────────────────────────────────
+
+/** Who speaks (voice identity) — never how loudly or in which language: those are separate. */
+const VOICE_IDENTITY_NOTE =
+  'Voice identity only: whispering, volume, speed or language ("susurrá", "hablá más bajo", "hablame en inglés") are not a voice change — never call this for them. "Martín, susurrá" → switch to Martín; the whisper is handled by itself.';
+
+const voiceEntry = (key: VoiceKey, current: VoiceKey) => ({
+  ...voiceForModel(key),
+  ...(key === current ? { current: true } : {}),
+  ...(key === DEFAULT_VOICE ? { default: true } : {}),
+});
+
+const voiceNames = (keys: readonly VoiceKey[]) => keys.map((k) => voiceOf(k).name).join(", ");
+
+export const getVoiceTool: ToolDefinition = {
+  name: "voice.getCurrent",
+  capability: "settings",
+  operation: "getVoice",
+  description: '"¿Qué voz estás usando?": ELISE\'s current voice.',
+  input: z.object({}).strict(),
+  async describe() {
+    return { summary: "Read the voice" };
+  },
+  async run(_raw, env) {
+    const { current } = await store(env).voices();
+    return { output: { voice: voiceEntry(current, current) } };
+  },
+};
+
+export const listVoicesTool: ToolDefinition = {
+  name: "voice.listAvailable",
+  capability: "settings",
+  operation: "listVoices",
+  description:
+    '"¿Qué voces tenés?": the voices that can be chosen now, with their traits. Only these exist.',
+  input: z.object({}).strict(),
+  async describe() {
+    return { summary: "List voices" };
+  },
+  async run(_raw, env) {
+    const { current, available } = await store(env).voices();
+    return { output: { voices: available.map((k) => voiceEntry(k, current)) } };
+  },
+};
+
+interface VoiceChange {
+  voice: ReturnType<typeof voiceForModel>;
+  changed: boolean;
+}
+
+async function switchVoice(env: ToolRunEnv, current: VoiceKey, key: VoiceKey) {
+  const after = key === current ? current : await store(env).setVoice(key);
+  const output: VoiceChange = { voice: voiceForModel(after), changed: after !== current };
+  return {
+    output,
+    display: {
+      kind: "setting_changed" as const,
+      changes: [
+        { setting: "voice" as const, from: voiceOf(current).name, to: voiceOf(after).name },
+      ],
+    },
+  };
+}
+
+const confirmVoice = (output: unknown, locale: "es" | "en") => {
+  const { voice, changed } = output as VoiceChange;
+  return locale === "es"
+    ? changed
+      ? `Listo, ahora uso la voz de ${voice.name}.`
+      : `Ya estoy usando la voz de ${voice.name}.`
+    : changed
+      ? `Done — I'm using ${voice.name}'s voice now.`
+      : `I'm already using ${voice.name}'s voice.`;
+};
+
+const setVoiceInput = z
+  .object({
+    voiceKey: z
+      .enum(VOICE_KEYS)
+      .describe(
+        'A voice by name ("poné a Martín", "usá Adriana"), or the best match for what the user described, from the traits in context. "Tu voz", "la original", "la de ELISE" → elise.',
+      ),
+  })
+  .strict();
+
+export const setVoiceTool: ToolDefinition = {
+  name: "voice.set",
+  capability: "settings",
+  operation: "setVoice",
+  description: `"Poné a Martín", "volvé a tu voz original", "una voz masculina", "una mujer con voz más grave": set ELISE's voice — the same choice as Settings › Voz, used from the next spoken sentence on, typed or spoken. Only the voices in context exist; for a type that doesn't, say so and offer the closest. ${VOICE_IDENTITY_NOTE}`,
+  input: setVoiceInput,
+  confirm: confirmVoice,
+  async describe(raw) {
+    return { summary: `Voice → ${voiceOf(setVoiceInput.parse(raw).voiceKey).name}` };
+  },
+  async run(raw, env) {
+    const { voiceKey } = setVoiceInput.parse(raw);
+    const { current, available } = await store(env).voices();
+    if (!available.includes(voiceKey))
+      throw new AppError(
+        "VALIDATION_ERROR",
+        `${voiceOf(voiceKey).name} isn't available. Voices available: ${voiceNames(available)}.`,
+        { recovery: "review" },
+      );
+    return switchVoice(env, current, voiceKey);
+  },
+};
+
+const nextVoiceInput = z
+  .object({
+    gender: z
+      .enum(["female", "male"])
+      .optional()
+      .describe('Only when the user asked for one: "masculina", "otra voz femenina".'),
+    lower: z.boolean().optional().describe('"Más grave", "más baja de tono" (pitch, not volume).'),
+  })
+  .strict();
+
+export const nextVoiceTool: ToolDefinition = {
+  name: "voice.next",
+  capability: "settings",
+  operation: "setVoice",
+  description: `"Cambiá la voz", "probemos otra voz", "poné la otra voz femenina": the next available voice, decided by ELISE in a fixed order — never ask which one. Narrow it with gender/lower when the user gave them. ${VOICE_IDENTITY_NOTE}`,
+  input: nextVoiceInput,
+  confirm: confirmVoice,
+  async describe(raw) {
+    const q = nextVoiceInput.parse(raw);
+    return { summary: ["Next voice", q.gender, q.lower && "lower"].filter(Boolean).join(" · ") };
+  },
+  async run(raw, env) {
+    const criteria = nextVoiceInput.parse(raw);
+    const { current, available } = await store(env).voices();
+    const key = nextVoice(current, available, criteria);
+    if (key) return switchVoice(env, current, key);
+    // The current voice is the only match: nothing to change, and that's the answer.
+    if (criteria.gender && voiceOf(current).gender === criteria.gender)
+      return switchVoice(env, current, current);
+    throw new AppError(
+      "VALIDATION_ERROR",
+      `No other voice matches. Voices available: ${voiceNames(available)}.`,
+      { recovery: "review" },
+    );
+  },
+};
+
 // ── Memory (ADR-068) ─────────────────────────────────────────────────────────
 
 export const listMemoryTool: ToolDefinition = {
@@ -483,7 +636,7 @@ export const listModulesTool: ToolDefinition = {
   capability: "settings",
   operation: "listModules",
   description:
-    "Which Mi ELISE modules (Tareas, Hábitos, Listas, Objetivos, Notas, Finanzas) the user has on. Turning one off keeps its data.",
+    "Which Mi ELISE modules (Tareas, Hábitos, Listas, Objetivos, Notas, Finanzas) show in Mi ELISE. A hidden one keeps its data and its tools work normally.",
   input: z.object({}).strict(),
   async describe() {
     return { summary: "List Mi ELISE modules" };
@@ -496,26 +649,27 @@ export const listModulesTool: ToolDefinition = {
 function moduleTool(on: boolean): ToolDefinition {
   const input = z.object({ modules: moduleKeys }).strict();
   return {
-    name: on ? "modules.enable" : "modules.disable",
+    name: on ? "modules.show" : "modules.hide",
     capability: "settings",
     operation: "setModules",
+    // Visibility only (ADR-070): hidden modules keep their data and every tool keeps working.
     description: on
-      ? '"Activame Hábitos", "quiero empezar a usar Finanzas", or yes to your offer: turns Mi ELISE modules on. Their earlier data comes back as it was. Only when the user clearly asks or accepts.'
-      : '"Sacá Finanzas de Mi ELISE": turns modules off. Nothing is deleted; ELISE stops using them until they are turned on again. Only on a clear request — "no uso mucho finanzas" is not one.',
+      ? '"Volvé a mostrar Objetivos en Mi ELISE", "activame Hábitos": shows modules in Mi ELISE navigation again, with all their data as it was. Only when the user clearly asks.'
+      : '"Ocultá Finanzas de Mi ELISE", "sacá Objetivos del menú": hides modules from Mi ELISE navigation only. Nothing is deleted and ELISE can still use them when asked. Only on a clear request — "no uso mucho finanzas" is not one.',
     input,
     async describe(raw) {
       const { modules } = input.parse(raw);
-      return { summary: `${on ? "Turn on" : "Turn off"} ${modules.join(", ")} in Mi ELISE` };
+      return { summary: `${on ? "Show" : "Hide"} ${modules.join(", ")} in Mi ELISE` };
     },
     confirm(output, locale) {
       const names = (output as { modules: string[] }).modules.join(", ");
       return locale === "es"
         ? on
-          ? `Listo. Activé ${names} en Mi ELISE.`
-          : `Listo. Saqué ${names} de Mi ELISE. Tus datos siguen guardados.`
+          ? `Listo. ${names} volvió a Mi ELISE.`
+          : `Listo. Oculté ${names} de Mi ELISE; tus datos siguen ahí.`
         : on
-          ? `Done. ${names} is on in My ELISE.`
-          : `Done. ${names} is off in My ELISE. Your data is still saved.`;
+          ? `Done. ${names} is back in My ELISE.`
+          : `Done. ${names} is hidden from My ELISE; your data is still there.`;
     },
     async run(raw, env) {
       const { modules } = input.parse(raw);
@@ -550,6 +704,10 @@ export const SETTINGS_TOOLS = [
   pauseTool("resume"),
   listConnectionsTool,
   updateVoiceTool,
+  getVoiceTool,
+  listVoicesTool,
+  setVoiceTool,
+  nextVoiceTool,
   listMemoryTool,
   rememberTool,
   forgetTool,

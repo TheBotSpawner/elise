@@ -15,6 +15,7 @@ import type { ThreadRef } from "@/core/interaction";
 import type { AuthContext } from "./auth-context";
 import { listConversations } from "./conversations-service";
 import { historyLinks, tagsFor } from "./history-links-service";
+import { pinnedThreads } from "./history-organize-service";
 import { listVoiceSessions } from "./interaction-thread";
 import { searchRecall, sessionSummaries } from "./recall-service";
 
@@ -35,12 +36,18 @@ export interface HistoryRow {
   chips: Chip[];
   /** Its folder (primary link), or null for "Sin Espacio". */
   primary: string | null;
+  /** Pinned by the person (ADR-070): first within whatever is shown, never listed twice. */
+  pinned: boolean;
+  /** In "Archivadas" (ADR-070). */
+  archived: boolean;
 }
 
 export interface HistoryQuery {
   q?: string;
   filter: HistoryFilter;
   sort: "newest" | "oldest";
+  /** "Archivadas": only archived typed conversations. */
+  archived?: boolean;
 }
 
 /** Titles read as what the conversation was about: the summary's title, else a cleaned one. */
@@ -51,19 +58,22 @@ export async function historyRows(
   auth: AuthContext,
   query: HistoryQuery,
 ): Promise<{ rows: HistoryRow[]; nodes: KnowledgeNode[]; untaggedRecent: ThreadRef[] }> {
-  const [conversations, voice, nodes] = await Promise.all([
-    listConversations(auth, 100),
-    listVoiceSessions(auth, 50).catch(() => []),
+  const archived = Boolean(query.archived);
+  const [conversations, voice, nodes, pins] = await Promise.all([
+    listConversations(auth, 100, archived ? "archived" : "active"),
+    // Voice sessions have no archive of their own (archiving one forgets it).
+    archived ? [] : listVoiceSessions(auth, 50).catch(() => []),
     historyLinks(auth)
       .nodes()
       .catch(() => [] as KnowledgeNode[]),
+    pinnedThreads(auth).catch(() => new Set<string>()),
   ]);
   const summaries = await sessionSummaries(
     auth,
     conversations.map((c) => c.id),
   ).catch(() => new Map<string, { title: string | null; summary: string | null }>());
 
-  const base: Omit<HistoryRow, "spaceIds" | "chips" | "primary">[] = [
+  const base: Omit<HistoryRow, "spaceIds" | "chips" | "primary" | "pinned" | "archived">[] = [
     ...conversations.map((c) => {
       const thread = { kind: "conversation" as const, id: c.id };
       return {
@@ -98,6 +108,8 @@ export async function historyRows(
     spaceIds: tags.get(r.key)?.spaceIds ?? [],
     chips: tags.get(r.key)?.chips ?? [],
     primary: tags.get(r.key)?.primary ?? null,
+    pinned: pins.has(r.key),
+    archived,
   }));
 
   // Recent threads without tags get evaluated after the page is sent (same deterministic
@@ -134,8 +146,10 @@ export async function historyRows(
     );
   }
 
-  rows.sort((a, b) =>
-    query.sort === "oldest" ? a.at.localeCompare(b.at) : b.at.localeCompare(a.at),
+  rows.sort(
+    (a, b) =>
+      Number(b.pinned) - Number(a.pinned) ||
+      (query.sort === "oldest" ? a.at.localeCompare(b.at) : b.at.localeCompare(a.at)),
   );
   return { rows, nodes, untaggedRecent };
 }

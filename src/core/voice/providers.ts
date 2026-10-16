@@ -69,7 +69,3 @@ export const VOICE_LIMITS = {
 
 export const VOICES = ["marin", "cedar", "coral", "sage", "ash", "verse"] as const;
 export type VoiceName = (typeof VOICES)[number];
-
-/** Every voice a user may store: the current provider's, plus the curated ELISE profiles. */
-export const VOICE_CHOICES = [...VOICES, "elise", "elise-alt"] as const;
-export type VoiceChoice = (typeof VOICE_CHOICES)[number];

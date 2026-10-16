@@ -493,11 +493,16 @@ export const RECENTS_LIMIT = 10;
  * "What was I just working on?": the latest activity first across every folder (the rows the
  * current filter already chose), whatever the list's own order. A short, bounded list.
  */
-export function recentThreads<T extends { at: string }>(
+export function recentThreads<T extends { at: string; pinned?: boolean }>(
   rows: readonly T[],
   limit = RECENTS_LIMIT,
 ): T[] {
-  return [...rows].sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
+  // Pinned first (ADR-070), then newest; each thread once.
+  return [...rows]
+    .sort(
+      (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.at.localeCompare(a.at),
+    )
+    .slice(0, limit);
 }
 
 /** "hace 8 min", "ayer", "12 sept" — compact, for fast scanning. */

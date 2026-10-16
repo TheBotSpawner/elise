@@ -200,7 +200,7 @@ describe("provider catalog", () => {
   });
 });
 
-function hub(accounts = ACCOUNTS, modules: ModuleStates = effectiveModules([])) {
+function hub(accounts = ACCOUNTS, modules: ModuleStates = effectiveModules(null)) {
   return render(
     <I18nProvider locale="es">
       <ConnectionsHub accounts={accounts} configured={CONFIGURED} modules={modules} />
@@ -214,7 +214,7 @@ describe("Connections Hub", () => {
     expect(screen.queryByText("lm@frba.utn.edu.ar")).toBeNull();
     // The only switches are Mi ELISE's own modules (ADR-064), never account configuration.
     for (const sw of screen.queryAllByRole("switch"))
-      expect(sw.getAttribute("aria-label")).toMatch(/^Usar .+ en ELISE$/);
+      expect(sw.getAttribute("aria-label")).toMatch(/^Mostrar .+ en Mi ELISE$/);
     const strip = screen.getByRole("heading", { name: "Conectadas" }).parentElement!;
     expect(
       within(strip).getByRole("link", {
@@ -256,13 +256,15 @@ describe("Connections Hub", () => {
     expect(screen.getByText("Nada coincide con “zzz”.")).toBeTruthy();
   });
 
-  it("Mi ELISE: searchable by everyday words, state in words, toggled in place", async () => {
-    hub(ACCOUNTS, { ...effectiveModules([]), habits: false });
-    const habits = screen.getByRole("switch", { name: "Usar Hábitos en ELISE" });
+  it("Mi ELISE: every module listed (hidden ones too), state in words, toggled in place", async () => {
+    hub(ACCOUNTS, { ...effectiveModules(null), habits: false });
+    const habits = screen.getByRole("switch", { name: "Mostrar Hábitos en Mi ELISE" });
     expect(habits.getAttribute("aria-checked")).toBe("false");
+    // A hidden module stays here so it can be shown again.
+    expect(screen.getByText("Oculto")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Buscar conexiones"), { target: { value: "gastos" } });
-    const finance = screen.getByRole("switch", { name: "Usar Finanzas en ELISE" });
-    expect(screen.queryByRole("switch", { name: "Usar Hábitos en ELISE" })).toBeNull();
+    const finance = screen.getByRole("switch", { name: "Mostrar Finanzas en Mi ELISE" });
+    expect(screen.queryByRole("switch", { name: "Mostrar Hábitos en Mi ELISE" })).toBeNull();
     fireEvent.click(finance);
     expect(modules.set).toHaveBeenCalledWith("finance", false);
   });

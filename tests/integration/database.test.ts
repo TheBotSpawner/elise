@@ -1517,6 +1517,21 @@ describe("voice sessions", () => {
       ]),
     ).rejects.toThrow(/check/);
   });
+
+  it("the chosen voice (ADR-030) is the person's own: nobody else reads or changes it", async () => {
+    const save = `insert into public.user_preferences (workspace_id, user_id, key, value_json)
+      values ($1, $2, 'voice.preferred_voice_key', '"martin"')
+      on conflict (workspace_id, user_id, key) do update set value_json = excluded.value_json`;
+    await as(alice, save, [alice.workspaceId, alice.userId]);
+    // Bob can't write Alice's voice, as her or in her workspace.
+    await expect(as(bob, save, [alice.workspaceId, alice.userId])).rejects.toThrow();
+    const read = `select value_json from public.user_preferences
+      where user_id = $1 and key = 'voice.preferred_voice_key'`;
+    expect((await as(bob, read, [alice.userId])).rows).toHaveLength(0);
+    expect(
+      (await as<{ value_json: string }>(alice, read, [alice.userId])).rows[0]!.value_json,
+    ).toBe("martin");
+  });
 });
 
 describe("web usage", () => {

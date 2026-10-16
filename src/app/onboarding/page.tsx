@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getAuthContext } from "@/application/auth-context";
 import { listConnections } from "@/application/connections-service";
 import { listSpaces } from "@/application/knowledge-service";
-import { hasChosenModules, enabledModules } from "@/application/modules-service";
+import { hasChosenModules, visibleModules } from "@/application/modules-service";
 import { NATIVE_MODULES } from "@/core/modules/registry";
 import {
   ONBOARDING_STEPS,
@@ -34,7 +34,7 @@ export default async function OnboardingPage({ searchParams }: PageProps<"/onboa
     listConnections(auth).catch(() => null),
     listSpaces(auth).catch(() => []),
     hasChosenModules(auth),
-    enabledModules(auth),
+    visibleModules(auth),
   ]);
   // Their own choice when they made one (seeing onboarding again); otherwise a few suggestions,
   // never everything (ADR-064).

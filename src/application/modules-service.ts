@@ -6,43 +6,58 @@ import { AppError } from "@/core/errors";
 import {
   availableModules,
   effectiveModules,
-  enabledModuleKeys,
   isModuleKey,
   moduleDefinition,
+  visibleModuleKeys,
   type ModuleStates,
   type NativeModuleKey,
 } from "@/core/modules/registry";
 import { logger } from "@/infrastructure/observability/logger";
+import type { Json } from "@/infrastructure/supabase/database.types";
 
 import type { AuthContext } from "./auth-context";
 
 /**
- * Mi ELISE (ADR-064): the one place that reads and changes which native modules a person uses.
- * Navigation, route guards, Connections, onboarding, chat tools, the context builder and the
- * Morning Brief all ask here — never their own copy of the rule.
+ * Mi ELISE visibility (ADR-070): the one place that reads and changes which native modules show
+ * in Mi ELISE. Desktop navigation, the phone drawer, the Mi ELISE page, Connections and
+ * onboarding all ask here. It is visibility only: no tool, page, Morning Brief block or piece
+ * of data depends on it.
+ *
+ * Stored per person and workspace in `user_preferences` (`my_elise.visibility`: an explicit
+ * map of the choices made), so it survives refreshes, sign-ins, devices and deploys.
  */
+const KEY = "my_elise.visibility";
 
-/** Effective state of every module for this person; loaded once per request. */
-export const moduleStates = cache(async (auth: AuthContext): Promise<ModuleStates> => {
+async function savedChoices(auth: AuthContext): Promise<Record<string, boolean> | null> {
   const { data, error } = await auth.db
-    .from("user_module_preferences")
-    .select("module_key, enabled")
+    .from("user_preferences")
+    .select("value_json")
     .eq("workspace_id", auth.workspaceId)
-    .eq("user_id", auth.userId);
-  // Before migration 047 the table doesn't exist: everything stays as it was (all on).
+    .eq("user_id", auth.userId)
+    .eq("key", KEY)
+    .maybeSingle();
   if (error) {
+    // Never hide anything because a read failed.
     logger.warn("modules.read_failed", { code: error.code });
-    return effectiveModules([]);
+    return null;
   }
-  return effectiveModules(data ?? []);
-});
-
-export async function enabledModules(auth: AuthContext): Promise<NativeModuleKey[]> {
-  return enabledModuleKeys(await moduleStates(auth));
+  const value = data?.value_json;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, boolean>)
+    : null;
 }
 
-export async function isModuleEnabled(auth: AuthContext, key: NativeModuleKey): Promise<boolean> {
-  return (await moduleStates(auth))[key];
+/** Whether each module shows in Mi ELISE; loaded once per request. */
+export const moduleVisibility = cache(async (auth: AuthContext): Promise<ModuleStates> =>
+  effectiveModules(await savedChoices(auth)),
+);
+
+export async function visibleModules(auth: AuthContext): Promise<NativeModuleKey[]> {
+  return visibleModuleKeys(await moduleVisibility(auth));
+}
+
+export async function isModuleVisible(auth: AuthContext, key: NativeModuleKey): Promise<boolean> {
+  return (await moduleVisibility(auth))[key];
 }
 
 function validKey(key: string): NativeModuleKey {
@@ -52,10 +67,11 @@ function validKey(key: string): NativeModuleKey {
 }
 
 /**
- * Turns modules on or off. Nothing else changes: data, providers, bindings and connections stay
- * exactly as they are. Audited (module.enabled / module.disabled), never an approval.
+ * Shows or hides modules in Mi ELISE. Nothing else changes — data, tools, providers, bindings,
+ * connections and schedules stay exactly as they are — so there is nothing to confirm and
+ * existing data never blocks it. Audited (module.shown / module.hidden).
  */
-export async function setModules(
+export async function setModuleVisibility(
   auth: AuthContext,
   changes: Partial<Record<string, boolean>>,
   origin: "user_ui" | "ai" | "onboarding",
@@ -63,33 +79,29 @@ export async function setModules(
   const entries = Object.entries(changes)
     .filter((e): e is [string, boolean] => typeof e[1] === "boolean")
     .map(([k, v]) => [validKey(k), v] as const);
-  if (!entries.length) return moduleStates(auth);
-  const before = await moduleStates(auth);
-  const { error } = await auth.db.from("user_module_preferences").upsert(
-    entries.map(([module_key, enabled]) => ({
+  if (!entries.length) return moduleVisibility(auth);
+  const saved = (await savedChoices(auth)) ?? {};
+  const before = effectiveModules(Object.keys(saved).length ? saved : null);
+  // The full effective map is written, so modules added later follow their own default.
+  const next = { ...before, ...Object.fromEntries(entries) };
+  const { error } = await auth.db.from("user_preferences").upsert(
+    {
       workspace_id: auth.workspaceId,
       user_id: auth.userId,
-      module_key,
-      enabled,
-    })),
-    { onConflict: "workspace_id,user_id,module_key" },
+      key: KEY,
+      value_json: next as unknown as Json,
+      source: origin === "onboarding" ? "onboarding" : "user",
+    },
+    { onConflict: "workspace_id,user_id,key" },
   );
-  if (error) {
-    // 42P01: the table isn't there yet (migration 047 not applied).
-    if (error.code === "42P01" || error.code === "PGRST205")
-      throw new AppError("SERVER_NOT_CONFIGURED", "This needs the latest ELISE database update", {
-        recovery: "configure",
-        details: { setup: "database_update", missing: ["migration 20261028000047"] },
-      });
-    throw new AppError("INTERNAL_ERROR", "Could not save Mi ELISE", { cause: error });
-  }
+  if (error) throw new AppError("INTERNAL_ERROR", "Could not save Mi ELISE", { cause: error });
   const changed = entries.filter(([k, v]) => before[k] !== v);
   if (changed.length)
     await auth.db.from("audit_events").insert(
-      changed.map(([module_key, enabled]) => ({
+      changed.map(([module_key, shown]) => ({
         workspace_id: auth.workspaceId,
         user_id: auth.userId,
-        event_type: enabled ? "module.enabled" : "module.disabled",
+        event_type: shown ? "module.shown" : "module.hidden",
         resource_type: "native_module",
         resource_id: module_key,
         origin: origin === "onboarding" ? "user_ui" : origin,
@@ -97,25 +109,20 @@ export async function setModules(
         metadata: { module: module_key, via: origin },
       })),
     );
-  return { ...before, ...Object.fromEntries(entries) } as ModuleStates;
+  return next as ModuleStates;
 }
 
-/** Onboarding writes an explicit choice for every module offered: the chosen ones on. */
+/** Onboarding records an explicit choice for every module offered: the chosen ones shown. */
 export async function chooseModules(auth: AuthContext, chosen: readonly string[]) {
   const keys = new Set(chosen.filter(isModuleKey));
-  return setModules(
+  return setModuleVisibility(
     auth,
     Object.fromEntries(availableModules().map((m) => [m.key, keys.has(m.key as NativeModuleKey)])),
     "onboarding",
   );
 }
 
-/** Whether this person ever chose (onboarding, Connections, chat) — existing accounts did. */
+/** Whether this person ever chose (onboarding, Connections, chat). */
 export async function hasChosenModules(auth: AuthContext): Promise<boolean> {
-  const { count, error } = await auth.db
-    .from("user_module_preferences")
-    .select("module_key", { count: "exact", head: true })
-    .eq("workspace_id", auth.workspaceId)
-    .eq("user_id", auth.userId);
-  return !error && (count ?? 0) > 0;
+  return (await savedChoices(auth)) !== null;
 }

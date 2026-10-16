@@ -140,7 +140,6 @@ function ports(
           ...(patch.lastActivityAt ? { last_activity_at: patch.lastActivityAt } : {}),
           ...(patch.summary
             ? {
-                title: patch.summary.title,
                 summary: patch.summary.summary,
                 topics: patch.summary.topics,
                 summarized_turns: patch.summary.turns,
@@ -149,6 +148,14 @@ function ports(
         })
         .eq("id", sessionId)
         .eq("workspace_id", workspaceId);
+      // A title the person chose (renamed in History, ADR-070) is never replaced by a summary.
+      if (patch.summary)
+        await db
+          .from("interaction_sessions")
+          .update({ title: patch.summary.title })
+          .eq("id", sessionId)
+          .eq("workspace_id", workspaceId)
+          .is("metadata->>titleLocked", null);
     },
   };
 }

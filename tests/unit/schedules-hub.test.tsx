@@ -122,7 +122,7 @@ describe("Scheduled hub (ADR-037)", () => {
     ).toContain("Planificá la semana que viene");
     expect(screen.getByLabelText("Días de la agenda")).toHaveValue("week");
     expect(
-      screen.getByText(/Se ejecuta: Dom · 19:00 · hora de America\/Argentina/),
+      screen.getByText(/Se ejecuta: Dom · 19:00 · hora de Buenos Aires, Argentina/),
     ).toBeInTheDocument();
     expect(actions.createScheduleAction).not.toHaveBeenCalled();
     await act(async () => {
@@ -326,7 +326,7 @@ describe("Programados editor and cards (ADR-067)", () => {
     view([]);
     const idea = screen.getByRole("button", { name: /Seguimiento de mails/ });
     expect(idea).toHaveTextContent("Días de semana · 16:00");
-    expect(idea).toHaveTextContent("Respuestas");
+    expect(idea).toHaveTextContent("Correos");
     expect(idea.querySelector("svg")).not.toBeNull();
   });
 });

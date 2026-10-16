@@ -25,7 +25,14 @@ const node = (
   ...over,
 });
 
-const params: HistoryParams = { q: "", space: null, section: null, group: "space", sort: "newest" };
+const params: HistoryParams = {
+  q: "",
+  space: null,
+  section: null,
+  group: "space",
+  sort: "newest",
+  archived: false,
+};
 
 function chips(nodes: KnowledgeNode[]) {
   return render(

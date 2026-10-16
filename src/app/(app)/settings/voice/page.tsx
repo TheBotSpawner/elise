@@ -1,8 +1,8 @@
 import { requireAuthContext } from "@/application/auth-context";
-import { speechStatus } from "@/application/voice-service";
 import { isEnabled } from "@/config/flags";
 import { SettingsPage } from "@/features/settings/shell";
 import { VoiceSettings } from "@/features/settings/voice-settings";
+import { availableVoiceKeys } from "@/infrastructure/ai/voices";
 
 export default async function VoiceSettingsPage() {
   const auth = await requireAuthContext();
@@ -11,7 +11,7 @@ export default async function VoiceSettingsPage() {
     <SettingsPage section="voice">
       <VoiceSettings
         initial={{ continuous: v.continuous, language: v.language, voice: v.voice }}
-        profiles={speechStatus().profiles}
+        voices={availableVoiceKeys()}
         wakeAllowed={isEnabled("wakePhrase", auth)}
       />
     </SettingsPage>

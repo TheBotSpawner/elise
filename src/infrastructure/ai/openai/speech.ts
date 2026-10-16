@@ -1,6 +1,7 @@
 import "server-only";
 
 import { AppError } from "@/core/errors";
+import { openaiVoiceFor } from "@/core/voice/catalog";
 import type { VoiceDelivery } from "@/core/voice/delivery";
 import {
   VOICES,
@@ -166,7 +167,7 @@ export class OpenAISpeechOutput implements SpeechOutputProvider {
       headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
         model: this.model,
-        voice: (VOICES as readonly string[]).includes(request.voice) ? request.voice : VOICES[0],
+        voice: openaiVoiceFor(request.voice),
         input: request.text,
         response_format: "pcm",
         instructions: `${STYLE[request.language]}${DELIVERY_STYLE[request.delivery ?? "normal"][request.language]}`,

@@ -4,11 +4,11 @@ import { z } from "zod";
 import { getAuthContext } from "@/application/auth-context";
 import { previewVoice } from "@/application/voice-service";
 import { AppError } from "@/core/errors";
-import { VOICE_CHOICES } from "@/core/voice/providers";
+import { VOICE_KEYS } from "@/core/voice/catalog";
 
 import { unauthorized, voiceError } from "../errors";
 
-const query = z.object({ voice: z.enum(VOICE_CHOICES), language: z.enum(["es", "en"]) }).strict();
+const query = z.object({ voice: z.enum(VOICE_KEYS), language: z.enum(["es", "en"]) }).strict();
 
 /** Settings › Voice preview (ADR-030): a fixed ELISE sample in the chosen voice, as PCM. */
 export async function GET(request: NextRequest) {

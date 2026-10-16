@@ -1,4 +1,4 @@
-import { CalendarClock, MessagesSquare, Mic, Search } from "lucide-react";
+import { Archive, CalendarClock, MessagesSquare, Mic, Pin, Search } from "lucide-react";
 import Link from "next/link";
 import { after } from "next/server";
 
@@ -16,13 +16,12 @@ import {
   relativeWhen,
   RECENTS_LIMIT,
   type HistoryFilter,
-  type KnowledgeNode,
 } from "@/core/history/links";
 import { NewChatButton } from "@/features/chat/continuity";
-import { DeleteConversationButton } from "@/features/history/delete-conversation";
 import { HistoryControls, type HistoryParams } from "@/features/history/history-controls";
 import { HistoryFolder } from "@/features/history/history-folder";
-import { TagChips, TagEditor } from "@/features/history/history-tags";
+import { TagChips } from "@/features/history/history-tags";
+import { DropTarget, HistoryOrganizer, ThreadItem, ThreadMenu } from "@/features/history/organize";
 import { NoSpaceGlyph, SpaceGlyph } from "@/features/knowledge/appearance";
 import type { Dictionary } from "@/lib/i18n";
 import { getT } from "@/lib/i18n/server";
@@ -53,6 +52,7 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
         ? (str(raw.group) as "none" | "section")
         : "space",
     sort: str(raw.sort) === "oldest" ? "oldest" : "newest",
+    archived: str(raw.view) === "archived",
   };
   const filter: HistoryFilter =
     params.space === "untagged"
@@ -64,6 +64,7 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
     q: params.q,
     filter,
     sort: params.sort,
+    archived: params.archived,
   });
   // Never delays the page: tags appear on the next visit.
   if (untaggedRecent.length)
@@ -79,14 +80,15 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
 
   const newChat = <NewChatButton />;
 
-  const list = (items: HistoryRow[], located = false) => (
+  /** `place`: the folder these rows are shown in (a Space id, null: Sin Espacio), or a flat list. */
+  const list = (items: HistoryRow[], place: string | null | "list", located = false) => (
     <ul className="divide-y divide-border rounded-2xl border border-border bg-surface">
       {items.map((r) => (
         <Row
           key={r.key}
           row={r}
           t={t}
-          nodes={nodes}
+          place={place}
           when={format.format(new Date(r.at))}
           location={located ? (locationOf(r.primary, byId) ?? t.history.untagged) : null}
         />
@@ -104,61 +106,65 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
     return (
       <div className="flex min-w-0 flex-col gap-1">
         {tree.spaces.map((f) => (
-          <HistoryFolder
-            key={f.id}
-            id={`space:${f.id}`}
-            // The same glyph and accent the Space has in Knowledge.
-            icon={
-              <SpaceGlyph icon={byId.get(f.id)?.icon} color={byId.get(f.id)?.color} size="sm" />
-            }
-            label={f.archived ? `${f.label} · ${h.archived}` : f.label}
-            count={f.count}
-            meta={[
-              f.sections.length ? h.sectionsCount(f.sections.length) : null,
-              day.format(new Date(f.lastAt)),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          >
-            {f.sections.length ? (
-              <div className="flex flex-col gap-0.5">
-                {f.sections.map((sec) => (
-                  <HistoryFolder
-                    key={sec.id}
-                    id={`section:${sec.id}`}
-                    label={sec.archived ? `${sec.label} · ${h.archived}` : sec.label}
-                    count={sec.items.length}
-                    nested
-                  >
-                    {list(sec.items)}
-                  </HistoryFolder>
-                ))}
-                {f.general.length > 0 && (
-                  <HistoryFolder
-                    id={`general:${f.id}`}
-                    label={h.generalFolder}
-                    count={f.general.length}
-                    nested
-                  >
-                    {list(f.general)}
-                  </HistoryFolder>
-                )}
-              </div>
-            ) : (
-              list(f.general)
-            )}
-          </HistoryFolder>
+          <DropTarget key={f.id} spaceId={f.id}>
+            <HistoryFolder
+              id={`space:${f.id}`}
+              // The same glyph and accent the Space has in Knowledge.
+              icon={
+                <SpaceGlyph icon={byId.get(f.id)?.icon} color={byId.get(f.id)?.color} size="sm" />
+              }
+              label={f.archived ? `${f.label} · ${h.archived}` : f.label}
+              count={f.count}
+              meta={[
+                f.sections.length ? h.sectionsCount(f.sections.length) : null,
+                day.format(new Date(f.lastAt)),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            >
+              {f.sections.length ? (
+                <div className="flex flex-col gap-0.5">
+                  {f.sections.map((sec) => (
+                    <DropTarget key={sec.id} spaceId={sec.id}>
+                      <HistoryFolder
+                        id={`section:${sec.id}`}
+                        label={sec.archived ? `${sec.label} · ${h.archived}` : sec.label}
+                        count={sec.items.length}
+                        nested
+                      >
+                        {list(sec.items, sec.id)}
+                      </HistoryFolder>
+                    </DropTarget>
+                  ))}
+                  {f.general.length > 0 && (
+                    <HistoryFolder
+                      id={`general:${f.id}`}
+                      label={h.generalFolder}
+                      count={f.general.length}
+                      nested
+                    >
+                      {list(f.general, f.id)}
+                    </HistoryFolder>
+                  )}
+                </div>
+              ) : (
+                list(f.general, f.id)
+              )}
+            </HistoryFolder>
+          </DropTarget>
         ))}
         {tree.untagged.length > 0 && (
-          <HistoryFolder
-            id="untagged"
-            icon={<NoSpaceGlyph />}
-            label={h.untagged}
-            count={tree.untagged.length}
-            meta={day.format(new Date(tree.untagged[0]!.at))}
-          >
-            {list(tree.untagged)}
-          </HistoryFolder>
+          <DropTarget spaceId={null}>
+            <HistoryFolder
+              id="untagged"
+              icon={<NoSpaceGlyph />}
+              label={h.untagged}
+              count={tree.untagged.length}
+              meta={day.format(new Date(tree.untagged[0]!.at))}
+            >
+              {list(tree.untagged, null)}
+            </HistoryFolder>
+          </DropTarget>
         )}
       </div>
     );
@@ -166,89 +172,100 @@ export default async function ChatHistoryPage({ searchParams }: PageProps<"/chat
 
   return (
     <PageContainer>
-      <PageHeader
-        title={t.chat.history}
-        icon={SECTION_ICONS.chat}
-        info={[t.chat.historySubtitle]}
-        actions={newChat}
-      />
-      <form role="search" action="/chat" className="relative mb-4">
-        <Search
-          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint"
-          aria-hidden
+      <HistoryOrganizer nodes={nodes}>
+        <PageHeader
+          title={params.archived ? t.history.archivedView : t.chat.history}
+          icon={params.archived ? Archive : SECTION_ICONS.chat}
+          info={[t.chat.historySubtitle]}
+          actions={newChat}
         />
-        {params.space && <input type="hidden" name="space" value={params.space} />}
-        {params.section && <input type="hidden" name="section" value={params.section} />}
-        {params.group !== "space" && <input type="hidden" name="group" value={params.group} />}
-        <Input
-          name="q"
-          defaultValue={params.q}
-          placeholder={t.history.search}
-          aria-label={t.history.search}
-          className="pl-9"
-        />
-      </form>
-      <HistoryControls params={params} nodes={nodes} />
+        <form role="search" action="/chat" className="relative mb-4">
+          <Search
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint"
+            aria-hidden
+          />
+          {params.space && <input type="hidden" name="space" value={params.space} />}
+          {params.section && <input type="hidden" name="section" value={params.section} />}
+          {params.group !== "space" && <input type="hidden" name="group" value={params.group} />}
+          <Input
+            name="q"
+            defaultValue={params.q}
+            placeholder={t.history.search}
+            aria-label={t.history.search}
+            className="pl-9"
+          />
+        </form>
+        <HistoryControls params={params} nodes={nodes} />
 
-      {rows.length === 0 ? (
-        filtered ? (
-          <p className="px-1 text-[14px] text-muted">{t.chat.historyNoMatches}</p>
+        {params.archived ? (
+          rows.length === 0 ? (
+            <p className="px-1 text-[14px] text-muted">{t.history.archivedEmpty}</p>
+          ) : (
+            list(rows, "list", true)
+          )
+        ) : rows.length === 0 ? (
+          filtered ? (
+            <p className="px-1 text-[14px] text-muted">{t.chat.historyNoMatches}</p>
+          ) : (
+            <EmptyState
+              icon={MessagesSquare}
+              title={t.chat.history}
+              body={t.chat.historyEmpty}
+              action={newChat}
+            />
+          )
+        ) : params.q ? (
+          // Search ignores folders: every match, with where it is filed.
+          list(rows, "list", true)
+        ) : params.group === "space" ? (
+          // Default: where conversations belong (folders), then what was just worked on.
+          <div className="flex flex-col gap-8">
+            <section aria-labelledby="history-spaces" className="flex flex-col gap-2">
+              <h2 id="history-spaces" className="px-1 type-label text-faint">
+                {t.history.spaces}
+              </h2>
+              {folders()}
+            </section>
+            <Recents
+              rows={recentThreads(rows)}
+              more={rows.length > RECENTS_LIMIT ? moreHref(params) : null}
+              title={
+                filter.kind === "all"
+                  ? t.history.recents
+                  : t.history.recentsIn(
+                      filter.kind === "untagged"
+                        ? t.history.untagged
+                        : (locationOf(filter.sectionId ?? filter.spaceId, byId) ??
+                            t.history.recents),
+                    )
+              }
+              where={(r) => locationOf(r.primary, byId) ?? t.history.untagged}
+              when={(r) => relativeWhen(r.at, now, locale, auth.profile.timezone)}
+              t={t}
+            />
+          </div>
+        ) : params.group === "none" ? (
+          list(rows, "list")
         ) : (
-          <EmptyState
-            icon={MessagesSquare}
-            title={t.chat.history}
-            body={t.chat.historyEmpty}
-            action={newChat}
-          />
-        )
-      ) : params.q ? (
-        // Search ignores folders: every match, with where it is filed.
-        list(rows, true)
-      ) : params.group === "space" ? (
-        // Default: where conversations belong (folders), then what was just worked on.
-        <div className="flex flex-col gap-8">
-          <section aria-labelledby="history-spaces" className="flex flex-col gap-2">
-            <h2 id="history-spaces" className="px-1 type-label text-faint">
-              {t.history.spaces}
-            </h2>
-            {folders()}
-          </section>
-          <Recents
-            rows={recentThreads(rows)}
-            more={rows.length > RECENTS_LIMIT ? moreHref(params) : null}
-            title={
-              filter.kind === "all"
-                ? t.history.recents
-                : t.history.recentsIn(
-                    filter.kind === "untagged"
-                      ? t.history.untagged
-                      : (locationOf(filter.sectionId ?? filter.spaceId, byId) ?? t.history.recents),
-                  )
-            }
-            where={(r) => locationOf(r.primary, byId) ?? t.history.untagged}
-            when={(r) => relativeWhen(r.at, now, locale, auth.profile.timezone)}
-            t={t}
-          />
-        </div>
-      ) : params.group === "none" ? (
-        list(rows)
-      ) : (
-        <div className="flex flex-col gap-4">
-          {groupThreads(rows, "section", byId, t.history.untagged, t.history.general).map((g) => (
-            <details key={g.key} open className="group">
-              <summary className="mb-2 flex cursor-pointer list-none items-baseline gap-2 px-1 [&::-webkit-details-marker]:hidden">
-                {g.parentLabel && <span className="type-label text-faint">{g.parentLabel} ›</span>}
-                <span className="type-label text-muted">{g.label}</span>
-                {g.archived && (
-                  <span className="text-[12px] text-faint">· {t.history.archived}</span>
-                )}
-                <span className="text-[12px] text-faint">{g.items.length}</span>
-              </summary>
-              {list(g.items)}
-            </details>
-          ))}
-        </div>
-      )}
+          <div className="flex flex-col gap-4">
+            {groupThreads(rows, "section", byId, t.history.untagged, t.history.general).map((g) => (
+              <details key={g.key} open className="group">
+                <summary className="mb-2 flex cursor-pointer list-none items-baseline gap-2 px-1 [&::-webkit-details-marker]:hidden">
+                  {g.parentLabel && (
+                    <span className="type-label text-faint">{g.parentLabel} ›</span>
+                  )}
+                  <span className="type-label text-muted">{g.label}</span>
+                  {g.archived && (
+                    <span className="text-[12px] text-faint">· {t.history.archived}</span>
+                  )}
+                  <span className="text-[12px] text-faint">{g.items.length}</span>
+                </summary>
+                {list(g.items, "list")}
+              </details>
+            ))}
+          </div>
+        )}
+      </HistoryOrganizer>
     </PageContainer>
   );
 }
@@ -285,13 +302,26 @@ function Recents({
       </h2>
       <ul className="flex flex-col">
         {rows.map((r) => (
-          <li key={r.key}>
+          <ThreadItem
+            key={r.key}
+            thread={r.thread}
+            rowKey={r.key}
+            title={titleOf(r, t)}
+            place="list"
+            className="group flex items-center gap-1 rounded-xl pr-1 hover:bg-surface-2"
+          >
             <Link
               href={hrefOf(r)}
-              className="flex min-w-0 items-center justify-between gap-4 rounded-xl px-3 py-2.5 hover:bg-surface-2"
+              className="flex min-w-0 flex-1 items-center justify-between gap-4 px-3 py-2.5"
             >
               <span className="min-w-0">
                 <span className="flex items-center gap-1.5 text-[14px]">
+                  {r.pinned && (
+                    <Pin
+                      className="size-3.5 shrink-0 text-accent-text"
+                      aria-label={t.history.menu.pinnedLabel}
+                    />
+                  )}
                   {r.voice && (
                     <Mic className="size-3.5 shrink-0 text-faint" aria-label={t.voice.history} />
                   )}
@@ -311,7 +341,15 @@ function Recents({
                 {when(r)}
               </time>
             </Link>
-          </li>
+            <ThreadMenu
+              thread={r.thread}
+              rowKey={r.key}
+              title={titleOf(r, t)}
+              primary={r.primary}
+              pinned={r.pinned}
+              archived={r.archived}
+            />
+          </ThreadItem>
         ))}
       </ul>
       {more && (
@@ -323,33 +361,48 @@ function Recents({
   );
 }
 
+const titleOf = (r: HistoryRow, t: Dictionary) =>
+  r.title || (r.voice ? t.voice.historyItem : t.chat.untitled);
+
 const hrefOf = (r: HistoryRow) =>
   r.thread.kind === "conversation" ? `/chat/${r.thread.id}` : `/?session=${r.thread.id}`;
 
 function Row({
   row: r,
   t,
-  nodes,
+  place,
   when,
   location,
 }: {
   row: HistoryRow;
   t: Dictionary;
-  nodes: KnowledgeNode[];
+  place: string | null | "list";
   when: string;
   /** Search results say where they are filed ("UTN › AMII"). */
   location: string | null;
 }) {
-  const title = r.title || (r.voice ? t.voice.historyItem : t.chat.untitled);
+  const title = titleOf(r, t);
   const href = hrefOf(r);
   return (
-    <li className="flex items-center gap-1 pr-2 hover:bg-surface-2">
+    <ThreadItem
+      thread={r.thread}
+      rowKey={r.key}
+      title={title}
+      place={place}
+      className="group flex items-center gap-1 pr-2 hover:bg-surface-2"
+    >
       <Link
         href={href}
         className="flex min-w-0 flex-1 items-center justify-between gap-4 py-3 pl-4"
       >
         <span className="min-w-0">
           <span className="flex items-center gap-1.5 text-sm">
+            {r.pinned && (
+              <Pin
+                className="size-3.5 shrink-0 text-accent-text"
+                aria-label={t.history.menu.pinnedLabel}
+              />
+            )}
             {r.voice && (
               <Mic className="size-3.5 shrink-0 text-faint" aria-label={t.voice.history} />
             )}
@@ -373,8 +426,14 @@ function Row({
           {when}
         </time>
       </Link>
-      <TagEditor thread={r.thread} title={title} linked={r.spaceIds} nodes={nodes} />
-      <DeleteConversationButton id={r.thread.id} title={title} voice={r.voice} />
-    </li>
+      <ThreadMenu
+        thread={r.thread}
+        rowKey={r.key}
+        title={title}
+        primary={r.primary}
+        pinned={r.pinned}
+        archived={r.archived}
+      />
+    </ThreadItem>
   );
 }

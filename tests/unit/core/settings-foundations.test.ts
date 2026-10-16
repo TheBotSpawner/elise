@@ -29,12 +29,11 @@ const LATER = "2026-10-17T12:00:00.000Z";
 describe("voice preferences", () => {
   const row = {
     voice_language: "auto" as const,
-    voice_name: "elise" as const,
     voice_continuous: true,
   };
 
   it("three choices; the rest are good defaults", () => {
-    expect(voicePreferences(row)).toEqual({
+    expect(voicePreferences(row, "elise")).toEqual({
       enabled: true,
       speak: true,
       language: "auto",
@@ -56,18 +55,20 @@ describe("voice preferences", () => {
       voice_wake_enabled: true,
       voice_wake_phrase: "liz",
     };
-    const v = voicePreferences(legacy);
+    const v = voicePreferences(legacy, "elise");
     expect(v.wakePhrase).toBe(WAKE_PHRASE);
     expect(WAKE_PHRASE).toBe("elise");
     expect(v).toMatchObject({ enabled: true, speak: true, bargeIn: true });
     // "Elise" only wakes a resting session in continuous mode.
     expect(v.wakeEnabled).toBe(false);
-    expect(voicePreferences({ ...row, voice_continuous: null }).continuous).toBe(false);
+    expect(voicePreferences({ ...row, voice_continuous: null }, "elise").continuous).toBe(false);
   });
 
   it("voice language is separate from the interface language", () => {
     for (const language of ["auto", "es", "en"] as const)
-      expect(voicePreferences({ ...row, voice_language: language }).language).toBe(language);
+      expect(voicePreferences({ ...row, voice_language: language }, "elise").language).toBe(
+        language,
+      );
   });
 
   it("the web never claims background wake-word listening", () => {

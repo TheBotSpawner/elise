@@ -17,7 +17,6 @@ import type {
 } from "../capabilities/types";
 import { AppError, toPublicError, type PublicError } from "../errors";
 import { applyAliases } from "../lexicon";
-import { moduleOfCapability, type ModuleStates } from "../modules/registry";
 import { readDestination } from "../providers/destination";
 import { resolveBindings } from "../providers/resolver";
 import type { CapabilityBinding } from "../providers/types";
@@ -118,22 +117,6 @@ export interface ExecutorPorts {
   loadBindings(): Promise<CapabilityBinding[]>;
   /** Permission level granted to a connection for a capability. */
   permissionFor(binding: CapabilityBinding): Promise<"understand" | "read" | "write">;
-  /**
-   * Which Mi ELISE modules this person uses (ADR-064). A module that's off is never used, by
-   * ELISE or a schedule, until they turn it back on. Absent: every module counts as on.
-   */
-  moduleStates?(): Promise<ModuleStates>;
-}
-
-/** The module a tool belongs to is off: a clear, structured refusal, never "not connected". */
-async function moduleOff(ports: ExecutorPorts, capability: string): Promise<AppError | null> {
-  const key = moduleOfCapability(capability);
-  if (!key || !ports.moduleStates || (await ports.moduleStates())[key]) return null;
-  return new AppError(
-    "CAPABILITY_UNAVAILABLE",
-    `${key} isn't active in Mi ELISE. Tell the user and offer to turn it on (modules.enable) — only with their yes. Their data is still there.`,
-    { recovery: "review", details: { reason: "module_disabled", module: key } },
-  );
 }
 
 export type ToolCallOutcome =
@@ -168,8 +151,6 @@ export type ToolCallOutcome =
   | {
       status: "failed";
       error: PublicError;
-      /** Set when the tool's Mi ELISE module is off (ADR-064): orchestrations skip it quietly. */
-      moduleDisabled?: string;
     };
 
 export interface ToolCall {
@@ -199,8 +180,6 @@ export async function executeToolCall(
   const baseOperation = getOperation(tool.capability, tool.operation);
   if (!baseOperation)
     return fail(new AppError("INTERNAL_ERROR", `Tool ${tool.name} has no operation definition`));
-  const off = await moduleOff(ports, tool.capability);
-  if (off) return trace(null, null, offOutcome(off));
   let operation = baseOperation;
 
   // Names the user's words resolved to known ones ("Mielist" → "Mi ELISE", ADR-065) reach a
@@ -570,9 +549,6 @@ export async function executeApprovedAction(
   const parsed = tool.input.safeParse(approved.input);
   if (!parsed.success)
     return fail(new AppError("VALIDATION_ERROR", "Stored action input is no longer valid"));
-  // Approved before the module was turned off: it stays waiting, never runs while it's off.
-  const off = await moduleOff(ports, tool.capability);
-  if (off) return offOutcome(off);
 
   const resolution: ReturnType<typeof resolveBindings> = getCapability(tool.capability).internal
     ? {
@@ -715,14 +691,6 @@ function withAliases(value: unknown, aliases: readonly { from: string; to: strin
   if (value && typeof value === "object")
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, withAliases(v, aliases)]));
   return value;
-}
-
-function offOutcome(error: AppError): ToolCallOutcome {
-  return {
-    status: "failed",
-    error: toPublicError(error),
-    moduleDisabled: String(error.details?.module),
-  };
 }
 
 function fail(error: unknown): ToolCallOutcome {

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AppError } from "@/core/errors";
-import { PREVIEW_TEXT, resolveProfile } from "@/core/voice/profiles";
+import { openaiVoiceFor, previewText, resolveVoice } from "@/core/voice/catalog";
 import type { SpeechOutputProvider, SynthesisRequest } from "@/core/voice/providers";
 import { formatForSpeech, numberWords } from "@/core/voice/speech-format";
 import { SEGMENT, SentenceChunker } from "@/core/voice/speech-text";
@@ -112,7 +112,7 @@ describe("speech formatter", () => {
 
 describe("ElevenLabs adapter", () => {
   afterEach(() => vi.unstubAllGlobals());
-  const voices = { elise: "voice-elise", "elise-alt": "voice-alt" };
+  const voices = { elise: "voice-elise", martin: "voice-martin" };
   const settings = { stability: 0.55 };
 
   it("HTTP models stream PCM with the previous segment for continuous intonation", async () => {
@@ -122,14 +122,14 @@ describe("ElevenLabs adapter", () => {
     const out = await p.synthesize({
       text: "Es a las dos.",
       language: "es",
-      voice: "elise-alt",
+      voice: "martin",
       previousText: "Encontré la reunión.",
     });
     expect(new Uint8Array(await new Response(out).arrayBuffer())).toEqual(
       new Uint8Array([1, 2, 3, 4]),
     );
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toContain("/text-to-speech/voice-alt/stream?output_format=pcm_24000");
+    expect(url).toContain("/text-to-speech/voice-martin/stream?output_format=pcm_24000");
     expect((init.headers as Record<string, string>)["xi-api-key"]).toBe("sk-secret");
     expect(JSON.parse(init.body as string)).toMatchObject({
       model_id: "eleven_flash_v2_5",
@@ -302,11 +302,12 @@ describe("failover", () => {
 });
 
 describe("voice profiles and key safety", () => {
-  it("a stored voice maps to the active provider's default when it belongs to the other one", () => {
-    expect(resolveProfile("marin", "elevenlabs", ["elise", "elise-alt"])).toBe("elise");
-    expect(resolveProfile("elise-alt", "elevenlabs", ["elise", "elise-alt"])).toBe("elise-alt");
-    expect(resolveProfile("elise", "openai", [])).toBe("marin");
-    expect(PREVIEW_TEXT.es).not.toMatch(/\{|\$\{/);
+  it("a stored voice resolves to ELISE when it isn't a curated, available one", () => {
+    expect(resolveVoice("marin", ["elise", "martin"])).toBe("elise");
+    expect(resolveVoice("elise-alt", ["elise", "martin"])).toBe("elise");
+    expect(resolveVoice("martin", ["elise", "martin"])).toBe("martin");
+    expect(openaiVoiceFor("elise")).toBe("marin");
+    expect(previewText("elise", "es")).not.toMatch(/\{|\$\{/);
   });
 
   it("the ElevenLabs key is only read in server-only modules, never in client code or NEXT_PUBLIC_", () => {

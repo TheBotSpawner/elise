@@ -142,6 +142,7 @@ const change = z.object({
     "module",
     "continuous",
     "voice_language",
+    "voice",
     "memory",
   ]),
   from: text(120).nullable(),

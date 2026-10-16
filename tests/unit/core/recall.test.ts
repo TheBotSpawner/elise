@@ -29,6 +29,7 @@ import {
   type RecallSession,
   type RecallTurn,
 } from "@/core/recall/model";
+import type { VoiceKey } from "@/core/voice/catalog";
 
 import { makeCtx, makePorts } from "../../fixtures/core-fakes";
 
@@ -326,6 +327,17 @@ describe("context builder", () => {
 });
 
 class FakeSettings implements SettingsStore {
+  voiceState: { current: VoiceKey; available: VoiceKey[] } = {
+    current: "elise",
+    available: ["elise", "martin", "adriana"],
+  };
+  async voices() {
+    return { ...this.voiceState };
+  }
+  async setVoice(key: VoiceKey) {
+    this.voiceState.current = key;
+    return key;
+  }
   moduleState: Record<string, boolean> = { tasks: true, habits: false, finance: true };
   async modules() {
     return Object.entries(this.moduleState).map(([key, enabled]) => ({ key, enabled }));

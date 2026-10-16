@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { createExecutorPorts, toolContext } from "@/application/elise";
+import { suggestWeatherCities, weatherCity } from "@/application/location-service";
 import {
   cancelActive,
   createSchedule,
@@ -18,6 +19,8 @@ import {
 } from "@/application/schedules-service";
 import { executeToolCall } from "@/core/agents/executor";
 import { AppError, toPublicError, type PublicError } from "@/core/errors";
+import type { CitySuggestion } from "@/core/location/model";
+import { weatherPlaceSchema, type WeatherPlace } from "@/core/schedules/schedule";
 
 export type ScheduleActionResult<T = undefined> =
   { ok: true; value: T } | { ok: false; error: PublicError };
@@ -102,6 +105,44 @@ export async function slackChannelsAction(
       };
     const { channels } = outcome.output as { channels: { id: string; name: string }[] };
     return { ok: true, value: channels.map((c) => ({ id: c.id, name: c.name })) };
+  } catch (error) {
+    return { ok: false, error: toPublicError(error) };
+  }
+}
+
+// ── Weather location (ADR-069) ───────────────────────────────────────────────
+
+const token = z.uuid();
+
+/** City-level suggestions while typing (server key; never exposed to the browser). */
+export async function suggestWeatherCitiesAction(
+  query: string,
+  sessionToken: string,
+): Promise<ScheduleActionResult<CitySuggestion[]>> {
+  try {
+    const q = z.string().trim().min(2).max(120).parse(query);
+    return {
+      ok: true,
+      value: await suggestWeatherCities(await requireAuthContext(), q, token.parse(sessionToken)),
+    };
+  } catch (error) {
+    return { ok: false, error: toPublicError(error) };
+  }
+}
+
+/** The chosen suggestion as a place a forecast can use: id, names, coordinates. */
+export async function weatherCityAction(
+  placeId: string,
+  sessionToken: string,
+): Promise<ScheduleActionResult<WeatherPlace>> {
+  try {
+    const place = await weatherCity(
+      await requireAuthContext(),
+      z.string().min(1).max(300).parse(placeId),
+      token.parse(sessionToken),
+    );
+    if (!place) throw new AppError("NOT_FOUND", "That place has no location");
+    return { ok: true, value: weatherPlaceSchema.parse(place) };
   } catch (error) {
     return { ok: false, error: toPublicError(error) };
   }

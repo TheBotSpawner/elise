@@ -593,7 +593,9 @@ export function Ambient({ ambient }: { ambient: HomeAmbient }) {
           <Link
             href={item.href}
             title={item.preview}
-            className="flex h-full max-w-full min-w-0 items-center gap-2.5 hover:text-fg md:items-baseline"
+            // Phones: the whole 44px row is the tap target. From md the link is its text's own
+            // height, centred in the 32px cell like the brief item, so every item shares one line.
+            className="flex h-full max-w-full min-w-0 items-center gap-2.5 hover:text-fg md:h-auto md:items-baseline"
           >
             <span className="shrink-0 font-mono text-[10.5px] tracking-[0.16em] text-faint uppercase">
               {item.label}

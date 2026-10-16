@@ -32,10 +32,6 @@ export async function runStep<T>(
   workspace?.activity({ id, tool, status: "running" });
   try {
     const { value, outcome } = await run();
-    if (outcome?.status === "failed" && outcome.moduleDisabled) {
-      workspace?.activity({ id, tool, status: "done" });
-      return { value: null, problem: null, status: "off" };
-    }
     if (outcome && outcome.status !== "succeeded") {
       const unavailable =
         outcome.status === "failed" ? UNAVAILABLE.includes(outcome.error.code) : true;

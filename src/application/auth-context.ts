@@ -4,8 +4,9 @@ import { cache } from "react";
 
 import { isSupabaseConfigured } from "@/config/env";
 import { AppError } from "@/core/errors";
+import { resolveVoice, type VoiceKey } from "@/core/voice/catalog";
 import { voicePreferences } from "@/core/voice/preferences";
-import type { VoiceChoice } from "@/core/voice/providers";
+import { availableVoiceKeys } from "@/infrastructure/ai/voices";
 import { createClient, type ServerSupabase } from "@/infrastructure/supabase/server";
 
 /** Voice preferences (ADR-014); allowlisted in the database. */
@@ -14,7 +15,8 @@ export interface VoicePreferences {
   /** Speak replies aloud (voice input still works with it off). */
   speak: boolean;
   language: "auto" | "es" | "en";
-  voice: VoiceChoice;
+  /** The curated voice in use (ADR-030), resolved against what's configured now. */
+  voice: VoiceKey;
   /** After a reply, keep listening (ADR-017). */
   continuous: boolean;
   /** Speaking over ELISE interrupts her. */
@@ -56,9 +58,15 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   if (!userId) return null;
 
   // RLS only returns workspaces the user is an active member of.
-  const [profileRes, workspacesRes] = await Promise.all([
+  // The chosen voice is read alongside, so speech never waits on another round trip.
+  const [profileRes, workspacesRes, voiceRes] = await Promise.all([
     db.from("user_profiles").select("*").eq("id", userId).maybeSingle(),
     db.from("workspaces").select("id, type").is("archived_at", null).order("created_at"),
+    db
+      .from("user_preferences")
+      .select("workspace_id, value_json")
+      .eq("user_id", userId)
+      .eq("key", VOICE_PREFERENCE_KEY),
   ]);
   if (profileRes.error || workspacesRes.error) {
     throw new AppError("INTERNAL_ERROR", "Could not load account", {
@@ -73,6 +81,8 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
   }
 
   const profile = profileRes.data;
+  // A failed read never blocks the request: the voice falls back to ELISE.
+  const storedVoice = voiceRes.data?.find((r) => r.workspace_id === workspace.id)?.value_json;
   return {
     db,
     userId,
@@ -85,10 +95,13 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
       onboardingStatus: profile.onboarding_status,
       theme: profile.theme,
       accent: profile.accent,
-      voice: voicePreferences(profile),
+      voice: voicePreferences(profile, resolveVoice(storedVoice, availableVoiceKeys())),
     },
   };
 });
+
+/** Where the chosen voice lives (`user_preferences`, per person and workspace, under RLS). */
+export const VOICE_PREFERENCE_KEY = "voice.preferred_voice_key";
 
 export async function requireAuthContext(): Promise<AuthContext> {
   const auth = await getAuthContext();

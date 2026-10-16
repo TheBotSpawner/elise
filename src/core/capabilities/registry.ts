@@ -431,6 +431,10 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       updateNotifications: WRITE,
       // The wake phrase and voice behavior (ADR-017 §9): allowlisted values only.
       updateVoice: WRITE,
+      // The curated voice (ADR-030): a stable catalog key, never a provider id; reversible.
+      getVoice: READ,
+      listVoices: READ,
+      setVoice: WRITE,
       listConnections: READ,
       // Mi ELISE (ADR-064): the person's own choice of modules; reversible, audited.
       listModules: READ,
