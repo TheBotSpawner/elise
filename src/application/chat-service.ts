@@ -74,6 +74,7 @@ import { autoLinkThread, historyLinks } from "./history-links-service";
 import { openThread } from "./interaction-thread";
 import { syncDueSources } from "./knowledge-background";
 import { locationConfigured } from "./location-service";
+import { memoryForContext } from "./memory-service";
 import { methodStore, methodsForTurn, recordMethodUse } from "./methods-service";
 import { moduleStates } from "./modules-service";
 import { queueRecallIndex, searchRecall } from "./recall-service";
@@ -518,6 +519,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     // Accounts of a module that's off aren't offered as destinations either.
     accounts: accountSummaries(bindings.filter((b) => !off.has(b.capability))),
     inactiveModules: NATIVE_MODULES.filter((m) => !modules[m.key]).map((m) => m.key),
+    memory: await perf.time("memory", memoryForContext(auth)),
     history,
     userMessage: input.message,
     attachments: attached,

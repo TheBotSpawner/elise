@@ -3,46 +3,50 @@
 import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
-import type { VoicePreferences } from "@/application/auth-context";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Label, Select } from "@/components/ui/input";
+import { Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { WakeAvailability } from "@/core/voice/device";
-import { VOICES, type VoiceChoice } from "@/core/voice/providers";
-import { WAKE_LABELS, WAKE_PHRASES, type WakePhrase } from "@/core/voice/wake";
-import { adaptiveDeliveryEnabled, setAdaptiveDeliveryEnabled } from "@/features/voice/use-voice";
+import { VOICE_LANGUAGES, type VoiceLanguage } from "@/core/voice/preferences";
+import type { VoiceChoice } from "@/core/voice/providers";
+import { setStartupSoundEnabled, startupSoundEnabled } from "@/features/boot/startup-sound";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { WebSpeechWakeEngine } from "@/features/voice/wake-engine";
 import { useI18n } from "@/lib/i18n/client";
 
 import { setVoicePreferences } from "./actions";
+import { SettingRow, SettingsCard } from "./shell";
+
+interface Prefs {
+  continuous: boolean;
+  language: VoiceLanguage;
+  voice: VoiceChoice;
+}
 
 /**
- * Voice (ADR-014, ADR-017): only controls that work. The wake phrase is offered only as far as
- * this browser can detect it on the device — checked, never assumed.
+ * Voice (ADR-068): three choices — continuous conversation, the voice language and the voice.
+ * The wake phrase is always "Elise"; barge-in and quiet-speech matching are defaults. The
+ * device line says only what this browser can really do, checked, never assumed.
  */
 export function VoiceSettings({
   initial,
+  profiles,
   wakeAllowed = true,
-  speech = { provider: "openai", profiles: VOICES.map((v) => ({ id: v, displayName: v })) },
 }: {
-  initial: VoicePreferences;
+  initial: Prefs;
+  /** The voices this deployment offers, by stable id (the provider is an implementation). */
+  profiles: { id: VoiceChoice; displayName: string }[];
   /** The wake-phrase feature flag (ADR-019). */
   wakeAllowed?: boolean;
-  /** Which provider speaks and the curated voices it offers (ADR-030). */
-  speech?: {
-    provider: "elevenlabs" | "openai";
-    profiles: { id: VoiceChoice; displayName: string }[];
-  };
 }) {
   const { t, locale } = useI18n();
-  const s = t.voice.settings;
+  const v = t.settingsHub.voice;
   const [prefs, setPrefs] = useState(initial);
-  // ADR-049: a per-device preference (browser storage; on until turned off here).
-  const adaptive = useSyncExternalStore(onVoicePrefs, adaptiveDeliveryEnabled, () => true);
   const [, startTransition] = useTransition();
   const lang: "es" | "en" = prefs.language === "auto" ? locale : prefs.language;
+  const voice = profiles.some((p) => p.id === prefs.voice)
+    ? prefs.voice
+    : (profiles[0]?.id ?? prefs.voice);
   const [wake, setWake] = useState<WakeAvailability | "installing" | "checking">("checking");
   useEffect(() => {
     let live = true;
@@ -61,14 +65,28 @@ export function VoiceSettings({
     setWake(ok ? "available" : await new WebSpeechWakeEngine().availability(lang));
   }
 
+  function change(patch: Partial<Prefs>) {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    startTransition(async () => {
+      const result = await setVoicePreferences(next);
+      if (!result.ok) {
+        setPrefs(prefs);
+        toast.error(t.errors.codes[result.error.code]);
+      } else
+        window.dispatchEvent(
+          new CustomEvent(VOICE_PREFS_EVENT, {
+            detail: { continuous: next.continuous, wakeEnabled: next.continuous },
+          }),
+        );
+    });
+  }
+
   const [previewing, setPreviewing] = useState(false);
   /** A fixed ELISE sample in the selected voice (never the user's own content). */
   async function preview() {
     setPreviewing(true);
     try {
-      const voice = speech.profiles.some((p) => p.id === prefs.voice)
-        ? prefs.voice
-        : (speech.profiles[0]?.id ?? prefs.voice);
       const res = await fetch(`/api/voice/preview?voice=${voice}&language=${lang}`);
       if (!res.ok) throw new Error("preview failed");
       const rate = Number(/rate=(\d+)/.exec(res.headers.get("x-audio-format") ?? "")?.[1] ?? 24000);
@@ -84,200 +102,112 @@ export function VoiceSettings({
       source.onended = () => void ctx.close();
       source.start();
     } catch {
-      toast.error(s.previewFailed);
+      toast.error(v.previewFailed);
     } finally {
       setPreviewing(false);
     }
   }
 
-  function change(patch: Partial<VoicePreferences>) {
-    const next = { ...prefs, ...patch };
-    setPrefs(next);
-    startTransition(async () => {
-      const result = await setVoicePreferences(next);
-      if (!result.ok) {
-        setPrefs(prefs);
-        toast.error(t.errors.codes[result.error.code]);
-      } else
-        window.dispatchEvent(
-          new CustomEvent(VOICE_PREFS_EVENT, {
-            detail: {
-              speak: next.speak,
-              continuous: next.continuous,
-              bargeIn: next.bargeIn,
-              wakeEnabled: next.wakeEnabled,
-              wakePhrase: next.wakePhrase,
-            },
-          }),
-        );
-    });
-  }
-
+  // The web can only offer "Elise" in an open, visible tab — and only where it's detected here.
+  const wakeHere = wakeAllowed && prefs.continuous && wake !== "unavailable" && wake !== "checking";
   return (
-    <Card className="p-5">
-      <h2 className="mb-4 font-medium">{s.title}</h2>
-      <div className="flex flex-col gap-5">
-        <Row label={s.enabled} hint={s.enabledHint}>
-          <Switch
-            checked={prefs.enabled}
-            aria-label={s.enabled}
-            onCheckedChange={(enabled) => change({ enabled })}
-          />
-        </Row>
-        <Row label={s.speak} hint={s.speakHint}>
-          <Switch
-            checked={prefs.speak}
-            disabled={!prefs.enabled}
-            aria-label={s.speak}
-            onCheckedChange={(speak) => change({ speak })}
-          />
-        </Row>
-        <Row label={s.continuous} hint={s.continuousHint}>
-          <Switch
-            checked={prefs.continuous}
-            disabled={!prefs.enabled}
-            aria-label={s.continuous}
-            onCheckedChange={(continuous) => change({ continuous })}
-          />
-        </Row>
-        <Row label={s.bargeIn} hint={s.bargeInHint}>
-          <Switch
-            checked={prefs.bargeIn}
-            disabled={!prefs.enabled || !prefs.speak}
-            aria-label={s.bargeIn}
-            onCheckedChange={(bargeIn) => change({ bargeIn })}
-          />
-        </Row>
-        <Row label={s.adaptive} hint={s.adaptiveHint}>
-          <Switch
-            checked={adaptive}
-            disabled={!prefs.enabled || !prefs.speak}
-            aria-label={s.adaptive}
-            onCheckedChange={setAdaptiveDeliveryEnabled}
-          />
-        </Row>
-        {/* Offered only where this browser can detect it on the device (ADR-017 §7). */}
-        {wakeAllowed && wake !== "unavailable" && (
-          <Row label={s.wake} hint={s.wakeHint}>
-            <Switch
-              checked={prefs.wakeEnabled}
-              disabled={!prefs.enabled || wake === "checking"}
-              aria-label={s.wake}
-              onCheckedChange={(wakeEnabled) => change({ wakeEnabled })}
-            />
-          </Row>
-        )}
-        {wakeAllowed && prefs.enabled && prefs.wakeEnabled && wake !== "unavailable" && (
-          <div className="flex flex-col gap-3 rounded-2xl border border-border p-4">
-            <div className="flex flex-wrap items-end gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="voice-wake-phrase">{s.wakePhrase}</Label>
-                <Select
-                  id="voice-wake-phrase"
-                  value={prefs.wakePhrase}
-                  onChange={(e) => change({ wakePhrase: e.target.value as WakePhrase })}
-                >
-                  {WAKE_PHRASES.map((p) => (
-                    <option key={p} value={p}>
-                      {WAKE_LABELS[p]}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              {(wake === "downloadable" || wake === "downloading" || wake === "installing") && (
-                <Button
-                  variant="secondary"
-                  size="sm"
+    <div className="flex flex-col gap-6">
+      <SettingsCard>
+        <SettingRow
+          id="continuous"
+          label={v.continuous}
+          info={v.continuousInfo}
+          hint={
+            <>
+              {v.continuousHint}
+              {wakeHere && wake === "available" && (
+                <span className="mt-1 block text-faint">{v.wakeHere}</span>
+              )}
+              {wakeHere && wake !== "available" && (
+                // The browser needs its on-device speech pack first: a quiet, optional step.
+                <button
+                  type="button"
                   disabled={wake !== "downloadable"}
                   onClick={() => void install()}
+                  className="mt-1 block text-[12.5px] text-accent-text hover:underline disabled:text-faint disabled:no-underline"
                 >
-                  {wake === "downloadable" ? s.wakeInstall : s.wakeInstalling}
-                </Button>
+                  {wake === "downloadable" ? v.wakeInstall : v.wakeInstalling}
+                </button>
               )}
-            </div>
-            <p className="text-[12.5px] text-muted">
-              {wake === "available" ? s.wakeReady : s.wakeNeedsPack}
-            </p>
-            {/* Only said where it's true: detection runs in this browser, on this device. */}
-            {wake === "available" && <p className="text-[12.5px] text-faint">{s.wakePrivacy}</p>}
-          </div>
-        )}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="voice-language">{s.language}</Label>
+            </>
+          }
+        >
+          <Switch
+            checked={prefs.continuous}
+            aria-label={v.continuous}
+            onCheckedChange={(continuous) => change({ continuous })}
+          />
+        </SettingRow>
+        <SettingRow id="voice-language" label={v.language} hint={v.languageHint} stack>
+          <Select
+            aria-label={v.language}
+            value={prefs.language}
+            onChange={(e) => change({ language: e.target.value as VoiceLanguage })}
+            className="sm:w-56"
+          >
+            {VOICE_LANGUAGES.map((l) => (
+              <option key={l} value={l}>
+                {v.languages[l]}
+              </option>
+            ))}
+          </Select>
+        </SettingRow>
+        <SettingRow id="voice-name" label={v.voice} hint={v.voiceHint} stack>
+          <div className="flex gap-2">
             <Select
-              id="voice-language"
-              value={prefs.language}
-              disabled={!prefs.enabled}
-              onChange={(e) => change({ language: e.target.value as VoicePreferences["language"] })}
+              aria-label={v.voice}
+              value={voice}
+              onChange={(e) => change({ voice: e.target.value as VoiceChoice })}
+              className="max-sm:flex-1 sm:w-44"
             >
-              {(["auto", "es", "en"] as const).map((l) => (
-                <option key={l} value={l}>
-                  {s.languages[l]}
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.displayName.charAt(0).toUpperCase() + p.displayName.slice(1)}
                 </option>
               ))}
             </Select>
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-10 shrink-0"
+              disabled={previewing}
+              onClick={() => void preview()}
+            >
+              {previewing ? v.previewing : v.preview}
+            </Button>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="voice-name">{s.voice}</Label>
-            <div className="flex gap-2">
-              <Select
-                id="voice-name"
-                value={
-                  speech.profiles.some((p) => p.id === prefs.voice)
-                    ? prefs.voice
-                    : (speech.profiles[0]?.id ?? prefs.voice)
-                }
-                disabled={!prefs.enabled || !prefs.speak}
-                onChange={(e) => change({ voice: e.target.value as VoicePreferences["voice"] })}
-              >
-                {speech.profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.displayName.charAt(0).toUpperCase() + p.displayName.slice(1)}
-                  </option>
-                ))}
-              </Select>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-10 shrink-0"
-                disabled={!prefs.enabled || !prefs.speak || previewing}
-                onClick={() => void preview()}
-              >
-                {previewing ? s.previewing : s.preview}
-              </Button>
-            </div>
-          </div>
-        </div>
-        <p className="text-[12.5px] text-muted">{s.provider[speech.provider]}</p>
-        <p className="text-[12.5px] text-faint">{s.privacy}</p>
-      </div>
-    </Card>
+        </SettingRow>
+      </SettingsCard>
+      <SoundsCard />
+    </div>
   );
 }
 
-function onVoicePrefs(change: () => void) {
-  window.addEventListener(VOICE_PREFS_EVENT, change);
-  return () => window.removeEventListener(VOICE_PREFS_EVENT, change);
-}
+const listeners = new Set<() => void>();
+const subscribe = (l: () => void) => (listeners.add(l), () => void listeners.delete(l));
 
-function Row({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint: string;
-  children: React.ReactNode;
-}) {
+/** ELISE's sounds: the startup chime, a per-device choice (ADR-046). */
+function SoundsCard() {
+  const { t } = useI18n();
+  const s = t.settings.startup;
+  const on = useSyncExternalStore(subscribe, startupSoundEnabled, () => true);
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <p className="text-sm">{label}</p>
-        <p className="text-[13px] text-muted">{hint}</p>
-      </div>
-      {children}
-    </div>
+    <SettingsCard title={t.settingsHub.voice.sounds}>
+      <SettingRow id="sounds" label={s.sound} hint={s.soundHint}>
+        <Switch
+          checked={on}
+          aria-label={s.sound}
+          onCheckedChange={(next) => {
+            setStartupSoundEnabled(next);
+            listeners.forEach((l) => l());
+          }}
+        />
+      </SettingRow>
+    </SettingsCard>
   );
 }

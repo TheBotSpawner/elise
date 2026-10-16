@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { isSupabaseConfigured } from "@/config/env";
 import { AppError } from "@/core/errors";
+import { voicePreferences } from "@/core/voice/preferences";
 import type { VoiceChoice } from "@/core/voice/providers";
 import { createClient, type ServerSupabase } from "@/infrastructure/supabase/server";
 
@@ -84,16 +85,7 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
       onboardingStatus: profile.onboarding_status,
       theme: profile.theme,
       accent: profile.accent,
-      voice: {
-        enabled: profile.voice_enabled,
-        speak: profile.voice_output,
-        language: profile.voice_language,
-        voice: profile.voice_name,
-        continuous: profile.voice_continuous ?? true,
-        bargeIn: profile.voice_barge_in ?? true,
-        wakeEnabled: profile.voice_wake_enabled ?? false,
-        wakePhrase: profile.voice_wake_phrase ?? "elise",
-      },
+      voice: voicePreferences(profile),
     },
   };
 });

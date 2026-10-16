@@ -6,6 +6,7 @@ export const ONBOARDING_STEPS = [
   "welcome",
   "profile",
   "uses",
+  "voice",
   "connect",
   "space",
   "ready",

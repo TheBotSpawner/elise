@@ -69,6 +69,21 @@ export async function completeOnboarding(input: { skipped: boolean }): Promise<v
   const { skipped } = z.object({ skipped: z.boolean() }).parse(input);
   const auth = await requireAuthContext();
   // The progress row stays: Home reads it once for the first prompt (e.g. a University Space).
+  // Continuous conversation is never on without an explicit choice (ADR-068): skipping the
+  // voice step leaves it off.
+  const { data: consent } = await auth.db
+    .from("user_preferences")
+    .select("id")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("user_id", auth.userId)
+    .eq("key", "voice.continuous_consent")
+    .maybeSingle();
+  const firstRun = !["completed", "skipped"].includes(auth.profile.onboardingStatus);
+  if (!consent && firstRun)
+    await auth.db
+      .from("user_profiles")
+      .update({ voice_continuous: false, voice_wake_enabled: false })
+      .eq("id", auth.userId);
   await auth.db
     .from("user_profiles")
     .update({ onboarding_status: skipped ? "skipped" : "completed" })

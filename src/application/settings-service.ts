@@ -13,10 +13,11 @@ import {
 import { AppError } from "@/core/errors";
 import { availableModules, type NativeModuleKey } from "@/core/modules/registry";
 import { isValidTimezone } from "@/core/time";
-import { WAKE_PHRASES } from "@/core/voice/wake";
+import { VOICE_LANGUAGES } from "@/core/voice/preferences";
 
 import type { AuthContext } from "./auth-context";
 import { listConnections } from "./connections-service";
+import { forgetFact, getMemory, rememberFact } from "./memory-service";
 import { moduleStates, setModules } from "./modules-service";
 import { listSchedules, setSchedulePaused, updateSchedule } from "./schedules-service";
 
@@ -147,46 +148,55 @@ export function settingsStore(auth: AuthContext): SettingsStore {
     async updateVoice(patch) {
       const v = await updateVoiceSettings(auth, patch);
       await audit(auth, "ai", "settings.voice_changed", {
-        wake_enabled: String(v.wakeEnabled),
-        wake_phrase: v.wakePhrase,
+        continuous: String(v.continuous),
+        language: v.language,
       });
       return v;
+    },
+    memory: () => getMemory(auth),
+    async remember(input) {
+      const r = await rememberFact(auth, input);
+      if (!r.kept)
+        await audit(auth, "ai", "memory.remembered", {
+          key: r.fact.key,
+          replaced: String(Boolean(r.replaced)),
+        });
+      return r;
+    },
+    async forget(idOrKey) {
+      const n = await forgetFact(auth, idOrKey);
+      if (n) await audit(auth, "ai", "memory.forgotten", { count: String(n) });
+      return n;
     },
   };
 }
 
-/** Voice behavior (ADR-017): allowlisted in the database, validated again here. */
+/** Voice behavior (ADR-068): the same columns the Settings page writes. */
 export async function getVoiceSettings(auth: AuthContext): Promise<VoiceSettings> {
   const { data, error } = await auth.db
     .from("user_profiles")
-    .select("voice_continuous, voice_barge_in, voice_wake_enabled, voice_wake_phrase")
+    .select("voice_continuous, voice_language")
     .eq("id", auth.userId)
     .single();
   if (error)
     throw new AppError("INTERNAL_ERROR", "Could not load voice settings", { cause: error });
-  return {
-    continuous: data.voice_continuous,
-    bargeIn: data.voice_barge_in,
-    wakeEnabled: data.voice_wake_enabled,
-    wakePhrase: data.voice_wake_phrase,
-  };
+  return { continuous: data.voice_continuous ?? false, language: data.voice_language };
 }
 
 export async function updateVoiceSettings(
   auth: AuthContext,
   patch: Partial<VoiceSettings>,
 ): Promise<VoiceSettings> {
-  if (patch.wakePhrase && !(WAKE_PHRASES as readonly string[]).includes(patch.wakePhrase))
-    throw new AppError("VALIDATION_ERROR", "That wake phrase isn't supported", {
-      recovery: "review",
-    });
+  if (patch.language && !(VOICE_LANGUAGES as readonly string[]).includes(patch.language))
+    throw invalid("voice language");
   const { error } = await auth.db
     .from("user_profiles")
     .update({
-      ...(patch.continuous !== undefined ? { voice_continuous: patch.continuous } : {}),
-      ...(patch.bargeIn !== undefined ? { voice_barge_in: patch.bargeIn } : {}),
-      ...(patch.wakeEnabled !== undefined ? { voice_wake_enabled: patch.wakeEnabled } : {}),
-      ...(patch.wakePhrase ? { voice_wake_phrase: patch.wakePhrase } : {}),
+      ...(patch.continuous !== undefined
+        ? // The wake column mirrors it for older clients: "Elise" wakes only in continuous mode.
+          { voice_continuous: patch.continuous, voice_wake_enabled: patch.continuous }
+        : {}),
+      ...(patch.language ? { voice_language: patch.language } : {}),
     })
     .eq("id", auth.userId);
   if (error)

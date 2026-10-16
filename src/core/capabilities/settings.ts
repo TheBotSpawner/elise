@@ -1,6 +1,7 @@
 import { AppError } from "../errors";
+import type { MemoryFact, RememberInput, RememberResult } from "../memory/model";
 import { isValidTimezone } from "../time";
-import type { WakePhrase } from "../voice/wake";
+import type { VoiceLanguage } from "../voice/preferences";
 
 /**
  * ELISE Self-Control (ADR-012): the product settings ELISE may change for the user, through
@@ -26,12 +27,13 @@ export interface ElisePreferences {
   accent: Accent;
 }
 
-/** Voice behavior ELISE may change (ADR-017 §9). The wake phrase is from an allowlist. */
+/**
+ * Voice behavior ELISE may change (ADR-068): continuous conversation and the voice language.
+ * The wake phrase is always "Elise"; barge-in and adaptive delivery are defaults, not settings.
+ */
 export interface VoiceSettings {
   continuous: boolean;
-  bargeIn: boolean;
-  wakeEnabled: boolean;
-  wakePhrase: WakePhrase;
+  language: VoiceLanguage;
 }
 
 export interface ScheduleSummary {
@@ -66,6 +68,11 @@ export interface SettingsStore {
   modules(): Promise<{ key: string; enabled: boolean }[]>;
   /** Turns modules on or off (audited); data is never touched. */
   setModules(changes: Record<string, boolean>): Promise<void>;
+  /** Memory (ADR-068): whether it's on, and the active facts. */
+  memory(): Promise<{ enabled: boolean; facts: MemoryFact[] }>;
+  remember(input: RememberInput): Promise<RememberResult>;
+  /** Forgets a fact by id or key; how many were removed. */
+  forget(idOrKey: string): Promise<number>;
 }
 
 const norm = (s: string) =>

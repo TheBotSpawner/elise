@@ -8,6 +8,7 @@ import {
   type RunnerPorts,
 } from "@/core/schedules/runner";
 import type { RunStatus } from "@/core/schedules/schedule";
+import { voicePreferences } from "@/core/voice/preferences";
 import { getAIProvider } from "@/infrastructure/ai";
 import { TriggerDevBackgroundRuntime } from "@/infrastructure/background/trigger/runtime";
 import { logger } from "@/infrastructure/observability/logger";
@@ -44,16 +45,7 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
       onboardingStatus: profile.onboarding_status,
       theme: profile.theme,
       accent: profile.accent,
-      voice: {
-        enabled: profile.voice_enabled,
-        speak: profile.voice_output,
-        language: profile.voice_language,
-        voice: profile.voice_name,
-        continuous: profile.voice_continuous ?? true,
-        bargeIn: profile.voice_barge_in ?? true,
-        wakeEnabled: profile.voice_wake_enabled ?? false,
-        wakePhrase: profile.voice_wake_phrase ?? "elise",
-      },
+      voice: voicePreferences(profile),
     },
   };
 }

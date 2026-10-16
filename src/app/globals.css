@@ -651,3 +651,25 @@ html[data-resuming] .elise-home {
 :root[data-keyboard="open"] [data-bottom-nav] {
   display: none;
 }
+
+/* Settings search (ADR-068): the setting a result points to lights up briefly. */
+.settings-row:target {
+  animation: settings-target 1.8s var(--ease-standard, ease) 1;
+}
+@keyframes settings-target {
+  0%,
+  35% {
+    background: var(--accent-soft);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 2px 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-row:target {
+    animation: none;
+    background: var(--accent-soft);
+  }
+}

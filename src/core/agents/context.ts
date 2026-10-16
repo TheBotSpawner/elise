@@ -53,6 +53,8 @@ export interface ContextInput {
   accounts?: readonly AccountSummary[];
   /** Mi ELISE modules this person turned off (ADR-064): offered back only when asked for. */
   inactiveModules?: readonly string[];
+  /** Memory (ADR-068): the person's saved facts, only when Memory is on. */
+  memory?: readonly { key: string; value: string }[];
   /** Knowledge Space the conversation is in ("Work › Acme"), if any. */
   activeSpace?: string | null;
   /** The user's Spaces and Sections with the names they gave them, for resolving what they mean. */
@@ -275,7 +277,7 @@ const TIME_GUIDANCE = `Time (the user's own timers, Pomodoros and stopwatches �
 - "Mostralo grande" → workspace.focus on that timer's Surface. "Mostrame un reloj" → time.now with show true.`;
 
 const RECALL_GUIDANCE = `Recall (past interactions with ELISE — history.* tools):
-- Recall is what was said in earlier conversations. Knowledge is the user's documents. Memory is saved preferences. Don't mix them: "what did we talk about…" is Recall; "what does the document say…" is Knowledge.
+- Recall is what was said in earlier conversations. Knowledge is the user's documents. Memory is the stable facts and preferences they asked you to keep (memory.remember / memory.forget; only durable things, never secrets). Don't mix them: "what did we talk about…" is Recall; "what does the document say…" is Knowledge.
 - "Buscame en nuestras conversaciones…", "la charla donde…", "lo que te pedí…": search Recall (history.search) first and thoroughly — typed and spoken conversations alike. Pass the user's own words as query and put exact names, titles or phrases they remember in phrases. Suggest other places (calendar, email, web) only after Recall found nothing.
 - Use history.search when the user refers to something discussed before ("what did we decide about X", "lo que hablamos ayer", "the last time"). Pass period/from/to for dates ("yesterday", "last week"). Use history.getContext for more of a specific interaction; history.getRecent for "what did we talk about recently".
 - Several matches: answer with the one that best fits (where the thing actually happened, not later conversations that only searched for it), and mention the others in a few words. Don't make the user pick before answering.
@@ -402,6 +404,14 @@ export function buildContextPackage(input: ContextInput): ContextPackage {
       `Mi ELISE modules turned off: ${input.inactiveModules.join(", ")}. Their tools aren't loaded and their data stays saved. If the user asks for one of these ("quiero registrar mis gastos", "volver a usar hábitos"), say it isn't active in Mi ELISE and ask whether to turn it on (modules.enable) — never turn one on or off without a clear yes, and never because something only sounds related ("no uso mucho finanzas" is not a request).`,
     );
   const accountLines = summarizeAccounts(input.accounts ?? []);
+  if (input.memory?.length) {
+    dynamic.push(
+      `Memory — what the user told you to keep in mind (they see and edit it in Settings › Memoria). Use it when it helps; don't recite it; if they now say something different, follow what they say now and update it with memory.remember:\n${input.memory
+        .slice(0, 60)
+        .map((m) => `- ${m.key}: ${m.value}`)
+        .join("\n")}`,
+    );
+  }
   if (accountLines) {
     dynamic.push(
       "Connected accounts (pass one of these names as `destination` only when the user names where something should go; otherwise omit it and the default is used):\n" +

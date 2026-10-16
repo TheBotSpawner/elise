@@ -10,7 +10,7 @@ import {
 } from "../capabilities/settings";
 import { AppError } from "../errors";
 import { NATIVE_MODULES, type NativeModuleKey } from "../modules/registry";
-import { WAKE_LABELS, WAKE_PHRASES } from "../voice/wake";
+import { VOICE_LANGUAGES } from "../voice/preferences";
 
 /**
  * ELISE Self-Control (ADR-012): ELISE operates its own product settings through these typed
@@ -289,84 +289,185 @@ export const listConnectionsTool: ToolDefinition = {
   },
 };
 
-const wakeInput = z
+const voiceInput = z
   .object({
-    phrase: z
-      .enum(WAKE_PHRASES)
+    continuous: z
+      .boolean()
       .optional()
-      .describe('One of the supported phrases: "elise", "hey_elise", "oye_elise", "liz".'),
-    enabled: z.boolean().optional().describe("Turn the wake phrase on or off."),
+      .describe('Continuous conversation: keep listening between replies (and answer to "Elise").'),
+    language: z.enum(VOICE_LANGUAGES).optional().describe("Voice language: auto, es or en."),
   })
   .strict();
 
-export const setWakePhraseTool: ToolDefinition = {
-  name: "voice.setWakePhrase",
+const onOff = (b: boolean) => (b ? "on" : "off");
+
+/**
+ * Voice (ADR-068): the same two settings the Voice page has. The wake phrase is always
+ * "Elise" — any other phrase isn't supported.
+ */
+export const updateVoiceTool: ToolDefinition = {
+  name: "voice.update",
   capability: "settings",
   operation: "updateVoice",
   description:
-    '"Cambiá tu wake phrase a Liz", "activá la palabra de activación": changes ELISE\'s wake phrase among the supported ones (Elise, Hey Elise, Oye Elise, Liz) or turns it on/off. Any other phrase isn\'t supported — say so.',
-  input: wakeInput,
+    '"Desactivá la conversación continua", "activá la conversación continua", "hablame en inglés": continuous conversation (ELISE keeps listening between replies; "Elise" wakes a resting session in an open tab) and the voice language. The wake phrase is always "Elise" — another phrase isn\'t supported, say so. Hearing "Elise" with the app closed or the screen locked isn\'t possible on the web — never promise it.',
+  input: voiceInput,
   async describe(raw) {
-    const q = wakeInput.parse(raw);
+    const q = voiceInput.parse(raw);
     return {
       summary: [
-        q.phrase && `Wake phrase → ${WAKE_LABELS[q.phrase]}`,
-        q.enabled !== undefined && `Wake phrase ${q.enabled ? "on" : "off"}`,
+        q.continuous !== undefined && `Continuous conversation ${onOff(q.continuous)}`,
+        q.language && `Voice language → ${q.language}`,
       ]
         .filter(Boolean)
         .join(", "),
     };
   },
   async run(raw, env) {
-    const q = wakeInput.parse(raw);
-    if (!q.phrase && q.enabled === undefined)
+    const q = voiceInput.parse(raw);
+    if (q.continuous === undefined && !q.language)
       throw new AppError("VALIDATION_ERROR", "Nothing to change", { recovery: "review" });
     const before = await store(env).voice();
-    const after = await store(env).updateVoice({
-      ...(q.phrase ? { wakePhrase: q.phrase } : {}),
-      ...(q.enabled !== undefined ? { wakeEnabled: q.enabled } : {}),
-    });
-    const device = env.ctx.voiceWake ?? null;
-    const works = device === "ready" || device === "listening";
+    const after = await store(env).updateVoice(q);
     return {
-      output: {
-        updated: true,
-        wakePhrase: WAKE_LABELS[after.wakePhrase],
-        enabled: after.wakeEnabled,
-        onThisDevice: device ?? "unknown",
-        instructions: after.wakeEnabled
-          ? works
-            ? "Saved. Say it works while a voice session sleeps on this device, with the page open."
-            : device === "downloadable"
-              ? "Saved, but this browser first needs its on-device speech pack: the user can install it in Settings › Voice. Don't say it works yet."
-              : "Saved, but this browser can't detect a wake phrase on the device (it needs Chrome with on-device speech). Say so plainly — tapping the microphone still works."
-          : "Saved.",
-      },
+      output: { updated: true, continuous: after.continuous, language: after.language },
       display: {
         kind: "setting_changed",
         changes: [
-          ...(q.phrase
+          ...(q.continuous !== undefined
             ? [
                 {
-                  setting: "wake_phrase" as const,
-                  from: WAKE_LABELS[before.wakePhrase],
-                  to: WAKE_LABELS[after.wakePhrase],
+                  setting: "continuous" as const,
+                  from: onOff(before.continuous),
+                  to: onOff(after.continuous),
                 },
               ]
             : []),
-          ...(q.enabled !== undefined
-            ? [
-                {
-                  setting: "wake_phrase" as const,
-                  from: before.wakeEnabled ? "on" : "off",
-                  to: after.wakeEnabled ? "on" : "off",
-                  subject: "enabled",
-                },
-              ]
+          ...(q.language
+            ? [{ setting: "voice_language" as const, from: before.language, to: after.language }]
             : []),
         ],
       },
     };
+  },
+};
+
+// ── Memory (ADR-068) ─────────────────────────────────────────────────────────
+
+export const listMemoryTool: ToolDefinition = {
+  name: "memory.list",
+  capability: "settings",
+  operation: "listMemory",
+  description:
+    '"¿Qué sabés de mí?", "¿qué recordás?": the facts in the user\'s Memory, and whether Memory is on. Memory is stable preferences and facts about the user — not past conversations (that is Recall) nor their documents (Knowledge).',
+  input: z.object({}).strict(),
+  async describe() {
+    return { summary: "Read Memory" };
+  },
+  async run(_raw, env) {
+    const m = await store(env).memory();
+    return {
+      output: {
+        enabled: m.enabled,
+        facts: m.facts.map((f) => ({
+          id: f.id,
+          key: f.key,
+          value: f.value,
+          confidence: f.confidence,
+        })),
+      },
+    };
+  },
+};
+
+const rememberInput = z
+  .object({
+    key: z
+      .string()
+      .trim()
+      .min(2)
+      .max(60)
+      .describe('Short stable key, dotted: "trabajo.horario", "respuestas.formato".'),
+    value: z.string().trim().min(1).max(300).describe("The fact, in one short sentence."),
+    stated: z
+      .boolean()
+      .describe("True when the user said it explicitly; false when you inferred it."),
+  })
+  .strict();
+
+export const rememberTool: ToolDefinition = {
+  name: "memory.remember",
+  capability: "settings",
+  operation: "remember",
+  description:
+    'Save one stable fact or preference about the user to Memory: "acordate que trabajo de 9 a 18", "prefiero respuestas cortas", "mi socia se llama Ana". Only durable things that help later — never one-off details, secrets, passwords, card numbers, health or other sensitive data unless the user explicitly asks. Not what Settings holds (language, time zone) nor how to do a task (that is a Method). Saving the same key again updates it.',
+  input: rememberInput,
+  async describe(raw) {
+    return { summary: `Remember ${rememberInput.parse(raw).key}` };
+  },
+  confirm(output, locale) {
+    const o = output as { kept?: boolean };
+    if (o.kept) return locale === "es" ? "Lo tengo en cuenta." : "Noted.";
+    return locale === "es" ? "Listo, lo guardé en tu memoria." : "Done, it's in your Memory.";
+  },
+  async run(raw, env) {
+    const q = rememberInput.parse(raw);
+    const r = await store(env).remember({
+      key: q.key,
+      value: q.value,
+      confidence: q.stated ? "stated" : "inferred",
+      conversationId: env.ctx.conversationId ?? null,
+    });
+    return {
+      output: {
+        saved: !r.kept,
+        kept: r.kept,
+        key: r.fact.key,
+        value: r.fact.value,
+        ...(r.replaced ? { replaced: r.replaced.value } : {}),
+        ...(r.kept
+          ? { note: "The user said something different before; it was kept. Ask if it changed." }
+          : {}),
+      },
+      display: {
+        kind: "setting_changed",
+        changes: [
+          {
+            setting: "memory",
+            from: r.replaced?.value ?? null,
+            to: r.fact.value,
+            subject: r.fact.key,
+          },
+        ],
+      },
+    };
+  },
+};
+
+const forgetInput = z
+  .object({
+    fact: z.string().trim().min(1).max(100).describe("The fact's id or key from memory.list."),
+  })
+  .strict();
+
+export const forgetTool: ToolDefinition = {
+  name: "memory.forget",
+  capability: "settings",
+  operation: "forget",
+  description:
+    '"Olvidate de eso", "borrá lo que sabés de mi horario": removes a fact from Memory (memory.list first for its id or key).',
+  input: forgetInput,
+  async describe(raw) {
+    return { summary: `Forget ${forgetInput.parse(raw).fact}` };
+  },
+  async run(raw, env) {
+    const { fact } = forgetInput.parse(raw);
+    const removed = await store(env).forget(fact);
+    if (!removed)
+      throw new AppError("NOT_FOUND", "No memory matches that. Use memory.list.", {
+        recovery: "review",
+      });
+    return { output: { forgotten: removed } };
   },
 };
 
@@ -448,7 +549,10 @@ export const SETTINGS_TOOLS = [
   pauseTool("pause"),
   pauseTool("resume"),
   listConnectionsTool,
-  setWakePhraseTool,
+  updateVoiceTool,
+  listMemoryTool,
+  rememberTool,
+  forgetTool,
   listModulesTool,
   enableModulesTool,
   disableModulesTool,

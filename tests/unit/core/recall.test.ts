@@ -9,7 +9,15 @@ import {
   type ElisePreferences,
   type ScheduleSummary,
   type SettingsStore,
+  type VoiceSettings,
 } from "@/core/capabilities/settings";
+import {
+  activeFacts,
+  forget,
+  remember,
+  type MemoryFact,
+  type RememberInput,
+} from "@/core/memory/model";
 import { indexSession, type IndexPorts } from "@/core/recall/indexer";
 import {
   chunkTurns,
@@ -356,16 +364,26 @@ class FakeSettings implements SettingsStore {
   async setScheduleNotify(id: string, notify: ScheduleSummary["notify"]) {
     this.list = this.list.map((s) => (s.id === id ? { ...s, notify } : s));
   }
-  voiceSettings = {
-    continuous: true,
-    bargeIn: true,
-    wakeEnabled: false,
-    wakePhrase: "elise" as const,
-  };
+  voiceSettings: VoiceSettings = { continuous: true, language: "auto" };
+  memoryOn = true;
+  facts: MemoryFact[] = [];
+  async memory() {
+    return { enabled: this.memoryOn, facts: activeFacts(this.facts) };
+  }
+  async remember(input: RememberInput) {
+    const r = remember(this.facts, input, "2026-10-16T12:00:00.000Z", `f${this.facts.length + 1}`);
+    this.facts = r.facts;
+    return r;
+  }
+  async forget(idOrKey: string) {
+    const before = this.facts.length;
+    this.facts = forget(this.facts, idOrKey);
+    return before - this.facts.length;
+  }
   async voice() {
     return this.voiceSettings;
   }
-  async updateVoice(patch: Partial<FakeSettings["voiceSettings"]>) {
+  async updateVoice(patch: Partial<VoiceSettings>) {
     this.voiceSettings = { ...this.voiceSettings, ...patch };
     return this.voiceSettings;
   }
@@ -375,6 +393,74 @@ class FakeSettings implements SettingsStore {
 }
 
 describe("self-control tools", () => {
+  it("voice.update turns continuous conversation off — the same setting the Voice page has", async () => {
+    const settings = new FakeSettings();
+    const { ports } = withProviders({ settings });
+    const out = await executeToolCall(ports, makeCtx(), {
+      name: "voice.update",
+      args: { continuous: false, language: "en" },
+    });
+    expect(out).toMatchObject({
+      status: "succeeded",
+      display: {
+        kind: "setting_changed",
+        changes: [
+          { setting: "continuous", from: "on", to: "off" },
+          { setting: "voice_language", from: "auto", to: "en" },
+        ],
+      },
+    });
+    expect(settings.voiceSettings).toEqual({ continuous: false, language: "en" });
+  });
+
+  it("the wake phrase isn't editable: there is no tool for another phrase", async () => {
+    const { ports } = withProviders({ settings: new FakeSettings() });
+    const old = await executeToolCall(ports, makeCtx(), {
+      name: "voice.setWakePhrase",
+      args: { phrase: "liz" },
+    });
+    expect(old.status).toBe("failed");
+    const bad = await executeToolCall(ports, makeCtx(), {
+      name: "voice.update",
+      args: { phrase: "liz" },
+    });
+    expect(bad.status).toBe("failed");
+  });
+
+  it("memory: remember with its conversation, list, forget", async () => {
+    const settings = new FakeSettings();
+    const { ports } = withProviders({ settings });
+    const ctx = makeCtx({ conversationId: "conv-1" });
+    const saved = await executeToolCall(ports, ctx, {
+      name: "memory.remember",
+      args: { key: "trabajo.horario", value: "De 9 a 18", stated: true },
+    });
+    expect(saved).toMatchObject({ status: "succeeded", output: { saved: true } });
+    expect(settings.facts[0]).toMatchObject({ sources: ["conv-1"], confidence: "stated" });
+    const listed = await executeToolCall(ports, ctx, { name: "memory.list", args: {} });
+    expect(listed).toMatchObject({
+      status: "succeeded",
+      output: { enabled: true, facts: [{ key: "trabajo.horario", value: "De 9 a 18" }] },
+    });
+    const gone = await executeToolCall(ports, ctx, {
+      name: "memory.forget",
+      args: { fact: "trabajo.horario" },
+    });
+    expect(gone).toMatchObject({ status: "succeeded", output: { forgotten: 1 } });
+    expect(settings.facts).toEqual([]);
+  });
+
+  it("memory never stores secrets", async () => {
+    const settings = new FakeSettings();
+    const { ports } = withProviders({ settings });
+    const out = await executeToolCall(ports, makeCtx(), {
+      name: "memory.remember",
+      args: { key: "banco", value: "Mi contraseña es 1234", stated: true },
+    });
+    expect(out.status).toBe("failed");
+    expect(settings.facts).toEqual([]);
+  });
+
   it("changes theme and accent through recorded, audited actions", async () => {
     const settings = new FakeSettings();
     const { ports, log } = withProviders({ settings });

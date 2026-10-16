@@ -16,7 +16,7 @@ import { availableModules, type NativeModuleKey } from "@/core/modules/registry"
 import type { ConnectionHealth } from "@/core/providers/health";
 import { connectGoogle, connectNotion } from "@/features/connections/actions";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
-import { updateProfile } from "@/features/settings/actions";
+import { chooseContinuousConversation, updateProfile } from "@/features/settings/actions";
 import { errorText, LOCALES, type Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { timezoneOptions } from "@/lib/timezones";
@@ -150,8 +150,10 @@ export function OnboardingFlow({
           )}
 
           {step === "uses" && (
-            <UsesStep initial={modules} onBack={() => go("profile")} onDone={() => go("connect")} />
+            <UsesStep initial={modules} onBack={() => go("profile")} onDone={() => go("voice")} />
           )}
+
+          {step === "voice" && <VoiceStep onBack={() => go("uses")} onDone={() => go("connect")} />}
 
           {step === "connect" && (
             <ConnectStep
@@ -159,7 +161,7 @@ export function OnboardingFlow({
               googleAvailable={googleAvailable}
               notionAvailable={notionAvailable}
               returned={returned}
-              onBack={() => go("uses")}
+              onBack={() => go("voice")}
               onNext={() => go("space")}
             />
           )}
@@ -303,6 +305,51 @@ function UsesStep({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Continuous conversation (ADR-068): an explicit choice, never on by default. On the web it is
+ * only what a browser allows; the wake phrase in the background is the future mobile app's.
+ */
+function VoiceStep({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
+  const { t } = useI18n();
+  const o = t.onboarding;
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const choose = (on: boolean) =>
+    start(async () => {
+      setError(null);
+      const r = await chooseContinuousConversation(on, "onboarding");
+      if (!r.ok) return setError(errorText(t, r.error));
+      onDone();
+    });
+  return (
+    <div className="flex w-full flex-col items-center">
+      <Orb size={88} state="listening" />
+      <h1 id="onboarding-voice" className="mt-6 text-2xl font-semibold tracking-tight">
+        {o.voiceTitle}
+      </h1>
+      <p className="mt-2 max-w-md text-sm text-muted">{o.voiceBody}</p>
+      <p className="mt-4 max-w-md text-[13px] text-faint">{o.voiceFuture}</p>
+      {error && (
+        <p role="alert" className="mt-4 text-sm text-danger-text">
+          {error}
+        </p>
+      )}
+      <div className="mt-8 flex flex-col-reverse gap-2 sm:flex-row">
+        <Button variant="ghost" onClick={onBack} disabled={pending}>
+          {o.back}
+        </Button>
+        <Button variant="secondary" onClick={() => choose(false)} disabled={pending}>
+          {o.voiceOff}
+        </Button>
+        <Button onClick={() => choose(true)} disabled={pending}>
+          {o.voiceOn}
+        </Button>
+      </div>
+      <p className="mt-4 text-[12.5px] text-faint">{o.voiceChange}</p>
     </div>
   );
 }

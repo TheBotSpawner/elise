@@ -435,6 +435,10 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       // Mi ELISE (ADR-064): the person's own choice of modules; reversible, audited.
       listModules: READ,
       setModules: WRITE,
+      // Memory (ADR-068): the person's own facts; visible and editable in Settings.
+      listMemory: READ,
+      remember: WRITE,
+      forget: WRITE,
     },
   },
   // Live Workspace (ADR-013): presentation only — no user data changes, so reads. Meeting

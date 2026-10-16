@@ -403,7 +403,16 @@ export type ToolDisplay =
   | {
       kind: "setting_changed";
       changes: {
-        setting: "timezone" | "language" | "notifications" | "schedule" | "wake_phrase" | "module";
+        setting:
+          | "timezone"
+          | "language"
+          | "notifications"
+          | "schedule"
+          | "wake_phrase"
+          | "module"
+          | "continuous"
+          | "voice_language"
+          | "memory";
         from: string | null;
         to: string;
         subject?: string;

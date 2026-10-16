@@ -13,7 +13,6 @@ import {
   type TurnModality,
   type VoiceTurnMeta,
 } from "@/core/interaction";
-import { WAKE_LABELS, WAKE_PHRASES, type WakePhrase } from "@/core/voice/wake";
 import { applyOps, emptyWorkspace, type WorkspaceState } from "@/core/workspace/model";
 import { locationForTurn } from "@/features/location/shared-location";
 import { embeddedSnapshot } from "@/features/music/store";
@@ -409,15 +408,12 @@ export function useEliseChat(initial: {
 }
 
 function announceVoicePrefs(changes: Extract<ToolDisplay, { kind: "setting_changed" }>["changes"]) {
-  const detail: { wakePhrase?: WakePhrase; wakeEnabled?: boolean } = {};
-  for (const c of changes) {
-    if (c.setting !== "wake_phrase") continue;
-    if (c.subject === "enabled") detail.wakeEnabled = c.to === "on";
-    else {
-      const phrase = WAKE_PHRASES.find((p) => WAKE_LABELS[p] === c.to);
-      if (phrase) detail.wakePhrase = phrase;
-    }
-  }
-  if (Object.keys(detail).length)
-    window.dispatchEvent(new CustomEvent(VOICE_PREFS_EVENT, { detail }));
+  // Continuous conversation also decides whether "Elise" wakes a resting session (ADR-068).
+  const c = changes.find((x) => x.setting === "continuous");
+  if (c)
+    window.dispatchEvent(
+      new CustomEvent(VOICE_PREFS_EVENT, {
+        detail: { continuous: c.to === "on", wakeEnabled: c.to === "on" },
+      }),
+    );
 }
