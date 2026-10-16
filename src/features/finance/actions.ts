@@ -8,6 +8,7 @@ import { runUserTool } from "@/application/elise";
 import {
   cancelFinanceImport,
   confirmFinanceImport,
+  financeImportStatus,
   importIssues,
   inspectImport,
   prepareFileImport,
@@ -134,6 +135,11 @@ export async function confirmImportAction(importId: string) {
 
 export async function cancelImportAction(importId: string) {
   return run(async () => cancelFinanceImport(await requireAuthContext(), id.parse(importId)));
+}
+
+/** A running or finished import: progress and result (ADR-073). */
+export async function importStatusAction(importId: string) {
+  return run(async () => financeImportStatus(await requireAuthContext(), id.parse(importId)));
 }
 
 export async function importIssuesAction(importId: string) {

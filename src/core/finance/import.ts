@@ -14,6 +14,7 @@ import {
   norm,
   normalizeStatus,
   normalizeType,
+  transferDirection,
   type TransactionStatus,
   type TransactionType,
 } from "../capabilities/finance";
@@ -41,6 +42,8 @@ export const FINANCE_FIELDS = [
   "category",
   "subcategory",
   "account",
+  /** A transfer's destination account (ADR-073). */
+  "toAccount",
   "paymentMethod",
   "project",
   "status",
@@ -103,6 +106,7 @@ const SYNONYMS: Record<FinanceField, string[]> = {
     "concept",
     "memo",
     "item",
+    "note",
   ],
   counterparty: [
     "counterparty",
@@ -132,6 +136,7 @@ const SYNONYMS: Record<FinanceField, string[]> = {
     "wallet",
     "billetera",
   ],
+  toAccount: ["to account", "cuenta destino", "destino", "destination", "to"],
   paymentMethod: ["metodo de pago", "método de pago", "payment", "pago con"],
   project: ["project", "proyecto", "entity", "entidad", "empresa", "unidad de negocio"],
   status: ["status", "estado", "state"],
@@ -150,6 +155,13 @@ const SYNONYMS: Record<FinanceField, string[]> = {
   // ADR-052: who the row belongs to (Personal, Empresa…), when the file says it.
   book: ["ambito", "ámbito", "book", "libro", "unidad"],
 };
+
+/** One name of the file → an existing account/category, a new one, or "the user decides". */
+export const entityDecision = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("match"), id: z.uuid() }),
+  z.object({ action: z.literal("create") }),
+]);
+export type EntityDecision = z.infer<typeof entityDecision>;
 
 export const financeMappingSchema = z
   .object({
@@ -171,6 +183,16 @@ export const financeMappingSchema = z
     includeDuplicates: z.boolean().default(false),
     /** ADR-052: the Book rows belong to when the file doesn't say (else account/default Book). */
     defaultBookId: z.uuid().nullable().default(null),
+    /**
+     * ADR-073: what each account / category name of the file becomes, decided once per name
+     * (key: entityKey of the name; categories "<type>|<key>"). Missing names resolve at preview.
+     */
+    entities: z
+      .object({
+        accounts: z.record(z.string().max(200), entityDecision).default({}),
+        categories: z.record(z.string().max(220), entityDecision).default({}),
+      })
+      .default({ accounts: {}, categories: {} }),
   })
   .strict();
 export type FinanceMapping = z.infer<typeof financeMappingSchema>;
@@ -251,7 +273,10 @@ export function parseDate(value: string, format: DateFormat | null): string | nu
     if (serial < 20000 || serial > 80000) return null;
     return new Date(Date.UTC(1899, 11, 30) + serial * 86_400_000).toISOString().slice(0, 10);
   }
-  const m = s.match(/^(\d{1,4})[/.-](\d{1,2})[/.-](\d{1,4})$/);
+  // A time of day may follow ("11/08/2026 22:26:48"): the day is what Finance keeps.
+  const m = s.match(
+    /^(\d{1,4})[/.-](\d{1,2})[/.-](\d{1,4})(?:[ T,]+\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(?:[ap]\.?m\.?)?)?$/i,
+  );
   if (!m) return null;
   const [p1, p2, p3] = [m[1]!, m[2]!, m[3]!];
   const year = (y: string) => (y.length === 2 ? 2000 + Number(y) : Number(y));
@@ -274,6 +299,8 @@ export interface NormalizedTransaction {
   category: string | null;
   subcategory: string | null;
   account: string | null;
+  /** Transfers: where the money went (`account` is where it left). */
+  toAccount: string | null;
   paymentMethod: string | null;
   project: string | null;
   status: TransactionStatus;
@@ -293,7 +320,11 @@ export type RowIssue =
   | "unknown_type"
   | "missing_currency"
   | "unknown_currency"
-  | "unknown_status";
+  | "unknown_status"
+  /** A transfer without both accounts: never guessed (ADR-073). */
+  | "transfer_accounts"
+  /** A name ELISE can't place without the user (ambiguous account or category). */
+  | "needs_review";
 
 export type RowResult =
   | { row: number; ok: true; tx: NormalizedTransaction }
@@ -363,6 +394,21 @@ export function normalizeRow(cells: Cell[], mapping: FinanceMapping, row: number
   const status = statusText ? normalizeStatus(statusText) : "completed";
   if (!status) issues.push("unknown_status");
 
+  // A transfer moves money between two of the user's accounts. Files that have no destination
+  // column write the other account where the category goes ("Transfer-Out" from BNA, category
+  // "Mercado Pago"); a "Transfer-In" row is the same money seen from the receiving account.
+  let account = clip(col("account"), 80);
+  let toAccount = clip(col("toAccount"), 80);
+  let categoryText = col("category") ?? "";
+  if (type === "transfer") {
+    const other = toAccount ?? clip(cleanCategoryName(categoryText), 80);
+    if (transferDirection(typeText) === "in") [account, toAccount] = [other, account];
+    else toAccount = other;
+    categoryText = "";
+    // A one-sided transfer stays readable here (connected sheets show it as before); importing
+    // it waits for the user instead of guessing the other account (ADR-073).
+  }
+
   if (issues.length) return { row, ok: false, issues };
   const tx = {
     type: type!,
@@ -372,9 +418,10 @@ export function normalizeRow(cells: Cell[], mapping: FinanceMapping, row: number
     description: clip(col("description"), 300),
     counterparty: clip(col("counterparty"), 200),
     // "Gastos - Herramientas" → "Herramientas": the prefix repeats the type (ADR-052).
-    category: clip(cleanCategoryName(col("category") ?? ""), 80),
+    category: clip(cleanCategoryName(categoryText), 80),
     subcategory: clip(col("subcategory"), 80),
-    account: clip(col("account"), 80),
+    account,
+    toAccount,
     paymentMethod: clip(col("paymentMethod"), 80),
     project: clip(col("project"), 120),
     status: status!,

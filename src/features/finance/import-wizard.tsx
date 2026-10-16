@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
@@ -8,9 +8,10 @@ import { useEffect, useState, useTransition } from "react";
 import type { ImportInspection, ImportPreviewView } from "@/application/finance-import";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Label, Select } from "@/components/ui/input";
-import type { FinanceMapping } from "@/core/finance/import";
+import type { EntityDecision, FinanceMapping } from "@/core/finance/import";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
+import { cn } from "@/lib/utils";
 
 import {
   cancelImportAction,
@@ -18,26 +19,29 @@ import {
   inspectImportAction,
   previewImportAction,
 } from "./actions";
+import { ImportProgress, ImportUnderstanding } from "./import-review";
 import { MappingEditor, PreviewPanel } from "./mapping";
 
 type Stage =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "mapping" }
-  | { kind: "importing"; background: boolean }
-  | { kind: "done"; imported: number };
+  | { kind: "importing" };
 
 /**
- * One import, step by step: columns (with ELISE's suggestion) → preview of every row →
- * confirm. Nothing is written until "Import N".
+ * One import (ADR-073): ELISE reads the file and says what it understood (columns, accounts,
+ * categories), asking only what it can't decide; the user corrects what they want and starts
+ * it; the import runs (in the background when large) and its progress and result show here.
+ * Nothing is written until "Import N".
  */
 export function ImportWizard({ importId, status }: { importId: string; status: string }) {
   const { t } = useI18n();
   const w = t.finance.wizard;
   const router = useRouter();
   const [stage, setStage] = useState<Stage>(
-    status === "importing" ? { kind: "importing", background: true } : { kind: "loading" },
+    status === "importing" || status === "completed" ? { kind: "importing" } : { kind: "loading" },
   );
+  const [columnsOpen, setColumnsOpen] = useState(false);
   const [inspection, setInspection] = useState<ImportInspection | null>(null);
   const [mapping, setMapping] = useState<FinanceMapping | null>(null);
   const [preview, setPreview] = useState<ImportPreviewView | null>(null);
@@ -55,23 +59,16 @@ export function ImportWizard({ importId, status }: { importId: string; status: s
       setInspection(r.value);
       setMapping(r.value.mapping);
       setStage({ kind: "mapping" });
+      // What ELISE understood, right away: no separate "preview" step to find.
+      const p = await previewImportAction(importId, r.value.mapping);
+      if (p.ok) setPreview({ ...p.value, sameFile: r.value.sameFile });
+      else setError(errorText(t, p.error));
     });
 
   useEffect(() => {
     if (status === "uploading" || status === "uploaded") load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- inspect once on arrival
   }, []);
-
-  // A background import finishes on its own; follow its status.
-  useEffect(() => {
-    if (stage.kind !== "importing" || !stage.background) return;
-    const timer = setInterval(() => router.refresh(), 4000);
-    return () => clearInterval(timer);
-  }, [stage, router]);
-  useEffect(() => {
-    if (status === "completed" && stage.kind === "importing")
-      router.push("/my-elise/finance/sources");
-  }, [status, stage.kind, router]);
 
   const runPreview = (m: FinanceMapping) =>
     startTransition(async () => {
@@ -80,6 +77,17 @@ export function ImportWizard({ importId, status }: { importId: string; status: s
       if (!r.ok) setError(errorText(t, r.error));
       else setPreview({ ...r.value, sameFile: inspection?.sameFile ?? null });
     });
+
+  /** One decision per name ("Cash" is the user's "Efectivo"); every row follows (ADR-073). */
+  const decide = (kind: "accounts" | "categories", key: string, decision: EntityDecision) => {
+    if (!mapping) return;
+    const next = {
+      ...mapping,
+      entities: { ...mapping.entities, [kind]: { ...mapping.entities[kind], [key]: decision } },
+    };
+    setMapping(next);
+    runPreview(next);
+  };
 
   if (stage.kind === "loading")
     return (
@@ -99,25 +107,7 @@ export function ImportWizard({ importId, status }: { importId: string; status: s
         </Link>
       </div>
     );
-  if (stage.kind === "importing")
-    return (
-      <p className="flex items-center gap-2 text-[14px] text-muted" aria-live="polite">
-        <Loader2 className="size-4 animate-spin" aria-hidden />
-        {stage.background ? w.background : w.importing}
-      </p>
-    );
-  if (stage.kind === "done")
-    return (
-      <div className="flex flex-col items-start gap-4" aria-live="polite">
-        <p className="flex items-center gap-2 text-[16px]">
-          <CheckCircle2 className="size-5 text-success" aria-hidden />
-          {w.done(stage.imported)}
-        </p>
-        <Link href="/my-elise/finance" className={buttonVariants()}>
-          {w.openFinance}
-        </Link>
-      </div>
-    );
+  if (stage.kind === "importing") return <ImportProgress importId={importId} />;
 
   if (!inspection || !mapping) return null;
   const notes = [
@@ -150,16 +140,46 @@ export function ImportWizard({ importId, status }: { importId: string; status: s
         )}
       </div>
 
-      <MappingEditor
-        headers={inspection.headers}
-        sample={inspection.sample}
-        mapping={mapping}
-        fromAI={inspection.fromAI}
-        onChange={(m) => {
-          setMapping(m);
-          setPreview(null);
-        }}
-      />
+      {preview ? (
+        <ImportUnderstanding
+          inspection={inspection}
+          preview={preview}
+          mapping={mapping}
+          onDecide={decide}
+        />
+      ) : (
+        <p className="flex items-center gap-2 text-[14px] text-muted" aria-live="polite">
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+          {w.previewing}
+        </p>
+      )}
+
+      <div className="flex flex-col gap-4">
+        <button
+          type="button"
+          aria-expanded={columnsOpen}
+          onClick={() => setColumnsOpen(!columnsOpen)}
+          className="flex items-center gap-1.5 self-start text-[12.5px] font-medium tracking-wide text-faint uppercase hover:text-fg"
+        >
+          <ChevronDown
+            className={cn("size-4 transition-transform", columnsOpen && "rotate-180")}
+            aria-hidden
+          />
+          {w.columns}
+        </button>
+        {columnsOpen && (
+          <MappingEditor
+            headers={inspection.headers}
+            sample={inspection.sample}
+            mapping={mapping}
+            fromAI={inspection.fromAI}
+            onChange={(m) => {
+              setMapping(m);
+              setPreview(null);
+            }}
+          />
+        )}
+      </div>
 
       {preview ? (
         <>
@@ -215,17 +235,13 @@ export function ImportWizard({ importId, status }: { importId: string; status: s
             onClick={() =>
               startTransition(async () => {
                 setError(null);
-                setStage({ kind: "importing", background: false });
                 const r = await confirmImportAction(importId);
                 if (!r.ok) {
                   // Keep the mapping: the user can fix what's wrong and try again.
-                  setStage({ kind: "mapping" });
                   setError(errorText(t, r.error));
                   return;
                 }
-                if (r.value.status === "completed")
-                  setStage({ kind: "done", imported: r.value.imported });
-                else setStage({ kind: "importing", background: true });
+                setStage({ kind: "importing" });
               })
             }
           >

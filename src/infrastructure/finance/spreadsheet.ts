@@ -1,3 +1,4 @@
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import readXlsxFile from "read-excel-file/node";
 
 import { AppError } from "@/core/errors";
@@ -6,7 +7,7 @@ import { MAX_FINANCE_IMPORT_ROWS, parseCsv, type Cell } from "@/core/finance/imp
 /**
  * Tabular files → text cells for Core. XLSX numbers keep the exact digits stored in the file
  * (no float round trip); date cells become ISO dates. Legacy .xls isn't supported (save as
- * .xlsx or CSV).
+ * .xlsx or CSV). Macros and formulas are never run: only stored values are read.
  */
 
 export interface ParsedSheet {
@@ -60,13 +61,52 @@ function limit(rows: Cell[][]): Cell[][] {
   return rows;
 }
 
+const unreadable = (cause?: unknown) =>
+  new AppError("VALIDATION_ERROR", "This doesn't look like a readable .xlsx file", {
+    recovery: "review",
+    cause,
+  });
+
+/**
+ * The workbook as a plain, standard zip the reader understands (ADR-073). Exports from phone
+ * apps stream their zip (data descriptors, zip64 headers) and write emoji as numeric character
+ * references (`&#x1f35c;`) that the reader truncates to 16 bits ("🍜" U+1F35C becomes U+F35C). Reading the
+ * central directory and spelling those characters out fixes both, without touching any value.
+ * A password-protected workbook (an OLE container, like legacy .xls) is refused clearly.
+ */
+export function normalizeXlsx(bytes: Uint8Array): Uint8Array {
+  if (bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0)
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "This workbook is password-protected or an old .xls: save it as .xlsx or CSV without a password",
+      { recovery: "review" },
+    );
+  let files: Record<string, Uint8Array>;
+  try {
+    files = unzipSync(bytes);
+  } catch (error) {
+    throw unreadable(error);
+  }
+  for (const [name, data] of Object.entries(files)) {
+    if (!/^xl\/(sharedStrings|worksheets\/[^/]+)\.xml$/.test(name)) continue;
+    const xml = strFromU8(data);
+    const fixed = xml.replace(/&#(x[0-9a-fA-F]{5,6}|\d{5,7});/g, (ref, code: string) => {
+      const cp = code.startsWith("x") ? parseInt(code.slice(1), 16) : Number(code);
+      return cp > 0xffff && cp <= 0x10ffff ? String.fromCodePoint(cp) : ref;
+    });
+    if (fixed !== xml) files[name] = strToU8(fixed);
+  }
+  return zipSync(files);
+}
+
 export async function parseSpreadsheet(
   bytes: Uint8Array,
   kind: SpreadsheetKind,
 ): Promise<ParsedSheet[]> {
   if (kind === "csv") return [{ name: "CSV", rows: limit(parseCsv(decodeText(bytes))) }];
+  const workbook = normalizeXlsx(bytes);
   try {
-    const sheets = await readXlsxFile(Buffer.from(bytes), {
+    const sheets = await readXlsxFile(Buffer.from(workbook), {
       // Keep numbers as the exact text stored in the file.
       parseNumber: (s: string) => s,
     });
@@ -78,9 +118,6 @@ export async function parseSpreadsheet(
     }));
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError("VALIDATION_ERROR", "This doesn't look like a readable .xlsx file", {
-      recovery: "review",
-      cause: error,
-    });
+    throw unreadable(error);
   }
 }

@@ -2474,7 +2474,39 @@ export const es: Dictionary = {
     undone: (n: number) => `${n} movimientos archivados`,
     wizard: {
       uploading: "Subiendo…",
-      reading: "Leyendo el archivo…",
+      reading: "Estoy analizando el archivo…",
+      understood: (n: number) => `Encontré ${n} movimientos y pude interpretarlos.`,
+      needsDecisions: (n: number) =>
+        n === 1
+          ? "Necesito que elijas 1 cuenta o categoría."
+          : `Necesito que elijas ${n} cuentas o categorías.`,
+      ignored: (cols: string) => `No uso: ${cols}`,
+      accounts: "Cuentas",
+      categories: (n: number) => `Categorías · ${n}`,
+      rowsCount: (n: number) => `${n} ${n === 1 ? "fila" : "filas"}`,
+      how: {
+        exact: "Igual",
+        alias: "Como la última vez",
+        synonym: "Equivalente",
+        similar: "Parecida",
+        semantic: "Sugerida por ELISE",
+        created: "Nueva",
+        review: "Elegí cuál",
+      },
+      choose: "Elegí…",
+      chooseFor: (name: string) => `Qué es «${name}»`,
+      newAccount: (name: string) => `Nueva cuenta: ${name}`,
+      newCategory: (name: string) => `Nueva categoría: ${name}`,
+      heldBack: (n: number) =>
+        `${n} ${n === 1 ? "fila queda" : "filas quedan"} para revisar hasta que elijas.`,
+      progress: (done: number, total: number) => `Importando movimientos · ${done} / ${total}`,
+      canLeave: "Podés cerrar esta pantalla. ELISE sigue trabajando.",
+      completed: "Importación completada",
+      resultImported: (n: number) => `${n} importados`,
+      resultDuplicates: (n: number) => `${n} duplicados omitidos`,
+      resultReview: (n: number) => `${n} para revisar`,
+      resultInvalid: (n: number) => `${n} con datos incompletos`,
+
       title: "Importar movimientos",
       sheet: "Hoja",
       columns: "Columnas",
@@ -2492,6 +2524,7 @@ export const es: Dictionary = {
         category: "Categoría",
         subcategory: "Subcategoría",
         account: "Cuenta o medio de pago",
+        toAccount: "Cuenta destino",
         paymentMethod: "Medio de pago",
         project: "Proyecto",
         status: "Estado",
@@ -2533,6 +2566,8 @@ export const es: Dictionary = {
         missing_currency: "Sin moneda",
         unknown_currency: "Moneda desconocida",
         unknown_status: "Estado desconocido",
+        transfer_accounts: "Transferencia sin cuenta de origen o destino",
+        needs_review: "Cuenta o categoría para revisar",
       },
       needs: {
         numberFormat: "Elegí cómo se escriben los montos.",

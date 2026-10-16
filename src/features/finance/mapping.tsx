@@ -26,6 +26,7 @@ const MAIN: FinanceField[] = [
 const EXTRA: FinanceField[] = [
   "incomeAmount",
   "expenseAmount",
+  "toAccount",
   "subcategory",
   "paymentMethod",
   "notes",

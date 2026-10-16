@@ -287,6 +287,7 @@ export function fingerprint(t: {
 const TYPE_WORDS: Record<string, TransactionType> = {
   transfer: "transfer",
   transferencia: "transfer",
+  traspaso: "transfer",
   "transferencia interna": "transfer",
   "movimiento interno": "transfer",
   "internal transfer": "transfer",
@@ -301,6 +302,9 @@ const TYPE_WORDS: Record<string, TransactionType> = {
   debit: "expense",
   pago: "expense",
   compra: "expense",
+  purchase: "expense",
+  withdrawal: "expense",
+  retiro: "expense",
   out: "expense",
   income: "income",
   ingreso: "income",
@@ -311,11 +315,27 @@ const TYPE_WORDS: Record<string, TransactionType> = {
   cobro: "income",
   venta: "income",
   revenue: "income",
+  deposit: "income",
+  deposito: "income",
+  reintegro: "income",
+  refund: "income",
   in: "income",
 };
 
+/** "Transfer-Out", "transferencia saliente", "Traspaso in": a transfer and its direction. */
+const DIRECTED_TRANSFER =
+  /^(transfer|transferencia|traspaso|transf)\s*[-_/]?\s*(out|in|saliente|entrante|enviada|recibida)$/;
+
+/** Which side of a transfer a row describes, when the file says ("Transfer-In" → "in"). */
+export function transferDirection(value: string | null | undefined): "in" | "out" | null {
+  const m = DIRECTED_TRANSFER.exec(norm(value ?? ""));
+  if (!m) return null;
+  return /^(in|entrante|recibida)$/.test(m[2]!) ? "in" : "out";
+}
+
 export function normalizeType(value: string | null | undefined): TransactionType | null {
-  return value ? (TYPE_WORDS[norm(value)] ?? null) : null;
+  if (!value) return null;
+  return TYPE_WORDS[norm(value)] ?? (transferDirection(value) ? "transfer" : null);
 }
 
 const STATUS_WORDS: Record<string, TransactionStatus> = {

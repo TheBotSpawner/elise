@@ -28,14 +28,17 @@ class Query implements PromiseLike<{ data: unknown; error: null }> {
   private payload: Row | Row[] | null = null;
   private conflict: string[] = [];
   private returning = false;
+  /** `select(cols, { count: "exact", head: true })`: the count, no rows. */
+  private counting: { head: boolean } | null = null;
 
   constructor(
     private readonly db: FakeSupabase,
     private readonly table: string,
   ) {}
 
-  select() {
+  select(_cols?: string, opts?: { count?: string; head?: boolean }) {
     this.returning = true;
+    if (opts?.count) this.counting = { head: Boolean(opts.head) };
     return this;
   }
   insert(rows: Row | Row[]) {
@@ -68,6 +71,29 @@ class Query implements PromiseLike<{ data: unknown; error: null }> {
   }
   lt(k: string, v: unknown) {
     this.filters.push((r) => String(r[k] ?? "") < String(v));
+    return this;
+  }
+  gte(k: string, v: unknown) {
+    this.filters.push((r) => String(r[k] ?? "") >= String(v));
+    return this;
+  }
+  lte(k: string, v: unknown) {
+    this.filters.push((r) => String(r[k] ?? "") <= String(v));
+    return this;
+  }
+  /** Only `not(col, "is", null)`. */
+  not(k: string, _op: "is", v: unknown) {
+    this.filters.push((r) => (r[k] ?? null) !== v);
+    return this;
+  }
+  /** jsonb array containment: the column holds every given value. */
+  contains(k: string, v: unknown[]) {
+    this.filters.push(
+      (r) => Array.isArray(r[k]) && v.every((x) => (r[k] as unknown[]).includes(x)),
+    );
+    return this;
+  }
+  range() {
     return this;
   }
   is(k: string, v: unknown) {
@@ -147,8 +173,9 @@ class Query implements PromiseLike<{ data: unknown; error: null }> {
     try {
       const rows = this.run();
       return Promise.resolve({
-        data: this.returning || this.op === "select" ? rows : null,
+        data: this.counting?.head ? null : this.returning || this.op === "select" ? rows : null,
         error: null,
+        ...(this.counting ? { count: rows.length } : {}),
       }).then(ok, fail);
     } catch (e) {
       return Promise.reject(e).then(ok, fail);
