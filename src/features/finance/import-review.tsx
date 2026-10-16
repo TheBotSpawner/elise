@@ -57,7 +57,11 @@ export function ImportUnderstanding({
           ) : (
             <CheckCircle2 className="size-5 text-success" aria-hidden />
           )}
-          {review ? w.needsDecisions(review) : w.understood(preview.willImport)}
+          {review
+            ? w.needsDecisions(review)
+            : preview.willImport === 0 && preview.duplicates > 0
+              ? w.alreadyImported(preview.duplicates)
+              : w.understood(preview.willImport)}
         </p>
         <p className="text-[13px] text-muted">
           {[

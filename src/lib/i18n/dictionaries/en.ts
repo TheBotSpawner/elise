@@ -2442,6 +2442,8 @@ export const en = {
       uploading: "Uploading…",
       reading: "Analyzing the file…",
       understood: (n: number) => `I found ${n} movements and understood them.`,
+      alreadyImported: (n: number) =>
+        `These ${n} movements are already in ELISE: nothing new to import.`,
       needsDecisions: (n: number) =>
         n === 1
           ? "Choose 1 account or category for me."
