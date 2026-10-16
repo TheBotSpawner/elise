@@ -76,9 +76,12 @@ const asks = (reply: string) => /¿\s*(quer[eé]s|lo (corrijo|cambio)|confirm)/i
 test("setup", async ({ page }) => {
   await signIn(page);
   await expect
-    .poll(async () => (await admin!.from("user_profiles").select("id").eq("id", userId)).data?.length, {
-      timeout: 30_000,
-    })
+    .poll(
+      async () => (await admin!.from("user_profiles").select("id").eq("id", userId)).data?.length,
+      {
+        timeout: 30_000,
+      },
+    )
     .toBe(1);
   await admin!.from("user_profiles").update({ onboarding_status: "skipped" }).eq("id", userId);
   workspaceId = (await admin!.from("workspaces").select("id").eq("owner_user_id", userId).single())
@@ -137,16 +140,55 @@ test("3: habit — “Mejor 30.” updates the same habit", async ({ page }) => 
   expect(asks(r2)).toBe(false);
 });
 
+test("1b: a misheard title already written is corrected in place", async ({ page }) => {
+  await signIn(page);
+  await newChat(page);
+  // Written literally on purpose, as speech recognition would have left it.
+  const r1 = await say(page, "Agregá una tarea, literal así: “pagar el hosting de Mielist”.");
+  const before = (
+    await admin!
+      .from("tasks")
+      .select("id, title")
+      .eq("workspace_id", workspaceId)
+      .ilike("title", "%hosting%")
+  ).data;
+  const r2 = await say(page, "No, ahí lo escribiste mal. Era Mi ELISE, como tu nombre.");
+  const after = (
+    await admin!
+      .from("tasks")
+      .select("id, title")
+      .eq("workspace_id", workspaceId)
+      .ilike("title", "%hosting%")
+  ).data;
+  report.case1b = { r1, r2, before, after };
+  expect(before?.[0]?.title).toMatch(/Mielist/);
+  expect(after).toHaveLength(1);
+  expect(after![0]!.id).toBe(before![0]!.id);
+  expect(after![0]!.title).toBe("Pagar el hosting de Mi ELISE");
+  expect(asks(r2)).toBe(false);
+});
+
 test("4: two things just written — asks which", async ({ page }) => {
   await signIn(page);
   await newChat(page);
-  const r1 = await say(
-    page,
-    "Agregá una tarea revisar presupuesto y además registrá un gasto de 5000 en supermercado.",
-  );
+  const r1 = await say(page, "Agregá la tarea revisar presupuesto y agregá yerba a Compras.");
   const r2 = await say(page, "Cambialo a Personal.");
   report.case4 = { r1, r2 };
   expect(r2).toMatch(/\?/);
+});
+
+test("4b: one object, “cambialo a Personal” is not a rename", async ({ page }) => {
+  await signIn(page);
+  await newChat(page);
+  const r1 = await say(page, "Agregá la tarea comprar regalo para Ana.");
+  const r2 = await say(page, "Cambialo a Personal.");
+  const { data } = await admin!
+    .from("tasks")
+    .select("title")
+    .eq("workspace_id", workspaceId)
+    .ilike("title", "%regalo%");
+  report.case4b = { r1, r2, data };
+  expect(data?.[0]?.title).toMatch(/regalo/i);
 });
 
 test("6: a literal name is respected", async ({ page }) => {

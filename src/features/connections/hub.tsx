@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Search } from "lucide-react";
+import { AlertTriangle, ChevronRight, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
@@ -111,7 +111,7 @@ export function ConnectionsHub({
               aria-pressed={filter === f}
               onClick={() => setFilter(f)}
               className={cn(
-                "h-8 rounded-full border px-3 text-[13px] transition-colors",
+                "h-10 rounded-full border px-3.5 text-[14px] transition-colors md:h-8 md:px-3 md:text-[13px]",
                 filter === f
                   ? "border-accent-line bg-accent-soft text-accent-text"
                   : "border-border text-muted hover:border-border-strong hover:text-fg",
@@ -133,7 +133,7 @@ export function ConnectionsHub({
           <h2 id="hub-connected" className="type-label text-faint">
             {h.connectedTitle}
           </h2>
-          <ul className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
+          <ul className="-mx-4 no-scrollbar flex snap-x gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             {connected.map((e) => (
               <li key={e.id} className="snap-start">
                 <ConnectedChip entry={e} summary={summaries.get(e.id)!} />
@@ -181,7 +181,8 @@ function ProviderGrid({
   summaries: Map<string, ProviderSummary>;
 }) {
   return (
-    <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    // Phones (ADR-066): one grouped list of rows with a chevron; cards from sm.
+    <ul className="grid divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface sm:grid-cols-2 sm:gap-2 sm:divide-y-0 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent lg:grid-cols-3">
       {entries.map((e) => (
         <li key={e.id}>
           <ProviderCard entry={e} summary={summaries.get(e.id)!} />
@@ -228,7 +229,7 @@ function ProviderCard({
       <span className="min-w-0 flex-1">
         <span className="block text-[14.5px] font-medium">{entry.name}</span>
         {/* The whole description, in at most two lines (descriptions are written to fit). */}
-        <span className="line-clamp-2 block text-[13px] leading-snug text-muted">
+        <span className="block truncate text-[13px] leading-snug text-muted sm:line-clamp-2 sm:whitespace-normal">
           {h.descriptions[entry.id]}
         </span>
         <span
@@ -250,12 +251,15 @@ function ProviderCard({
           <span className="truncate">{line.text}</span>
         </span>
       </span>
+      {!planned && (
+        <ChevronRight className="size-4 shrink-0 self-center text-faint sm:hidden" aria-hidden />
+      )}
     </>
   );
   const frame =
-    "flex h-full items-start gap-3 rounded-2xl border bg-surface px-4 py-3.5 transition-colors";
+    "flex h-full items-start gap-3 px-4 py-3 transition-colors sm:rounded-2xl sm:border sm:bg-surface sm:py-3.5";
   return planned ? (
-    <div aria-disabled className={cn(frame, "border-dashed border-border opacity-70")}>
+    <div aria-disabled className={cn(frame, "border-border opacity-70 sm:border-dashed")}>
       {body}
     </div>
   ) : (

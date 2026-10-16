@@ -21,9 +21,17 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  // Mobile-first (ADR-066): the page draws under the notch and home indicator, and pads itself
+  // with env(safe-area-inset-*); the keyboard resizes the layout so fixed bars stay above it.
+  // Pinch zoom stays available (no maximumScale).
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+  // The browser chrome matches --bg in each theme.
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#04070c" },
-    { media: "(prefers-color-scheme: light)", color: "#f5f7fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#05080a" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f6f7" },
   ],
 };
 
@@ -53,7 +61,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full">
         <I18nProvider locale={locale}>{children}</I18nProvider>
-        <Toaster position="top-center" theme="system" richColors closeButton />
+        {/* On phones: below the header and the notch, never over the top bar. */}
+        <Toaster
+          position="top-center"
+          theme="system"
+          richColors
+          closeButton
+          mobileOffset={{ top: "calc(env(safe-area-inset-top) + 64px)", left: 16, right: 16 }}
+        />
       </body>
     </html>
   );

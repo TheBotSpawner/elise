@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { GoalsWorkspace } from "@/application/native-service";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
+import { FilterButton, FilterSheet } from "@/components/ui/sheet-menu";
 import type { Goal, Vision } from "@/core/capabilities/goals";
 import {
   filterGoals,
@@ -27,6 +28,7 @@ import {
 import { daysBetween, periodLabel } from "@/core/goals/periods";
 import type { VisualizationSpec } from "@/core/workspace/visualization";
 import { Visualization } from "@/features/workspace/viz/visualization";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -784,6 +786,8 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
   const [sort, setSort] = useState<GoalSort>("attention");
   const [view, setView] = useState<"list" | "timeline">("list");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const desktop = useIsDesktop();
   const [selected, setSelected] = useState<{ kind: "goal" | "vision"; id: string } | null>(() => {
     const goal = params.get("goal");
     const vision = params.get("vision");
@@ -909,9 +913,111 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
     return r ? `${g.periodFilters[p]} · ${periodLabel(r, locale)}` : g.periodFilters[p];
   };
 
+  const filterFields = (
+    <>
+      <label className="flex flex-col gap-1 text-[12.5px] text-muted">
+        {g.filterVision}
+        <Select value={visionId} onChange={(e) => setVisionId(e.target.value)} className="h-9">
+          <option value="">{g.any}</option>
+          {visionList.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.title.slice(0, 60)}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <label className="flex flex-col gap-1 text-[12.5px] text-muted">
+        {g.filterArea}
+        <Select value={area} onChange={(e) => setArea(e.target.value)} className="h-9">
+          <option value="">{g.any}</option>
+          {data.areas.map((a) => (
+            <option key={a} value={a}>
+              {a}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <label className="flex flex-col gap-1 text-[12.5px] text-muted">
+        {g.filterHabit}
+        <Select value={habitId} onChange={(e) => setHabitId(e.target.value)} className="h-9">
+          <option value="">{g.any}</option>
+          {data.habits.map((h) => (
+            <option key={h.id} value={h.id}>
+              {h.icon ? `${h.icon} ` : ""}
+              {h.name}
+            </option>
+          ))}
+        </Select>
+      </label>
+    </>
+  );
+  const periodSelect = (
+    <Select
+      aria-label={g.periodLabel}
+      value={period}
+      className="h-9 w-auto max-md:h-12 max-md:w-full"
+      onChange={(e) => setPeriod(e.target.value as PeriodFilter)}
+    >
+      {PERIOD_FILTERS.map((p) => (
+        <option key={p} value={p}>
+          {periodOption(p)}
+        </option>
+      ))}
+    </Select>
+  );
+  const customDates = period === "custom" && (
+    <>
+      <Input
+        type="date"
+        aria-label={g.form.from}
+        value={custom.from}
+        onChange={(e) => setCustom({ ...custom, from: e.target.value })}
+        className="h-9 w-auto max-md:h-12 max-md:w-full"
+      />
+      <Input
+        type="date"
+        aria-label={g.form.to}
+        value={custom.to}
+        onChange={(e) => setCustom({ ...custom, to: e.target.value })}
+        className="h-9 w-auto max-md:h-12 max-md:w-full"
+      />
+    </>
+  );
+  const sortSelect = (
+    <Select
+      aria-label={g.sort}
+      value={sort}
+      className="h-9 w-auto max-md:h-12 max-md:w-full"
+      onChange={(e) => setSort(e.target.value as GoalSort)}
+    >
+      {GOAL_SORTS.map((s) => (
+        <option key={s} value={s}>
+          {g.sort}: {g.sorts[s]}
+        </option>
+      ))}
+    </Select>
+  );
+
   return (
     <div className="flex flex-col gap-4">
-      {/* Toolbar */}
+      {/*
+        Toolbar. Phones (ADR-066): "Nuevo objetivo" and ⋯ first, the status tabs, search, then
+        one row with Filtros and the view — period, vision, area, habit and sort live in the
+        filter sheet.
+      */}
+      <FilterSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        onClear={() => {
+          setPeriod("all");
+          activeFilters.forEach((f) => f.clear());
+        }}
+      >
+        {periodSelect}
+        {customDates}
+        {filterFields}
+        {sortSelect}
+      </FilterSheet>
       <div className="flex flex-wrap items-center justify-between gap-3">
         {data.archived ? (
           <div className="flex items-center gap-2">
@@ -925,7 +1031,7 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
           <div
             role="radiogroup"
             aria-label={g.title}
-            className="flex max-w-full overflow-x-auto rounded-full bg-surface-2 p-0.5"
+            className="no-scrollbar flex max-w-full overflow-x-auto rounded-full bg-surface-2 p-0.5"
           >
             {TABS.map((s) => (
               <button
@@ -935,7 +1041,7 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
                 aria-checked={status === s}
                 onClick={() => setStatus(s)}
                 className={cn(
-                  "h-8 shrink-0 rounded-full px-3 text-[13px] whitespace-nowrap transition-colors",
+                  "h-10 shrink-0 rounded-full px-3 text-[13px] whitespace-nowrap transition-colors md:h-8",
                   status === s ? "bg-bg font-medium text-fg shadow-sm" : "text-muted hover:text-fg",
                 )}
               >
@@ -952,8 +1058,8 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
             ))}
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
+        <div className="flex flex-wrap items-center gap-2 max-md:order-first max-md:w-full">
+          <div className="relative max-md:order-last max-md:w-full">
             <Search
               className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint"
               aria-hidden
@@ -963,12 +1069,24 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
               placeholder={g.search}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-9 w-44 pl-9 sm:w-52"
+              className="h-9 w-44 pl-9 max-md:h-11 max-md:w-full sm:w-52"
             />
           </div>
+          <Button
+            onClick={() => setGoalDialog({ goal: null })}
+            aria-keyshortcuts="n"
+            className="max-md:order-first max-md:flex-1"
+          >
+            <Plus />
+            {g.new}
+          </Button>
           <Menu
             label={g.more}
             items={[
+              // Phones: New vision sits here, beside New goal.
+              ...(desktop
+                ? []
+                : [{ label: g.newVision, onClick: () => setVisionDialog({ vision: null }) }]),
               { label: g.importCsv, onClick: () => setImporting(true) },
               {
                 label: data.archived ? g.tabs.active : g.tabs.archived,
@@ -976,12 +1094,12 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
               },
             ]}
           />
-          <Button onClick={() => setGoalDialog({ goal: null })} aria-keyshortcuts="n">
-            <Plus />
-            {g.new}
-          </Button>
           {/* Creating a Vision is a core action: visible, next to New goal, never louder. */}
-          <Button variant="secondary" onClick={() => setVisionDialog({ vision: null })}>
+          <Button
+            variant="secondary"
+            className="max-md:hidden"
+            onClick={() => setVisionDialog({ vision: null })}
+          >
             <VisionIcon />
             {g.newVision}
           </Button>
@@ -989,37 +1107,16 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Select
-          aria-label={g.periodLabel}
-          value={period}
-          className="h-9 w-auto"
-          onChange={(e) => setPeriod(e.target.value as PeriodFilter)}
-        >
-          {PERIOD_FILTERS.map((p) => (
-            <option key={p} value={p}>
-              {periodOption(p)}
-            </option>
-          ))}
-        </Select>
-        {period === "custom" && (
-          <>
-            <Input
-              type="date"
-              aria-label={g.form.from}
-              value={custom.from}
-              onChange={(e) => setCustom({ ...custom, from: e.target.value })}
-              className="h-9 w-auto"
-            />
-            <Input
-              type="date"
-              aria-label={g.form.to}
-              value={custom.to}
-              onChange={(e) => setCustom({ ...custom, to: e.target.value })}
-              className="h-9 w-auto"
-            />
-          </>
-        )}
-        <div className="relative">
+        <FilterButton
+          className="md:hidden"
+          count={activeFilters.length + (period === "all" ? 0 : 1)}
+          onClick={() => setSheetOpen(true)}
+        />
+        <div className="contents max-md:hidden">
+          {periodSelect}
+          {customDates}
+        </div>
+        <div className="relative max-md:hidden">
           <Button
             size="sm"
             variant="secondary"
@@ -1035,48 +1132,7 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
           </Button>
           {filtersOpen && (
             <div className="absolute top-full left-0 z-40 mt-1.5 flex w-72 flex-col gap-2.5 rounded-2xl border border-border-strong bg-[var(--overlay-bg)] p-3 shadow-[var(--menu-shadow)]">
-              <label className="flex flex-col gap-1 text-[12.5px] text-muted">
-                {g.filterVision}
-                <Select
-                  value={visionId}
-                  onChange={(e) => setVisionId(e.target.value)}
-                  className="h-9"
-                >
-                  <option value="">{g.any}</option>
-                  {visionList.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.title.slice(0, 60)}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="flex flex-col gap-1 text-[12.5px] text-muted">
-                {g.filterArea}
-                <Select value={area} onChange={(e) => setArea(e.target.value)} className="h-9">
-                  <option value="">{g.any}</option>
-                  {data.areas.map((a) => (
-                    <option key={a} value={a}>
-                      {a}
-                    </option>
-                  ))}
-                </Select>
-              </label>
-              <label className="flex flex-col gap-1 text-[12.5px] text-muted">
-                {g.filterHabit}
-                <Select
-                  value={habitId}
-                  onChange={(e) => setHabitId(e.target.value)}
-                  className="h-9"
-                >
-                  <option value="">{g.any}</option>
-                  {data.habits.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.icon ? `${h.icon} ` : ""}
-                      {h.name}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+              {filterFields}
               <Button
                 size="sm"
                 variant="ghost"
@@ -1101,18 +1157,7 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
-          <Select
-            aria-label={g.sort}
-            value={sort}
-            className="h-9 w-auto"
-            onChange={(e) => setSort(e.target.value as GoalSort)}
-          >
-            {GOAL_SORTS.map((s) => (
-              <option key={s} value={s}>
-                {g.sort}: {g.sorts[s]}
-              </option>
-            ))}
-          </Select>
+          <div className="max-md:hidden">{sortSelect}</div>
           <div
             role="radiogroup"
             aria-label={g.views.list}
@@ -1126,7 +1171,7 @@ export function GoalsView({ data, workspaceId }: { data: GoalsWorkspace; workspa
                 aria-checked={view === v}
                 onClick={() => setView(v)}
                 className={cn(
-                  "h-8 rounded-full px-3 text-[13px]",
+                  "h-8 rounded-full px-3 text-[13px] max-md:h-10 max-md:px-3.5",
                   view === v ? "bg-bg font-medium shadow-sm" : "text-muted hover:text-fg",
                 )}
               >

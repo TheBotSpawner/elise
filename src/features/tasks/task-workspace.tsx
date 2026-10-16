@@ -9,7 +9,6 @@ import {
   Hash,
   Inbox,
   ListChecks,
-  Menu,
   Plus,
   Search,
   Sun,
@@ -31,7 +30,9 @@ import {
 import { toast } from "sonner";
 
 import type { TasksOverview } from "@/application/tasks-service";
+import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
+import { FilterButton, FilterSheet } from "@/components/ui/sheet-menu";
 import {
   taskCapabilities,
   TASK_PRIORITIES,
@@ -163,6 +164,7 @@ export function TaskWorkspace({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const quickRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -448,41 +450,57 @@ export function TaskWorkspace({
       <aside className="hidden md:block">
         <div className="sticky top-6">{sidebar}</div>
       </aside>
-      {navOpen && (
-        <div
-          className="fixed inset-0 z-50 md:hidden"
-          role="dialog"
-          aria-modal="true"
-          aria-label={w.menu}
-        >
-          <button
-            type="button"
-            aria-label={w.close}
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setNavOpen(false)}
-          />
-          <div className="absolute inset-y-0 left-0 w-[85%] max-w-[320px] overflow-y-auto border-r border-border bg-bg p-4">
-            {sidebar}
-          </div>
-        </div>
-      )}
+      {/* Phones (ADR-066): the views open in a sheet, within thumb reach. */}
+      <Dialog open={navOpen} onClose={() => setNavOpen(false)} title={w.menu}>
+        <div className="-mx-2 [&_button]:min-h-11">{sidebar}</div>
+      </Dialog>
+      <FilterSheet
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        onClear={() => setFilters({})}
+      >
+        <FilterBar overview={overview} filters={filters} onChange={setFilters} stacked />
+        <Select aria-label={w.sort} value={sort} onChange={(e) => writePref(SORT, e.target.value)}>
+          {SORTS.map((s) => (
+            <option key={s} value={s}>
+              {w.sorts[s]}
+            </option>
+          ))}
+        </Select>
+      </FilterSheet>
 
       <section aria-label={title} className="flex min-w-0 flex-col gap-3">
         <header className="flex flex-wrap items-center gap-2">
+          {/* Phones: the current view is the switcher ("Hoy · 2"); filters sit beside it. */}
           <button
             type="button"
             onClick={() => setNavOpen(true)}
-            aria-label={w.menu}
-            className="grid size-9 place-items-center rounded-lg border border-border text-muted md:hidden"
+            aria-haspopup="dialog"
+            aria-label={`${w.menu}: ${searching ? search.trim() : title}`}
+            className="flex h-11 min-w-0 items-center gap-2 rounded-full border border-border pr-3 pl-4 md:hidden"
           >
-            <Menu className="size-4" aria-hidden />
+            <span className="truncate text-[16px] font-medium tracking-tight">
+              {searching ? `“${search.trim()}”` : title}
+            </span>
+            <span className="font-mono text-[12px] text-faint">{visible.length}</span>
+            <ChevronDown className="size-4 shrink-0 text-muted" aria-hidden />
           </button>
-          <h2 className="text-[18px] font-medium tracking-tight">
+          <FilterButton
+            className="ml-auto md:hidden"
+            count={
+              [filters.source, filters.priority, filters.label, filters.thisWeek].filter(Boolean)
+                .length
+            }
+            onClick={() => setFiltersOpen(true)}
+          />
+          <h2 className="hidden text-[18px] font-medium tracking-tight md:block">
             {searching ? `“${search.trim()}”` : title}
           </h2>
-          <span className="font-mono text-[12px] text-faint">{visible.length}</span>
+          <span className="hidden font-mono text-[12px] text-faint md:inline">
+            {visible.length}
+          </span>
           {pending && <span className="text-[12px] text-faint">{w.refreshing}</span>}
-          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <div className="ml-auto hidden flex-wrap items-center gap-1.5 md:flex">
             <FilterBar overview={overview} filters={filters} onChange={setFilters} />
             <Select
               aria-label={w.sort}
@@ -684,17 +702,24 @@ function FilterBar({
   overview,
   filters,
   onChange,
+  stacked = false,
 }: {
   overview: TasksOverview;
   filters: TaskFilters;
   onChange: (f: TaskFilters) => void;
+  /** In the phone filter sheet: full-width rows. */
+  stacked?: boolean;
 }) {
   const { t } = useI18n();
   const w = t.tasks.ws;
   const active = Boolean(filters.source || filters.priority || filters.label || filters.thisWeek);
-  const cls = "h-8 w-auto max-w-[11rem] py-0 text-[12.5px]";
+  const cls = stacked ? "" : "h-8 w-auto max-w-[11rem] py-0 text-[12.5px]";
   return (
-    <div role="group" aria-label={w.filters} className="flex flex-wrap items-center gap-1.5">
+    <div
+      role="group"
+      aria-label={w.filters}
+      className={cn("flex gap-1.5", stacked ? "flex-col gap-4" : "flex-wrap items-center")}
+    >
       {overview.sources.length > 1 && (
         <Select
           aria-label={w.account}
@@ -745,7 +770,8 @@ function FilterBar({
         aria-pressed={Boolean(filters.thisWeek)}
         onClick={() => onChange({ ...filters, thisWeek: !filters.thisWeek })}
         className={cn(
-          "h-8 rounded-lg border px-2.5 text-[12.5px] transition-colors",
+          "rounded-lg border px-2.5 transition-colors",
+          stacked ? "h-12 rounded-full text-[15px]" : "h-8 text-[12.5px]",
           filters.thisWeek
             ? "border-accent-line bg-accent-soft text-accent-text"
             : "border-border text-muted hover:text-fg",
@@ -753,7 +779,7 @@ function FilterBar({
       >
         {w.thisWeek}
       </button>
-      {active && (
+      {active && !stacked && (
         <button
           type="button"
           onClick={() => onChange({})}
@@ -791,6 +817,8 @@ function QuickAdd({
   const [date, setDate] = useState<string | null>(null);
   const [listId, setListId] = useState<string | null>(null);
   const [more, setMore] = useState(false);
+  // Phones (ADR-066): one row until it's used; destination, date and "Más" appear then.
+  const [engaged, setEngaged] = useState(false);
   const [priority, setPriority] = useState<TaskPriority | "">("");
   const [description, setDescription] = useState("");
   // Smart default: the list in view, else ELISE's Inbox.
@@ -855,7 +883,8 @@ function QuickAdd({
         e.preventDefault();
         submit();
       }}
-      className="flex flex-col gap-2 rounded-xl border border-border bg-surface px-3 py-2 focus-within:border-accent-line"
+      onFocus={() => setEngaged(true)}
+      className="flex flex-col gap-2 rounded-xl border border-border bg-surface px-3 py-1.5 focus-within:border-accent-line md:py-2"
     >
       <div className="flex items-center gap-2">
         <Plus className="size-4 shrink-0 text-accent-text" aria-hidden />
@@ -866,10 +895,12 @@ function QuickAdd({
           placeholder={w.quickAdd}
           aria-label={t.tasks.newTitle}
           maxLength={500}
-          className="h-8 min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-faint"
+          className="h-10 min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-faint md:h-8"
         />
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div
+        className={cn("flex flex-wrap items-center gap-1.5", !engaged && !title && "max-md:hidden")}
+      >
         {overview.lists.length > 1 && (
           <Select
             aria-label={t.tasks.destination}
@@ -1014,7 +1045,7 @@ function TaskRow({
     <li
       data-task-row={task.id}
       className={cn(
-        "group flex items-start gap-2.5 px-3 py-[7px] transition-colors",
+        "group flex items-start gap-3 px-3 py-2.5 transition-colors md:gap-2.5 md:py-[7px]",
         selected ? "bg-accent-soft/60" : "hover:bg-active",
         pendingCreate && "opacity-60",
       )}
@@ -1028,7 +1059,7 @@ function TaskRow({
         disabled={pendingCreate}
         onClick={onToggle}
         className={cn(
-          "mt-[3px] grid size-[17px] shrink-0 place-items-center rounded-full border transition-colors",
+          "touch-hit mt-[2px] grid size-5 shrink-0 place-items-center rounded-full border transition-colors md:mt-[3px] md:size-[17px]",
           done
             ? "border-accent bg-accent text-accent-fg"
             : task.priority === "high"
@@ -1047,7 +1078,7 @@ function TaskRow({
       >
         <span
           className={cn(
-            "block truncate text-[13.5px] leading-5",
+            "block truncate text-[15px] leading-6 md:text-[13.5px] md:leading-5",
             done && "text-faint line-through",
           )}
         >

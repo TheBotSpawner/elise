@@ -140,7 +140,11 @@ export function AppearancePicker({
   const { t } = useI18n();
   return (
     <div className="flex flex-col gap-3">
-      <div role="radiogroup" aria-label={t.knowledge.icon} className="grid grid-cols-9 gap-1.5">
+      <div
+        role="radiogroup"
+        aria-label={t.knowledge.icon}
+        className="grid grid-cols-6 gap-2 sm:grid-cols-9 sm:gap-1.5"
+      >
         {SPACE_ICONS.map((key) => {
           const Icon = SPACE_GLYPHS[key];
           const selected = key === icon;
@@ -154,18 +158,23 @@ export function AppearancePicker({
               title={t.knowledge.icons[key]}
               onClick={() => onChange({ icon: key, color })}
               className={cn(
-                "grid aspect-square place-items-center rounded-lg transition-colors",
+                // Phones (ADR-066): six per row, each a comfortable 44px+ square.
+                "grid aspect-square min-h-11 place-items-center rounded-xl transition-colors sm:min-h-0 sm:rounded-lg",
                 selected
                   ? "bg-fg/10 text-fg ring-1 ring-border-strong"
                   : "text-muted hover:bg-active hover:text-fg",
               )}
             >
-              <Icon className="size-4" aria-hidden />
+              <Icon className="size-5 sm:size-4" aria-hidden />
             </button>
           );
         })}
       </div>
-      <div role="radiogroup" aria-label={t.knowledge.color} className="flex flex-wrap gap-2">
+      <div
+        role="radiogroup"
+        aria-label={t.knowledge.color}
+        className="flex flex-wrap gap-3 sm:gap-2"
+      >
         {SPACE_COLORS.map((key) => (
           <button
             key={key}
@@ -176,7 +185,7 @@ export function AppearancePicker({
             title={t.knowledge.colors[key]}
             onClick={() => onChange({ icon, color: key })}
             className={cn(
-              "size-7 rounded-full transition-shadow",
+              "touch-hit size-9 rounded-full transition-shadow sm:size-7",
               key === color && "ring-2 ring-fg/60 ring-offset-2 ring-offset-bg",
             )}
             style={{ backgroundColor: SPACE_HEX[key] }}

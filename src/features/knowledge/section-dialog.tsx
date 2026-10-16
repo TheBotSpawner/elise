@@ -78,6 +78,7 @@ export function SectionDialog({
       open={open}
       onClose={close}
       busy={busy}
+      size="form"
       title={s.createTitle(parent.name)}
       description={s.createBody}
     >
@@ -141,7 +142,7 @@ export function SectionDialog({
             {error}
           </p>
         )}
-        <div className="flex justify-end gap-2">
+        <div data-sheet-actions className="flex justify-end gap-2">
           <Button variant="ghost" onClick={close} disabled={busy}>
             {t.knowledge.cancel}
           </Button>

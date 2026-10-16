@@ -416,7 +416,8 @@ function MiniTimer() {
   if (!first) return null;
   const v = view(first, now);
   return (
-    <div className="fixed bottom-4 left-4 z-40 flex flex-col items-start gap-2">
+    // Above the navigation, the dock and the mini player (ADR-066), never on top of them.
+    <div className="fixed bottom-[calc(var(--activity-bottom)+var(--activity-music))] left-4 z-40 flex flex-col items-start gap-2">
       {open && (
         <div className="w-[min(340px,calc(100vw-32px))] rounded-2xl border border-border bg-[var(--menu-bg)] p-3 shadow-xl backdrop-blur">
           <ul className="flex flex-col divide-y divide-border">

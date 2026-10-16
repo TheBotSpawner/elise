@@ -59,7 +59,7 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
       : t.nav[active ?? "home"];
 
   return (
-    <header className="sticky top-0 z-40 hidden h-20 grid-cols-[1fr_auto_1fr] items-center bg-bg/80 px-10 backdrop-blur-md md:grid">
+    <header className="sticky top-0 z-40 hidden h-20 grid-cols-[1fr_auto_1fr] items-center bg-bg/80 px-10 backdrop-blur-md lg:grid">
       <Link
         href={home}
         className="flex h-11 items-center gap-3 justify-self-start"

@@ -15,8 +15,9 @@ export const buttonVariants = cva(
         danger: "bg-danger text-white hover:opacity-90",
       },
       size: {
-        sm: "h-8 px-3",
-        md: "h-10 px-4",
+        // Phones (ADR-066): 44px to tap — the small size keeps its look with a 44px hit area.
+        sm: "touch-hit h-8 px-3",
+        md: "h-11 px-4 md:h-10",
         lg: "h-12 px-5 text-base",
         icon: "size-11",
       },
@@ -30,6 +31,11 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
 
 export function Button({ className, variant, size, type = "button", ...props }: ButtonProps) {
   return (
-    <button type={type} className={cn(buttonVariants({ variant, size }), className)} {...props} />
+    <button
+      type={type}
+      data-variant={variant ?? "primary"}
+      className={cn(buttonVariants({ variant, size }), className)}
+      {...props}
+    />
   );
 }

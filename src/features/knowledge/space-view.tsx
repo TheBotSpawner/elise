@@ -25,6 +25,7 @@ import { InfoTip } from "@/components/shared/info-tip";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/input";
+import { OverflowMenu } from "@/components/ui/sheet-menu";
 import { GENERAL_DEFAULT_DESCRIPTION } from "@/core/knowledge/model";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
@@ -222,7 +223,7 @@ export function SpaceView({
           )}
         </nav>
         <div className="flex flex-col gap-1.5">
-          <h1 className="flex items-center gap-3 text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
+          <h1 className="flex items-center gap-3 text-[26px] leading-[1.15] font-light tracking-[-0.025em] md:text-[30px]">
             <SpaceGlyph icon={space.icon} color={space.color} size="lg" />
             {space.name}
             {/* What General is for lives behind ⓘ, not as permanent copy. */}
@@ -240,21 +241,52 @@ export function SpaceView({
             )}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-2">
-          <Link href={`/?space=${space.id}`} className={buttonVariants()}>
+          {/* Phones (ADR-066): asking is the main action; adding and editing sit beside it. */}
+          <Link href={`/?space=${space.id}`} className={cn(buttonVariants(), "max-md:flex-1")}>
             <MessageSquare />
             {t.knowledge.ask}
           </Link>
-          <Button variant="secondary" onClick={() => setAdding("choose")}>
+          <div className="flex items-center gap-1 md:hidden">
+            <OverflowMenu
+              label={t.common.add}
+              trigger={<Plus className="size-5" aria-hidden />}
+              className="border border-border text-fg"
+              items={[
+                { label: t.knowledge.addSource, onClick: () => setAdding("choose") },
+                ...(!isSection
+                  ? [{ label: t.knowledge.sections.new, onClick: () => setCreatingSection(true) }]
+                  : []),
+              ]}
+            />
+            <OverflowMenu
+              label={t.knowledge.more}
+              items={[
+                {
+                  label: isSection ? t.knowledge.editSection : t.knowledge.editSpace,
+                  icon: Pencil,
+                  onClick: () => setEditingSpace(true),
+                },
+                ...(!space.general
+                  ? [{ label: t.knowledge.settings, onClick: () => setSettingsOpen(true) }]
+                  : []),
+              ]}
+            />
+          </div>
+          <Button variant="secondary" className="max-md:hidden" onClick={() => setAdding("choose")}>
             <Plus />
             {t.knowledge.addSource}
           </Button>
           {!isSection && (
-            <Button variant="secondary" onClick={() => setCreatingSection(true)}>
+            <Button
+              variant="secondary"
+              className="max-md:hidden"
+              onClick={() => setCreatingSection(true)}
+            >
               <Plus />
               {t.knowledge.sections.new}
             </Button>
           )}
-          <Button variant="ghost" onClick={() => setEditingSpace(true)}>
+          <Button variant="ghost" className="max-md:hidden" onClick={() => setEditingSpace(true)}>
             <Pencil />
             {isSection ? t.knowledge.editSection : t.knowledge.editSpace}
           </Button>
@@ -265,6 +297,7 @@ export function SpaceView({
               size="icon"
               aria-label={t.knowledge.settings}
               title={t.knowledge.more}
+              className="max-md:hidden"
               onClick={() => setSettingsOpen(true)}
             >
               <MoreHorizontal />

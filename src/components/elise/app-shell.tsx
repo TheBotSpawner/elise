@@ -8,12 +8,16 @@ import type { NativeModuleKey } from "@/core/modules/registry";
 import { MusicController } from "@/features/music/music-view";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 
+import { BottomNav } from "./navigation/bottom-nav";
 import { MobileHeader } from "./navigation/mobile-nav";
 import { TopNav, type NavUser } from "./navigation/top-nav";
 import { skipBoot } from "./orb/boot";
 import { OrbPresenceProvider } from "./orb/orb-presence";
 
-/** Authenticated frame: top navigation (mobile header + overlay below md), one shared Orb presence. */
+/**
+ * Authenticated frame: top navigation from `lg`; on phones and portrait tablets a compact header
+ * and the bottom navigation (ADR-066). One shared Orb presence.
+ */
 export function AppShell({
   workspaceId,
   pendingApprovals,
@@ -43,8 +47,10 @@ export function AppShell({
       <OrbPresenceProvider>
         <div className="relative flex min-h-dvh flex-col">
           <TopNav user={user} pendingApprovals={pendingApprovals} />
-          <MobileHeader user={user} pendingApprovals={pendingApprovals} />
-          <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+          <MobileHeader user={user} />
+          {/* Phones: room for the bottom navigation under the content (ADR-066). */}
+          <div className="flex min-w-0 flex-1 flex-col pb-[var(--bottom-nav-h)]">{children}</div>
+          <BottomNav user={user} pendingApprovals={pendingApprovals} />
         </div>
         {/* Music (ADR-042): one canonical player state for every page. */}
         <MusicController />

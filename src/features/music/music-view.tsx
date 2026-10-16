@@ -428,7 +428,9 @@ function YouTubeFrame() {
       const w = slot ? slot.width : Math.min(corner.w, window.innerWidth - 32);
       const h = slot ? slot.height : Math.max(200, corner.h);
       el.style.left = `${slot ? slot.left : window.innerWidth - w - 16}px`;
-      el.style.top = `${slot ? slot.top : window.innerHeight - h - 16}px`;
+      // In its corner it sits above the navigation and the dock (ADR-066).
+      el.style.top = slot ? `${slot.top}px` : "auto";
+      el.style.bottom = slot ? "auto" : "var(--activity-bottom)";
       el.style.width = `${w}px`;
       el.style.height = `${h}px`;
       el.dataset.docked = slot ? "true" : "false";
@@ -502,6 +504,14 @@ const CANVAS = /^\/($|chat\/)/;
  * A quiet mini-player in the app shell (ADR-042 §I) when music plays and the Canvas isn't on
  * screen: the same canonical state, never a second player. Its title returns to the Canvas.
  */
+/** The mini player's height, while it shows, so the mini timer stacks above it (ADR-066). */
+function publishHeight(el: HTMLDivElement | null) {
+  const root = document.documentElement;
+  if (!el) return;
+  root.style.setProperty("--activity-music", `${el.offsetHeight + 8}px`);
+  return () => root.style.setProperty("--activity-music", "0px");
+}
+
 function MiniPlayer() {
   const { t } = useI18n();
   const live = useMusic();
@@ -510,7 +520,10 @@ function MiniPlayer() {
   const p = live.payload;
   if (!p?.item || CANVAS.test(path) || p.provider === "youtube") return null;
   return (
-    <div className="fixed bottom-4 left-1/2 z-40 flex w-[min(420px,calc(100vw-32px))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-border bg-[var(--menu-bg)] px-3 py-2 shadow-xl backdrop-blur">
+    <div
+      ref={publishHeight}
+      className="fixed bottom-[var(--activity-bottom)] left-1/2 z-40 flex w-[min(420px,calc(100vw-32px))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-border bg-[var(--menu-bg)] px-3 py-2 shadow-xl backdrop-blur"
+    >
       <Artwork src={p.item.artwork} size={36} />
       <Link href="/" className="min-w-0 flex-1" title={t.music.backToCanvas}>
         <span className="flex items-center gap-2 truncate text-[13.5px] font-medium">

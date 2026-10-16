@@ -426,6 +426,7 @@ export function TransactionDialog({
       onClose={onClose}
       busy={pending}
       title={editing ? x.editTitle : x.newTitle}
+      size="form"
       className="border-border-strong bg-[var(--overlay-bg)] shadow-[0_32px_96px_-24px_rgba(0,0,0,0.55)] sm:max-w-xl"
     >
       <form
@@ -697,7 +698,10 @@ export function TransactionDialog({
             {error}
           </p>
         )}
-        <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
+        <div
+          data-sheet-actions
+          className="flex items-center justify-end gap-2 border-t border-border pt-4"
+        >
           <Button variant="ghost" onClick={onClose} disabled={pending}>
             {t.finance.cancel}
           </Button>

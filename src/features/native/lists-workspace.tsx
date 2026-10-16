@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   GripVertical,
@@ -24,7 +25,9 @@ import {
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
+import { OverflowMenu } from "@/components/ui/sheet-menu";
 import {
   LIST_ITEM_SORTS,
   splitItems,
@@ -225,6 +228,8 @@ export function ListsWorkspace({
   }, []);
 
   const q = norm(search.trim());
+  const [switching, setSwitching] = useState(false);
+  const [inView, setInView] = useState(0);
   const shown = q
     ? lists
         .map((l) =>
@@ -285,11 +290,16 @@ export function ListsWorkspace({
   };
 
   const detailItem = lists.flatMap((l) => l.items).find((i) => i.id === detail) ?? null;
+  const current = shown[Math.min(inView, shown.length - 1)] ?? null;
 
   return (
     <div className="flex flex-col gap-4">
+      {/*
+        Phones (ADR-066): one list at a time. The switcher is a full-width row naming the list in
+        view; it opens every list in a sheet. "Nueva lista" stays; import goes to ⋯.
+      */}
       <div className="flex flex-wrap items-center gap-2">
-        <label className="relative min-w-[12rem] flex-1 sm:max-w-xs">
+        <label className="relative min-w-[12rem] flex-1 max-md:order-last max-md:basis-full sm:max-w-xs">
           <span className="sr-only">{w.search}</span>
           <Search
             className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-faint"
@@ -301,19 +311,59 @@ export function ListsWorkspace({
             value={search}
             placeholder={w.search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 pl-8 text-[13.5px]"
+            className="h-9 pl-8 text-[13.5px] max-md:h-11"
           />
         </label>
-        {/* Mobile shows one list at a time: the switcher is there from two lists on. */}
-        {lists.length > 1 && (
+        {lists.length > 1 && current && (
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            aria-label={`${w.jumpTo}: ${current.name}`}
+            onClick={() => setSwitching(true)}
+            className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-full border border-border pr-3 pl-4 text-left md:hidden"
+          >
+            <span className="min-w-0 flex-1 truncate text-[16px] font-medium">
+              {[current.icon, current.name].filter(Boolean).join(" ")}
+            </span>
+            <span className="font-mono text-[12px] text-faint">
+              {current.items.filter((i) => !i.checked).length}
+            </span>
+            <ChevronDown className="size-4 shrink-0 text-muted" aria-hidden />
+          </button>
+        )}
+        <Dialog open={switching} onClose={() => setSwitching(false)} title={w.jumpTo}>
+          <ul className="-mx-2 -mt-2 flex flex-col">
+            {lists.map((l) => (
+              <li key={l.id}>
+                <button
+                  type="button"
+                  aria-current={l.id === current?.id ? "true" : undefined}
+                  onClick={() => {
+                    setSwitching(false);
+                    reveal(l.id);
+                  }}
+                  className={cn(
+                    "flex h-13 w-full items-center gap-3 rounded-2xl px-3 text-left text-[16px]",
+                    l.id === current?.id ? "bg-active" : "active:bg-surface-2",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    {[l.icon, l.name].filter(Boolean).join(" ")}
+                  </span>
+                  <span className="font-mono text-[12.5px] text-faint">
+                    {l.items.filter((i) => !i.checked).length}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Dialog>
+        {lists.length > 3 && (
           <Select
             aria-label={w.jumpTo}
             value=""
             onChange={(e) => e.target.value && reveal(e.target.value)}
-            className={cn(
-              "h-9 w-auto max-w-[14rem] py-0 text-[13px]",
-              lists.length <= 3 && "md:hidden",
-            )}
+            className="h-9 w-auto max-w-[14rem] py-0 text-[13px] max-md:hidden"
           >
             <option value="">{w.jumpTo}</option>
             {lists.map((l) => (
@@ -324,13 +374,24 @@ export function ListsWorkspace({
           </Select>
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          <Button variant="ghost" size="sm" onClick={() => setImporting((v) => !v)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="max-md:hidden"
+            onClick={() => setImporting((v) => !v)}
+          >
             {t.native.importCsv}
           </Button>
-          <Button size="sm" onClick={() => setCreating(true)}>
+          <Button size="sm" onClick={() => setCreating(true)} className="max-md:h-11">
             <Plus />
-            {w.newList}
+            <span className="max-sm:sr-only">{w.newList}</span>
           </Button>
+          <div className="md:hidden">
+            <OverflowMenu
+              label={t.common.moreActions}
+              items={[{ label: t.native.importCsv, onClick: () => setImporting((v) => !v) }]}
+            />
+          </div>
         </div>
       </div>
       {importing && <ImportPanel kind="lists" onDone={() => setImporting(false)} />}
@@ -352,7 +413,14 @@ export function ListsWorkspace({
         )}
         <div
           ref={board}
-          className="lists-board flex snap-x snap-mandatory [scrollbar-width:thin] items-start gap-3 overflow-x-auto pb-3 md:snap-none"
+          onScroll={(e) => {
+            // The list in view on phones (one column at a time), for the switcher.
+            const el = e.currentTarget;
+            const first = el.firstElementChild as HTMLElement | null;
+            if (!first) return;
+            setInView(Math.round(el.scrollLeft / (first.offsetWidth + 12)));
+          }}
+          className="lists-board flex snap-x snap-mandatory items-start gap-3 overflow-x-auto pb-3 max-md:no-scrollbar md:snap-none md:[scrollbar-width:thin]"
         >
           {shown.map((list) => (
             <Column
@@ -566,7 +634,7 @@ function Column({
         onDrop(list.id, null);
       }}
       className={cn(
-        "flex max-h-[calc(100vh-15rem)] w-[calc(100vw-2rem)] shrink-0 snap-center flex-col rounded-xl border bg-surface sm:w-[300px] lg:w-[312px]",
+        "flex max-h-[calc(100dvh-15rem)] w-[calc(100vw-2rem)] shrink-0 snap-center flex-col rounded-xl border bg-surface sm:w-[300px] lg:w-[312px]",
         over ? "border-accent-line" : "border-border",
         drag?.kind === "list" && drag.id === list.id && "opacity-50",
       )}
@@ -939,7 +1007,7 @@ function ItemRow({
       onDragOver={(e) => onDropBefore && e.preventDefault()}
       onDrop={onDropBefore}
       className={cn(
-        "group flex items-start gap-2.5 px-3 py-[5px] hover:bg-active",
+        "group flex items-center gap-3 px-3 hover:bg-active md:items-start md:gap-2.5 md:py-[5px]",
         dragging && "opacity-40",
         pending && "opacity-60",
       )}
@@ -952,7 +1020,7 @@ function ItemRow({
         disabled={pending}
         onClick={onToggle}
         className={cn(
-          "mt-[3px] grid size-[16px] shrink-0 place-items-center rounded-full border transition-colors duration-150",
+          "touch-hit grid size-5 shrink-0 place-items-center rounded-full border transition-colors duration-150 md:mt-[3px] md:size-[16px]",
           item.checked
             ? "border-accent bg-accent text-accent-fg"
             : "border-border-strong hover:border-accent",
@@ -968,10 +1036,13 @@ function ItemRow({
         type="button"
         onClick={onOpen}
         disabled={pending}
-        className="min-w-0 flex-1 text-left"
+        className="min-h-11 min-w-0 flex-1 py-2.5 text-left md:min-h-0 md:py-0"
       >
         <span
-          className={cn("block text-[13.5px] leading-5", item.checked && "text-faint line-through")}
+          className={cn(
+            "block text-[15px] leading-6 md:text-[13.5px] md:leading-5",
+            item.checked && "text-faint line-through",
+          )}
         >
           {item.content}
         </span>

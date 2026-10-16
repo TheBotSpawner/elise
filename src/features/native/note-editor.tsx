@@ -50,7 +50,7 @@ function ToolButton({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className={cn(
-        "grid size-8 shrink-0 place-items-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",
+        "grid size-10 shrink-0 place-items-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none md:size-8",
         active ? "bg-accent-soft text-accent-text" : "text-muted hover:bg-active hover:text-fg",
       )}
     >
@@ -81,7 +81,8 @@ function Toolbar({ editor, onLink }: { editor: Editor; onLink: () => void }) {
     <div
       role="toolbar"
       aria-label={x.label}
-      className="flex flex-wrap items-center gap-0.5 border-b border-border px-2 py-1.5"
+      // Phones (ADR-066): one swipeable row of 40px tools, never several rows of small icons.
+      className="no-scrollbar flex items-center gap-0.5 overflow-x-auto border-b border-border px-2 py-1.5 md:flex-wrap md:overflow-visible"
     >
       <select
         aria-label={x.paragraph}

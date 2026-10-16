@@ -8,7 +8,7 @@ export const en = {
     knowledge: "Knowledge",
     connections: "Connections",
     schedules: "Schedules",
-    myElise: "My Elise",
+    myElise: "My ELISE",
     settings: "Settings",
     approvals: "Approvals",
     tasks: "Tasks",
@@ -2152,6 +2152,7 @@ export const en = {
       },
       tx: {
         newTitle: "Record transaction",
+        add: "Transaction",
         editTitle: "Edit transaction",
         searchCategories: "Search categories…",
         createCategory: (q: string) => (q ? `+ Create category “${q}”` : "+ Create category"),
@@ -3512,6 +3513,15 @@ export const en = {
     loading: "Loading…",
     close: "Close",
     aboutSection: (title: string) => `About ${title}`,
+    cancel: "Cancel",
+    add: "Add",
+    more: "More",
+    moreActions: "More actions",
+    filters: "Filters",
+    filtersCount: (n: number) => (n ? `Filters · ${n}` : "Filters"),
+    clearFilters: "Clear",
+    applyFilters: "Apply",
+    clearSearch: "Clear search",
   },
 };
 

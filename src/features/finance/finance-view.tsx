@@ -7,22 +7,21 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
-  MoreHorizontal,
   Plus,
   Search,
-  SlidersHorizontal,
   Upload,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import type { FinanceGranularity, FinanceOverview } from "@/application/finance-service";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Select } from "@/components/ui/input";
+import { FilterButton, FilterSheet, OverflowMenu } from "@/components/ui/sheet-menu";
 import {
   suggestCategoryIcon,
   UNCLASSIFIED,
@@ -38,7 +37,9 @@ import { isSingleEmoji } from "@/core/emoji";
 import { addAmounts, compareAmounts } from "@/core/finance/money";
 import { shiftPeriod, type Period } from "@/core/periods";
 import { financeTrendVisual, type VisualizationSpec } from "@/core/workspace/visualization";
+import { Menu } from "@/features/native/native-ui";
 import { Visualization } from "@/features/workspace/viz/visualization";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -75,7 +76,7 @@ function useFilters() {
 
 const chip = (active: boolean) =>
   cn(
-    "h-8 shrink-0 rounded-full px-3 text-[13px] transition-colors",
+    "h-10 shrink-0 rounded-full px-3.5 text-[14px] transition-colors md:h-8 md:px-3 md:text-[13px]",
     active ? "bg-fg text-bg" : "bg-surface-2 text-muted hover:text-fg",
   );
 
@@ -109,70 +110,6 @@ function useLabels() {
     },
     dayMonth: (d: string) => dayMonth.format(at(d)),
   };
-}
-
-function Menu({
-  label,
-  items,
-}: {
-  label: string;
-  items: { label: string; onClick: () => void; danger?: boolean }[];
-}) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (
-        e instanceof KeyboardEvent ? e.key === "Escape" : !root.current?.contains(e.target as Node)
-      )
-        setOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", close);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", close);
-    };
-  }, [open]);
-  return (
-    <div ref={root} className="relative">
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={label}
-        onClick={() => setOpen(!open)}
-        className="grid size-10 place-items-center rounded-full text-muted transition-colors hover:bg-active hover:text-fg"
-      >
-        <MoreHorizontal className="size-4" aria-hidden />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute top-full right-0 z-40 mt-1 flex w-52 flex-col rounded-2xl border border-border bg-[var(--menu-bg)] p-1 shadow-lg backdrop-blur"
-        >
-          {items.map((i) => (
-            <button
-              key={i.label}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                i.onClick();
-              }}
-              className={cn(
-                "flex w-full rounded-xl px-3 py-2 text-left text-[13.5px] hover:bg-surface-2",
-                i.danger && "hover:text-danger-text",
-              )}
-            >
-              {i.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ── Navigation ───────────────────────────────────────────────────────────────
@@ -209,7 +146,7 @@ export function FinanceNav({
     // vertical overflow made overflow-x-auto show a vertical scrollbar (its arrows on Windows).
     <nav
       aria-label={t.finance.title}
-      className="flex gap-6 overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_var(--line)]"
+      className="no-scrollbar flex gap-5 overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_var(--line)] md:gap-6"
     >
       {tabs.map(([key, label]) =>
         onSelect ? (
@@ -256,10 +193,11 @@ function ScopeChips({ books, value }: { books: FinanceBook[]; value: string | un
     ...visible.map((b) => [b.id, `${b.icon ? `${b.icon} ` : ""}${b.name}`] as [string, string]),
   ];
   return (
+    // Phones (ADR-066): one swipeable rail, edge to edge; wraps from md.
     <div
       role="radiogroup"
       aria-label={t.finance.ws.book}
-      className="flex flex-wrap items-center gap-1.5"
+      className="-mx-4 no-scrollbar flex items-center gap-1.5 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
     >
       {options.map(([id, name]) => (
         <button
@@ -311,7 +249,7 @@ function ScopeChips({ books, value }: { books: FinanceBook[]; value: string | un
             else router.refresh();
           });
         }}
-        className="grid size-8 place-items-center rounded-full border border-dashed border-border-strong text-muted hover:text-fg"
+        className="grid size-10 shrink-0 place-items-center rounded-full border border-dashed border-border-strong text-muted hover:text-fg md:size-8"
       >
         <Plus className="size-3.5" aria-hidden />
       </button>
@@ -344,13 +282,98 @@ function PeriodBar({ overview }: { overview: FinanceOverview }) {
         date: p.from <= overview.today && overview.today <= p.to ? null : p.from,
       });
   };
+  const [sheet, setSheet] = useState(false);
+  const granularity = (
+    <div
+      role="radiogroup"
+      aria-label={t.finance.period}
+      className="flex rounded-full bg-surface-2 p-0.5 max-md:w-full max-md:[&>button]:h-10 max-md:[&>button]:flex-1"
+    >
+      {(["day", "week", "month", "year"] as const).map((k) => (
+        <button
+          key={k}
+          type="button"
+          role="radio"
+          aria-checked={gran === k}
+          onClick={() => {
+            setOpen(false);
+            setSheet(false);
+            set({
+              gran: k === "month" ? null : k,
+              period: null,
+              from: null,
+              to: null,
+              date: containsToday ? null : overview.period.from,
+            });
+          }}
+          className={cn(
+            "h-8 rounded-full px-3 text-[13px] transition-colors",
+            gran === k ? "bg-bg font-medium text-fg shadow-sm" : "text-muted hover:text-fg",
+          )}
+        >
+          {g[k]}
+        </button>
+      ))}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={gran === "custom"}
+        onClick={() => setOpen(true)}
+        className={cn(
+          "h-8 rounded-full px-3 text-[13px] transition-colors",
+          gran === "custom" ? "bg-bg font-medium text-fg shadow-sm" : "text-muted hover:text-fg",
+        )}
+      >
+        {g.custom}
+      </button>
+    </div>
+  );
+  const range = open && (
+    <form
+      className="flex flex-wrap items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (from && to && from <= to) {
+          setSheet(false);
+          set({ period: null, date: null, from, to });
+        }
+      }}
+    >
+      <Input
+        type="date"
+        aria-label={t.finance.ws.from}
+        value={from}
+        onChange={(e) => setFrom(e.target.value)}
+        className="h-11 w-auto max-md:flex-1 md:h-9"
+      />
+      <Input
+        type="date"
+        aria-label={t.finance.ws.to}
+        value={to}
+        onChange={(e) => setTo(e.target.value)}
+        className="h-11 w-auto max-md:flex-1 md:h-9"
+      />
+      <Button size="sm" type="submit" variant="secondary" className="max-md:h-11 max-md:w-full">
+        {t.finance.ws.apply}
+      </Button>
+    </form>
+  );
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 max-md:w-full max-md:justify-between">
         <Button size="sm" variant="ghost" aria-label={t.finance.ws.prev} onClick={() => go(-1)}>
           <ChevronLeft />
         </Button>
-        <span className="min-w-40 text-center text-[17px] font-medium first-letter:uppercase">
+        {/* Phones (ADR-066): the period is one row; tapping it opens day/week/month/year. */}
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          onClick={() => setSheet(true)}
+          className="h-11 min-w-0 flex-1 truncate rounded-full text-center text-[17px] font-medium first-letter:uppercase md:hidden"
+        >
+          {labels.span(gran, overview.period)}
+        </button>
+        <span className="hidden min-w-40 text-center text-[17px] font-medium first-letter:uppercase md:inline">
           {labels.span(gran, overview.period)}
         </span>
         <Button size="sm" variant="ghost" aria-label={t.finance.ws.next} onClick={() => go(1)}>
@@ -360,81 +383,32 @@ function PeriodBar({ overview }: { overview: FinanceOverview }) {
           <Button
             size="sm"
             variant="secondary"
+            className="max-md:hidden"
             onClick={() => set({ period: null, from: null, to: null, date: null })}
           >
             {t.finance.v21.today}
           </Button>
         )}
       </div>
-      <div
-        role="radiogroup"
-        aria-label={t.finance.period}
-        className="flex rounded-full bg-surface-2 p-0.5"
-      >
-        {(["day", "week", "month", "year"] as const).map((k) => (
-          <button
-            key={k}
-            type="button"
-            role="radio"
-            aria-checked={gran === k}
-            onClick={() => {
-              setOpen(false);
-              set({
-                gran: k === "month" ? null : k,
-                period: null,
-                from: null,
-                to: null,
-                date: containsToday ? null : overview.period.from,
-              });
-            }}
-            className={cn(
-              "h-8 rounded-full px-3 text-[13px] transition-colors",
-              gran === k ? "bg-bg font-medium text-fg shadow-sm" : "text-muted hover:text-fg",
-            )}
-          >
-            {g[k]}
-          </button>
-        ))}
-        <button
-          type="button"
-          role="radio"
-          aria-checked={gran === "custom"}
-          onClick={() => setOpen(true)}
-          className={cn(
-            "h-8 rounded-full px-3 text-[13px] transition-colors",
-            gran === "custom" ? "bg-bg font-medium text-fg shadow-sm" : "text-muted hover:text-fg",
-          )}
-        >
-          {g.custom}
-        </button>
+      <div className="contents max-md:hidden">
+        {granularity}
+        {range}
       </div>
-      {open && (
-        <form
-          className="flex flex-wrap items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (from && to && from <= to) set({ period: null, date: null, from, to });
-          }}
-        >
-          <Input
-            type="date"
-            aria-label={t.finance.ws.from}
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="h-9 w-auto"
-          />
-          <Input
-            type="date"
-            aria-label={t.finance.ws.to}
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="h-9 w-auto"
-          />
-          <Button size="sm" type="submit" variant="secondary">
-            {t.finance.ws.apply}
+      <Dialog open={sheet} onClose={() => setSheet(false)} title={t.finance.period}>
+        {granularity}
+        {range}
+        {!containsToday && (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setSheet(false);
+              set({ period: null, from: null, to: null, date: null });
+            }}
+          >
+            {t.finance.v21.today}
           </Button>
-        </form>
-      )}
+        )}
+      </Dialog>
     </div>
   );
 }
@@ -450,9 +424,13 @@ function KpiStrip({ overview }: { overview: FinanceOverview }) {
     ["net", "net"],
   ] as const;
   return (
-    <dl className={cn(CARD, "grid divide-border max-sm:divide-y sm:grid-cols-3 sm:divide-x")}>
+    // Phones (ADR-066): one compact row of three, never three tall cards.
+    <dl className={cn(CARD, "grid grid-cols-3 divide-x divide-border")}>
       {cols.map(([label, key]) => (
-        <div key={key} className="flex flex-col gap-1.5 px-5 py-3.5">
+        <div
+          key={key}
+          className="flex min-w-0 flex-col gap-1 px-3 py-2.5 md:gap-1.5 md:px-5 md:py-3.5"
+        >
           <dt className="type-label text-faint">{t.finance[label]}</dt>
           {totals.length === 0 ? (
             <dd className="font-mono text-[20px] text-faint">—</dd>
@@ -469,7 +447,7 @@ function KpiStrip({ overview }: { overview: FinanceOverview }) {
                 >
                   <span
                     className={cn(
-                      "font-mono text-[19px] whitespace-nowrap",
+                      "truncate font-mono text-[15px] whitespace-nowrap md:text-[19px]",
                       key === "income" && "text-success",
                       key === "net" && value.startsWith("-") && "text-danger-text",
                     )}
@@ -477,7 +455,10 @@ function KpiStrip({ overview }: { overview: FinanceOverview }) {
                     {money(value, c.currency)}
                   </span>
                   {pct != null && (
-                    <span className="text-[11.5px] text-faint" title={t.finance.vsPrevious}>
+                    <span
+                      className="text-[11.5px] text-faint max-md:hidden"
+                      title={t.finance.vsPrevious}
+                    >
                       {t.finance.change(pct)} {t.finance.vsPrevious}
                     </span>
                   )}
@@ -671,6 +652,77 @@ function FilterBar({
   const [open, setOpen] = useState(false);
   const currencies = overview.summary.current.totals.map((c) => c.currency);
   const filtered = Boolean(f.q || f.type || f.category || f.account || f.currency || f.status);
+  const count = [f.type, f.category, f.account, f.currency, f.status].filter(Boolean).length;
+  const controls = (
+    <>
+      <Select
+        aria-label={t.finance.accountType}
+        value={f.type ?? ""}
+        onChange={(e) => set({ type: e.target.value || null })}
+      >
+        <option value="">{t.finance.all}</option>
+        <option value="expense">{t.finance.expenses}</option>
+        <option value="income">{t.finance.income}</option>
+        <option value="transfer">{t.finance.types.transfer}</option>
+      </Select>
+      <Select
+        aria-label={t.finance.category}
+        value={f.category ?? ""}
+        onChange={(e) => set({ category: e.target.value || null })}
+      >
+        <option value="">{t.finance.allCategories}</option>
+        {[...new Map(overview.categories.map((c) => [c.name, c])).values()].map((c) => (
+          <option key={c.id} value={c.name}>
+            {categoryIcon(c)} {c.name}
+          </option>
+        ))}
+      </Select>
+      <Select
+        aria-label={t.finance.account}
+        value={f.account ?? ""}
+        onChange={(e) => set({ account: e.target.value || null })}
+      >
+        <option value="">{t.finance.allAccounts}</option>
+        {overview.accounts.map((a) => (
+          <option key={a.id} value={a.name}>
+            {a.name}
+          </option>
+        ))}
+      </Select>
+      <Select
+        aria-label={t.finance.currency}
+        value={f.currency ?? ""}
+        onChange={(e) => set({ currency: e.target.value || null })}
+      >
+        <option value="">{t.finance.allCurrencies}</option>
+        {[...new Set([...currencies, ...COMMON_CURRENCIES])].map((c) => (
+          <option key={c} value={c}>
+            {c}
+          </option>
+        ))}
+      </Select>
+      <Select
+        aria-label={t.finance.status}
+        value={f.status ?? ""}
+        onChange={(e) => set({ status: e.target.value || null })}
+      >
+        <option value="">{t.finance.all}</option>
+        <option value="pending">{t.finance.ws.pendingOnly}</option>
+      </Select>
+    </>
+  );
+  const clear = () => {
+    setQ("");
+    set({
+      q: null,
+      type: null,
+      category: null,
+      account: null,
+      currency: null,
+      source: null,
+      status: null,
+    });
+  };
   const active: [string, string, string | null][] = [
     [t.finance.category, "category", f.category ?? null],
     [t.finance.account, "account", f.account ?? null],
@@ -694,72 +746,13 @@ function FilterBar({
             className="h-10 pl-9"
           />
         </div>
-        <Button
-          variant="secondary"
-          className="md:hidden"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          <SlidersHorizontal />
-          {t.finance.v21.filters}
-        </Button>
+        {/* Phones (ADR-066): one "Filtros · n" button; the controls live in a sheet. */}
+        <FilterButton className="md:hidden" count={count} onClick={() => setOpen(true)} />
       </div>
-      <div className={cn("grid gap-2 sm:grid-cols-2 md:grid-cols-5", !open && "max-md:hidden")}>
-        <Select
-          aria-label={t.finance.accountType}
-          value={f.type ?? ""}
-          onChange={(e) => set({ type: e.target.value || null })}
-        >
-          <option value="">{t.finance.all}</option>
-          <option value="expense">{t.finance.expenses}</option>
-          <option value="income">{t.finance.income}</option>
-          <option value="transfer">{t.finance.types.transfer}</option>
-        </Select>
-        <Select
-          aria-label={t.finance.category}
-          value={f.category ?? ""}
-          onChange={(e) => set({ category: e.target.value || null })}
-        >
-          <option value="">{t.finance.allCategories}</option>
-          {[...new Map(overview.categories.map((c) => [c.name, c])).values()].map((c) => (
-            <option key={c.id} value={c.name}>
-              {categoryIcon(c)} {c.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          aria-label={t.finance.account}
-          value={f.account ?? ""}
-          onChange={(e) => set({ account: e.target.value || null })}
-        >
-          <option value="">{t.finance.allAccounts}</option>
-          {overview.accounts.map((a) => (
-            <option key={a.id} value={a.name}>
-              {a.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          aria-label={t.finance.currency}
-          value={f.currency ?? ""}
-          onChange={(e) => set({ currency: e.target.value || null })}
-        >
-          <option value="">{t.finance.allCurrencies}</option>
-          {[...new Set([...currencies, ...COMMON_CURRENCIES])].map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </Select>
-        <Select
-          aria-label={t.finance.status}
-          value={f.status ?? ""}
-          onChange={(e) => set({ status: e.target.value || null })}
-        >
-          <option value="">{t.finance.all}</option>
-          <option value="pending">{t.finance.ws.pendingOnly}</option>
-        </Select>
-      </div>
+      <FilterSheet open={open} onClose={() => setOpen(false)} onClear={clear}>
+        {controls}
+      </FilterSheet>
+      <div className="grid gap-2 max-md:hidden md:grid-cols-5">{controls}</div>
       {filtered && (
         <div className="flex flex-wrap items-center gap-1.5">
           {active
@@ -776,22 +769,7 @@ function FilterBar({
                 <X className="size-3" aria-hidden />
               </button>
             ))}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setQ("");
-              set({
-                q: null,
-                type: null,
-                category: null,
-                account: null,
-                currency: null,
-                source: null,
-                status: null,
-              });
-            }}
-          >
+          <Button size="sm" variant="ghost" onClick={clear}>
             {t.finance.clearFilters}
           </Button>
         </div>
@@ -1905,6 +1883,7 @@ export function FinanceView({
   const v = t.finance.v21;
   const labels = useLabels();
   const { set } = useFilters();
+  const desktop = useIsDesktop();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<FinanceTransaction | null>(null);
   const [duplicating, setDuplicating] = useState<FinanceTransaction | null>(null);
@@ -1975,29 +1954,47 @@ export function FinanceView({
   };
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-5 max-md:pb-20">
       {/* Header actions + Ámbito filter */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <ScopeChips books={overview.books} value={f.book} />
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center justify-between gap-3 md:flex-wrap">
+        <div className="min-w-0 flex-1">
+          <ScopeChips books={overview.books} value={f.book} />
+        </div>
+        <div className="flex items-center gap-2">
           {/* One entry point: files, connected Sheets and past imports live on the Import page. */}
-          <Link href={IMPORT_HREF} className={buttonVariants({ variant: "secondary" })}>
+          <Link
+            href={IMPORT_HREF}
+            className={cn(buttonVariants({ variant: "secondary" }), "max-md:hidden")}
+          >
             <Upload />
             {v.importAction}
           </Link>
-          <Button onClick={startAdd}>
+          <Button onClick={startAdd} className="max-md:hidden">
             <Plus />
             {v.tx.newTitle}
           </Button>
-          <Menu
+          <OverflowMenu
             label={v.more}
             items={[
+              ...(desktop ? [] : [{ label: v.importAction, href: IMPORT_HREF, icon: Upload }]),
               { label: v.categories.title, onClick: () => setManaging("categories") },
               { label: v.accounts.title, onClick: () => setManaging("accounts") },
             ]}
           />
         </div>
       </div>
+      {/* Phones (ADR-066): adding a movement is the main action, within thumb reach (the
+          empty state has its own). */}
+      {overview.hasAny && (
+        <button
+          type="button"
+          onClick={startAdd}
+          className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music))] z-30 flex h-13 items-center gap-2 rounded-full bg-fg px-5 text-[15px] font-medium text-bg shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)] md:hidden"
+        >
+          <Plus className="size-5" aria-hidden />
+          {v.tx.add}
+        </button>
+      )}
       {overview.books.length === 0 && (
         <p
           role="status"

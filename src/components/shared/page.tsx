@@ -19,11 +19,18 @@ export function PageHeader({
   info?: string[];
 }) {
   return (
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
+    // Phones (ADR-066): a compact title, actions on the same row — content starts sooner.
+    <header className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 md:mb-6 md:items-end">
+      <div className="min-w-0">
         <div className="flex items-center gap-1.5">
-          <h1 className="flex items-center gap-3 text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
-            {Icon && <Icon className="size-6 shrink-0 text-muted" strokeWidth={1.6} aria-hidden />}
+          <h1 className="flex items-center gap-2.5 text-[26px] leading-[1.15] font-light tracking-[-0.025em] md:gap-3 md:text-[30px]">
+            {Icon && (
+              <Icon
+                className="size-5 shrink-0 text-muted md:size-6"
+                strokeWidth={1.6}
+                aria-hidden
+              />
+            )}
             {title}
           </h1>
           {info && <PageInfo title={title} body={info} />}
@@ -39,7 +46,7 @@ export function PageHeader({
 export function PageContainer({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
     <div
-      className={`mx-auto w-full ${wide ? "max-w-[1440px]" : "max-w-[960px]"} px-4 pt-6 pb-16 md:px-10 md:pt-10`}
+      className={`mx-auto w-full ${wide ? "max-w-[1440px]" : "max-w-[960px]"} px-[var(--page-gutter)] pt-4 pb-10 md:pt-10 md:pb-16`}
     >
       {children}
     </div>

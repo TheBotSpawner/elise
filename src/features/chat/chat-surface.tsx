@@ -586,14 +586,14 @@ export function Ambient({ ambient }: { ambient: HomeAmbient }) {
         <li
           key={item.label}
           className={cn(
-            "flex h-8 items-center",
+            "flex h-11 items-center md:h-8",
             item.preview ? "max-w-full min-w-0 md:shrink" : "shrink-0 whitespace-nowrap",
           )}
         >
           <Link
             href={item.href}
             title={item.preview}
-            className="flex max-w-full min-w-0 items-baseline gap-2.5 hover:text-fg"
+            className="flex h-full max-w-full min-w-0 items-center gap-2.5 hover:text-fg md:items-baseline"
           >
             <span className="shrink-0 font-mono text-[10.5px] tracking-[0.16em] text-faint uppercase">
               {item.label}

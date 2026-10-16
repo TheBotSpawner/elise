@@ -452,6 +452,7 @@ function MethodEditor({
       onClose={onClose}
       busy={busy}
       title={methodId ? tm.edit : tm.new}
+      size="form"
       description={tm.safety}
       className="sm:max-w-2xl"
     >

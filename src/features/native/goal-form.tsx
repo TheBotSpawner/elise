@@ -254,6 +254,7 @@ export function GoalDialog({
       open={open}
       onClose={onClose}
       title={goal ? f.editTitle : f.newTitle}
+      size="form"
       className="border-border-strong bg-[var(--overlay-bg)] shadow-[0_32px_96px_-24px_rgba(0,0,0,0.55)] sm:max-w-xl"
     >
       <GoalForm
@@ -934,7 +935,7 @@ function GoalForm({
           ))}
         </ul>
       )}
-      <div className="flex justify-end gap-2">
+      <div data-sheet-actions className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onDone}>
           {f.cancel}
         </Button>
@@ -969,6 +970,7 @@ export function VisionDialog({
       open={open}
       onClose={onClose}
       title={vision ? v.editTitle : v.newTitle}
+      size="form"
       description={v.hint}
       className="border-border-strong bg-[var(--overlay-bg)] sm:max-w-xl"
     >
@@ -1077,7 +1079,7 @@ function VisionForm({
           ))}
         </datalist>
       </Field>
-      <div className="flex justify-end gap-2">
+      <div data-sheet-actions className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onDone}>
           {f.cancel}
         </Button>

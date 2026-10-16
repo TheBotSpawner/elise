@@ -39,6 +39,7 @@ import {
 import { addDays } from "@/core/time";
 import type { VisualizationSpec } from "@/core/workspace/visualization";
 import { Visualization } from "@/features/workspace/viz/visualization";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -1115,6 +1116,7 @@ function HabitDetail({
 
 export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; workspaceId: string }) {
   const { t } = useI18n();
+  const desktop = useIsDesktop();
   const w = t.native.habits.ws;
   const fmt = useFormats();
   const router = useRouter();
@@ -1228,12 +1230,16 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
   return (
     <div className="flex flex-col gap-4">
       {/* Range + actions */}
+      {/*
+        Phones (ADR-066): "Nuevo hábito" first, within reach, with ⋯ (status, import, export);
+        then the period as a full-width segmented control and one ‹ range › row.
+      */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 max-md:w-full">
           <div
             role="radiogroup"
             aria-label={w.views.week}
-            className="flex rounded-full bg-surface-2 p-0.5"
+            className="flex rounded-full bg-surface-2 p-0.5 max-md:w-full max-md:[&>button]:h-10 max-md:[&>button]:flex-1"
           >
             {(["week", "month", "year", "custom"] as HabitView[]).map((v) => (
               <button
@@ -1259,7 +1265,7 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 max-md:w-full max-md:justify-between">
             <Button
               size="sm"
               variant="ghost"
@@ -1290,11 +1296,11 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
             )}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 max-md:order-first max-md:w-full">
           <Select
             aria-label={w.status.active}
             value={status}
-            className="h-9 w-auto"
+            className="h-9 w-auto max-md:hidden"
             onChange={(e) => set({ status: e.target.value === "active" ? null : e.target.value })}
           >
             {(["active", "paused", "archived"] as const).map((s) => (
@@ -1304,7 +1310,7 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
             ))}
           </Select>
           {data.habits.length > 6 && (
-            <div className="relative">
+            <div className="relative max-md:order-last max-md:w-full">
               <Search
                 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint"
                 aria-hidden
@@ -1314,18 +1320,12 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
                 placeholder={w.search}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                className="h-9 w-48 pl-9"
+                className="h-9 w-48 pl-9 max-md:h-11 max-md:w-full"
               />
             </div>
           )}
-          <Menu
-            label={w.more}
-            items={[
-              { label: t.native.importCsv, onClick: () => setPanel("import") },
-              { label: w.exportCsv, onClick: exportCsv },
-            ]}
-          />
           <Button
+            className="max-md:flex-1"
             onClick={() => {
               setStarter("");
               setPanel(panel === "new" ? null : "new");
@@ -1334,8 +1334,34 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
             <Plus />
             {t.native.habits.new}
           </Button>
+          <Menu
+            label={w.more}
+            items={[
+              // Phones: which habits to show lives here (the select is for wider screens).
+              ...(desktop
+                ? []
+                : (["active", "paused", "archived"] as const)
+                    .filter((x) => x !== status)
+                    .map((x) => ({
+                      label: `${w.status[x]} (${data.counts[x]})`,
+                      onClick: () => set({ status: x === "active" ? null : x }),
+                    }))),
+              { label: t.native.importCsv, onClick: () => setPanel("import") },
+              { label: w.exportCsv, onClick: exportCsv },
+            ]}
+          />
         </div>
       </div>
+      {!desktop && status !== "active" && (
+        <button
+          type="button"
+          onClick={() => set({ status: null })}
+          className="flex h-9 w-fit items-center gap-1.5 rounded-full border border-accent-line bg-accent-soft px-3.5 text-[14px] text-accent-text"
+        >
+          {w.status[status]} ({data.counts[status]})
+          <X className="size-3.5" aria-hidden />
+        </button>
+      )}
       {customOpen && (
         <form
           className="flex flex-wrap items-center gap-2"
@@ -1366,14 +1392,17 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
 
       {/* Summary */}
       {status === "active" && summary.active > 0 && (
-        <dl className="flex flex-wrap items-stretch divide-x divide-border rounded-2xl border border-border bg-surface text-[13px]">
+        <dl className="flex items-stretch divide-x divide-border rounded-2xl border border-border bg-surface text-[13px] md:flex-wrap max-md:[&>div]:flex-1 max-md:[&>div]:px-3">
           <div className="flex flex-col gap-0.5 px-4 py-2.5">
             <dt className="text-muted">{w.completion}</dt>
             <dd className="font-mono text-[18px]">
               {fmt.pct(summary.rate)}
               {delta !== null && (
                 <span
-                  className={cn("ml-2 text-[11.5px]", delta >= 0 ? "text-success" : "text-faint")}
+                  className={cn(
+                    "ml-2 text-[11.5px] max-md:ml-0 max-md:block",
+                    delta >= 0 ? "text-success" : "text-faint",
+                  )}
                 >
                   {w.vsPrevious(delta)}
                 </span>
@@ -1395,7 +1424,7 @@ export function HabitsView({ data, workspaceId }: { data: HabitsWorkspace; works
             </div>
           )}
           {summary.bestStreak && (
-            <div className="flex min-w-0 flex-col gap-0.5 px-4 py-2.5">
+            <div className="flex min-w-0 flex-col gap-0.5 px-4 py-2.5 max-md:hidden">
               <dt className="text-muted">{w.bestStreak}</dt>
               <dd className="truncate text-[14px]">
                 <span className="font-mono text-[18px]">{summary.bestStreak.count}</span>{" "}

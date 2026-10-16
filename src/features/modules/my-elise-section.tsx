@@ -87,7 +87,8 @@ export function MyEliseSection({
         </span>
         {!only && <p className="text-[13.5px] text-muted">{m.subtitle}</p>}
       </div>
-      <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Phones (ADR-066): one grouped list of compact rows; cards from sm. */}
+      <ul className="grid divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface sm:grid-cols-2 sm:gap-2 sm:divide-y-0 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent lg:grid-cols-3">
         {keys.map((key) => {
           const Icon = MY_ELISE_ICONS[key];
           const on = states[key];
@@ -96,13 +97,13 @@ export function MyEliseSection({
             <li key={key}>
               <div
                 className={cn(
-                  "flex h-full items-center gap-3 rounded-2xl border bg-surface px-4 py-3 transition-colors",
-                  on ? "border-border" : "border-dashed border-border",
+                  "flex h-full min-h-14 items-center gap-3 px-4 py-2.5 transition-colors sm:rounded-2xl sm:border sm:bg-surface sm:py-3",
+                  on ? "sm:border-border" : "sm:border-dashed sm:border-border",
                 )}
               >
                 <span
                   className={cn(
-                    "grid size-9 shrink-0 place-items-center rounded-xl border border-border bg-bg",
+                    "grid size-8 shrink-0 place-items-center rounded-xl border border-border bg-bg sm:size-9",
                     on ? "text-accent-text" : "text-faint",
                   )}
                 >
@@ -110,11 +111,16 @@ export function MyEliseSection({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[14.5px] font-medium">{name}</span>
-                  <span className="line-clamp-2 block text-[13px] leading-snug text-muted">
+                  <span className="block truncate text-[13px] leading-snug text-muted sm:line-clamp-2 sm:whitespace-normal">
                     {m.descriptions[key]}
                   </span>
-                  {/* State in words, not only color. */}
-                  <span className={cn("block text-[12px]", on ? "text-faint" : "text-faint/80")}>
+                  {/* State in words, not only color (the switch says it on phones). */}
+                  <span
+                    className={cn(
+                      "hidden text-[12px] sm:block",
+                      on ? "text-faint" : "text-faint/80",
+                    )}
+                  >
                     {on ? m.on : m.off}
                   </span>
                 </span>

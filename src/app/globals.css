@@ -315,6 +315,77 @@
   }
 }
 
+/*
+ * Mobile-first system (ADR-066). Compact (< 768px, Tailwind `md`) gets the bottom navigation;
+ * these variables let everything fixed to the bottom edge (dock, mini timer, mini player,
+ * sheets) stack above it instead of fighting for it.
+ * --bottom-nav-h: the bottom navigation's height, safe area included (0 when hidden).
+ * --keyboard-inset: how much of the layout viewport the on-screen keyboard covers (iOS).
+ * --dock-space: room the chat dock takes above the navigation, on pages that have one.
+ */
+:root {
+  --bottom-nav-h: 0px;
+  --keyboard-inset: 0px;
+  --dock-space: 0px;
+  --page-gutter: 16px;
+  /*
+   * Where persistent activities (mini timer, mini player, YouTube corner) sit: above the
+   * navigation and the dock. --activity-music is the mini player's height while it shows, so
+   * the timer stacks above it instead of overlapping.
+   */
+  --activity-music: 0px;
+  --activity-bottom: calc(var(--bottom-nav-h) + var(--dock-space) + 16px);
+}
+/* Phones and portrait tablets (< lg): the full top navigation doesn't fit; the bottom one does. */
+@media (max-width: 1023.98px) {
+  :root {
+    --bottom-nav-h: calc(58px + env(safe-area-inset-bottom));
+  }
+  /* The keyboard is open: the navigation steps aside so the field and its actions fit. */
+  :root[data-keyboard="open"] {
+    --bottom-nav-h: 0px;
+  }
+}
+@media (max-width: 767.98px) {
+  /* 16px fields: iOS Safari zooms into anything smaller on focus. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}
+@media (min-width: 768px) {
+  :root {
+    --page-gutter: 40px;
+  }
+}
+
+/*
+ * A comfortable 44px tap area around a smaller control (ADR-066), without changing how it looks.
+ * The control stays positioned; the invisible area is centered on it.
+ */
+@utility touch-hit {
+  position: relative;
+  &::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Horizontal rails (chips, tabs): scroll by swipe, no scrollbar drawn. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* Status and label typography from the reference type scale. */
 @utility type-status {
   font-family: var(--font-mono);
@@ -545,4 +616,38 @@
 /* A bare Home visit in a tab with an active conversation: hidden until it opens (ADR-032). */
 html[data-resuming] .elise-home {
   visibility: hidden;
+}
+
+/*
+ * Form sheets on phones (ADR-066): the form's action row stays at the bottom of the screen,
+ * above the home indicator, while the fields scroll.
+ */
+@media (max-width: 639.98px) {
+  [data-sheet="form"] [data-sheet-actions] {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    margin-inline: -1.25rem;
+    margin-top: auto;
+    padding: 0.75rem 1.25rem max(0.75rem, env(safe-area-inset-bottom));
+    background: color-mix(in oklab, var(--bg) 94%, transparent);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line);
+  }
+  [data-sheet="form"] [data-sheet-actions] > * {
+    flex: 1;
+  }
+  /* "Cancelar" already sits in the sheet's header. */
+  [data-sheet="form"] [data-sheet-actions] > [data-variant="ghost"] {
+    display: none;
+  }
+  /* The form fills the sheet, so its action row rests at the bottom. */
+  [data-sheet="form"] > form {
+    flex: 1;
+  }
+}
+
+/* The keyboard is open on a phone: the bottom navigation steps aside (ADR-066). */
+:root[data-keyboard="open"] [data-bottom-nav] {
+  display: none;
 }

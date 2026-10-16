@@ -111,6 +111,16 @@ export function Dock({
   const session = voice && voice.state.phase !== "idle" && voice.state.phase !== "error";
   const hearing = voice ? isHearing(voice.state) : false;
   const orbSize = mobile ? 56 : 72;
+  // Phones (ADR-066): persistent activities (timer, music) sit above the docked composer.
+  const docked = !inline;
+  const withTranscript = Boolean(transcript);
+  useEffect(() => {
+    // Only where the bottom navigation is (< lg); wide screens have room beside the dock.
+    if (!docked || window.matchMedia("(min-width: 1024px)").matches) return;
+    const root = document.documentElement;
+    root.style.setProperty("--dock-space", mobile ? (withTranscript ? "104px" : "80px") : "104px");
+    return () => root.style.setProperty("--dock-space", "0px");
+  }, [docked, withTranscript, mobile]);
 
   return (
     <div
@@ -119,7 +129,11 @@ export function Dock({
         inline
           ? "relative mt-9 w-full"
           : cn("fixed inset-x-3 md:inset-x-0", besideDrawer && "md:right-[400px]"),
-        !inline && (mobile ? "bottom-[max(14px,env(safe-area-inset-bottom))]" : "bottom-6"),
+        // Phones (ADR-066): above the bottom navigation, or the keyboard while typing.
+        !inline &&
+          (mobile
+            ? "bottom-[calc(max(var(--bottom-nav-h),env(safe-area-inset-bottom))+10px+var(--keyboard-inset))]"
+            : "bottom-[calc(var(--bottom-nav-h)+24px)]"),
       )}
     >
       {above && (
@@ -205,8 +219,9 @@ export function Dock({
             )}
             <span
               className={cn(
-                "line-clamp-2 leading-[1.38]",
-                mobile ? "text-[13.5px]" : "text-[15px]",
+                // A live caption may take two lines; the idle prompt stays on one.
+                caption.who ? "line-clamp-2 leading-[1.38]" : "truncate leading-[1.38]",
+                "text-[15px]",
                 caption.tone === "problem"
                   ? "text-approval-text"
                   : caption.who

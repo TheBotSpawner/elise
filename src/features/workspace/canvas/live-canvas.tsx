@@ -369,7 +369,9 @@ function IdleHero({
     />
   );
   return (
-    <div className="flex flex-col items-center pt-6 [--orb:clamp(250px,min(42vw,46dvh),620px)] md:pt-2">
+    // Phones (ADR-066): the idle Orb leads but leaves room for the greeting, the dock and the
+    // navigation, even on short screens (320×568).
+    <div className="flex flex-col items-center pt-4 [--orb:clamp(190px,min(54vw,34dvh),420px)] md:pt-2 md:[--orb:clamp(250px,min(42vw,46dvh),620px)]">
       <motion.div
         layoutId={ORB_LAYOUT_ID}
         transition={ORB_MOVE}

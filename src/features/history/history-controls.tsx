@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { Select } from "@/components/ui/input";
+import { FilterButton, FilterSheet } from "@/components/ui/sheet-menu";
 import type { KnowledgeNode } from "@/core/history/links";
 import { NoSpaceGlyph, SpaceGlyph } from "@/features/knowledge/appearance";
 import { useI18n } from "@/lib/i18n/client";
@@ -46,7 +48,7 @@ function FilterChip({
       href={to}
       aria-current={active ? "true" : undefined}
       className={cn(
-        "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition-colors has-[>span:first-child]:pl-2",
+        "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition-colors has-[>span:first-child]:pl-2 md:h-9",
         active
           ? "border-accent bg-accent-soft text-fg"
           : "border-border text-muted hover:border-border-strong hover:text-fg",
@@ -76,11 +78,17 @@ export function HistoryControls({
     ? nodes.filter((n) => n.parentId === params.space && !n.archived)
     : [];
   const allSpace = { space: null, section: null };
+  const [open, setOpen] = useState(false);
+  const sortControls = <SortControls params={params} hasSpaces={spaces.length > 0} />;
 
   return (
     <div className="mb-4 flex flex-col gap-3">
       {spaces.length > 0 && (
-        <nav aria-label={h.filterSpace} className="flex flex-wrap items-center gap-2">
+        // Phones (ADR-066): Spaces and Sections are swipeable rails; group and sort sit in a sheet.
+        <nav
+          aria-label={h.filterSpace}
+          className="-mx-4 no-scrollbar flex items-center gap-2 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
+        >
           {spaces.length <= MAX_CHIPS ? (
             <>
               <FilterChip to={href(params, allSpace)} active={!params.space}>
@@ -127,7 +135,10 @@ export function HistoryControls({
         </nav>
       )}
       {sections.length > 0 && (
-        <nav aria-label={h.filterSection} className="flex flex-wrap items-center gap-2">
+        <nav
+          aria-label={h.filterSection}
+          className="-mx-4 no-scrollbar flex items-center gap-2 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
+        >
           <FilterChip to={href(params, { section: null })} active={!params.section}>
             {h.allSections}
           </FilterChip>
@@ -142,37 +153,60 @@ export function HistoryControls({
           ))}
         </nav>
       )}
-      <div className="flex flex-wrap items-center gap-4 text-[13px] text-muted">
-        {spaces.length > 0 && (
-          <label className="flex items-center gap-2">
-            {h.groupBy}
-            <Select
-              value={params.group}
-              className="h-9 w-auto"
-              onChange={(e) =>
-                router.push(href(params, { group: e.target.value as HistoryParams["group"] }))
-              }
-            >
-              <option value="space">{h.groups.space}</option>
-              <option value="section">{h.groups.section}</option>
-              <option value="none">{h.groups.none}</option>
-            </Select>
-          </label>
-        )}
-        <label className="flex items-center gap-2">
-          {h.sortBy}
-          <Select
-            value={params.sort}
-            className="h-9 w-auto"
-            onChange={(e) =>
-              router.push(href(params, { sort: e.target.value as HistoryParams["sort"] }))
-            }
-          >
-            <option value="newest">{h.sorts.newest}</option>
-            <option value="oldest">{h.sorts.oldest}</option>
-          </Select>
-        </label>
+      <FilterButton
+        className="w-fit md:hidden"
+        count={(params.group !== "space" ? 1 : 0) + (params.sort !== "newest" ? 1 : 0)}
+        onClick={() => setOpen(true)}
+      />
+      <FilterSheet
+        open={open}
+        onClose={() => setOpen(false)}
+        onClear={() => router.push(href(params, { group: "space", sort: "newest" }))}
+      >
+        {sortControls}
+      </FilterSheet>
+      <div className="flex flex-wrap items-center gap-4 text-[13px] text-muted max-md:hidden">
+        {sortControls}
       </div>
     </div>
+  );
+}
+
+function SortControls({ params, hasSpaces }: { params: HistoryParams; hasSpaces: boolean }) {
+  const { t } = useI18n();
+  const h = t.history;
+  const router = useRouter();
+  return (
+    <>
+      {hasSpaces && (
+        <label className="flex items-center gap-2 max-md:flex-col max-md:items-stretch max-md:text-[14px]">
+          {h.groupBy}
+          <Select
+            value={params.group}
+            className="h-9 w-auto"
+            onChange={(e) =>
+              router.push(href(params, { group: e.target.value as HistoryParams["group"] }))
+            }
+          >
+            <option value="space">{h.groups.space}</option>
+            <option value="section">{h.groups.section}</option>
+            <option value="none">{h.groups.none}</option>
+          </Select>
+        </label>
+      )}
+      <label className="flex items-center gap-2 max-md:flex-col max-md:items-stretch max-md:text-[14px]">
+        {h.sortBy}
+        <Select
+          value={params.sort}
+          className="h-9 w-auto"
+          onChange={(e) =>
+            router.push(href(params, { sort: e.target.value as HistoryParams["sort"] }))
+          }
+        >
+          <option value="newest">{h.sorts.newest}</option>
+          <option value="oldest">{h.sorts.oldest}</option>
+        </Select>
+      </label>
+    </>
   );
 }

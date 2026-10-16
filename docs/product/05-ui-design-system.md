@@ -620,6 +620,15 @@ Prioridades:
 
 Configuraciones avanzadas permanecen disponibles pero son secundarias.
 
+## Sistema mobile-first (ADR-066)
+
+- **Breakpoints:** compact < 640 px, medium 640–767 px, expanded ≥ 768 px (`md`). Las pantallas de teléfono se componen para mobile, no se comprimen.
+- **Navegación:** debajo de `lg` (teléfonos y tablets en vertical), barra inferior con Inicio · Historial · Conocimiento · Mi ELISE · Más. Mi ELISE abre los módulos activos; Más tiene Conexiones, Programados, Aprobaciones y Configuración. Se oculta con el teclado abierto.
+- **Safe areas y borde inferior:** `viewport-fit=cover` y las variables `--bottom-nav-h`, `--keyboard-inset`, `--dock-space` y `--activity-bottom` coordinan el dock, el mini timer, el mini player y los botones flotantes.
+- **Targets:** 44 px para acciones frecuentes; `touch-hit` agranda el área de toque sin cambiar el aspecto. Inputs de 16 px en teléfonos.
+- **Primitivas:** `Dialog` (bottom sheet con handle; `size="form"` = editor a pantalla completa con Cancelar / título y acciones fijas abajo), `OverflowMenu` (menú anclado desde `md`, action sheet en teléfono, destructivo al final y en rojo), `FilterButton` + `FilterSheet`, rails sin scrollbar.
+- **Jerarquía:** una acción principal visible; secundarias en "⋯"; filtros en una hoja con contador ("Filtros · 2").
+
 ---
 
 # 23. Accessibility

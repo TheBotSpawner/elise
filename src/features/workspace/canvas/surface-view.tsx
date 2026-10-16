@@ -225,9 +225,10 @@ export const SurfaceView = memo(function SurfaceView({
           <span
             className={cn(
               "-mr-2 flex shrink-0 items-center",
-              // Glanceable cards stay quiet: their controls appear on hover or keyboard focus.
+              // Glanceable cards stay quiet: their controls appear on hover or keyboard focus —
+              // on touch screens (no hover) they are always there (ADR-066).
               size === "small" &&
-                "opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100",
+                "opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100",
             )}
           >
             {size === "small" && surface.pinned && (
@@ -303,7 +304,7 @@ function IconButton({
       title={label}
       aria-pressed={pressed}
       onClick={onClick}
-      className="grid size-8 place-items-center rounded-lg text-muted transition-colors hover:bg-active hover:text-fg"
+      className="grid size-10 place-items-center rounded-lg text-muted transition-colors hover:bg-active hover:text-fg md:size-8"
     >
       {children}
     </button>

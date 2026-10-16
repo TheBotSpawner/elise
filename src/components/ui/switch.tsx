@@ -21,7 +21,8 @@ export function Switch({
       aria-checked={checked}
       onClick={() => onCheckedChange(!checked)}
       className={cn(
-        "relative inline-flex h-6 w-10 shrink-0 items-center rounded-full border transition-colors duration-[var(--dur-xs)] disabled:opacity-50",
+        // touch-hit: a 44px tap area around the 40 × 24 track (ADR-066).
+        "touch-hit inline-flex h-6 w-10 shrink-0 items-center rounded-full border transition-colors duration-[var(--dur-xs)] disabled:opacity-50",
         checked ? "border-accent bg-accent" : "border-border-strong bg-surface-2",
         className,
       )}

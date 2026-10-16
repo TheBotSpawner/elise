@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import type { RunView, ScheduleView } from "@/application/schedules-service";
 import { EmptyState } from "@/components/shared/page";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { OverflowMenu } from "@/components/ui/sheet-menu";
 import { PRESETS, presetOf } from "@/core/schedules/presets";
 import type { ScheduleInput } from "@/core/schedules/schedule";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
@@ -97,7 +98,7 @@ export function SchedulesView({
         />
       ) : (
         <div className="flex justify-end">
-          <Button onClick={() => open({ input: blankTask(timezone) })}>
+          <Button onClick={() => open({ input: blankTask(timezone) })} className="max-md:w-full">
             <Plus />
             {t.schedules.create}
           </Button>
@@ -132,12 +133,13 @@ export function SchedulesView({
           <h2 className="type-label text-faint">{t.schedules.ideas}</h2>
           <p className="text-[13px] text-muted">{t.schedules.ideasHint}</p>
         </div>
-        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Phones (ADR-066): a swipeable rail of compact ideas, not a long list of cards. */}
+        <ul className="-mx-4 no-scrollbar flex snap-x gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-3">
           {PRESETS.map((p) => {
             const text = t.schedules.presets[p.id];
             const existing = byPreset.get(p.id);
             return (
-              <li key={p.id}>
+              <li key={p.id} className="w-[78%] shrink-0 snap-start sm:w-auto">
                 <button
                   type="button"
                   onClick={() =>
@@ -160,7 +162,9 @@ export function SchedulesView({
                   <span className="text-[12.5px] text-faint">
                     {describeWhen(p.definition, t, locale)}
                   </span>
-                  <span className="text-[13px] text-muted">{text.purpose}</span>
+                  <span className="line-clamp-2 text-[13px] text-muted sm:line-clamp-none">
+                    {text.purpose}
+                  </span>
                 </button>
               </li>
             );
@@ -212,6 +216,16 @@ function ScheduleCard({
     });
   }
   const attention = s.lastRun?.warnings.find((w) => ATTENTION.has(w.code));
+  const toggleHistory = () =>
+    history
+      ? setHistory(null)
+      : startTransition(async () => {
+          const result = await historyAction(s.id);
+          if (result.ok) setHistory(result.value);
+        });
+  const remove = () => {
+    if (window.confirm(t.schedules.deleteConfirm(s.name))) act(() => deleteScheduleAction(s.id));
+  };
 
   function act<T>(fn: () => Promise<ScheduleActionResult<T>>, success?: string) {
     startTransition(async () => {
@@ -230,7 +244,7 @@ function ScheduleCard({
         : { label: t.schedules.status[s.status], dot: "bg-faint" };
 
   return (
-    <article className="flex flex-col gap-3 rounded-2xl border border-border bg-surface px-5 py-4">
+    <article className="flex flex-col gap-3 rounded-2xl border border-border bg-surface px-4 py-3.5 md:px-5 md:py-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-base font-medium">{s.name}</p>
@@ -279,6 +293,7 @@ function ScheduleCard({
             size="sm"
             variant="ghost"
             disabled={pending}
+            className="max-md:hidden"
             onClick={() => act(() => pauseScheduleAction(s.id, false))}
           >
             {t.schedules.resume}
@@ -288,6 +303,7 @@ function ScheduleCard({
             size="sm"
             variant="ghost"
             disabled={pending}
+            className="max-md:hidden"
             onClick={() => act(() => pauseScheduleAction(s.id, true))}
           >
             {t.schedules.pause}
@@ -301,21 +317,21 @@ function ScheduleCard({
             {t.schedules.openLatest}
           </Link>
         )}
-        <Button size="sm" variant="ghost" disabled={pending} onClick={onEdit}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={pending}
+          onClick={onEdit}
+          className="max-md:hidden"
+        >
           {t.schedules.edit}
         </Button>
         <Button
           size="sm"
           variant="ghost"
           aria-expanded={history !== null}
-          onClick={() =>
-            history
-              ? setHistory(null)
-              : startTransition(async () => {
-                  const result = await historyAction(s.id);
-                  if (result.ok) setHistory(result.value);
-                })
-          }
+          onClick={toggleHistory}
+          className="max-md:hidden"
         >
           {t.schedules.history}
         </Button>
@@ -323,14 +339,37 @@ function ScheduleCard({
           size="sm"
           variant="ghost"
           disabled={pending}
-          className="ml-auto hover:text-danger-text"
-          onClick={() => {
-            if (window.confirm(t.schedules.deleteConfirm(s.name)))
-              act(() => deleteScheduleAction(s.id));
-          }}
+          className="ml-auto hover:text-danger-text max-md:hidden"
+          onClick={remove}
         >
           {t.schedules.delete}
         </Button>
+        {/* Phones (ADR-066): pause, edit, history and delete in one ⋯, delete last. */}
+        <div className="ml-auto md:hidden">
+          <OverflowMenu
+            label={t.common.moreActions}
+            items={[
+              ...(s.status === "paused"
+                ? [
+                    {
+                      label: t.schedules.resume,
+                      onClick: () => act(() => pauseScheduleAction(s.id, false)),
+                    },
+                  ]
+                : s.status === "active"
+                  ? [
+                      {
+                        label: t.schedules.pause,
+                        onClick: () => act(() => pauseScheduleAction(s.id, true)),
+                      },
+                    ]
+                  : []),
+              { label: t.schedules.edit, onClick: onEdit },
+              { label: t.schedules.history, onClick: toggleHistory },
+              { label: t.schedules.delete, onClick: remove, danger: true },
+            ]}
+          />
+        </div>
       </div>
 
       {history && <History runs={history} timezone={s.timezone} />}

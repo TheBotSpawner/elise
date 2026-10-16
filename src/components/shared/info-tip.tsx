@@ -111,7 +111,8 @@ export function InfoTip({
         onPointerEnter={hoverIn}
         onPointerLeave={hoverOut}
         className={cn(
-          "inline-grid shrink-0 place-items-center rounded-full text-faint transition-colors hover:bg-active hover:text-fg focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none aria-expanded:text-fg",
+          // touch-hit: 44px to tap, whatever the icon's size (ADR-066).
+          "touch-hit inline-grid shrink-0 place-items-center rounded-full text-faint transition-colors hover:bg-active hover:text-fg focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none aria-expanded:text-fg",
           size === "lg" ? "size-8" : "size-6",
           className,
         )}
