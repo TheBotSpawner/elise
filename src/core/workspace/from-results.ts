@@ -23,6 +23,7 @@ import {
 import type { KnowledgeEvidence, ToolDisplay } from "../agents/tools";
 import type { CalendarEvent } from "../capabilities/calendar";
 import type { EmailMessage } from "../capabilities/email";
+import type { EmailTriageGroup } from "../capabilities/email-triage";
 import { splitItems } from "../capabilities/lists";
 import type { Task } from "../capabilities/tasks";
 import { channelLabel, type TeamMessage } from "../capabilities/team-messaging";
@@ -171,6 +172,49 @@ export function emailListSurface(
       ref: null,
     },
   );
+}
+
+/**
+ * Triaged email (ADR-067): one Communication Surface per account, never one mixed list. Its id
+ * comes from the account, so refreshing the read updates each account's Surface in place.
+ */
+export function triageSurfaces(
+  messages: EmailMessage[],
+  groups: EmailTriageGroup[],
+  opts: PresentOptions,
+): SurfaceDraft[] {
+  const byId = new Map(messages.map((m) => [m.id, m]));
+  return groups.flatMap((g) => {
+    const items = g.items.flatMap((t) => {
+      const m = byId.get(t.messageId);
+      return m
+        ? [
+            {
+              ...emailItem(m, t.status === "needs_reply"),
+              priority: t.level,
+              status: t.status,
+            },
+          ]
+        : [];
+    });
+    if (!items.length) return [];
+    const label = clip(g.account.label, 200);
+    const s = draft(
+      "email_list",
+      `${opts.key}:${g.account.connectionId}`,
+      {
+        items: items.slice(0, 10),
+        mailbox: {
+          label,
+          providerKey: g.account.providerKey,
+          address: g.account.address ? clip(g.account.address, 320) : null,
+        },
+      },
+      opts,
+      { title: label, source: { capability: "email", label }, ref: null },
+    );
+    return s ? [s] : [];
+  });
 }
 
 export function taskItem(t: Task): SurfacePayloads["task_list"]["items"][number] {
@@ -585,7 +629,9 @@ export function surfacesFromOutcome(
         calendarSurface({ events: [], from: d.from, to: d.to, free: d.free, busy: d.busy }, opts),
       );
     case "email_list":
-      return one(emailListSurface(d.messages, opts));
+      return d.triage
+        ? triageSurfaces(d.messages, d.triage, opts)
+        : one(emailListSurface(d.messages, opts));
     case "email_thread":
       return one(threadSurface(d, opts));
     case "email_followups": {

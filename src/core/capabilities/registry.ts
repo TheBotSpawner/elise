@@ -46,6 +46,7 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       getMessage: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
       getThread: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
       findFollowUps: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
+      triage: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
       // Drafts never leave the mailbox: creating and editing them is low-friction.
       createDraft: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
       reply: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },

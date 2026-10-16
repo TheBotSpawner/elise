@@ -63,6 +63,32 @@ export function briefCanvas(brief: MorningBrief, reads: readonly BriefRead[]): B
         add(r, d, brief.today?.conflicts.length ? 88 : withOthers ? 80 : meetings.length ? 70 : 38);
         break;
       case "email_list": {
+        if (d.triage) {
+          // One Communication Surface per account (ADR-067), each re-reading only its account;
+          // an account with nothing relevant gets none. The most urgent account comes first.
+          for (const g of d.triage) {
+            const ids = new Set(g.items.map((i) => i.messageId));
+            const messages = d.messages.filter((m) => ids.has(m.id));
+            if (!messages.length) continue;
+            const top = g.items.some((i) => i.level === "high")
+              ? 72
+              : g.items.some((i) => i.level === "medium")
+                ? 66
+                : 60;
+            add(
+              {
+                ...r,
+                args: {
+                  ...r.args,
+                  destination: (g.account.address ?? g.account.label).slice(0, 80),
+                },
+              },
+              { kind: "email_list", messages, triage: [g] },
+              top,
+            );
+          }
+          break;
+        }
         const messages = d.messages.filter((m) => attentionEmails.has(m.id));
         // One urgent email leads; several important ones support.
         if (messages.length)

@@ -98,7 +98,10 @@ describe("Morning Brief gathering", () => {
     const { data, failed } = await gatherBrief(ports, ctx, all);
     expect(failed).toBe(0);
     expect(data.events).toHaveLength(2);
-    expect(data.unread?.map((m) => m.provenance.source).sort()).toEqual(["Northwind", "Personal"]);
+    expect(data.email?.messages.map((m) => m.provenance.source).sort()).toEqual([
+      "Northwind",
+      "Personal",
+    ]);
     expect(data.tasks?.map((t) => t.title)).toEqual(["Send proposal"]);
     expect(data.warnings).toEqual([]);
   });
@@ -108,8 +111,8 @@ describe("Morning Brief gathering", () => {
     personalMail.failReads = new AppError("AUTH_EXPIRED", "reconnect");
     northwindMail.failReads = new AppError("AUTH_EXPIRED", "reconnect");
     const { data, failed, attempted } = await gatherBrief(ports, ctx, all);
-    expect(failed).toBe(3); // email + two follow-up reads
-    expect(attempted).toBe(5);
+    expect(failed).toBe(1); // one email triage read, both accounts in it
+    expect(attempted).toBe(3);
     expect(data.events).toHaveLength(2);
     expect(data.warnings.map((w) => [w.block, w.code])).toContainEqual(["email", "AUTH_EXPIRED"]);
   });
@@ -118,7 +121,7 @@ describe("Morning Brief gathering", () => {
     const { ports, ctx, personalMail } = setup({ northwindStatus: "needs_reauthorization" });
     personalMail.addMessage({ id: "p1", threadId: "pt1" });
     const { data } = await gatherBrief(ports, ctx, all);
-    expect(data.unread?.map((m) => m.provenance.source)).toEqual(["Personal"]);
+    expect(data.email?.messages.map((m) => m.provenance.source)).toEqual(["Personal"]);
   });
 
   it("a pinned account is used alone and never replaced by another", async () => {
@@ -129,7 +132,7 @@ describe("Morning Brief gathering", () => {
       sources: { email: NORTHWIND },
     });
     const { data } = await gatherBrief(ports, ctx, pinned);
-    expect(data.unread).toBeUndefined();
+    expect(data.email).toBeUndefined();
     expect(data.warnings).toEqual([{ block: "email", code: "AUTH_EXPIRED" }]);
   });
 });
@@ -138,7 +141,7 @@ describe("Morning Brief connection semantics", () => {
   it("an empty inbox is an empty section, not a disconnected source", async () => {
     const { ports, ctx } = setup();
     const { data } = await gatherBrief(ports, ctx, all);
-    expect(data.unread).toEqual([]);
+    expect(data.email?.messages).toEqual([]);
     expect(briefIssues(data.warnings)).toEqual([]);
   });
 
@@ -149,7 +152,7 @@ describe("Morning Brief connection semantics", () => {
     northwindMail.failReads = missing;
     const { data } = await gatherBrief(ports, ctx, all);
     const issues = briefIssues(data.warnings);
-    // email + needs_reply + waiting_on_others collapse into one Email line.
+    // Email (and its follow-ups) is one read and one line.
     expect(issues).toEqual([
       { block: "email", code: "SERVER_NOT_CONFIGURED", state: "server_config" },
     ]);
@@ -205,7 +208,7 @@ describe("Morning Brief connection semantics", () => {
     ]);
     // Same schedule configuration, next run: Gmail is now connected.
     const second = await gatherBrief(ports, ctx, email);
-    expect(second.data.unread?.map((m) => m.provenance.source)).toContain("Personal");
+    expect(second.data.email?.messages.map((m) => m.provenance.source)).toContain("Personal");
     expect(second.data.warnings).toEqual([]);
   });
 
@@ -220,7 +223,7 @@ describe("Morning Brief connection semantics", () => {
         (await ports.loadBindings()).filter((b) => b.connectionId !== PERSONAL),
     };
     const { data } = await gatherBrief(removed, ctx, email);
-    expect(data.unread?.map((m) => m.provenance.source)).toEqual(["Northwind"]);
+    expect(data.email?.messages.map((m) => m.provenance.source)).toEqual(["Northwind"]);
   });
 
   it("news needs topics, not a connection", async () => {

@@ -149,6 +149,7 @@ const EMAIL_GUIDANCE = `Email:
 - When summarizing, separate: what the email says (facts, with sender and date), your interpretation, and a suggested next step. Useful sections: Summary, Decision/Request, Open questions, Action items, Relevant dates.
 - Replies: use email.reply with the message id; it stays in the same thread and account. Use replyAll only if the user asks; mention people a plain reply leaves out if it matters.
 - New emails: email.createDraft. Drafting is free; sending always needs the user's approval of that exact draft (email.sendDraft). "Send it" refers to the latest draft id in this conversation. Never say an email was sent until the tool confirms it. If a send outcome is unknown, do not retry: ask the user to check Sent.
+- "¿Algo importante en el mail?", "¿qué tengo que atender?" → email.triage: per account, noise left out, most important first; keep its accounts separate when you answer.
 - "Needs reply", "waiting on" → email.findFollowUps and keep its reasons. Your own classifications (important, newsletter, needs reply, action requested) are judgments: say why, and never archive or change mail based on them unless the user asks. Bulk cleanups: show count and examples first; ELISE asks for approval.
 - Attachments: you only see names, types and sizes.`;
 

@@ -295,3 +295,63 @@ describe("motion", () => {
     expect(surfaceMotion(false).initial).toMatchObject({ y: 12 });
   });
 });
+
+describe("balanced packing (ADR-067)", () => {
+  const calendar = { events: [], range: { from: "2026-10-16", to: "2026-10-16" }, view: "day" };
+  const habits: SurfacePayloads["visualization"] = {
+    spec: {
+      type: "hbar",
+      title: "Hábitos",
+      format: { kind: "number" },
+      rows: ["a", "b", "c", "d", "e"].map((label) => ({ label, value: 1 })),
+    },
+  };
+  const fiveEmails: SurfacePayloads["email_list"] = {
+    items: Array.from({ length: 5 }, (_, i) => ({ ...emails.items[0]!, threadId: `t${i}` })),
+  };
+  // The screenshot: a tall calendar leads, two Communication Surfaces, tasks and habits.
+  const morning = () => [
+    s("focus", "summary", summary, { priority: 86 }),
+    s("cal", "calendar", calendar, { priority: 80 }),
+    s("mail1", "email_list", fiveEmails, { priority: 66 }),
+    s("mail2", "email_list", fiveEmails, { priority: 64 }),
+    s("habits", "visualization", habits, { priority: 45 }),
+  ];
+
+  it("the column under a tall lead takes Surfaces instead of leaving a gap", () => {
+    const c = resolveComposition(input(morning()));
+    expect(c.kind).toBe("brief");
+    const z = zones(c);
+    const side = c.slots.filter((x) => x.zone === "side").map((x) => x.id);
+    const main = c.slots.filter((x) => x.zone === "main").map((x) => x.id);
+    // Not everything stacked on the right.
+    expect(side.length).toBeLessThan(4);
+    expect(main.length).toBeGreaterThan(1);
+    // Every Surface is placed; none is pushed to the shelf while a column has room.
+    expect(c.shelf).toEqual([]);
+    expect(Object.keys(z).sort()).toEqual(["cal", "focus", "habits", "mail1", "mail2"]);
+  });
+
+  it("is stable: the same workspace always packs the same way", () => {
+    const a = resolveComposition(input(morning()));
+    const b = resolveComposition(input(morning()));
+    expect(zones(a)).toEqual(zones(b));
+    expect(a.slots.map((x) => x.id)).toEqual(b.slots.map((x) => x.id));
+  });
+
+  it("phones never get two columns", () => {
+    const c = resolveComposition(input(morning(), { device: "mobile" }));
+    expect(new Set(c.slots.map((x) => x.zone))).not.toContain("side");
+    expect(c.slots.every((x) => ["main", "stack"].includes(x.zone))).toBe(true);
+  });
+
+  it("reading order stays priority order inside each column", () => {
+    const c = resolveComposition(input(morning()));
+    const order = (zone: string) => c.slots.filter((x) => x.zone === zone).map((x) => x.id);
+    const rank = ["cal", "focus", "mail1", "mail2", "habits"];
+    for (const zone of ["main", "side"]) {
+      const ids = order(zone).filter((id) => id !== "cal" && id !== "focus");
+      expect(ids).toEqual([...ids].sort((x, y) => rank.indexOf(x) - rank.indexOf(y)));
+    }
+  });
+});

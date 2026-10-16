@@ -1037,7 +1037,7 @@ describe("Morning Brief focus", () => {
       timezone: BA,
       events: [event("alex", "Weekly", "2026-10-01T16:00:00Z", [{ email: "alex@example.com" }])],
       tasks: [task("t", "Initech invoice", { dueDate: "2026-10-01" })],
-      needsReply: [],
+      email: { messages: [], triage: [] },
       contexts: {
         profiles: [INITECH, NORTHWIND, ADMIN],
         entities: [ALEX],

@@ -75,6 +75,16 @@ const emailItem = z.object({
   unread: z.boolean(),
   needsReply: z.boolean().optional(),
   account: text(200),
+  /** Triage (ADR-067): how much attention it needs, and the one status worth showing. */
+  priority: z.enum(["high", "medium", "normal"]).optional(),
+  status: z.enum(["needs_reply", "urgent", "payment", "waiting"]).nullable().optional(),
+});
+
+/** The account a Communication Surface belongs to: the identity Connections shows. */
+const mailbox = z.object({
+  label: text(200),
+  providerKey: text(40),
+  address: text(320).nullable(),
 });
 
 const teamMessage = z.object({
@@ -238,7 +248,12 @@ export const PAYLOADS = {
   meeting: eventPayload,
   calendar_event: eventPayload,
   calendar: calendarPayloadSchema,
-  email_list: z.object({ items: z.array(emailItem).max(8), query: text(200).optional() }),
+  email_list: z.object({
+    items: z.array(emailItem).max(10),
+    query: text(200).optional(),
+    /** One account's triaged email (ADR-067); absent on plain lists and older Surfaces. */
+    mailbox: mailbox.optional(),
+  }),
   email_thread: z.object({
     threadId: text(1000),
     subject: text(300),

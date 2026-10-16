@@ -404,6 +404,16 @@ function MeetingBody({
   );
 }
 
+/** Provider names worth showing next to an account alias (ADR-067). */
+const MAIL_PROVIDER: Record<string, string> = { google: "Gmail", microsoft: "Outlook" };
+/** Shown at first; the rest one tap away, so a busy account never grows the Canvas. */
+const EMAIL_VISIBLE = 5;
+const PRIORITY_DOT = {
+  high: "bg-danger",
+  medium: "bg-approval",
+  normal: "bg-accent/60",
+} as const;
+
 function EmailListBody({
   surface,
   p,
@@ -417,33 +427,76 @@ function EmailListBody({
 }) {
   const { t } = useI18n();
   const f = useFormat(timezone);
+  const [all, setAll] = useState(false);
+  const shown = all ? p.items : p.items.slice(0, EMAIL_VISIBLE);
+  const hidden = p.items.length - shown.length;
   return (
-    <ol className="-mx-2 flex flex-col">
-      {p.items.map((m, i) => (
-        <li key={m.threadId}>
-          <button
-            type="button"
-            onClick={() => handlers.onExpand(surface, m.threadId)}
-            className="grid w-full grid-cols-[20px_minmax(0,1fr)_auto] items-baseline gap-x-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-surface-2"
-          >
-            <span className="font-mono text-[11.5px] text-faint">{i + 1}</span>
-            <span className="min-w-0">
-              <span className={cn("block truncate text-[14px]", m.unread && "font-medium")}>
-                {m.subject}
-              </span>
-              <span className="block truncate text-[12.5px] text-muted">
-                {m.from?.name ?? m.from?.email}
-                {m.needsReply && (
-                  <span className="text-approval-text"> · {t.workspace.email.needsReply}</span>
+    <div className="flex flex-col gap-1.5">
+      {p.mailbox && (
+        <p className="flex min-w-0 items-baseline gap-1.5 text-[12px] text-faint">
+          <span className="shrink-0 text-fg2">
+            {MAIL_PROVIDER[p.mailbox.providerKey] ?? p.mailbox.providerKey}
+          </span>
+          {p.mailbox.address && <span className="truncate">· {p.mailbox.address}</span>}
+          <span className="ml-auto shrink-0 font-mono text-[11px]">
+            {t.workspace.email.relevant(p.items.length)}
+          </span>
+        </p>
+      )}
+      <ol className="-mx-2 flex flex-col">
+        {shown.map((m, i) => {
+          const status = m.status ?? (m.needsReply ? "needs_reply" : null);
+          return (
+            <li key={m.threadId}>
+              <button
+                type="button"
+                onClick={() => handlers.onExpand(surface, m.threadId)}
+                className="grid w-full grid-cols-[20px_minmax(0,1fr)_auto] items-baseline gap-x-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-surface-2"
+              >
+                {m.priority ? (
+                  <span
+                    role="img"
+                    aria-label={t.workspace.email.priority[m.priority]}
+                    title={t.workspace.email.priority[m.priority]}
+                    className={cn(
+                      "ml-1 inline-block size-1.5 -translate-y-px rounded-full",
+                      PRIORITY_DOT[m.priority],
+                    )}
+                  />
+                ) : (
+                  <span className="font-mono text-[11.5px] text-faint">{i + 1}</span>
                 )}
-                {m.snippet && <span className="text-faint"> · {m.snippet}</span>}
-              </span>
-            </span>
-            <span className="font-mono text-[11.5px] text-faint">{f.date(m.date)}</span>
-          </button>
-        </li>
-      ))}
-    </ol>
+                <span className="min-w-0">
+                  <span className={cn("block truncate text-[14px]", m.unread && "font-medium")}>
+                    {m.subject}
+                  </span>
+                  <span className="block truncate text-[12.5px] text-muted">
+                    {m.from?.name ?? m.from?.email}
+                    {status && (
+                      <span className={status === "waiting" ? "text-faint" : "text-approval-text"}>
+                        {" "}
+                        · {t.workspace.email.status[status]}
+                      </span>
+                    )}
+                    {m.snippet && <span className="text-faint"> · {m.snippet}</span>}
+                  </span>
+                </span>
+                <span className="font-mono text-[11.5px] text-faint">{f.date(m.date)}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      {(hidden > 0 || all) && p.items.length > EMAIL_VISIBLE && (
+        <button
+          type="button"
+          onClick={() => setAll(!all)}
+          className="self-start rounded-full px-2 py-1 text-[12.5px] text-accent-text hover:bg-surface-2"
+        >
+          {all ? t.workspace.email.showLess : t.workspace.email.showMore(hidden)}
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -37,7 +37,7 @@ export default async function SchedulesPage({ searchParams }: PageProps<"/schedu
     .filter((c) => c.providerKey === "slack" && c.capabilities.some((x) => x.enabled))
     .map((c) => ({ id: c.id, name: c.displayName }));
   return (
-    <PageContainer>
+    <PageContainer wide>
       <PageHeader
         title={t.schedules.title}
         icon={SECTION_ICONS.schedules}

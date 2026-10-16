@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { executeToolCall } from "@/core/agents/executor";
-import { assembleBrief } from "@/core/briefs/morning-brief";
+import { assembleBrief, type BriefData } from "@/core/briefs/morning-brief";
 import type { CalendarEvent } from "@/core/capabilities/calendar";
+import type { EmailMessage } from "@/core/capabilities/email";
+import { triageAccount } from "@/core/capabilities/email-triage";
 import { AppError } from "@/core/errors";
 import {
   dispatchDue,
@@ -20,6 +22,28 @@ import {
 import { isMissed, nextOccurrence, scheduleInputSchema } from "@/core/schedules/schedule";
 
 import { makeCtx, makePorts } from "../../fixtures/core-fakes";
+
+/** One account's email as the brief receives it: through the real triage. */
+function triaged(now: Date, messages: EmailMessage[]): BriefData["email"] {
+  const items = triageAccount(
+    messages.map((message) => ({ message })),
+    now,
+  );
+  return {
+    messages,
+    triage: [
+      {
+        account: { connectionId: "x", providerKey: "google", label: "Northwind", address: null },
+        items: items.map((t) => ({
+          messageId: t.message.id,
+          level: t.priority.level,
+          status: t.status,
+          reasons: t.priority.reasonCodes,
+        })),
+      },
+    ],
+  };
+}
 
 const WS = "11111111-1111-4111-8111-111111111111";
 const BA = "America/Argentina/Buenos_Aires";
@@ -415,7 +439,7 @@ describe("Morning Brief assembly", () => {
         event("Standup", "2026-09-29T12:00:00Z", "2026-09-29T12:30:00Z"),
         event("Client call", "2026-09-29T12:15:00Z", "2026-09-29T13:00:00Z"),
       ],
-      unread: [
+      email: triaged(now, [
         {
           id: "m1",
           threadId: "t1",
@@ -476,7 +500,7 @@ describe("Morning Brief assembly", () => {
             account: null,
           },
         },
-      ],
+      ]),
       tasks: [
         {
           id: "a",

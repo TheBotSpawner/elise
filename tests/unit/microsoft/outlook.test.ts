@@ -618,11 +618,14 @@ describe("Gmail and Outlook side by side", () => {
     graph.add(msg({ id: "o1", conversationId: "C1", bodyPreview: "Can you confirm?" }));
     const config = morningBriefConfigSchema.parse({ blocks: ["email", "needs_reply"] });
     const { data } = await gatherBrief(ports, ctx, config);
-    expect(data.unread?.map((m) => m.provenance.providerKey).sort()).toEqual([
+    // One Communication group per account, Gmail and Outlook through the same contract.
+    expect(data.email?.triage.map((g) => g.account.providerKey).sort()).toEqual([
       "google",
       "microsoft",
     ]);
-    expect(data.needsReply?.some((f) => f.threadId === ref("t", "C1"))).toBe(true);
+    const outlook = data.email?.triage.find((g) => g.account.providerKey === "microsoft");
+    expect(outlook?.items.find((i) => i.reasons.includes("needs_reply"))).toBeDefined();
+    expect(data.email?.messages.some((m) => m.threadId === ref("t", "C1"))).toBe(true);
 
     const throttled = new AppError("RATE_LIMITED", "busy");
     graph.request = async () => {
@@ -633,7 +636,7 @@ describe("Gmail and Outlook side by side", () => {
       ctx,
       morningBriefConfigSchema.parse({ blocks: ["email"] }),
     );
-    expect(busy.data.unread?.map((m) => m.provenance.source)).toEqual(["Personal"]);
+    expect(busy.data.email?.messages.map((m) => m.provenance.source)).toEqual(["Personal"]);
     expect(busy.data.warnings).toContainEqual(
       expect.objectContaining({ block: "email", code: "RATE_LIMITED" }),
     );

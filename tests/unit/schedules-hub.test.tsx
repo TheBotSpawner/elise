@@ -67,7 +67,21 @@ beforeEach(() => {
   actions.pauseScheduleAction.mockResolvedValue({ ok: true, value: undefined });
   actions.historyAction.mockResolvedValue({ ok: true, value: [] });
   window.scrollTo = vi.fn();
+  // jsdom has <dialog> without showModal/close, and no matchMedia (desktop: anchored menus).
+  HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
+    this.removeAttribute("open");
+  };
+  window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as never;
 });
+
+/** Secondary actions live behind "⋯" (ADR-067). */
+function menuItem(name: string) {
+  fireEvent.click(screen.getByRole("button", { name: "Más acciones" }));
+  return screen.getByRole("menuitem", { name });
+}
 
 describe("Scheduled hub (ADR-037)", () => {
   it("leads with a generic New scheduled task, your tasks first, ideas after", () => {
@@ -77,14 +91,22 @@ describe("Scheduled hub (ADR-037)", () => {
     const yours = screen.getByText("Tus tareas programadas");
     const ideas = screen.getByText("Ideas para ELISE");
     expect(yours.compareDocumentPosition(ideas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // The existing Morning Brief keeps its controls.
-    for (const name of ["Ejecutar ahora", "Pausar", "Editar", "Historial", "Eliminar"])
-      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    // One primary action on the card; the rest in its ⋯ menu, delete last.
+    expect(screen.getByRole("button", { name: "Ejecutar ahora" })).toBeInTheDocument();
+    for (const name of ["Pausar", "Editar", "Historial"])
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Más acciones" }));
+    expect(screen.getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
+      "Pausar",
+      "Editar",
+      "Historial",
+      "Eliminar",
+    ]);
   });
 
   it("the existing Morning Brief is recognised: its idea says Already added and opens it", () => {
     view();
-    const idea = screen.getByRole("button", { name: /^Morning Brief/ });
+    const idea = screen.getByRole("button", { name: /Morning Brief/ });
     expect(within(idea).getByText(/Ya agregada/)).toBeInTheDocument();
     fireEvent.click(idea);
     expect(screen.getByText("Editar “Morning Brief”")).toBeInTheDocument();
@@ -165,17 +187,20 @@ describe("Scheduled hub (ADR-037)", () => {
 
   it("pauses and shows history through the same controls", async () => {
     view();
+    const pausar = menuItem("Pausar");
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Pausar" }));
+      fireEvent.click(pausar);
     });
     expect(actions.pauseScheduleAction).toHaveBeenCalledWith(legacyBrief.id, true);
+    const historial = menuItem("Historial");
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Historial" }));
+      fireEvent.click(historial);
     });
     expect(actions.historyAction).toHaveBeenCalledWith(legacyBrief.id);
     view([{ ...legacyBrief, id: "33333333-3333-4333-8333-333333333333", status: "paused" }]);
     expect(screen.getAllByText("Pausado").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Reanudar" })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Más acciones" }).at(-1)!);
+    expect(screen.getByRole("menuitem", { name: "Reanudar" })).toBeInTheDocument();
   });
 
   it("no delivery choice anywhere; editing a legacy 'browser' schedule saves in_app and keeps the rest", async () => {
@@ -185,7 +210,7 @@ describe("Scheduled hub (ADR-037)", () => {
       input: { ...legacyBrief.input, delivery: { notify: "browser" } },
     };
     view([legacy]);
-    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(menuItem("Editar"));
     expect(screen.getByText("Editar “Morning Brief”")).toBeInTheDocument();
     for (const gone of ["Cuando esté listo", "En ELISE", "Notificación del navegador", "Sin aviso"])
       expect(screen.queryByText(gone)).toBeNull();
@@ -203,5 +228,105 @@ describe("Scheduled hub (ADR-037)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Nueva tarea programada" }));
     expect(screen.queryByText("Cuando esté listo")).toBeNull();
     expect(screen.queryByRole("combobox", { name: /listo|ready/i })).toBeNull();
+  });
+});
+
+describe("Programados editor and cards (ADR-067)", () => {
+  const isOpen = () => screen.queryByLabelText("Nombre") !== null;
+
+  it("create opens a modal over the page — never an inline form — and Cancel closes it", () => {
+    view();
+    fireEvent.click(screen.getByRole("button", { name: "Nueva tarea programada" }));
+    const dialog = screen.getByLabelText("Nombre").closest("dialog")!;
+    expect(dialog).not.toBeNull();
+    expect(dialog).toHaveAttribute("open");
+    // The dimmed, blurred backdrop and the wide desktop size.
+    expect(dialog.className).toMatch(/backdrop:backdrop-blur/);
+    expect(dialog.className).toMatch(/sm:max-w-3xl/);
+    // The list stays where it was, under the modal.
+    expect(screen.getByText("Tus tareas programadas").closest("dialog")).toBeNull();
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "Cancelar" }).at(-1)!);
+    expect(isOpen()).toBe(false);
+  });
+
+  it("edit opens the same modal with the schedule's values", () => {
+    view();
+    fireEvent.click(menuItem("Editar"));
+    expect(screen.getByLabelText("Nombre").closest("dialog")).toHaveAttribute("open");
+    expect(screen.getByLabelText("Nombre")).toHaveValue("Morning Brief");
+  });
+
+  it("unsaved changes: asks before discarding, and can keep editing", () => {
+    view();
+    fireEvent.click(screen.getByRole("button", { name: "Nueva tarea programada" }));
+    fireEvent.change(screen.getByLabelText("Nombre"), { target: { value: "Algo" } });
+    const cancel = () =>
+      fireEvent.click(screen.getAllByRole("button", { name: "Cancelar" }).at(-1)!);
+    cancel();
+    expect(screen.getByRole("alert")).toHaveTextContent("Tenés cambios sin guardar.");
+    fireEvent.click(screen.getByRole("button", { name: "Seguir editando" }));
+    expect(screen.getByLabelText("Nombre")).toHaveValue("Algo");
+    cancel();
+    fireEvent.click(screen.getByRole("button", { name: "Descartar cambios" }));
+    expect(isOpen()).toBe(false);
+  });
+
+  it("saving closes the modal", async () => {
+    view();
+    fireEvent.click(screen.getByRole("button", { name: /Planificación semanal/ }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Crear" }));
+    });
+    expect(actions.createScheduleAction).toHaveBeenCalled();
+    expect(isOpen()).toBe(false);
+  });
+
+  it("settings appear only for what ELISE looks at (progressive disclosure)", () => {
+    view();
+    fireEvent.click(screen.getByRole("button", { name: "Nueva tarea programada" }));
+    expect(screen.queryByLabelText("Temas de noticias")).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Noticias/ }));
+    expect(screen.getByLabelText("Temas de noticias")).toBeInTheDocument();
+  });
+
+  it("run now is the card's primary action; delete asks first", async () => {
+    actions.runNowAction.mockResolvedValue({
+      ok: false,
+      error: { code: "RATE_LIMITED", message: "" },
+    });
+    view();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Ejecutar ahora" }));
+    });
+    expect(actions.runNowAction).toHaveBeenCalledWith(legacyBrief.id);
+    window.confirm = vi.fn().mockReturnValue(false);
+    fireEvent.click(menuItem("Eliminar"));
+    expect(window.confirm).toHaveBeenCalled();
+    expect(actions.deleteScheduleAction).not.toHaveBeenCalled();
+  });
+
+  it("filters: active, paused, all", () => {
+    view([
+      legacyBrief,
+      {
+        ...legacyBrief,
+        id: "44444444-4444-4444-8444-444444444444",
+        name: "Cierre",
+        status: "paused",
+      },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /^Pausados/ }));
+    expect(screen.queryByText("Morning Brief", { selector: "p" })).toBeNull();
+    expect(screen.getByText("Cierre", { selector: "p" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Todos/ }));
+    expect(screen.getByText("Morning Brief", { selector: "p" })).toBeInTheDocument();
+  });
+
+  it("templates show their icon, cadence and what they look at", () => {
+    view([]);
+    const idea = screen.getByRole("button", { name: /Seguimiento de mails/ });
+    expect(idea).toHaveTextContent("Días de semana · 16:00");
+    expect(idea).toHaveTextContent("Respuestas");
+    expect(idea.querySelector("svg")).not.toBeNull();
   });
 });

@@ -12,6 +12,7 @@ import type {
   EmailThread,
   FollowUp,
 } from "../capabilities/email";
+import type { EmailTriageGroup } from "../capabilities/email-triage";
 import type {
   BudgetUsage,
   FinanceAccount,
@@ -228,7 +229,13 @@ export type ToolDisplay =
       busy: { start: string; end: string; source: string }[];
     }
   /** Message lists never carry bodies (compact, and safe to keep in history). */
-  | { kind: "email_list"; messages: EmailMessage[]; unavailable?: string[] }
+  | {
+      kind: "email_list";
+      messages: EmailMessage[];
+      unavailable?: string[];
+      /** email.triage (ADR-067): the same messages, per account, ranked, with their priority. */
+      triage?: EmailTriageGroup[];
+    }
   | { kind: "email_thread"; thread: EmailThread }
   | {
       kind: "email_draft";

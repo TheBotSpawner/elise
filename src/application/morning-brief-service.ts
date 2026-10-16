@@ -126,86 +126,72 @@ export async function gatherBrief(
       : config.horizon === "week"
         ? { from: today, days: 7 }
         : { from: today, days: 1 };
-  const [events, unread, needsReply, waiting, tasks, habits, goals, month, recent, yesterday, sky] =
-    await Promise.all([
-      want.has("calendar")
-        ? call(
-            "calendar",
-            "calendar.listEvents",
-            range.days > 1
-              ? { from: range.from, to: addDays(range.from, range.days - 1), limit: 100 }
-              : { from: range.from, limit: 50 },
-            config.sources.calendar,
-          )
-        : undefined,
-      want.has("email")
-        ? call(
-            "email",
-            "email.listRecent",
-            { unreadOnly: true, days: 1, limit: 25 },
-            config.sources.email,
-          )
-        : undefined,
-      want.has("needs_reply")
-        ? call(
-            "needs_reply",
-            "email.findFollowUps",
-            { kind: "needs_reply", days: 7, limit: 10 },
-            config.sources.email,
-          )
-        : undefined,
-      want.has("needs_reply")
-        ? call(
-            "waiting_on_others",
-            "email.findFollowUps",
-            { kind: "waiting_on_others", days: 14, olderThanHours: 48, limit: 5 },
-            config.sources.email,
-          )
-        : undefined,
-      want.has("tasks")
-        ? call("tasks", "tasks.list", { status: "open", limit: OPEN_LIMIT }, config.sources.tasks)
-        : undefined,
-      want.has("habits") ? call("habits", "habits.list", {}, "all") : undefined,
-      want.has("goals") ? call("goals", "goals.list", { status: "all" }, "all") : undefined,
-      // Finance: month-to-date totals, the last 30 days vs the 30 before (for grounded
-      // observations), and yesterday's expenses. Every number is computed by the tools.
-      want.has("finance")
-        ? call("finance", "finance.getSummary", { period: "this_month", compare: "none" }, "all")
-        : undefined,
-      want.has("finance")
-        ? call(
-            "finance",
-            "finance.getSummary",
-            { period: "last_30_days", compare: "previous", type: "expense" },
-            "all",
-          )
-        : undefined,
-      want.has("finance")
-        ? call(
-            "finance",
-            "finance.listTransactions",
-            { period: "yesterday", type: "expense", limit: 50 },
-            "all",
-          )
-        : undefined,
-      // Weather (ADR-038): the structured forecast for the brief's days, never a web search.
-      want.has("weather")
-        ? call(
-            "weather",
-            "weather.forecast",
-            {
-              when:
-                config.horizon === "week"
-                  ? "this_week"
-                  : config.horizon === "tomorrow"
-                    ? "tomorrow"
-                    : "today",
-              ...(config.weatherLocation ? { location: config.weatherLocation } : {}),
-            },
-            "all",
-          )
-        : undefined,
-    ]);
+  const [events, email, tasks, habits, goals, month, recent, yesterday, sky] = await Promise.all([
+    want.has("calendar")
+      ? call(
+          "calendar",
+          "calendar.listEvents",
+          range.days > 1
+            ? { from: range.from, to: addDays(range.from, range.days - 1), limit: 100 }
+            : { from: range.from, limit: 50 },
+          config.sources.calendar,
+        )
+      : undefined,
+    // Email (ADR-067): one triage read. Every enabled account is read in parallel (the
+    // executor's multi-account read); one that fails is named, the others still count. Each
+    // account keeps its own ranked list: one Communication Surface per account.
+    want.has("email") || want.has("needs_reply")
+      ? call(
+          "email",
+          "email.triage",
+          { limit: 10, days: 3, waiting: want.has("needs_reply") },
+          config.sources.email,
+        )
+      : undefined,
+    want.has("tasks")
+      ? call("tasks", "tasks.list", { status: "open", limit: OPEN_LIMIT }, config.sources.tasks)
+      : undefined,
+    want.has("habits") ? call("habits", "habits.list", {}, "all") : undefined,
+    want.has("goals") ? call("goals", "goals.list", { status: "all" }, "all") : undefined,
+    // Finance: month-to-date totals, the last 30 days vs the 30 before (for grounded
+    // observations), and yesterday's expenses. Every number is computed by the tools.
+    want.has("finance")
+      ? call("finance", "finance.getSummary", { period: "this_month", compare: "none" }, "all")
+      : undefined,
+    want.has("finance")
+      ? call(
+          "finance",
+          "finance.getSummary",
+          { period: "last_30_days", compare: "previous", type: "expense" },
+          "all",
+        )
+      : undefined,
+    want.has("finance")
+      ? call(
+          "finance",
+          "finance.listTransactions",
+          { period: "yesterday", type: "expense", limit: 50 },
+          "all",
+        )
+      : undefined,
+    // Weather (ADR-038): the structured forecast for the brief's days, never a web search.
+    want.has("weather")
+      ? call(
+          "weather",
+          "weather.forecast",
+          {
+            when:
+              config.horizon === "week"
+                ? "this_week"
+                : config.horizon === "tomorrow"
+                  ? "tomorrow"
+                  : "today",
+            ...(config.weatherLocation ? { location: config.weatherLocation } : {}),
+          },
+          "all",
+        )
+      : undefined,
+  ]);
 
   // Slack (ADR-062): only the channels the schedule names, in its one workspace, for a bounded
   // window — one history read per channel, one after another (Slack's history limits are
@@ -282,9 +268,10 @@ export async function gatherBrief(
       timezone: ctx.timezone,
       locale: ctx.locale,
       events: events?.kind === "event_list" ? events.events : undefined,
-      unread: unread?.kind === "email_list" ? unread.messages : undefined,
-      needsReply: needsReply?.kind === "email_followups" ? needsReply.items : undefined,
-      waitingOnOthers: waiting?.kind === "email_followups" ? waiting.items : undefined,
+      email:
+        email?.kind === "email_list"
+          ? { messages: email.messages, triage: email.triage ?? [] }
+          : undefined,
       tasks: tasks?.kind === "task_list" ? tasks.tasks : undefined,
       habits: habits?.kind === "habits" ? habits.progress : undefined,
       goals: goals?.kind === "goals" ? goals.goals : undefined,
@@ -392,8 +379,8 @@ function logBrief(
 ) {
   const sections = Object.entries({
     calendar: brief.today?.events.length,
-    email: brief.attention.emails.length,
-    needs_reply: brief.waitingOnYou.replies.length,
+    email: brief.communication?.reduce((n, c) => n + c.messages.length, 0),
+    email_accounts: brief.communication?.length,
     tasks: brief.attention.tasks.length + brief.waitingOnYou.overdue.length,
     habits: brief.habits?.length,
     goals: brief.goals?.length,

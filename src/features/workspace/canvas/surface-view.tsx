@@ -158,6 +158,8 @@ export const SurfaceView = memo(function SurfaceView({
     );
 
   const framed = !SELF_FRAMED.has(surface.type);
+  const mailbox =
+    surface.type === "email_list" && (surface.payload as SurfacePayloads["email_list"]).mailbox;
   const source = surface.source?.label;
   const Prov = PROVENANCE[surface.source?.capability ?? ""] ?? Sparkles;
   const confidence =
@@ -210,7 +212,12 @@ export const SurfaceView = memo(function SurfaceView({
             <span
               className={cn(
                 "flex shrink-0 items-center gap-1.5 type-eyebrow text-[10px]",
-                surface.state === "error" ? "text-danger-text" : "text-accent-text",
+                surface.state === "error"
+                  ? "text-danger-text"
+                  : // Staleness is a footnote: it never outshines the title or the account.
+                    surface.state === "stale" && !isNew && !surface.pinned
+                    ? "text-faint"
+                    : "text-accent-text",
               )}
             >
               <span aria-hidden className="size-[5px] rounded-full bg-current" />
@@ -274,7 +281,8 @@ export const SurfaceView = memo(function SurfaceView({
         {focused && <FocusDetail surface={surface} timezone={timezone} handlers={handlers} />}
       </div>
       {size !== "small" && <SurfaceActions surface={surface} handlers={handlers} />}
-      {(source || confidence) && size !== "small" && (
+      {/* A Communication Surface already names its account in the header (ADR-067). */}
+      {(source || confidence) && size !== "small" && !mailbox && (
         <footer className="mt-auto flex items-center gap-2 pt-1 text-[11.5px] text-faint">
           <Prov className="size-3 shrink-0" aria-hidden />
           <span className="truncate">{source ?? surface.source?.capability}</span>
@@ -448,17 +456,5 @@ export function SkeletonSurface({ label }: { label: string }) {
       <span className="h-2.5 w-[92%] animate-pulse rounded bg-skel" />
       <span className="h-2.5 w-[58%] animate-pulse rounded bg-skel" />
     </motion.div>
-  );
-}
-
-/** Where a focused Surface will return (reference ghost: "returns here"). */
-export function GhostSlot({ label }: { label: string }) {
-  return (
-    <div
-      aria-hidden
-      className="flex min-h-[72px] items-end rounded-2xl border border-dashed border-ghost p-3 font-mono text-[10px] tracking-[0.1em] text-faint uppercase"
-    >
-      {label}
-    </div>
   );
 }

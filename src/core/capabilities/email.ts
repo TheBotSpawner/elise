@@ -207,6 +207,24 @@ export const followUpsInput = z
   })
   .strict();
 
+export const triageInput = z
+  .object({
+    limit: z.number().int().min(1).max(10).default(10).describe("Most per account."),
+    days: z
+      .number()
+      .int()
+      .min(1)
+      .max(7)
+      .default(3)
+      .describe("How far back to look at unread mail."),
+    waiting: z
+      .boolean()
+      .default(false)
+      .describe("Also threads where the user wrote last and is waiting for an answer."),
+    destination: destinationField,
+  })
+  .strict();
+
 const recipients = z.array(address).max(50);
 
 export const createDraftInput = z

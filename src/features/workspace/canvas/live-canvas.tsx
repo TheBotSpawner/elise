@@ -39,7 +39,7 @@ import {
 } from "./composition";
 import { Dock, type DockCaption } from "./dock";
 import { EASE, ORB_MOVE } from "./motion";
-import { GhostSlot, SkeletonSurface, SurfaceView, type CanvasHandlers } from "./surface-view";
+import { SkeletonSurface, SurfaceView, type CanvasHandlers } from "./surface-view";
 import { TemporalView } from "./temporal-view";
 import { TranscriptPanel } from "./transcript";
 
@@ -614,7 +614,6 @@ function Zones({
   labelFor: (k: TemporalItem["kind"]) => string;
   reduced: boolean;
 }) {
-  const { t } = useI18n();
   const mobile = device === "mobile";
   const kind = composition.kind;
   const zone = (z: Zone) => composition.slots.filter((s) => s.zone === z);
@@ -691,12 +690,7 @@ function Zones({
             : "grid-cols-[200px_minmax(0,1fr)_200px]",
         )}
       >
-        {device !== "tablet" && (
-          <div className="flex flex-col gap-4">
-            <GhostSlot label={t.canvas.returnsHere} />
-            {render(left)}
-          </div>
-        )}
+        {device !== "tablet" && <div className="flex flex-col gap-4">{render(left)}</div>}
         <div className="mx-auto w-full max-w-[1100px] min-w-0">{center}</div>
         <div className="flex flex-col gap-4">{render(right)}</div>
       </div>

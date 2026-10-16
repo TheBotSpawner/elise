@@ -3,7 +3,12 @@ import { z } from "zod";
 import type { AIProvider } from "../agents/ai-provider";
 import { MODEL_POLICY } from "../agents/model-policy";
 import type { CalendarEvent } from "../capabilities/calendar";
-import { clip, noiseSignals, type EmailMessage, type FollowUp } from "../capabilities/email";
+import { clip, type EmailMessage, type FollowUp } from "../capabilities/email";
+import type {
+  EmailPriorityLevel,
+  EmailTriageGroup,
+  EmailTriageStatus,
+} from "../capabilities/email-triage";
 import type {
   CurrencyTotals,
   FinanceInsight,
@@ -63,6 +68,20 @@ export interface BriefEmail {
   source: string;
   url: string | null;
   important: boolean;
+  /** Triage (ADR-067); absent on briefs stored before it. */
+  priority?: EmailPriorityLevel;
+  status?: EmailTriageStatus | null;
+}
+
+/**
+ * One email account's part of the brief (ADR-067): its alias, provider and address, and its
+ * few triaged emails, most important first. Enough to re-render the Surface; never a token.
+ */
+export interface BriefCommunication {
+  type: "communication";
+  account: { connectionId: string; provider: string; alias: string; email: string | null };
+  messages: BriefEmail[];
+  generatedAt: string;
 }
 
 export interface BriefFollowUp {
@@ -196,6 +215,8 @@ export interface MorningBrief {
     gaps: { start: string; end: string }[];
   } | null;
   attention: { emails: BriefEmail[]; tasks: BriefTask[] };
+  /** Email per account (ADR-067): one entry per account with something relevant. */
+  communication?: BriefCommunication[];
   waitingOnYou: { replies: BriefFollowUp[]; overdue: BriefTask[] };
   waitingOnOthers: BriefFollowUp[];
   /** Habits still open today or at risk this week (computed, never estimated). */
@@ -293,9 +314,8 @@ export interface BriefData {
   now: Date;
   timezone: string;
   events?: CalendarEvent[];
-  unread?: EmailMessage[];
-  needsReply?: FollowUp[];
-  waitingOnOthers?: FollowUp[];
+  /** email.triage (ADR-067): the triaged messages and, per account, their ranking. */
+  email?: { messages: EmailMessage[]; triage: EmailTriageGroup[] };
   tasks?: Task[];
   habits?: HabitProgress[];
   /** The same snapshots the Goals screen uses (health optional for older callers). */
@@ -378,7 +398,7 @@ function briefFocus(data: BriefData, today: string): BriefFocus[] {
     const meetings = p.kind === "study" ? [] : dayEvents.filter((e) => eventMatches(s, e));
     const tasks = due.filter((t) => taskMatches(s, t)).length;
     const terms = s.terms.map(nameKey);
-    const replies = (data.needsReply ?? []).filter((f) => {
+    const replies = needsReplyOf(data).filter((f) => {
       const who = f.counterpart.toLowerCase();
       return (
         [...s.emails].some((e) => who.includes(e)) ||
@@ -435,6 +455,64 @@ function briefNews(news: NonNullable<BriefData["news"]>): BriefNews[] {
     .slice(0, CAPS.news);
 }
 
+interface TriagedRow {
+  message: EmailMessage;
+  group: EmailTriageGroup;
+  level: EmailPriorityLevel;
+  status: EmailTriageStatus | null;
+  reasons: string[];
+}
+
+/** The triaged emails, per account in order, each with its account. */
+function triagedRows(data: BriefData): TriagedRow[] {
+  const byId = new Map((data.email?.messages ?? []).map((m) => [m.id, m]));
+  return (data.email?.triage ?? []).flatMap((group) =>
+    group.items.flatMap(({ messageId, ...meta }) => {
+      const message = byId.get(messageId);
+      return message ? [{ message, group, ...meta }] : [];
+    }),
+  );
+}
+
+/** Threads waiting on the user, as the focus and the narration count them. */
+function needsReplyOf(data: BriefData): { counterpart: string; subject: string }[] {
+  return triagedRows(data)
+    .filter((r) => r.reasons.includes("needs_reply"))
+    .map((r) => ({
+      counterpart: r.message.from ? `${r.message.from.name ?? ""} <${r.message.from.email}>` : "",
+      subject: r.message.subject,
+    }));
+}
+
+function briefEmail(r: TriagedRow): BriefEmail {
+  const m = r.message;
+  return {
+    id: m.id,
+    threadId: m.threadId,
+    from: m.from ? (m.from.name ?? m.from.email) : "?",
+    subject: m.subject,
+    snippet: clip(m.snippet, 160),
+    date: m.date,
+    source: r.group.account.label,
+    url: m.url,
+    important: m.important,
+    priority: r.level,
+    status: r.status,
+  };
+}
+
+function rowFollowUp(r: TriagedRow): BriefFollowUp {
+  return {
+    threadId: r.message.threadId,
+    subject: r.message.subject,
+    with: r.message.from ? (r.message.from.name ?? r.message.from.email) : "?",
+    since: r.message.date,
+    reasons: r.reasons,
+    confidence: r.level === "high" ? "high" : r.level === "medium" ? "medium" : "low",
+    source: r.group.account.label,
+  };
+}
+
 const minutesBetween = (a: string, b: string) =>
   Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000);
 
@@ -462,19 +540,7 @@ function briefTask(t: Task): BriefTask {
   };
 }
 
-function briefFollowUp(f: FollowUp): BriefFollowUp {
-  return {
-    threadId: f.threadId,
-    subject: f.subject,
-    with: f.counterpart,
-    since: f.lastMessageAt,
-    reasons: f.reasons,
-    confidence: f.confidence,
-    source: f.source,
-  };
-}
-
-const CONFIDENCE = { high: 0, medium: 1, low: 2 } as const;
+const LEVEL = { high: 0, medium: 1, normal: 2 } as const;
 
 /** Deterministic selection and ranking. Same data in, same brief out. */
 export function assembleBrief(data: BriefData): MorningBrief {
@@ -522,32 +588,26 @@ export function assembleBrief(data: BriefData): MorningBrief {
     };
   }
 
-  const replies = (data.needsReply ?? [])
-    .slice()
-    .sort(
-      (a, b) =>
-        CONFIDENCE[a.confidence] - CONFIDENCE[b.confidence] ||
-        b.lastMessageAt.localeCompare(a.lastMessageAt),
-    )
-    .slice(0, CAPS.replies);
-  const replyThreads = new Set(replies.map((r) => r.threadId));
-
-  // Important: unread, not automated/newsletter, not already listed as needing a reply.
-  const emails = (data.unread ?? [])
-    .filter((m) => !m.fromMe && noiseSignals(m).length === 0 && !replyThreads.has(m.threadId))
-    .sort((a, b) => Number(b.important) - Number(a.important) || b.date.localeCompare(a.date))
-    .slice(0, CAPS.emails)
-    .map((m) => ({
-      id: m.id,
-      threadId: m.threadId,
-      from: m.from ? (m.from.name ?? m.from.email) : "?",
-      subject: m.subject,
-      snippet: clip(m.snippet, 160),
-      date: m.date,
-      source: m.provenance.source,
-      url: m.url,
-      important: m.important,
-    }));
+  // Email (ADR-067): already triaged per account — noise out, ranked, capped. Across accounts,
+  // the most important first for the narration; per account for the screen.
+  const rows = triagedRows(data);
+  const ranked = [...rows].sort((a, b) => LEVEL[a.level] - LEVEL[b.level]);
+  const replies = ranked.filter((r) => r.reasons.includes("needs_reply"));
+  const waiting = ranked.filter((r) => r.reasons.includes("waiting"));
+  const emails = ranked.filter((r) => !replies.includes(r) && !waiting.includes(r));
+  const communication: BriefCommunication[] = (data.email?.triage ?? [])
+    .map((g) => ({
+      type: "communication" as const,
+      account: {
+        connectionId: g.account.connectionId,
+        provider: g.account.providerKey,
+        alias: g.account.label,
+        email: g.account.address,
+      },
+      messages: rows.filter((r) => r.group === g).map(briefEmail),
+      generatedAt: data.now.toISOString(),
+    }))
+    .filter((c) => c.messages.length);
 
   const open = (data.tasks ?? []).filter(isOpenTask);
   const dueToday = open.filter((t) => t.dueDate === today);
@@ -568,14 +628,15 @@ export function assembleBrief(data: BriefData): MorningBrief {
     timezone: tz,
     today: todaySection,
     attention: {
-      emails,
+      emails: emails.slice(0, CAPS.emails).map(briefEmail),
       tasks: [...dueToday, ...soon].slice(0, CAPS.tasks).map(briefTask),
     },
+    ...(data.email ? { communication } : {}),
     waitingOnYou: {
-      replies: replies.map(briefFollowUp),
+      replies: replies.slice(0, CAPS.replies).map(rowFollowUp),
       overdue: overdue.slice(0, CAPS.overdue).map(briefTask),
     },
-    waitingOnOthers: (data.waitingOnOthers ?? []).slice(0, CAPS.waiting).map(briefFollowUp),
+    waitingOnOthers: waiting.slice(0, CAPS.waiting).map(rowFollowUp),
     ...(data.habits ? { habits: briefHabits(data.habits) } : {}),
     ...(data.goals ? { goals: briefGoals(data.goals, today) } : {}),
     ...(data.finance ? { finance: briefFinance(data.finance) } : {}),
@@ -747,6 +808,13 @@ function forModel(b: MorningBrief) {
       subject: e.subject,
       snippet: e.snippet,
       source: e.source,
+      ...(e.priority ? { priority: e.priority } : {}),
+    })),
+    // Which accounts have something, and how much: the screen shows one card per account.
+    emailAccounts: b.communication?.map((c) => ({
+      account: c.account.alias,
+      relevant: c.messages.length,
+      high: c.messages.filter((m) => m.priority === "high").length,
     })),
     tasksToday: b.attention.tasks,
     needsReply: b.waitingOnYou.replies.map(({ subject, with: w, reasons }) => ({

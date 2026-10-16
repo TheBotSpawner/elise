@@ -123,6 +123,75 @@ export const isCompact = (s: Surface) =>
   isKpi(s) ||
   (s.type === "media" && (s.payload as SurfacePayloads["media"]).kind === "link");
 
+/** Gap between stacked Surfaces, in the same unit as `estimateHeight`. */
+const GAP = 24;
+
+/**
+ * Roughly how tall a Surface renders in a column (px), from its type and how much it holds.
+ * Deterministic and content-based — never measured from the DOM — so the same workspace always
+ * packs the same way and nothing jumps column while it loads or re-renders.
+ */
+export function estimateHeight(s: Surface): number {
+  const head = 64;
+  const p = s.payload as Record<string, unknown>;
+  const count = (key: string, max: number) =>
+    Math.min(Array.isArray(p[key]) ? (p[key] as unknown[]).length : 0, max);
+  switch (s.type) {
+    case "calendar":
+      return 560;
+    case "email_list":
+      // Five rows show; the rest sit behind "Ver más".
+      return head + 28 + count("items", 5) * 50 + (count("items", 10) > 5 ? 32 : 0);
+    case "task_list":
+      return head + count("items", 12) * 44;
+    case "summary":
+      return head + 140;
+    case "web_news":
+      return head + count("events", 6) * 72;
+    case "team_messages":
+      return head + count("items", 8) * 56;
+    case "weather":
+      return 300;
+    case "visualization": {
+      const spec = (s.payload as SurfacePayloads["visualization"]).spec;
+      if (spec.type === "kpi") return 120;
+      return (
+        head +
+        Math.max(200, ("rows" in spec && Array.isArray(spec.rows) ? spec.rows.length : 5) * 40)
+      );
+    }
+    default:
+      return isCompact(s) ? 110 : 260;
+  }
+}
+
+/**
+ * Two columns kept balanced (ADR-067): each Surface, in priority order, goes to the column
+ * that is shorter so far (ties to `first`). Reading order stays priority order inside each
+ * column; nothing is positioned absolutely.
+ */
+function balance(
+  surfaces: Surface[],
+  first: { items: Surface[]; height: number },
+  second: { items: Surface[]; height: number },
+  cap = Infinity,
+) {
+  for (const s of surfaces) {
+    const target =
+      second.height < first.height
+        ? second.items.length < cap
+          ? second
+          : first
+        : first.items.length < cap
+          ? first
+          : second;
+    if (target.items.length >= cap) return false;
+    target.items.push(s);
+    target.height += estimateHeight(s) + GAP;
+  }
+  return true;
+}
+
 const isPendingApproval = (s: Surface) => s.type === "approval" && s.state === "attention";
 
 /** Priority order (pinned first among equals), oldest first on ties: stable across renders. */
@@ -234,20 +303,26 @@ function brief(list: Surface[], input: CanvasInput): Composition {
   }
 
   const wide = device === "wide";
+  // How many Surfaces the two columns hold together (the lead aside), and the compact rail.
   const caps =
-    device === "tablet"
-      ? { main: 1, side: 2, rail: 0 }
-      : { main: 2, side: wide ? 4 : 3, rail: wide ? 3 : 2 };
+    device === "tablet" ? { total: 4, rail: 0 } : { total: wide ? 7 : 6, rail: wide ? 3 : 2 };
   // The brief summary of an orchestration reads right under its lead (meeting → brief).
-  const summary = others.find((s) => s.type === "summary");
-  const main: Surface[] = summary && caps.main > 1 ? [summary] : [];
+  const summary = device === "tablet" ? undefined : others.find((s) => s.type === "summary");
+  const main: Surface[] = summary ? [summary] : [];
   let pool = others.filter((s) => !main.includes(s));
   const rail = caps.rail ? pool.filter(isCompact).slice(0, caps.rail) : [];
   pool = pool.filter((s) => !rail.includes(s));
-  const side = pool.slice(0, caps.side);
-  pool = pool.filter((s) => !side.includes(s));
-  // One quiet leftover can sit under the lead (web context under a meeting).
-  if (pool.length && main.length < caps.main) main.push(pool.shift()!);
+  const placed = pool.slice(0, caps.total - main.length);
+  pool = pool.slice(placed.length);
+  // Balanced, not stacked (ADR-067): the next Surface goes under the lead when that column is
+  // shorter — a tall calendar no longer leaves a gap while the side keeps growing.
+  const left = {
+    items: main,
+    height: [lead, ...main].reduce((h, s) => h + estimateHeight(s) + GAP, 0),
+  };
+  const right = { items: [] as Surface[], height: 0 };
+  balance(placed, left, right);
+  const side = right.items;
   for (const s of main) take(s, "main", s.type === "summary" ? "large" : "medium");
   for (const s of side) take(s, "side", isCompact(s) ? "small" : "medium");
   for (const s of rail) take(s, "rail", "small");
@@ -274,17 +349,22 @@ function spatial(list: Surface[], input: CanvasInput): Composition {
   const quiet = list.length > 4 ? list.at(-1)! : null;
   const around = list.filter((s) => s !== quiet);
   const perSide = 3;
-  const count = { left: 0, right: 0 };
+  // The lead opens the left side; the rest go to the shorter side (ADR-067); a full side passes
+  // to the other; both full → the shelf.
+  const left = { items: [around[0]!], height: estimateHeight(around[0]!) + GAP };
+  const right = { items: [] as Surface[], height: 0 };
   const shelf: string[] = [];
-  // Alternate sides by priority; a full side passes to the other; both full → the shelf.
-  around.forEach((s, i) => {
-    const preferred = i % 2 === 0 ? "left" : "right";
-    const other = preferred === "left" ? "right" : "left";
-    const zone = count[preferred] < perSide ? preferred : count[other] < perSide ? other : null;
-    if (!zone) return void shelf.push(s.id);
-    count[zone]++;
-    slots.push(slot(s.id, zone, isCompact(s) ? "small" : "medium", tierOf(s, input, i === 0)));
+  around.slice(1).forEach((s) => {
+    if (!balance([s], left, right, perSide)) shelf.push(s.id);
   });
+  for (const [zone, side] of [
+    ["left", left],
+    ["right", right],
+  ] as const)
+    for (const s of side.items)
+      slots.push(
+        slot(s.id, zone, isCompact(s) ? "small" : "medium", tierOf(s, input, s === around[0])),
+      );
   if (quiet) slots.push(slot(quiet.id, "bottom", "small", tierOf(quiet, input, false)));
   // Reading order: left column, then right, then the quiet one below.
   const rank: Partial<Record<Zone, number>> = { left: 0, right: 1, bottom: 2 };
