@@ -13,7 +13,7 @@ import {
   RETRIEVAL,
   selectEvidence,
 } from "../knowledge/retrieval";
-import { representationHint, TEMPORAL_HINT } from "../workspace/representation";
+import { ANSWER_HINT, representationHint, TEMPORAL_HINT } from "../workspace/representation";
 
 /**
  * Knowledge tools (docs/architecture/09 §31-37, 72). Scope first — the active Space, or the
@@ -308,7 +308,7 @@ export const searchKnowledgeTool: ToolDefinition = {
           ? `Answer from these passages (and scopeMetadata, the user's own description of the Space, when relevant — say which is which) and cite passages inline as [n] with the document name. Passages with readLive were read just now from the connected source (Notion, Google Drive): they are its current content. If they only partly answer, say what is missing. Say when something comes from general knowledge instead.${
               representationHint(selected.map((h) => h.content)) === "temporal"
                 ? ` ${TEMPORAL_HINT}`
-                : ""
+                : ` ${ANSWER_HINT}`
             }`
           : metadata.length
             ? "No document passage matched. scopeMetadata is what the user wrote about this Space/Section (its description and context): if it answers the question (what it is, what it's about), answer from it and say it comes from the Space's description. It is not evidence of what documents say; for document contents, say none were found."

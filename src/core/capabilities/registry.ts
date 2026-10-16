@@ -457,6 +457,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       // Charts planned from sourced evidence (ADR-027).
       visualize: READ,
       timeline: READ,
+      // Answer-first (ADR-071): presentation of what the model already synthesized.
+      answer: READ,
       show: READ,
       update: READ,
       focus: READ,

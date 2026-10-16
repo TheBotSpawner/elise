@@ -249,35 +249,108 @@ function AssistantMessage({
   );
 }
 
+/** Retrieval: where an answer came from (ADR-071), grouped as one "Sources · N" chip. */
+const EVIDENCE_TOOL =
+  /^(knowledge\.search|history\.search|web\.(search|searchNews|research|open))$/;
+
+type ShownTool = ChatMessage["tools"][number];
+
+/** The documents behind the evidence, by name — never a generic "Knowledge" twice. */
+export function evidenceSources(tools: ShownTool[]) {
+  const docs = new Map<string, { title: string; space: string }>();
+  const other: ShownTool[] = [];
+  for (const tool of tools) {
+    const d = tool.outcome?.status === "succeeded" ? tool.outcome.display : undefined;
+    if (d?.kind === "knowledge_evidence")
+      for (const e of d.evidence)
+        if (!docs.has(e.itemId)) docs.set(e.itemId, { title: e.title, space: e.spaceName });
+    if (d?.kind !== "knowledge_evidence") other.push(tool);
+  }
+  return { docs: [...docs], other };
+}
+
 /** Results presented as Surfaces: one quiet chip each, which brings the Surface into view. */
 function SurfaceChips({ message, handlers }: { message: ChatMessage; handlers: ThreadHandlers }) {
   const { t } = useI18n();
   const shown = message.tools.filter((tool) => tool.surfaceIds?.length && tool.outcome);
   if (!shown.length || !handlers.onShowSurface) return null;
   const storedId = message.serverId ?? (message.fresh ? null : message.id);
+  const show = (tool: ShownTool) =>
+    handlers.onShowSurface?.(tool.surfaceIds ?? [], storedId, tool.callId);
+  const evidence = shown.filter((tool) => EVIDENCE_TOOL.test(tool.name));
+  const { docs, other } = evidenceSources(evidence);
+  const chip =
+    "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12.5px] transition-colors";
   return (
-    <ul className="flex flex-wrap gap-2">
-      {shown.map((tool) => {
-        const waiting = tool.outcome?.status === "approval_required" && !tool.resolution;
-        return (
-          <li key={tool.callId}>
-            <button
-              type="button"
-              onClick={() => handlers.onShowSurface?.(tool.surfaceIds ?? [], storedId, tool.callId)}
+    <ul className="flex flex-wrap items-start gap-2">
+      {evidence.length > 0 && (
+        <li>
+          <details className="group">
+            <summary
               className={cn(
-                "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12.5px] transition-colors",
-                waiting
-                  ? "border-approval-line text-approval-text"
-                  : "border-border text-muted hover:border-accent-line hover:text-fg",
+                chip,
+                "cursor-pointer list-none border-border text-muted hover:border-accent-line hover:text-fg [&::-webkit-details-marker]:hidden",
               )}
             >
-              {waiting ? t.workspace.approvalPending : activityLabel(t, tool.name, false)}
-              <span className="text-faint">· {t.workspace.shown}</span>
-              <ArrowUpRight className="size-3.5" aria-hidden />
-            </button>
-          </li>
-        );
-      })}
+              {t.workspace.answer.sources(docs.length + other.length)}
+            </summary>
+            <ul className="mt-1.5 flex flex-col gap-1 pl-3 text-[12.5px]">
+              {docs.map(([id, d]) => (
+                <li key={id}>
+                  <a href={`/knowledge/items/${id}`} className="hover:text-accent-text">
+                    {d.title}
+                  </a>
+                  <span className="text-faint"> · {d.space}</span>
+                </li>
+              ))}
+              {other.map((tool) => (
+                <li key={tool.callId}>
+                  <button
+                    type="button"
+                    onClick={() => show(tool)}
+                    className="hover:text-accent-text"
+                  >
+                    {activityLabel(t, tool.name, false)}
+                  </button>
+                </li>
+              ))}
+              <li>
+                <button
+                  type="button"
+                  onClick={() => show(evidence.at(-1)!)}
+                  className="inline-flex items-center gap-1 text-faint hover:text-accent-text"
+                >
+                  {t.workspace.focus}
+                  <ArrowUpRight className="size-3.5" aria-hidden />
+                </button>
+              </li>
+            </ul>
+          </details>
+        </li>
+      )}
+      {shown
+        .filter((tool) => !evidence.includes(tool))
+        .map((tool) => {
+          const waiting = tool.outcome?.status === "approval_required" && !tool.resolution;
+          return (
+            <li key={tool.callId}>
+              <button
+                type="button"
+                onClick={() => show(tool)}
+                className={cn(
+                  chip,
+                  waiting
+                    ? "border-approval-line text-approval-text"
+                    : "border-border text-muted hover:border-accent-line hover:text-fg",
+                )}
+              >
+                {waiting ? t.workspace.approvalPending : activityLabel(t, tool.name, false)}
+                <span className="text-faint">· {t.workspace.shown}</span>
+                <ArrowUpRight className="size-3.5" aria-hidden />
+              </button>
+            </li>
+          );
+        })}
     </ul>
   );
 }

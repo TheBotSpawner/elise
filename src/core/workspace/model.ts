@@ -56,6 +56,11 @@ export const SURFACE_TYPES = [
   "team_messages",
   "team_thread",
   "result",
+  /**
+   * The answer itself (ADR-071): what the user asked for, synthesized from evidence — a list,
+   * a ranking, a comparison, key figures — with its sources one tap away. Primary over evidence.
+   */
+  "answer",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
 

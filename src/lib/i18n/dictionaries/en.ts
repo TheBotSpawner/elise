@@ -3095,6 +3095,7 @@ export const en = {
       team_messages: "Slack",
       team_thread: "Thread",
       result: "Result",
+      answer: "Answer",
     },
     states: {
       loading: "Loading",
@@ -3130,6 +3131,18 @@ export const en = {
     back: "Back to workspace",
     dismiss: "Dismiss",
     focus: "Show in workspace",
+    answer: {
+      sources: (n: number) => `Sources · ${n}`,
+      showAll: (n: number) => `Show all (${n})`,
+      showLess: "Show less",
+      ofTotal: (shown: number, total: number) => `${shown} of ${total}`,
+      sourceKinds: {
+        knowledge: "Knowledge",
+        web: "Web",
+        recall: "Conversation",
+        other: "Source",
+      },
+    },
     shown: "In the workspace",
     prompts: {
       summarize: (title: string) => `Summarize “${title}”.`,

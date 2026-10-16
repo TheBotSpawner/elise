@@ -18,7 +18,7 @@ import { groupNews, isStale, isWeak, queryTerms, rankResults, reformulations } f
 import { checkUrl, domainOf, normalizeUrl } from "../web/url";
 import { surfaceId, type WorkspaceOp } from "../workspace/model";
 import { draftDefaults, PAYLOADS, type SurfacePayloads } from "../workspace/registry";
-import { representationHint, TEMPORAL_HINT } from "../workspace/representation";
+import { ANSWER_HINT, representationHint, TEMPORAL_HINT } from "../workspace/representation";
 
 /**
  * Web tools (ADR-015): the current external world, as cited evidence. Provider-independent
@@ -201,7 +201,7 @@ export const searchWebTool: ToolDefinition = {
         instructions: `${WEB_ANSWER}${QUICK_FOLLOW_UP}${
           representationHint(sources.flatMap((x) => x.untrustedPassages ?? [])) === "temporal"
             ? ` ${TEMPORAL_HINT}`
-            : ""
+            : ` ${ANSWER_HINT}`
         }`,
       },
       display: {

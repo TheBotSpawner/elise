@@ -61,6 +61,7 @@ import { ClockSurfaceBody, TimerSurfaceBody } from "@/features/time/time-view";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { AnswerBody } from "./answer-view";
 import { CalendarBody } from "./calendar-view";
 import type { VisualSize } from "./canvas/composition";
 import { MapBody, PlaceBody } from "./canvas/map";
@@ -120,6 +121,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   team_messages: MessagesSquare,
   team_thread: MessagesSquare,
   result: Sparkles,
+  answer: Sparkles,
 };
 
 export interface SurfaceHandlers {
@@ -1038,6 +1040,8 @@ export function SurfaceBody({
       return <SettingsBody p={p} />;
     case "summary":
       return <SummaryBody p={p} large={large} />;
+    case "answer":
+      return <AnswerBody p={p} large={large} />;
     case "schedule": {
       const sp = surface.payload as SurfacePayloads["schedule"];
       const proposal = sp.proposal as ToolDisplay | undefined;

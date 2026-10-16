@@ -146,6 +146,12 @@ export function estimateHeight(s: Surface): number {
       return head + count("items", 12) * 44;
     case "summary":
       return head + 140;
+    case "answer": {
+      const a = s.payload as SurfacePayloads["answer"];
+      return (
+        head + 40 + Math.min(a.items.length, 8) * 54 + Math.ceil((a.metrics?.length ?? 0) / 2) * 76
+      );
+    }
     case "web_news":
       return head + count("events", 6) * 72;
     case "team_messages":

@@ -44,6 +44,13 @@ export function representationHint(texts: readonly string[]): RepresentationInte
   return distinctDates(texts) >= 3 ? "temporal" : null;
 }
 
+/**
+ * Answer-first (ADR-071): retrieved evidence is where the answer came from, not what to show.
+ * Appended to retrieval results so the answer's shape reaches the Canvas in the same response.
+ */
+export const ANSWER_HINT =
+  "These results are evidence, not the answer to show. If the answer is several things — entities (competitors, people, tools), a ranking, a comparison, key figures, steps — call ui.answer in this same response with those items, each citing its sources ([n] for a Knowledge passage, the exact URL for a web page), keeping the distinctions the sources make (e.g. direct competitor vs reference) as badges. One fact, or the user asking for the document itself → no ui.answer.";
+
 /** The instruction a retrieval tool appends when its evidence is a schedule. */
 export const TEMPORAL_HINT =
   "This evidence contains several dates (a schedule). In this same response call ui.timeline with each dated event (ISO date, title, kind, and its source: [n] for a Knowledge passage, the exact URL for a web page) so the schedule appears on screen, and keep your text to the key dates.";

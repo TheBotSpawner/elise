@@ -121,6 +121,69 @@ const passage = z.object({
   excerpt: text(600),
 });
 
+/**
+ * An answer-first Surface (ADR-071): a bounded presentation vocabulary — never markup or styles.
+ * Every item points at the sources it came from (indexes into `sources`).
+ */
+export const ANSWER_INTENTS = [
+  "list",
+  "entities",
+  "ranking",
+  "comparison",
+  "metrics",
+  "checklist",
+  "summary",
+] as const;
+export type AnswerIntent = (typeof ANSWER_INTENTS)[number];
+const sourceRefs = z.array(z.number().int().min(0).max(11)).max(6);
+const answerPayload = z.object({
+  intent: z.enum(ANSWER_INTENTS),
+  summary: text(400).optional(),
+  items: z
+    .array(
+      z.object({
+        title: text(160),
+        description: text(300).optional(),
+        badge: text(40).optional(),
+        group: text(80).optional(),
+        value: text(60).optional(),
+        rank: z.number().int().min(1).max(500).optional(),
+        /** Comparison: one value per column key. */
+        cells: z.record(text(40), text(120)).optional(),
+        sources: sourceRefs,
+      }),
+    )
+    .max(50),
+  columns: z
+    .array(z.object({ key: text(40), label: text(60) }))
+    .max(6)
+    .optional(),
+  metrics: z
+    .array(
+      z.object({
+        label: text(60),
+        value: text(40),
+        secondary: text(80).optional(),
+        sources: sourceRefs,
+      }),
+    )
+    .max(8)
+    .optional(),
+  /** Provenance: what the answer came from (a Knowledge document, a page, a conversation). */
+  sources: z
+    .array(
+      z.object({
+        title: text(300),
+        url: href.nullable(),
+        kind: z.enum(["knowledge", "web", "recall", "other"]),
+        space: text(200).optional(),
+      }),
+    )
+    .max(12),
+  /** How many there are in all, when only some are shown. */
+  total: z.number().int().min(0).max(100_000).optional(),
+});
+
 const knowledgeSource = z.object({
   itemId: text(100),
   title: text(300),
@@ -774,6 +837,7 @@ export const PAYLOADS = {
       .max(30),
   }),
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
+  answer: answerPayload,
 } satisfies Record<SurfaceType, z.ZodType>;
 
 export type SurfacePayloads = { [K in SurfaceType]: z.infer<(typeof PAYLOADS)[K]> };
@@ -1350,6 +1414,15 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     priority: 40,
     actions: () => [],
     describe: (p) => p.display.kind,
+  },
+  // The answer leads (ADR-071): above its evidence, below approvals.
+  answer: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 90,
+    actions: () => [expand],
+    describe: (p) =>
+      `${p.intent}: ${[...p.items.map((i) => i.title), ...(p.metrics ?? []).map((m) => `${m.label} ${m.value}`)].slice(0, 12).join("; ")} · sources: ${p.sources.map((s) => q(s.title)).join(", ") || "none"}`,
   },
 };
 

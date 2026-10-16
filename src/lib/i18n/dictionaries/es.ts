@@ -3125,6 +3125,7 @@ export const es: Dictionary = {
       team_messages: "Slack",
       team_thread: "Hilo",
       result: "Resultado",
+      answer: "Respuesta",
     },
     states: {
       loading: "Cargando",
@@ -3161,6 +3162,18 @@ export const es: Dictionary = {
     dismiss: "Quitar",
     focus: "Mostrar en el espacio de trabajo",
     shown: "En el espacio de trabajo",
+    answer: {
+      sources: (n: number) => `Fuentes · ${n}`,
+      showAll: (n: number) => `Ver todos (${n})`,
+      showLess: "Ver menos",
+      ofTotal: (shown: number, total: number) => `${shown} de ${total}`,
+      sourceKinds: {
+        knowledge: "Conocimiento",
+        web: "Web",
+        recall: "Conversación",
+        other: "Fuente",
+      },
+    },
     prompts: {
       summarize: (title: string) => `Resumí «${title}».`,
       draftReply: (title: string) => `Prepará un borrador de respuesta a «${title}».`,

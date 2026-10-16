@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolDefinition, ToolRunEnv, ToolRunResult } from "../agents/tools";
 import { AppError } from "../errors";
 import { toLocalDateTime } from "../time";
+import { answerTool } from "./answer";
 import { timelineTool, visualizeTool } from "./visualize";
 import {
   CALENDAR_VIEWS,
@@ -737,6 +738,7 @@ export const showTool: ToolDefinition = {
 
 export const WORKSPACE_TOOLS = [
   listSurfacesTool,
+  answerTool,
   presentTool,
   visualizeTool,
   timelineTool,
