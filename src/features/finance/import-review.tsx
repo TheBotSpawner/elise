@@ -60,7 +60,7 @@ export function ImportUnderstanding({
           {review
             ? w.needsDecisions(review)
             : preview.willImport === 0 && preview.duplicates > 0
-              ? w.alreadyImported(preview.duplicates)
+              ? w.allDuplicates(preview.duplicates)
               : w.understood(preview.willImport)}
         </p>
         <p className="text-[13px] text-muted">

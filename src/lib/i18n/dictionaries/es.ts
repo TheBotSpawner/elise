@@ -2476,7 +2476,7 @@ export const es: Dictionary = {
       uploading: "Subiendo…",
       reading: "Estoy analizando el archivo…",
       understood: (n: number) => `Encontré ${n} movimientos y pude interpretarlos.`,
-      alreadyImported: (n: number) =>
+      allDuplicates: (n: number) =>
         `Estos ${n} movimientos ya están en ELISE: no hay nada nuevo para importar.`,
       needsDecisions: (n: number) =>
         n === 1

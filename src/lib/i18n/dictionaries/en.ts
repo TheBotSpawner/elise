@@ -2442,7 +2442,7 @@ export const en = {
       uploading: "Uploading…",
       reading: "Analyzing the file…",
       understood: (n: number) => `I found ${n} movements and understood them.`,
-      alreadyImported: (n: number) =>
+      allDuplicates: (n: number) =>
         `These ${n} movements are already in ELISE: nothing new to import.`,
       needsDecisions: (n: number) =>
         n === 1
