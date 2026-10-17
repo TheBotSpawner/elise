@@ -17,6 +17,7 @@ import {
   suggestCategoryIcon,
   UNCLASSIFIED,
   updateCategoryInput,
+  deleteCategoryInput,
   type ConvertedTotals,
   type FinanceBook,
   createAccountInput,
@@ -860,7 +861,7 @@ export const updateCategoryTool: ToolDefinition = {
   capability: "finance",
   operation: "updateCategory",
   description:
-    "Rename a category, change its icon or parent, or archive it (its transactions keep it). Never deletes.",
+    "Rename a category, change its icon or parent, or archive it (its transactions keep it). To delete one, use finance.deleteCategory.",
   input: updateCategoryInput,
   route: nativeOnly,
   async describe(raw) {
@@ -870,12 +871,7 @@ export const updateCategoryTool: ToolDefinition = {
     const u = updateCategoryInput.parse(raw);
     const p = writable(env);
     const categories = await p.listCategories();
-    const category = pickOne(
-      findByName(categories, u.category, (x) => x.name),
-      u.category,
-      "category",
-      (x) => x.name,
-    );
+    const category = categoryRef(categories, u.category);
     const parentId =
       u.parent === undefined
         ? undefined
@@ -897,6 +893,109 @@ export const updateCategoryTool: ToolDefinition = {
       output: { updated: true, category: { name: updated.name, icon: updated.icon ?? null } },
       display: { kind: "finance_categories", categories: [updated] },
       target: { type: "finance_category", id: updated.id },
+    };
+  },
+};
+
+const importFileInput = z
+  .object({
+    attachment: z.uuid().describe("The id of a CSV or .xlsx file attached in this conversation."),
+  })
+  .strict();
+
+/**
+ * ADR-075: a spreadsheet attached in chat goes through the Finance screen's own import pipeline,
+ * reading the ORIGINAL stored file — never the preview the model saw. Nothing is written to
+ * Finance here: the card lets the user pick the file's currency and start (or review) it.
+ */
+export const importFileTool: ToolDefinition = {
+  name: "finance.importFile",
+  capability: "finance",
+  operation: "importFile",
+  description:
+    '"Importá esto a mis finanzas", "cargame estos movimientos", "pasá este Excel a Finanzas" with a CSV/.xlsx attached: analyzes the attached file (all of it, from the stored original) with the Finance importer and shows an import card. Use it instead of reading rows yourself; never ask to re-attach a file you have.',
+  input: importFileInput,
+  route: nativeOnly,
+  async describe(raw, env) {
+    return {
+      summary:
+        env.ctx.locale === "es"
+          ? "Analizar el archivo para importar"
+          : "Analyze the file to import",
+      target: { type: "chat_attachment", id: importFileInput.parse(raw).attachment },
+    };
+  },
+  async run(raw, env) {
+    const { attachment } = importFileInput.parse(raw);
+    const p = writable(env);
+    const a = await nativeFeature(p.analyzeImportFile?.bind(p))(attachment);
+    return {
+      output: {
+        rows: a.rows,
+        format: a.format,
+        dateRange: a.dateRange,
+        ready: a.willImport,
+        needsAttention: a.invalid,
+        duplicates: a.duplicates,
+        review: a.review,
+        needs: a.needs,
+        fileCurrency: a.fileCurrency ? (a.currency ?? "to choose") : null,
+        typeStrategy: a.typeStrategy,
+        instructions:
+          "The import card is on screen with the choices and the buttons. In one or two short sentences say what was found (rows, and the source if recognized) and the one thing left, if any (e.g. the file's currency). Don't list columns or mappings, don't narrate uncertainty, and never say the file is truncated or ask to attach it again: the importer read the whole stored file. Nothing is imported until the user starts it.",
+      },
+      display: { kind: "finance_import", financeImport: a },
+      target: { type: "import", id: a.importId },
+    };
+  },
+};
+
+/** A category by id (what the UI sends — names repeat across expense/income) or by name. */
+function categoryRef(categories: FinanceCategory[], ref: string) {
+  return (
+    categories.find((c) => c.id === ref) ??
+    pickOne(
+      findByName(categories, ref, (x) => x.name),
+      ref,
+      "category",
+      (x) => `${x.name} (${x.type})`,
+    )
+  );
+}
+
+export const deleteCategoryTool: ToolDefinition = {
+  name: "finance.deleteCategory",
+  capability: "finance",
+  operation: "deleteCategory",
+  description:
+    "Delete a category. Its movements are kept and become uncategorized; never deletes a movement. Always needs the user's approval.",
+  input: deleteCategoryInput,
+  route: nativeOnly,
+  async describe(raw, env) {
+    const p = provider(env);
+    const category = categoryRef(await p.listCategories(), deleteCategoryInput.parse(raw).category);
+    const usage = await nativeFeature(p.categoryUsage?.bind(p))(category.id);
+    return {
+      summary: `Delete category “${category.name}”; ${usage.transactions} movements stay, uncategorized`,
+      target: { type: "finance_category", id: category.id },
+    };
+  },
+  async run(raw, env) {
+    const { category: ref, preview } = deleteCategoryInput.parse(raw);
+    const p = writable(env);
+    const category = categoryRef(await p.listCategories(), ref);
+    const usage = await nativeFeature(p.categoryUsage?.bind(p))(category.id);
+    if (preview)
+      return { output: { category: { id: category.id, name: category.name }, ...usage } };
+    await nativeFeature(p.deleteCategory?.bind(p))(category.id);
+    return {
+      output: {
+        deleted: true,
+        category: category.name,
+        uncategorizedMovements: usage.transactions,
+        instructions: "Say the movements were kept, now without category.",
+      },
+      target: { type: "finance_category", id: category.id },
     };
   },
 };
@@ -1210,6 +1309,8 @@ export { UNCLASSIFIED };
 
 export const FINANCE_TOOLS = [
   updateCategoryTool,
+  deleteCategoryTool,
+  importFileTool,
   getSummaryTool,
   queryTool,
   listTransactionsTool,

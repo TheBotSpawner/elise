@@ -97,9 +97,11 @@ describe("web.search", () => {
 
   it("gives up honestly after the bounded attempts — no invented results", async () => {
     let n = 0;
+    const recencies: (string | null)[] = [];
     const web: WebCapability = {
-      search: async () => {
+      search: async (q) => {
         n++;
+        recencies.push(q.recency);
         return [];
       },
       open: async (url) => page(url),
@@ -111,7 +113,10 @@ describe("web.search", () => {
       args: { query: "precio exacto del modelo XZ-9000 hoy", recency: "day" },
     });
     if (out.status !== "succeeded") throw new Error(out.status);
-    expect(n).toBe(3);
+    // "Hoy" is time-sensitive (ADR-074): the reworded search plus up to two recovery rounds
+    // (news + dated variants) — bounded, and none of them drops the day's window.
+    expect(n).toBe(5);
+    expect(recencies.every((r) => r === "day")).toBe(true);
     expect(out.output).toMatchObject({ found: false });
     expect(out.display).toBeUndefined();
   });

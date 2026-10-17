@@ -61,6 +61,10 @@ export const SURFACE_TYPES = [
    * a ranking, a comparison, key figures — with its sources one tap away. Primary over evidence.
    */
   "answer",
+  /** Public market data (ADR-074): a quote card, a price history, or followed assets. */
+  "market",
+  /** A spreadsheet from chat, analyzed by the Finance import pipeline (ADR-075). */
+  "finance_import",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
 

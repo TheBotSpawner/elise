@@ -137,6 +137,20 @@ export async function downloadFinanceImport(workspaceId: string, path: string) {
   return new Uint8Array(await data.arrayBuffer());
 }
 
+/** A server-side copy into the import bucket: a chat attachment imported to Finance (ADR-075). */
+export async function uploadFinanceImport(
+  workspaceId: string,
+  path: string,
+  bytes: Uint8Array,
+  contentType: string,
+) {
+  assertFinanceOwned(workspaceId, path);
+  const { error } = await createAdminClient()
+    .storage.from(FINANCE_IMPORTS_BUCKET)
+    .upload(path, bytes, { contentType, upsert: true });
+  if (error) throw new AppError("INTERNAL_ERROR", "Could not prepare the import", { cause: error });
+}
+
 export async function removeFinanceImport(workspaceId: string, path: string) {
   assertFinanceOwned(workspaceId, path);
   await createAdminClient().storage.from(FINANCE_IMPORTS_BUCKET).remove([path]);

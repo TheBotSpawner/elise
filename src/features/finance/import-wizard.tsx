@@ -20,7 +20,7 @@ import {
   previewImportAction,
 } from "./actions";
 import { ImportProgress, ImportUnderstanding } from "./import-review";
-import { MappingEditor, PreviewPanel } from "./mapping";
+import { FileSettings, MappingEditor, PreviewPanel } from "./mapping";
 
 type Stage =
   | { kind: "loading" }
@@ -119,6 +119,7 @@ export function ImportWizard({ importId, status }: { importId: string; status: s
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-[14px] text-muted">
           {inspection.label} · {w.detected(inspection.rows)}
+          {inspection.format && <> · {w.format(inspection.format.label)}</>}
         </p>
         {inspection.sheets.length > 1 && (
           <div className="flex items-center gap-2">
@@ -139,6 +140,15 @@ export function ImportWizard({ importId, status }: { importId: string; status: s
           </div>
         )}
       </div>
+
+      <FileSettings
+        headers={inspection.headers}
+        mapping={mapping}
+        onChange={(m) => {
+          setMapping(m);
+          runPreview(m);
+        }}
+      />
 
       {preview ? (
         <ImportUnderstanding

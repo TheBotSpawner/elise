@@ -34,13 +34,28 @@ export const CORE_GROUPS: ReadonlySet<string> = new Set([
   "time",
 ]);
 
+/**
+ * A message about public markets: tickers (2–5 capitals), stock/market words, indices. Market
+ * tools are loaded for these only; "¿cuánto gasté?" is Finance, never markets.
+ */
+const MARKET_WORDS =
+  /(?<!\p{L})(acci[oó]n(es)?|stocks?|shares?|bolsa|burs[aá]til|mercados?|markets?|cotiza\p{L}*|ticker|nasdaq|nyse|s&p|sp500|dow jones|merval|etf|[ií]ndice|index|wall street|subi[oó]|baj[oó]|cay[oó]|cerr[oó]|cierre|apertura|inversion\p{L}*|invest\p{L}*|watchlist|activos?)(?!\p{L})/iu;
+/** A ticker in capitals ("AAPL", "GOOGL") ending a question or before "hoy", "en bolsa"… */
+const TICKER = /(?<!\p{L})[A-Z]{2,5}(?=\s*(\?|$|,| hoy| ahora| esta| en bolsa))/u;
+/** "Seguí Alphabet en mis resúmenes", "lo que sigo": following assets names no market word. */
+const FOLLOWING =
+  /(?<!\p{L})(segu[ií]|seguir|follow|dej[aá] de seguir|sac[aá])(?!\p{L})[^.?!]*(?<!\p{L})(res[uú]menes|resumen|brief|programados)(?!\p{L})|(?<!\p{L})(lo que sigo|what I follow)(?!\p{L})/iu;
+export const MARKET_SIGNAL = {
+  test: (m: string) => MARKET_WORDS.test(m) || TICKER.test(m) || FOLLOWING.test(m),
+};
+
 /** A message about places or travel (the browser also refreshes the device location for it). */
 export const LOCATION_SIGNAL =
   /\b(tard[oa]\w*|ruta|c[oó]mo llego|d[oó]nde (queda|est[aá])|cerca|near\w*|mapa|maps?|direcci[oó]n|address|km|kil[oó]metros?|viaje|llegar|desde .+ hasta|caf[eé]s?|restaurant\w*|farmacias?|routes?|how long|drive|walk\w*|en auto|caminando|colectivo|subte|tr[aá]nsito|por ac[aá]|around here|d[oó]nde estoy|where am i)\b/i;
 
 /** Words that point to a group (Spanish and English). Deliberately generous: a false positive
  * costs a few hundred tokens, a false negative an extra round trip. */
-const SIGNALS: readonly [string, RegExp][] = [
+const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   [
     "email",
     /\b(e-?mails?|mails?|correos?|casilla|inbox|gmail|bandeja|remitente|respond\w*|contest\w*|reenvi\w*|forward|reply)\b/i,
@@ -76,6 +91,8 @@ const SIGNALS: readonly [string, RegExp][] = [
     /\b(program[aá]\w*|todos los d[ií]as|cada (d[ií]a|lunes|martes|mi[eé]rcoles|jueves|viernes|semana|mañana)|every (day|morning|week\w*)|morning brief|resumen (matutino|diario)|recordame cada)\b/i,
   ],
   ["location", LOCATION_SIGNAL],
+  // Public markets (ADR-074): tickers, listed companies in a market context, prices, indices.
+  ["markets", MARKET_SIGNAL],
   [
     "music",
     /\b(m[uú]sica|music|canci[oó]n\w*|songs?|temas?|playlists?|[aá]lbum(es)?|albums?|spotify|youtube|reproduc\w*|pon[eé]me|pas[aá] (esta|este)|siguiente canci[oó]n|paus[aá] la m[uú]sica|volumen|volume|subilo|bajalo|parlante|speaker)\b/i,
@@ -125,6 +142,7 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   map: "location",
   place: "location",
   weather: "weather",
+  market: "markets",
   music: "music",
   timer: "time",
   clock: "time",

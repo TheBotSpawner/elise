@@ -1,6 +1,6 @@
 import type { AIImageInput, AIInputItem } from "./ai-provider";
 import { explicitStructured } from "./tool-selection";
-import type { SentAttachment } from "../attachments/model";
+import type { SentAttachment, SpreadsheetSummary } from "../attachments/model";
 import type { CapabilityKey } from "../capabilities/types";
 import type { RecallResult } from "../recall/model";
 import { describeNow } from "../time";
@@ -31,6 +31,7 @@ export interface ContextInput {
       text: string;
       truncated: boolean;
       unreadPages?: readonly number[];
+      spreadsheet?: SpreadsheetSummary;
     }[];
     images: readonly {
       id: string;
@@ -85,6 +86,8 @@ export interface ContextInput {
   voiceDelivery?: "speech" | "live";
   /** A web search provider is configured (ADR-015). */
   web?: boolean;
+  /** Structured market data is configured (ADR-074). */
+  markets?: boolean;
   /**
    * Maps (ADR-023): configured (`here`: the user shared their position this session), null when
    * no Maps key is configured, undefined when unknown.
@@ -221,6 +224,19 @@ const WEATHER_GUIDANCE = `Weather (weather.* tools):
 - Act at once: no place named → omit location (ELISE uses the user's shared position, else the city of their timezone and says so). Never ask for the city first; only ask when the tool says it doesn't know.
 - "¿Cómo está el clima?" → weather.current. "Hoy", "esta tarde", "¿va a llover mañana a la tarde?", "el finde", "esta semana" → weather.forecast with when (ELISE resolves the dates; never compute them).
 - The forecast is on screen: answer in one or two sentences with what matters (rain and when, warmest/coldest, wind). In voice, never read every day or hour.`;
+
+/**
+ * Market data vs web (ADR-074): structured data says what happened, the web may say why.
+ * The provider never shows: the model calls markets.* and web.* by capability.
+ */
+const MARKETS_GUIDANCE = `Public markets (stocks, ETFs, indices — markets.* tools; never the user's own Finance):
+- Prices and movements → structured data first, never web search: no ticker given → markets.search (never invent a symbol); then "¿cómo está X hoy?", "¿a cuánto está?", "el máximo de hoy" → markets.getQuote; "esta semana", "este mes", "en el año" → markets.getHistory with that period. Use their computed numbers; never calculate changes yourself.
+- "¿Por qué cayó/subió X hoy?" → markets.getQuote AND web.searchNews (recency "day") in the SAME response: the quote says what happened, the news may say why. Separate the confirmed movement from likely causes; if no source ties the move to one cause, say so.
+- "Última noticia de X", "¿qué anunció X?" → web only (no quote unless it helps).
+- A market tool answering available:false → say it in one short sentence, and for a price check the web (recency day), quoting it as "según <fuente>, <fecha>" — never as a live quote, never with invented precision.
+- Time: say the quote's time from asOf in the user's timezone; "ahora" only when freshness is live; a closed market shows its latest price.
+- Following assets: "seguí Alphabet y Apple" → markets.watch; "sacá Tesla" → markets.unwatch. Followed assets are interest, never holdings: never say "tus inversiones" or "tu cartera". Recurring summaries ("todos los días a las 18 resumime GOOGL, AAPL y MSFT") are Programados (schedules.* tools) whose instructions name the assets.
+- Information only: never recommend buying, selling or holding, never trade, never promise returns.`;
 
 const WEB_GUIDANCE = `Web (the current public world — web.* tools):
 - Web is external, current information: news, "latest"/"current"/"today"/"this week", versions, documentation, prices, availability, companies, anything you'd otherwise answer from memory that may have changed. Choose it yourself — the user never has to say "search the web". Never search the web for the user's private data (their documents → Knowledge; past conversations → Recall; calendar, email, tasks → their tools).
@@ -492,6 +508,7 @@ ${input.knowledgeMap
   if (input.voice && input.availableCapabilities.includes("settings"))
     dynamic.push(voiceSection(input.voice));
   sections.push(SOURCE_GUIDANCE, WEATHER_GUIDANCE);
+  if (input.markets) sections.push(MARKETS_GUIDANCE);
   if (input.web) sections.push(WEB_GUIDANCE);
   if (input.location === null)
     sections.push(
@@ -571,19 +588,27 @@ ${input.knowledgeMap
 function withAttachments(message: string, files: ContextInput["attachments"]): string {
   if (!files || (!files.documents.length && !files.images.length)) return message;
   const docs = files.documents.map((d) =>
-    JSON.stringify({
-      attachment: d.id,
-      name: d.name,
-      ...(d.text ? { untrustedContent: d.text } : { unreadable: true }),
-      ...(d.truncated ? { truncated: true } : {}),
-      // Never answer about these as if they were read.
-      ...(d.unreadPages?.length
-        ? {
-            pagesNotReadYet:
-              d.unreadPages.length > 20 ? `${d.unreadPages.length} pages` : d.unreadPages,
-          }
-        : {}),
-    }),
+    d.spreadsheet
+      ? JSON.stringify({
+          attachment: d.id,
+          name: d.name,
+          kind: "spreadsheet",
+          untrustedContent: d.spreadsheet,
+          note: "Summary of the stored file (sheets, headers, row counts, first rows) — complete as a summary, not a truncated copy. The whole original is stored: to import its movements to Finance, call finance.importFile with this attachment id.",
+        })
+      : JSON.stringify({
+          attachment: d.id,
+          name: d.name,
+          ...(d.text ? { untrustedContent: d.text } : { unreadable: true }),
+          ...(d.truncated ? { truncated: true } : {}),
+          // Never answer about these as if they were read.
+          ...(d.unreadPages?.length
+            ? {
+                pagesNotReadYet:
+                  d.unreadPages.length > 20 ? `${d.unreadPages.length} pages` : d.unreadPages,
+              }
+            : {}),
+        }),
   );
   const images = files.images.map((i) =>
     JSON.stringify({ attachment: i.id, name: i.name, image: "shown below" }),

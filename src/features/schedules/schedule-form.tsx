@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { createScheduleAction, slackChannelsAction, updateScheduleAction } from "./actions";
 import { describeWhen } from "./format";
 import { BLOCK_ICONS } from "./icons";
+import { MarketsBriefSettings } from "./market-assets";
 import { WeatherPlacePicker } from "./weather-place";
 
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -40,6 +41,7 @@ const FORM_ORDER: BriefBlock[] = [
   "habits",
   "goals",
   "finance",
+  "markets",
   "news",
   "weather",
   "knowledge",
@@ -61,6 +63,7 @@ export function blankTask(timezone: string): ScheduleInput {
       knowledgeSpaceId: null,
       weatherLocation: null,
       weatherPlace: null,
+      markets: { instruments: [], period: "today", news: false },
       slack: { connectionId: null, channels: [], window: "since_previous" },
       methodId: null,
       preset: null,
@@ -101,6 +104,7 @@ export function ScheduleEditor({
   editing,
   spaces,
   slackWorkspaces,
+  marketsAvailable = false,
   methods,
   onClose,
   onSaved,
@@ -108,6 +112,8 @@ export function ScheduleEditor({
   editing: { id?: string; input: ScheduleInput } | null;
   spaces: { id: string; path: string }[];
   slackWorkspaces?: { id: string; name: string }[];
+  /** Market data is configured on this server (ADR-074): the Markets block is offered. */
+  marketsAvailable?: boolean;
   methods?: { id: string; name: string }[];
   onClose: () => void;
   onSaved: () => void;
@@ -155,6 +161,7 @@ export function ScheduleEditor({
           scheduleId={editing.id}
           spaces={spaces}
           slackWorkspaces={slackWorkspaces}
+          marketsAvailable={marketsAvailable}
           methods={methods}
           onCancel={request}
           onSaved={() => {
@@ -187,6 +194,7 @@ export function ScheduleForm({
   scheduleId,
   spaces,
   slackWorkspaces = [],
+  marketsAvailable = false,
   methods = [],
   onCancel,
   onSaved,
@@ -195,6 +203,8 @@ export function ScheduleForm({
 }: {
   /** Connected Slack workspaces: the Slack block is offered only when there is one. */
   slackWorkspaces?: { id: string; name: string }[];
+  /** Market data is configured on this server (ADR-074): the Markets block is offered. */
+  marketsAvailable?: boolean;
   /** Methods the task can follow: the schedule says when, the Method how (ADR-040 §O). */
   methods?: { id: string; name: string }[];
   initial: ScheduleInput;
@@ -277,7 +287,9 @@ export function ScheduleForm({
   const slack = v.configuration.slack;
   const needsSlack = blocks.includes("slack") && (!slack.connectionId || !slack.channels.length);
   const offered = FORM_ORDER.filter(
-    (b) => b !== "slack" || slackWorkspaces.length > 0 || blocks.includes("slack"),
+    (b) =>
+      (b !== "slack" || slackWorkspaces.length > 0 || blocks.includes("slack")) &&
+      (b !== "markets" || marketsAvailable || blocks.includes("markets")),
   );
   const setConfig = (patch: Partial<ScheduleInput["configuration"]>) =>
     setV((s) => ({ ...s, configuration: { ...s.configuration, ...patch } }));
@@ -454,7 +466,7 @@ export function ScheduleForm({
       </Section>
 
       {/* Progressive disclosure: settings only for what ELISE looks at. */}
-      {(["calendar", "knowledge", "news", "slack", "weather"] as const).some((b) =>
+      {(["calendar", "knowledge", "news", "slack", "weather", "markets"] as const).some((b) =>
         blocks.includes(b),
       ) && (
         <Section title={t.schedules.sections.details}>
@@ -513,6 +525,12 @@ export function ScheduleForm({
               />
               <p className="text-[12.5px] text-faint">{t.schedules.form.newsTopicsHint}</p>
             </div>
+          )}
+          {blocks.includes("markets") && (
+            <MarketsBriefSettings
+              value={v.configuration.markets}
+              onChange={(next) => setConfig({ markets: next })}
+            />
           )}
           {blocks.includes("slack") && (
             <SlackBriefSettings

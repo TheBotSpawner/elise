@@ -14,6 +14,7 @@ import {
   Sparkles,
   Sunrise,
   Target,
+  TrendingUp,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -42,6 +43,7 @@ export const BLOCK_ICONS: Record<BriefBlock, LucideIcon> = {
   habits: Repeat,
   goals: Target,
   finance: Wallet,
+  markets: TrendingUp,
   knowledge: BookOpen,
   weather: CloudSun,
   slack: Hash,

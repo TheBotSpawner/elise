@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { Toaster } from "sonner";
 
 import { getAuthContext } from "@/application/auth-context";
+import { ConfirmProvider } from "@/components/ui/confirm";
 import { RESUME_SCRIPT } from "@/lib/active-thread";
 import { I18nProvider } from "@/lib/i18n/client";
 import { getLocale } from "@/lib/i18n/server";
@@ -60,7 +61,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: RESUME_SCRIPT }} />
       </head>
       <body className="min-h-full">
-        <I18nProvider locale={locale}>{children}</I18nProvider>
+        <I18nProvider locale={locale}>
+          <ConfirmProvider>{children}</ConfirmProvider>
+        </I18nProvider>
         {/* On phones: below the header and the notch, never over the top bar. */}
         <Toaster
           position="top-center"

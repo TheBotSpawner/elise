@@ -567,6 +567,11 @@ export class EliseFinanceProvider implements FinanceProvider {
       .eq("workspace_id", this.workspaceId)
       .select("id")
       .maybeSingle();
+    if (error?.code === "23505")
+      throw new AppError("CONFLICT", "A category with that name already exists", {
+        recovery: "review",
+        details: { reason: "duplicate_name" },
+      });
     check(error, "update the category");
     if (!data) throw new AppError("NOT_FOUND", "Category not found");
     this.invalidate();
@@ -582,6 +587,59 @@ export class EliseFinanceProvider implements FinanceProvider {
         icon: null,
       }
     );
+  }
+
+  async categoryUsage(id: string) {
+    const counted = (r: {
+      count: number | null;
+      error: { code?: string; message: string } | null;
+    }) => {
+      // Budgets exist from migration 039 on.
+      if (r.error && notMigrated(r.error.code)) return 0;
+      check(r.error, "count what uses the category");
+      return r.count ?? 0;
+    };
+    const head = { count: "exact", head: true } as const;
+    const ws = this.workspaceId;
+    const [transactions, budgets, children] = await Promise.all([
+      this.db
+        .from("finance_transactions")
+        .select("id", head)
+        .eq("workspace_id", ws)
+        .eq("category_id", id)
+        .then(counted),
+      this.db
+        .from("finance_budgets")
+        .select("id", head)
+        .eq("workspace_id", ws)
+        .eq("category_id", id)
+        .then(counted),
+      this.db
+        .from("finance_categories")
+        .select("id", head)
+        .eq("workspace_id", ws)
+        .eq("parent_category_id", id)
+        .then(counted),
+    ]);
+    return { transactions, budgets, children };
+  }
+
+  /**
+   * One DELETE, so it's atomic: the FKs keep every movement (category_id → null), lift
+   * subcategories to the top level and drop the category's budgets. Movements are never deleted.
+   */
+  async deleteCategory(id: string) {
+    const { data, error } = await this.db
+      .from("finance_categories")
+      .delete()
+      .eq("id", id)
+      .eq("workspace_id", this.workspaceId)
+      .select("id");
+    check(error, "delete the category");
+    // The caller resolved it from this workspace's list: no row deleted means RLS has no delete
+    // policy yet (migration 048 not applied).
+    if (!data?.length) throw needsUpdate();
+    this.invalidate();
   }
 
   async settings() {
@@ -706,8 +764,9 @@ export class EliseFinanceProvider implements FinanceProvider {
         });
     const { data, error } = await query.select("*").single();
     if (error?.code === "23505")
-      throw new AppError("VALIDATION_ERROR", "There's already a Book with that name", {
+      throw new AppError("CONFLICT", "There's already a Book with that name", {
         recovery: "review",
+        details: { reason: "duplicate_name" },
       });
     check(error, "save the Book");
     this.invalidate();

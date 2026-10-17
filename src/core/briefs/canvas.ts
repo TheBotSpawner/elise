@@ -123,6 +123,10 @@ export function briefCanvas(brief: MorningBrief, reads: readonly BriefRead[]): B
       case "web_news":
         if (d.events.length) add(r, d, 35);
         break;
+      case "market":
+        // Followed assets: one compact list, the biggest movers first (ADR-074).
+        if (brief.markets?.items.length) add(r, d, 44);
+        break;
       default:
         break;
     }

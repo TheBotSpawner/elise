@@ -184,6 +184,75 @@ const answerPayload = z.object({
   total: z.number().int().min(0).max(100_000).optional(),
 });
 
+/** A chat attachment analyzed by the Finance import pipeline (ADR-075): counts, never rows. */
+export const financeImportPayload = z.object({
+  importId: z.uuid(),
+  label: text(300),
+  rows: z.number().int().min(0),
+  format: text(60).nullable(),
+  dateRange: z.object({ from: text(10), to: text(10) }).nullable(),
+  willImport: z.number().int().min(0),
+  invalid: z.number().int().min(0),
+  duplicates: z.number().int().min(0),
+  review: z.number().int().min(0),
+  needs: z.array(text(40)).max(10),
+  fileCurrency: z.boolean(),
+  currency: text(3).nullable(),
+  typeStrategy: z.enum(["column", "sign", "income", "expense"]).nullable(),
+  accounts: z.array(z.object({ raw: text(120), name: text(120), how: text(20) })).max(6),
+  creates: z.object({
+    accounts: z.array(text(120)).max(30),
+    categories: z.array(text(120)).max(30),
+  }),
+  sameFile: z.boolean(),
+});
+
+/** Public market data as Surfaces show it (ADR-074): every number from the provider or code. */
+const nullableNumber = z.number().finite().nullable();
+const marketQuote = z.object({
+  symbol: text(20),
+  name: text(200).nullable(),
+  price: z.number().finite(),
+  currency: text(8).nullable(),
+  change: nullableNumber,
+  changePercent: nullableNumber,
+  open: nullableNumber,
+  previousClose: nullableNumber,
+  dayHigh: nullableNumber,
+  dayLow: nullableNumber,
+  volume: nullableNumber,
+  asOf: text(40).nullable(),
+  freshness: z.enum(["live", "delayed", "unknown"]),
+});
+export const marketPayload = z.object({
+  mode: z.enum(["quote", "history", "watch"]),
+  quotes: z.array(marketQuote).max(24),
+  history: z
+    .object({
+      symbol: text(20),
+      name: text(200).nullable(),
+      currency: text(8).nullable(),
+      period: text(20),
+      points: z.array(z.object({ date: text(10), close: z.number().finite() })).max(420),
+      change: z
+        .object({
+          from: text(10),
+          to: text(10),
+          start: z.number().finite(),
+          end: z.number().finite(),
+          change: z.number().finite(),
+          changePercent: nullableNumber,
+          high: z.number().finite(),
+          low: z.number().finite(),
+        })
+        .nullable(),
+    })
+    .nullable(),
+  /** Symbols that couldn't be read (plan, limits): shown honestly, never invented. */
+  unavailable: z.array(text(20)).max(24).default([]),
+  provider: text(40),
+});
+
 const knowledgeSource = z.object({
   itemId: text(100),
   title: text(300),
@@ -838,6 +907,8 @@ export const PAYLOADS = {
   }),
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
   answer: answerPayload,
+  market: marketPayload,
+  finance_import: financeImportPayload,
 } satisfies Record<SurfaceType, z.ZodType>;
 
 export type SurfacePayloads = { [K in SurfaceType]: z.infer<(typeof PAYLOADS)[K]> };
@@ -1414,6 +1485,34 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     priority: 40,
     actions: () => [],
     describe: (p) => p.display.kind,
+  },
+  // A file to import (ADR-075): what ELISE understood and the one thing to decide.
+  finance_import: {
+    sizes: ["medium", "large", "expanded"],
+    size: "medium",
+    priority: 89,
+    actions: () => [],
+    describe: (p) =>
+      `Finance import ${p.label}: ${p.rows} rows, ${p.willImport} ready, ${p.invalid} need attention${p.needs.length ? `; needs ${p.needs.join(", ")}` : ""}`,
+  },
+  // Market data (ADR-074): the quote is the answer to "¿cómo está X?".
+  market: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 88,
+    actions: () => [expand],
+    describe: (p) =>
+      [
+        ...p.quotes.map(
+          (q) =>
+            `${q.symbol} ${q.price} ${q.currency ?? ""}${q.changePercent !== null ? ` ${q.changePercent > 0 ? "+" : ""}${q.changePercent}%` : ""}${q.asOf ? ` as of ${q.asOf}` : ""}`,
+        ),
+        p.history?.change
+          ? `${p.history.symbol} ${p.history.period}: ${p.history.change.changePercent}% (${p.history.change.from}→${p.history.change.to})`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("; "),
   },
   // The answer leads (ADR-071): above its evidence, below approvals.
   answer: {

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireAuthContext } from "@/application/auth-context";
 import { createExecutorPorts, toolContext } from "@/application/elise";
 import { suggestWeatherCities, weatherCity } from "@/application/location-service";
+import { marketsCapability } from "@/application/markets-service";
 import {
   cancelActive,
   createSchedule,
@@ -113,6 +114,37 @@ export async function slackChannelsAction(
 // ── Weather location (ADR-069) ───────────────────────────────────────────────
 
 const token = z.uuid();
+
+/** Assets for the Markets block, by name or ticker (server key; never exposed to the browser). */
+export async function searchMarketsAction(query: string): Promise<
+  ScheduleActionResult<
+    {
+      symbol: string;
+      name: string;
+      exchange: string | null;
+      currency: string | null;
+      type: "equity" | "etf" | "index" | "other";
+    }[]
+  >
+> {
+  try {
+    const q = z.string().trim().min(1).max(60).parse(query);
+    await requireAuthContext();
+    const found = await marketsCapability().search(q);
+    return {
+      ok: true,
+      value: found.slice(0, 6).map(({ symbol, name, exchange, currency, type }) => ({
+        symbol,
+        name: name.slice(0, 200),
+        exchange,
+        currency,
+        type,
+      })),
+    };
+  } catch (error) {
+    return { ok: false, error: toPublicError(error) };
+  }
+}
 
 /** City-level suggestions while typing (server key; never exposed to the browser). */
 export async function suggestWeatherCitiesAction(

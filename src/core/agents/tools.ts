@@ -58,6 +58,7 @@ import type { HabitStatsReport } from "../habits/analytics";
 import type { KnowledgeManager } from "../knowledge/admin";
 import type { KnowledgeReader } from "../knowledge/model";
 import type { LatLng, LocationCapability } from "../location/model";
+import type { MarketsPort } from "../markets/model";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
 import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
@@ -154,6 +155,8 @@ export interface CapabilityProviders {
   location: LocationCapability;
   /** Current conditions and forecasts (ADR-038). */
   weather: WeatherCapability;
+  /** Public market data and the person's followed assets (ADR-074). */
+  markets: MarketsPort;
   /** Context Profiles and people: the organizational layer (ADR-016). */
   contexts: ContextStore;
   /** Study sessions and progress, plus AI for questions and evaluation (ADR-016). */
@@ -501,6 +504,10 @@ export type ToolDisplay =
   | { kind: "map"; map: SurfacePayloads["map"] }
   | { kind: "place"; place: SurfacePayloads["place"] }
   | { kind: "weather"; weather: SurfacePayloads["weather"] }
+  /** Public market data (ADR-074). */
+  | { kind: "market"; market: SurfacePayloads["market"] }
+  /** A spreadsheet from chat, analyzed by the Finance import pipeline (ADR-075). */
+  | { kind: "finance_import"; financeImport: SurfacePayloads["finance_import"] }
   /**
    * Music playback (ADR-042): the canonical Music Surface's payload, and — for an embedded
    * player the browser holds — what the page must do with it.

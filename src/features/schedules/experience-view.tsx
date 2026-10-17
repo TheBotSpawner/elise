@@ -255,6 +255,8 @@ export function Block({ block, timezone }: { block: ExperienceBlock; timezone: s
       return <FinanceBlock finance={block.finance} />;
     case "news":
       return <NewsBlock block={block} />;
+    case "markets":
+      return <MarketsBlock block={block} />;
     case "knowledge":
       return <KnowledgeBlock block={block} />;
     case "slack":
@@ -678,9 +680,79 @@ export function warningText(w: Of<"issues">["warnings"][number], t: Dictionary):
   if (w.block === "summary") return t.brief.warnings.summary;
   const state = w.state ?? sourceState(w.code);
   if (state === "needs_topics") return t.brief.issues.needs_topics;
+  if (state === "needs_assets") return t.brief.issues.needs_assets;
   const what = t.brief.sources[w.block] ?? w.block;
   const accounts = w.accounts?.length ? t.brief.issues.accounts(w.accounts.join(", ")) : "";
   return t.brief.issues[state](`${what}${accounts}`);
+}
+
+/** Followed assets (ADR-074): the biggest movers, price and change — words and signs, not color alone. */
+function MarketsBlock({ block }: { block: Of<"markets"> }) {
+  const { t, locale } = useI18n();
+  const m = block.markets;
+  const money = (n: number, c: string | null) =>
+    c
+      ? new Intl.NumberFormat(locale, {
+          style: "currency",
+          currency: c,
+          maximumFractionDigits: 2,
+        }).format(n)
+      : new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(n);
+  const pct = (n: number | null | undefined) =>
+    n === null || n === undefined
+      ? "—"
+      : `${n > 0 ? "+" : ""}${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(n)}%`;
+  return (
+    <div className="flex flex-col gap-2">
+      <ul className="flex flex-col divide-y divide-border">
+        {m.items.map((i) => {
+          const change = m.period === "today" ? i.changePercent : i.periodChangePercent;
+          return (
+            <li
+              key={i.symbol}
+              className="flex items-baseline justify-between gap-3 py-1.5 text-[13.5px]"
+            >
+              <span className="min-w-0 truncate">
+                <span className="font-mono font-medium">{i.symbol}</span>
+                {i.name && <span className="text-muted"> · {i.name}</span>}
+              </span>
+              <span className="flex shrink-0 items-baseline gap-3 font-mono tabular-nums">
+                {money(i.price, i.currency)}
+                <span
+                  className={cn(
+                    (change ?? 0) > 0 && "text-success",
+                    (change ?? 0) < 0 && "text-danger-text",
+                  )}
+                >
+                  {pct(change)}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-[11.5px] text-faint">
+        {[
+          t.brief.markets.period[m.period],
+          m.total > m.items.length ? t.brief.markets.more(m.total - m.items.length) : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      {m.news.length > 0 && (
+        <ul className="flex flex-col gap-1 text-[13px]">
+          {m.news.map((n) => (
+            <li key={n.url}>
+              <a href={n.url} target="_blank" rel="noreferrer" className="hover:text-accent-text">
+                <span className="font-mono text-[12px] text-faint">{n.symbol}</span> {n.headline}
+              </a>
+              <span className="text-faint"> · {n.domain}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function IssuesBlock({ block }: { block: Of<"issues"> }) {

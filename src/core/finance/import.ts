@@ -175,8 +175,14 @@ export const financeMappingSchema = z
       .regex(/^[A-Z]{3}$/)
       .nullable()
       .default(null),
-    /** For rows without a type column or sign: every row is an expense (or income). */
-    defaultType: z.enum(["income", "expense"]).nullable().default(null),
+    /**
+     * For rows without a type: every row is an expense (or income), or "sign" — the amount's
+     * sign is the direction (positive in, negative out; ADR-075). A negative amount is always
+     * an expense.
+     */
+    defaultType: z.enum(["income", "expense", "sign"]).nullable().default(null),
+    /** The account of rows that don't name one (a wallet's own export); resolved like a name. */
+    defaultAccount: z.string().trim().max(80).nullable().default(null),
     /** Rows before this one are ignored; this row holds the headers. */
     headerRow: z.number().int().min(0).max(50).default(0),
     /** Import rows ELISE flags as probable duplicates anyway. */
@@ -374,7 +380,11 @@ export function normalizeRow(cells: Cell[], mapping: FinanceMapping, row: number
     if (!type) issues.push("unknown_type");
   } else if (!type) {
     // No type given: a sign says it ("-25" is money going out), else the user's default.
-    type = parsed?.negative ? "expense" : mapping.defaultType;
+    type = parsed?.negative
+      ? "expense"
+      : mapping.defaultType === "sign"
+        ? "income"
+        : mapping.defaultType;
     if (!type) issues.push("missing_type");
   }
 
@@ -397,7 +407,7 @@ export function normalizeRow(cells: Cell[], mapping: FinanceMapping, row: number
   // A transfer moves money between two of the user's accounts. Files that have no destination
   // column write the other account where the category goes ("Transfer-Out" from BNA, category
   // "Mercado Pago"); a "Transfer-In" row is the same money seen from the receiving account.
-  let account = clip(col("account"), 80);
+  let account = clip(col("account"), 80) ?? mapping.defaultAccount;
   let toAccount = clip(col("toAccount"), 80);
   let categoryText = col("category") ?? "";
   if (type === "transfer") {

@@ -6,13 +6,16 @@ import {
   attachmentType,
   checkAttachment,
   imageMatchesType,
+  summarizeSpreadsheet,
   type SentAttachment,
+  type SpreadsheetSummary,
 } from "@/core/attachments/model";
 import { imageDetail, imageSize, isImage, type ImageDetail } from "@/core/attachments/vision";
 import { AppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import { extractionText } from "@/core/knowledge/extraction";
 import { documentText } from "@/core/knowledge/model";
+import { parseSpreadsheet, spreadsheetKind } from "@/infrastructure/finance/spreadsheet";
 import { contentMatchesType, decodeText, parseDocument } from "@/infrastructure/knowledge/parsers";
 import { logger } from "@/infrastructure/observability/logger";
 import {
@@ -49,6 +52,8 @@ export interface TurnAttachments {
     truncated: boolean;
     /** Scanned pages not read yet (OCR limit or not configured). */
     unreadPages?: number[];
+    /** CSV / .xlsx (ADR-075): the structured summary instead of raw text. */
+    spreadsheet?: SpreadsheetSummary;
   }[];
   images: { id: string; name: string; dataUrl: string; detail: ImageDetail }[];
 }
@@ -215,6 +220,10 @@ export async function loadTurnAttachments(
       continue;
     }
     result.sent.push({ id: row.id, name: row.name, mimeType: row.mime_type, size: row.size_bytes });
+    if (ATTACHMENT_TYPES[row.mime_type]?.kind === "spreadsheet") {
+      result.documents.push(await spreadsheetOf(row, data));
+      continue;
+    }
     const { text, unread } = await documentTextOf(auth, row, data);
     result.documents.push({
       id: row.id,
@@ -225,6 +234,38 @@ export async function loadTurnAttachments(
     });
   }
   return result;
+}
+
+/**
+ * A spreadsheet attachment (ADR-075): parsed from the stored bytes into a bounded summary —
+ * sheets, headers, counts, first rows. Never "truncated": the model sees a summary by design,
+ * and tools (finance.importFile) read the whole original. A file that doesn't parse says so.
+ */
+async function spreadsheetOf(
+  row: { id: string; name: string; mime_type: string },
+  data: Uint8Array,
+): Promise<TurnAttachments["documents"][number]> {
+  const kind = spreadsheetKind(row.name, row.mime_type)!;
+  try {
+    const sheets = await parseSpreadsheet(data, kind);
+    const spreadsheet = summarizeSpreadsheet(sheets);
+    logger.info("chat.attachment.spreadsheet", {
+      attachment_id: row.id,
+      mime: row.mime_type,
+      stored_bytes: data.byteLength,
+      parser: kind,
+      sheets: spreadsheet.sheets.length,
+      rows: spreadsheet.sheets.reduce((n, s) => n + s.rows, 0),
+    });
+    return { id: row.id, name: row.name, text: "", truncated: false, spreadsheet };
+  } catch (error) {
+    logger.warn("chat.attachment.spreadsheet_unreadable", {
+      attachment_id: row.id,
+      parser: kind,
+      code: error instanceof AppError ? error.code : "UNKNOWN",
+    });
+    return { id: row.id, name: row.name, text: "", truncated: false };
+  }
 }
 
 /**

@@ -28,6 +28,7 @@ import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { KNOWLEDGE_ADMIN_TOOLS } from "@/core/tools/knowledge-admin";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { LOCATION_TOOLS } from "@/core/tools/location";
+import { MARKET_TOOLS } from "@/core/tools/markets";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { METHOD_TOOLS } from "@/core/tools/methods";
 import { MUSIC_TOOLS } from "@/core/tools/music";
@@ -102,6 +103,7 @@ import { contextStore } from "./contexts-service";
 import { knowledgeManager } from "./knowledge-admin";
 import { liveKnowledge } from "./knowledge-live";
 import { locationCapability } from "./location-service";
+import { marketsCapability, readWatchlist, writeWatchlist } from "./markets-service";
 import { methodStore } from "./methods-service";
 import { syncNoteToKnowledge } from "./notes-knowledge";
 import { catchUpRecall } from "./recall-service";
@@ -134,6 +136,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...WEB_TOOLS,
   ...LOCATION_TOOLS,
   ...WEATHER_TOOLS,
+  ...MARKET_TOOLS,
   ...CONTEXT_TOOLS,
   ...STUDY_TOOLS,
   ...PLANNING_TOOLS,
@@ -410,13 +413,19 @@ function providerFactory(
     },
     finance(binding) {
       if (binding.providerKey === "elise_native") {
-        return new EliseFinanceProvider(
+        const native = new EliseFinanceProvider(
           auth.db,
           auth.workspaceId,
           auth.userId,
           binding.connectionId,
           auth.profile.locale,
         );
+        // Chat imports run the Finance screen's own pipeline (ADR-075).
+        return Object.assign(native, {
+          // Lazy: finance-import reads Google helpers from this module.
+          analyzeImportFile: async (attachmentId: string) =>
+            (await import("./finance-import")).analyzeAttachmentImport(auth, attachmentId),
+        });
       }
       // Connected Google Sheets: read-only, from the rows the last sync mirrored.
       if (binding.providerKey === "google") {
@@ -468,6 +477,13 @@ function providerFactory(
       return locationCapability(auth);
     },
     // Forecasts: server-provided, no user connection (ADR-038).
+    // Public market data: server-provided, no user connection (ADR-074).
+    markets() {
+      return {
+        ...marketsCapability(),
+        watchlist: { list: () => readWatchlist(auth), save: (l) => writeWatchlist(auth, l) },
+      };
+    },
     weather() {
       return weatherCapability(auth);
     },

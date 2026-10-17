@@ -24,6 +24,7 @@ import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { KNOWLEDGE_ADMIN_TOOLS } from "@/core/tools/knowledge-admin";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { LOCATION_TOOLS } from "@/core/tools/location";
+import { MARKET_TOOLS } from "@/core/tools/markets";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { METHOD_TOOLS } from "@/core/tools/methods";
 import { MUSIC_TOOLS } from "@/core/tools/music";
@@ -254,6 +255,7 @@ export function makePorts(
       ...WEB_TOOLS,
       ...LOCATION_TOOLS,
       ...WEATHER_TOOLS,
+      ...MARKET_TOOLS,
       ...CONTEXT_TOOLS,
       ...STUDY_TOOLS,
       ...PLANNING_TOOLS,

@@ -73,6 +73,7 @@ import { autoLinkThread, historyLinks } from "./history-links-service";
 import { openThread } from "./interaction-thread";
 import { syncDueSources } from "./knowledge-background";
 import { locationConfigured } from "./location-service";
+import { marketsConfigured } from "./markets-service";
 import { memoryForContext } from "./memory-service";
 import { methodStore, methodsForTurn, recordMethodUse } from "./methods-service";
 import { queueRecallIndex, searchRecall } from "./recall-service";
@@ -168,6 +169,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
   const modality: TurnModality = input.modality ?? "text";
   const web = webSearchConfigured() && isEnabled("research", auth);
   const location = locationConfigured();
+  const markets = marketsConfigured();
   const here = input.here ? coarse(input.here) : null;
 
   // Setup in dependency phases (ADR-025): independent reads share one round trip. Nothing is
@@ -541,6 +543,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     modality,
     voiceDelivery: input.live ? "live" : "speech",
     web,
+    markets,
     location: location ? { here: Boolean(here) } : null,
     activeContext: activeProfile ? describeActiveContext(activeProfile) : null,
     contexts: contexts.profiles
@@ -583,7 +586,10 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
   const allTools = toolRegistry
     .available(capabilities)
     .filter(
-      (t) => (web || t.capability !== "web_search") && (location || t.capability !== "location"),
+      (t) =>
+        (web || t.capability !== "web_search") &&
+        (location || t.capability !== "location") &&
+        (markets || t.capability !== "markets"),
     );
   const selection =
     env.ELISE_TOOL_SELECTION === "selected"
@@ -599,6 +605,8 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
             ...(loadedMethod || methodPlan.hint ? ["methods.get"] : []),
             // A repair needs its update tool, whatever the message's words select.
             ...(repairTarget.kind === "one" ? [repairTool(repairTarget.ref.type) ?? ""] : []),
+            // A spreadsheet attached: importing it to Finance must be possible (ADR-075).
+            ...(attached?.documents.some((d) => d.spreadsheet) ? ["finance.importFile"] : []),
           ],
           contextKind: activeProfile?.kind ?? null,
           listNames,

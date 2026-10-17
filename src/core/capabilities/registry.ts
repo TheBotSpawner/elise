@@ -216,6 +216,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       createAccount: WRITE,
       updateAccount: WRITE,
       updateCategory: WRITE,
+      deleteCategory: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
+      importFile: WRITE,
       createCategory: WRITE,
       archiveTransaction: ARCHIVE,
       undoImport: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
@@ -282,6 +284,22 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     status: "available",
     internal: true,
     operations: { current: READ, forecast: READ },
+  },
+  // Public market data (ADR-074): server-provided (FMP), no user connection. Reads need no
+  // approval; following an asset is the person's own low-risk preference. No trading, ever.
+  markets: {
+    key: "markets",
+    status: "available",
+    internal: true,
+    operations: {
+      search: READ,
+      getQuote: READ,
+      getHistory: READ,
+      getProfile: READ,
+      listWatchlist: READ,
+      watch: WRITE,
+      unwatch: WRITE,
+    },
   },
   // Context Profiles (ADR-016): an organizational layer over the user's data. Proposing,
   // activating and briefing only read (each source under its own permissions); creating or

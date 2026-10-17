@@ -21,6 +21,8 @@ import {
   Newspaper,
   ShoppingBag,
   Telescope,
+  TrendingUp,
+  FileSpreadsheet,
   Compass,
   FolderPlus,
   Handshake,
@@ -68,6 +70,8 @@ import type { VisualSize } from "./canvas/composition";
 import { MapBody, PlaceBody } from "./canvas/map";
 import { MediaBody } from "./canvas/media";
 import { WeatherView } from "./canvas/weather";
+import { MarketBody } from "./market-view";
+import { FinanceImportCard } from "../finance/chat-import-card";
 import { Visualization } from "./viz/visualization";
 
 /**
@@ -123,6 +127,8 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   team_thread: MessagesSquare,
   result: Sparkles,
   answer: Sparkles,
+  market: TrendingUp,
+  finance_import: FileSpreadsheet,
 };
 
 export interface SurfaceHandlers {
@@ -1046,6 +1052,10 @@ export function SurfaceBody({
       return <SummaryBody p={p} large={large} />;
     case "answer":
       return <AnswerBody p={p} large={large} />;
+    case "market":
+      return <MarketBody p={p} timezone={timezone} />;
+    case "finance_import":
+      return <FinanceImportCard p={p} />;
     case "schedule": {
       const sp = surface.payload as SurfacePayloads["schedule"];
       const proposal = sp.proposal as ToolDisplay | undefined;

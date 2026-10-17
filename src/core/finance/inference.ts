@@ -1,3 +1,4 @@
+import { detectProviderFormat } from "./formats";
 import {
   bodyRows,
   detectDateFormat,
@@ -100,6 +101,27 @@ export interface InferredMapping {
   ignored: { index: number; reason: "duplicate" | "empty" | "unused" }[];
   /** A currency the amount column's header names ("ARS"), when there's no currency column. */
   currency: string | null;
+  /** No type column, and amounts carry both signs: the sign is the direction (ADR-075). */
+  defaultType: "sign" | null;
+  /** The account every row belongs to (a provider export of one wallet). */
+  account: string | null;
+  /** A recognized export format ("Mercado Pago"), when one matched. */
+  format: { id: string; label: string } | null;
+}
+
+/** Signed amounts in both directions: "+100000.00" in, "-17200.00" out. */
+function mixedSigns(body: Cell[][], index: number | undefined): boolean {
+  if (index === undefined) return false;
+  let pos = false;
+  let neg = false;
+  for (const r of body.slice(0, SAMPLE_ROWS)) {
+    const x = parseAmount(r[index] ?? "", null);
+    if (!x || toUnits(x.amount) === 0n) continue;
+    if (x.negative) neg = true;
+    else pos = true;
+    if (pos && neg) return true;
+  }
+  return false;
 }
 
 /**
@@ -110,6 +132,23 @@ export interface InferredMapping {
  */
 export function inferFinanceMapping(headers: string[], body: Cell[][]): InferredMapping {
   const profiles = profileColumns(headers, body);
+  const format = detectProviderFormat(headers);
+  if (format) {
+    const used = new Set(Object.values(format.columns));
+    return {
+      columns: format.columns,
+      ignored: profiles
+        .filter((p) => !used.has(p.index) && p.header)
+        .map((p) => ({
+          index: p.index,
+          reason: p.filled === 0 ? ("empty" as const) : ("unused" as const),
+        })),
+      currency: null,
+      defaultType: format.defaultType,
+      account: format.account,
+      format: { id: format.id, label: format.label },
+    };
+  }
   const used = new Set<number>();
   const columns: FinanceMapping["columns"] = {};
   const take = (field: FinanceField, p: ColumnProfile | undefined) => {
@@ -216,7 +255,9 @@ export function inferFinanceMapping(headers: string[], body: Cell[][]): Inferred
   for (const field of FINANCE_FIELDS) {
     const i = rules[field];
     if (columns[field] !== undefined || i === undefined || used.has(i)) continue;
-    if (["amount", "incomeAmount", "expenseAmount", "date", "account"].includes(field)) continue;
+    // A type comes from its values only: "PAYMENT_METHOD_TYPE" holds "bank_transfer", not types.
+    if (["amount", "incomeAmount", "expenseAmount", "date", "account", "type"].includes(field))
+      continue;
     if (profiles[i] && profiles[i]!.filled === 0) continue;
     take(field, profiles[i]);
   }
@@ -224,7 +265,14 @@ export function inferFinanceMapping(headers: string[], body: Cell[][]): Inferred
   for (const p of profiles)
     if (!used.has(p.index) && p.header)
       ignored.push({ index: p.index, reason: p.filled === 0 ? "empty" : "unused" });
-  return { columns, ignored: ignored.sort((a, b) => a.index - b.index), currency };
+  return {
+    columns,
+    ignored: ignored.sort((a, b) => a.index - b.index),
+    currency,
+    defaultType: columns.type === undefined && mixedSigns(body, columns.amount) ? "sign" : null,
+    account: null,
+    format: null,
+  };
 }
 
 /** Sheets that are rarely the data: dashboards, summaries, settings. */

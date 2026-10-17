@@ -916,6 +916,39 @@ export function surfacesFromOutcome(
           ref: null,
         }),
       );
+    case "market": {
+      const m = d.market;
+      // One quote card per set of symbols; a history per symbol and period updates in place.
+      const key =
+        m.mode === "history" && m.history
+          ? `history:${m.history.symbol}`
+          : `${m.mode}:${m.quotes.map((q) => q.symbol).join(",")}`;
+      const lead = m.history ?? m.quotes[0];
+      return one(
+        draft("market", key, m, opts, {
+          title:
+            m.mode === "watch"
+              ? opts.locale === "es"
+                ? "Mercados que seguís"
+                : "Markets you follow"
+              : lead
+                ? `${lead.name ?? lead.symbol} · ${lead.symbol}`
+                : opts.locale === "es"
+                  ? "Mercados"
+                  : "Markets",
+          source: { capability: "markets", label: m.provider },
+          ref: null,
+        }),
+      );
+    }
+    case "finance_import":
+      return one(
+        draft("finance_import", d.financeImport.importId, d.financeImport, opts, {
+          title: opts.locale === "es" ? "Importación de finanzas" : "Finance import",
+          source: { capability: "finance", label: null },
+          ref: null,
+        }),
+      );
     case "weather": {
       const w = d.weather;
       // One forecast per interaction: asking again (another day, another city) updates it.

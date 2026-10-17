@@ -9,6 +9,7 @@ import {
   FileText,
   Plus,
   Search,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -19,7 +20,9 @@ import { toast } from "sonner";
 
 import type { FinanceGranularity, FinanceOverview } from "@/application/finance-service";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Dialog } from "@/components/ui/dialog";
+import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { Input, Label, Select } from "@/components/ui/input";
 import { FilterButton, FilterSheet, OverflowMenu } from "@/components/ui/sheet-menu";
 import {
@@ -33,7 +36,7 @@ import {
   type FinanceTransaction,
   type GroupTotal,
 } from "@/core/capabilities/finance";
-import { isSingleEmoji } from "@/core/emoji";
+import type { PublicError } from "@/core/errors";
 import { addAmounts, compareAmounts } from "@/core/finance/money";
 import { shiftPeriod, type Period } from "@/core/periods";
 import { financeTrendVisual, type VisualizationSpec } from "@/core/workspace/visualization";
@@ -45,7 +48,7 @@ import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-import { financeToolAction, setDefaultCurrencyAction } from "./actions";
+import { categoryUsageAction, financeToolAction, setDefaultCurrencyAction } from "./actions";
 import { COMMON_CURRENCIES, share, useMoney, usePeriodLabel } from "./format";
 import { categoryIcon, TransactionDialog } from "./transaction-dialog";
 
@@ -184,8 +187,7 @@ export function FinanceNav({
 function ScopeChips({ books, value }: { books: FinanceBook[]; value: string | undefined }) {
   const { t } = useI18n();
   const { set } = useFilters();
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
+  const [creating, setCreating] = useState(false);
   const visible = books.slice(0, 4);
   const rest = books.slice(4);
   const options: [string | null, string][] = [
@@ -239,21 +241,100 @@ function ScopeChips({ books, value }: { books: FinanceBook[]; value: string | un
         type="button"
         aria-label={t.finance.v21.newBook}
         title={t.finance.v21.newBook}
-        disabled={pending}
-        onClick={() => {
-          const name = window.prompt(t.finance.v21.newBookPrompt)?.trim();
-          if (!name) return;
-          startTransition(async () => {
-            const r = await financeToolAction("finance.saveBook", { name, type: "business" });
-            if (!r.ok) toast.error(errorText(t, r.error));
-            else router.refresh();
-          });
-        }}
+        onClick={() => setCreating(true)}
         className="grid size-10 shrink-0 place-items-center rounded-full border border-dashed border-border-strong text-muted hover:text-fg md:size-8"
       >
         <Plus className="size-3.5" aria-hidden />
       </button>
+      <NewBookDialog open={creating} onClose={() => setCreating(false)} books={books} />
     </div>
+  );
+}
+
+/** "Nuevo ámbito" (ADR-075): ELISE's own dialog — never the browser's prompt. */
+function NewBookDialog({
+  open,
+  onClose,
+  books,
+}: {
+  open: boolean;
+  onClose: () => void;
+  books: FinanceBook[];
+}) {
+  const { t } = useI18n();
+  const v = t.finance.v21;
+  const { set } = useFilters();
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const close = () => {
+    setName("");
+    setError(null);
+    onClose();
+  };
+  const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase();
+  return (
+    <Dialog open={open} onClose={close} busy={pending} title={v.newBook} className="sm:max-w-md">
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const trimmed = name.trim();
+          if (!trimmed) return;
+          if (books.some((b) => fold(b.name) === fold(trimmed))) return setError(v.bookDuplicate);
+          startTransition(async () => {
+            const r = await financeToolAction("finance.saveBook", {
+              name: trimmed,
+              type: "business",
+            });
+            if (!r.ok)
+              return setError(
+                r.error.code === "CONFLICT" ? v.bookDuplicate : errorText(t, r.error),
+              );
+            const created = r.value?.kind === "finance_books" ? r.value.books[0] : undefined;
+            close();
+            if (created) set({ book: created.id });
+            router.refresh();
+          });
+        }}
+      >
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="new-book-name">{v.bookName}</Label>
+          <Input
+            id="new-book-name"
+            data-autofocus
+            value={name}
+            maxLength={80}
+            placeholder={v.bookNamePlaceholder}
+            aria-invalid={Boolean(error)}
+            aria-describedby="new-book-hint"
+            onChange={(e) => {
+              setName(e.target.value);
+              setError(null);
+            }}
+            className="h-11"
+          />
+          <p
+            id="new-book-hint"
+            className={cn("text-[12.5px]", error ? "text-danger-text" : "text-muted")}
+          >
+            {error ?? v.newBookHint}
+          </p>
+        </div>
+        <div
+          data-sheet-actions
+          className="flex justify-end gap-2 max-sm:flex-col-reverse max-sm:[&>button]:w-full"
+        >
+          <Button type="button" variant="secondary" onClick={close} disabled={pending}>
+            {t.common.cancel}
+          </Button>
+          <Button type="submit" disabled={pending || !name.trim()}>
+            {v.createBook}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -990,6 +1071,7 @@ function DetailDrawer({
   onDuplicate: (tx: FinanceTransaction) => void;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const money = useMoney();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -1158,7 +1240,10 @@ function DetailDrawer({
                   {
                     label: t.finance.archive,
                     danger: true,
-                    onClick: () => window.confirm(t.finance.archiveConfirm) && archive(),
+                    onClick: async () => {
+                      if (await confirm({ title: t.finance.archiveConfirm, destructive: true }))
+                        archive();
+                    },
                   },
                 ]}
               />
@@ -1184,19 +1269,56 @@ function CategoryManager({
   const { t } = useI18n();
   const c = t.finance.v21.categories;
   const router = useRouter();
+  const confirm = useConfirm();
   const [pending, startTransition] = useTransition();
   const [drafts, setDrafts] = useState<Record<string, { name: string; icon: string }>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [newName, setNewName] = useState("");
+  const [newIcon, setNewIcon] = useState("");
   const [newType, setNewType] = useState<"expense" | "income">("expense");
-  const run = (tool: string, args: unknown, done?: () => void) =>
+  const [newError, setNewError] = useState<string | null>(null);
+  const failure = (e: PublicError) => (e.code === "CONFLICT" ? c.duplicate : errorText(t, e));
+  // Categories are always addressed by id: "Préstamos" can be both an expense and an income.
+  const save = (cat: FinanceCategory, d: { name: string; icon: string }) =>
     startTransition(async () => {
-      const r = await financeToolAction(tool, args);
-      if (!r.ok) toast.error(errorText(t, r.error));
-      else {
-        done?.();
-        router.refresh();
-      }
+      const r = await financeToolAction("finance.updateCategory", {
+        category: cat.id,
+        ...(d.name.trim() !== cat.name ? { name: d.name.trim() } : {}),
+        ...(d.icon !== (cat.icon ?? "") ? { icon: d.icon || null } : {}),
+      });
+      if (!r.ok) return setErrors({ ...errors, [cat.id]: failure(r.error) });
+      router.refresh();
     });
+  const remove = async (cat: FinanceCategory) => {
+    const usage = await categoryUsageAction(cat.id);
+    if (!usage.ok) return void toast.error(c.deleteFailed);
+    const { transactions, budgets, children } = usage.value;
+    const ok = await confirm({
+      title: c.deleteTitle(cat.name),
+      body: (
+        <div className="flex flex-col gap-1.5">
+          <p>{transactions ? c.deleteUsed(transactions) : c.deleteUnused}</p>
+          {budgets > 0 && <p>{c.deleteBudgets(budgets)}</p>}
+          {children > 0 && <p>{c.deleteChildren(children)}</p>}
+        </div>
+      ),
+      confirmLabel: c.delete,
+      destructive: true,
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const r = await financeToolAction("finance.deleteCategory", { category: cat.id });
+      if (!r.ok)
+        return void toast.error(
+          r.error.code === "INTERNAL_ERROR" ? c.deleteFailed : errorText(t, r.error),
+        );
+      toast.success(
+        c.deleted,
+        transactions ? { description: c.deletedDetached(transactions) } : undefined,
+      );
+      router.refresh();
+    });
+  };
   return (
     <Dialog
       open={open}
@@ -1206,39 +1328,58 @@ function CategoryManager({
       className="border-border-strong bg-[var(--overlay-bg)] sm:max-w-2xl"
     >
       <form
-        className="flex flex-wrap items-end gap-2 rounded-2xl border border-border bg-bg p-3"
+        className="flex flex-col gap-2 rounded-2xl border border-border bg-bg p-3"
         onSubmit={(e) => {
           e.preventDefault();
-          if (newName.trim())
-            run("finance.createCategory", { name: newName.trim(), type: newType }, () =>
-              setNewName(""),
-            );
+          if (!newName.trim()) return;
+          startTransition(async () => {
+            const r = await financeToolAction("finance.createCategory", {
+              name: newName.trim(),
+              type: newType,
+              ...(newIcon ? { icon: newIcon } : {}),
+            });
+            if (!r.ok) return setNewError(failure(r.error));
+            setNewName("");
+            setNewIcon("");
+            router.refresh();
+          });
         }}
       >
-        <div className="flex min-w-48 flex-1 flex-col gap-1.5">
-          <Label htmlFor="newcat">{t.finance.addCategory}</Label>
+        <Label htmlFor="newcat">{t.finance.addCategory}</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          <EmojiPicker
+            value={newIcon}
+            onChange={setNewIcon}
+            label={c.icon}
+            placeholder={suggestCategoryIcon(newName) ?? "•"}
+          />
           <Input
             id="newcat"
             value={newName}
             maxLength={80}
             placeholder={t.finance.categoryPlaceholder}
-            onChange={(e) => setNewName(e.target.value)}
-            className="h-10"
+            aria-invalid={Boolean(newError)}
+            onChange={(e) => {
+              setNewName(e.target.value);
+              setNewError(null);
+            }}
+            className="h-10 min-w-40 flex-1"
           />
+          <Select
+            aria-label={t.finance.accountType}
+            value={newType}
+            onChange={(e) => setNewType(e.target.value as "expense" | "income")}
+            className="h-10 w-auto"
+          >
+            <option value="expense">{c.expense}</option>
+            <option value="income">{c.income}</option>
+          </Select>
+          <Button type="submit" disabled={pending || !newName.trim()}>
+            <Plus />
+            {t.finance.v21.tx.create}
+          </Button>
         </div>
-        <Select
-          aria-label={t.finance.accountType}
-          value={newType}
-          onChange={(e) => setNewType(e.target.value as "expense" | "income")}
-          className="h-10 w-auto"
-        >
-          <option value="expense">{c.expense}</option>
-          <option value="income">{c.income}</option>
-        </Select>
-        <Button type="submit" disabled={pending || !newName.trim()}>
-          <Plus />
-          {t.finance.v21.tx.create}
-        </Button>
+        {newError && <p className="text-[12.5px] text-danger-text">{newError}</p>}
       </form>
       {(["expense", "income"] as const).map((type) => {
         const list = categories.filter((x) => x.type === type || x.type === "both");
@@ -1250,58 +1391,60 @@ function CategoryManager({
               {list.map((cat) => {
                 const d = drafts[cat.id] ?? { name: cat.name, icon: cat.icon ?? "" };
                 const dirty = d.name.trim() !== cat.name || d.icon !== (cat.icon ?? "");
-                const iconOk = !d.icon || isSingleEmoji(d.icon);
+                const edit = (next: { name: string; icon: string }) => {
+                  setDrafts({ ...drafts, [cat.id]: next });
+                  if (errors[cat.id]) setErrors({ ...errors, [cat.id]: "" });
+                };
                 return (
-                  <li key={cat.id} className="flex items-center gap-2 py-2">
-                    <Input
-                      aria-label={`${t.finance.v21.tx.icon}: ${cat.name}`}
-                      value={d.icon}
-                      maxLength={16}
-                      placeholder={suggestCategoryIcon(cat.name) ?? "•"}
-                      aria-invalid={!iconOk}
-                      onChange={(e) =>
-                        setDrafts({ ...drafts, [cat.id]: { ...d, icon: e.target.value.trim() } })
-                      }
-                      className="h-9 w-14 text-center text-[16px]"
-                    />
-                    <Input
-                      aria-label={c.rename}
-                      value={d.name}
-                      maxLength={80}
-                      onChange={(e) =>
-                        setDrafts({ ...drafts, [cat.id]: { ...d, name: e.target.value } })
-                      }
-                      className="h-9 min-w-0 flex-1"
-                    />
-                    {cat.parent && (
-                      <span className="hidden text-[12px] text-faint sm:inline">{cat.parent}</span>
+                  <li key={cat.id} className="flex flex-col gap-1 py-2">
+                    <div className="flex items-center gap-2">
+                      <EmojiPicker
+                        value={d.icon}
+                        onChange={(icon) => edit({ ...d, icon })}
+                        label={`${c.icon}: ${cat.name}`}
+                        placeholder={suggestCategoryIcon(cat.name) ?? "•"}
+                      />
+                      <Input
+                        aria-label={`${c.rename}: ${cat.name}`}
+                        value={d.name}
+                        maxLength={80}
+                        aria-invalid={Boolean(errors[cat.id])}
+                        onChange={(e) => edit({ ...d, name: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && dirty && d.name.trim()) {
+                            e.preventDefault();
+                            save(cat, d);
+                          }
+                        }}
+                        className="h-10 min-w-0 flex-1"
+                      />
+                      {cat.parent && (
+                        <span className="hidden text-[12px] text-faint sm:inline">
+                          {cat.parent}
+                        </span>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={pending || !dirty || !d.name.trim()}
+                        onClick={() => save(cat, d)}
+                      >
+                        {c.save}
+                      </Button>
+                      <button
+                        type="button"
+                        aria-label={`${c.delete}: ${cat.name}`}
+                        title={c.delete}
+                        disabled={pending}
+                        onClick={() => void remove(cat)}
+                        className="grid size-10 shrink-0 place-items-center rounded-xl text-faint hover:bg-danger/10 hover:text-danger-text disabled:opacity-50"
+                      >
+                        <Trash2 className="size-4" aria-hidden />
+                      </button>
+                    </div>
+                    {errors[cat.id] && (
+                      <p className="pl-12 text-[12.5px] text-danger-text">{errors[cat.id]}</p>
                     )}
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={pending || !dirty || !d.name.trim() || !iconOk}
-                      onClick={() =>
-                        run("finance.updateCategory", {
-                          category: cat.name,
-                          ...(d.name.trim() !== cat.name ? { name: d.name.trim() } : {}),
-                          ...(d.icon !== (cat.icon ?? "") ? { icon: d.icon || null } : {}),
-                        })
-                      }
-                    >
-                      {c.save}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="hover:text-danger-text"
-                      disabled={pending}
-                      onClick={() =>
-                        window.confirm(c.archiveConfirm(cat.name)) &&
-                        run("finance.updateCategory", { category: cat.name, archived: true })
-                      }
-                    >
-                      {c.archive}
-                    </Button>
                   </li>
                 );
               })}
@@ -1327,6 +1470,7 @@ function AccountManager({
   defaultCurrency: string | null;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState<FinanceAccount | "new" | null>(null);
@@ -1435,10 +1579,14 @@ function AccountManager({
                 variant="ghost"
                 className="mr-auto hover:text-danger-text"
                 disabled={pending}
-                onClick={() =>
-                  window.confirm(t.finance.archiveAccountConfirm(editing.name)) &&
-                  run("finance.updateAccount", { account: editing.name, archived: true })
-                }
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: t.finance.archiveAccountConfirm(editing.name),
+                    confirmLabel: t.finance.archive,
+                    destructive: true,
+                  });
+                  if (ok) run("finance.updateAccount", { account: editing.name, archived: true });
+                }}
               >
                 {t.finance.archive}
               </Button>

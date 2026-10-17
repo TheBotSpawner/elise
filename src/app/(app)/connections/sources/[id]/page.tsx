@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import { getStructuredSource } from "@/application/structured-service";
+import { BackLink } from "@/components/shared/back-link";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { SourceDetail } from "@/features/structured/source-detail";
 import { getT } from "@/lib/i18n/server";
@@ -18,9 +18,7 @@ export default async function StructuredSourcePage({
   if (!source) notFound();
   return (
     <PageContainer>
-      <Link href="/connections" className="text-[13px] text-muted hover:text-fg">
-        {t.structured.back}
-      </Link>
+      <BackLink href="/connections" label={t.common.backTo(t.structured.back)} />
       <PageHeader title={source.name} subtitle={source.context ?? undefined} />
       <SourceDetail source={source} workspaceId={auth.workspaceId} />
     </PageContainer>

@@ -243,6 +243,66 @@ export async function gatherBrief(
     }),
   );
 
+  // Markets (ADR-074): the schedule's assets, else the person's followed ones — fetched only
+  // when the brief runs, one quote per asset (cached briefly), history only for a period,
+  // news only when asked. A market that can't be read degrades to a warning, never a guess.
+  const markets = want.has("markets") ? await gatherMarkets() : undefined;
+  async function gatherMarkets(): Promise<BriefData["markets"]> {
+    const chosen = config.markets.instruments.length
+      ? config.markets.instruments
+      : ((
+          (await invoke("markets", "markets.watchlist", {}, "all"))?.output as
+            { following?: { symbol: string; name: string }[] } | undefined
+        )?.following ?? []);
+    const symbols = chosen.map((i) => i.symbol).slice(0, 8);
+    if (!symbols.length) {
+      warnings.push({ block: "markets", code: "NEEDS_ASSETS" });
+      return undefined;
+    }
+    const d = await call("markets", "markets.getQuote", { symbols }, "all");
+    if (d?.kind !== "market") return undefined;
+    const quotes = d.market.quotes.map((q) => ({
+      ...q,
+      name: q.name ?? chosen.find((c) => c.symbol === q.symbol)?.name ?? null,
+    }));
+    const periodChange: Record<string, number | null> = {};
+    if (config.markets.period !== "today")
+      for (const q of quotes) {
+        const h = await call(
+          "markets",
+          "markets.getHistory",
+          { symbol: q.symbol, period: config.markets.period },
+          "all",
+        );
+        periodChange[q.symbol] =
+          h?.kind === "market" ? (h.market.history?.change?.changePercent ?? null) : null;
+      }
+    const news: NonNullable<BriefData["markets"]>["news"] = [];
+    if (config.markets.news) {
+      const movers = [...quotes]
+        .sort((a, b) => Math.abs(b.changePercent ?? 0) - Math.abs(a.changePercent ?? 0))
+        .slice(0, 2);
+      for (const q of movers) {
+        const n = await call(
+          "markets",
+          "web.searchNews",
+          { query: q.name ?? q.symbol, recency: "day" },
+          "all",
+        );
+        const top = n?.kind === "web_news" ? n.events[0]?.items[0] : undefined;
+        if (top)
+          news.push({
+            symbol: q.symbol,
+            headline: top.title,
+            url: top.url,
+            domain: top.domain,
+            publishedAt: top.publishedAt,
+          });
+      }
+    }
+    return { period: config.markets.period, quotes, periodChange, news };
+  }
+
   // Knowledge digest: what changed in one Space (its Sections included) over the period.
   const knowledge =
     want.has("knowledge") && config.knowledgeSpaceId
@@ -284,6 +344,7 @@ export async function gatherBrief(
           }
         : undefined,
       ...(topics.length ? { news } : {}),
+      ...(markets ? { markets } : {}),
       ...(range.days > 1 || range.from !== today ? { range } : {}),
       ...(knowledge ? { knowledge: knowledge as BriefData["knowledge"] } : {}),
       ...(slack ? { slack } : {}),

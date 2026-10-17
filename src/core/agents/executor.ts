@@ -339,19 +339,25 @@ export async function executeToolCall(
       });
   }
 
-  const recorded = await ports.log.recordAction(ctx, {
-    toolName: tool.name,
-    capability: tool.capability,
-    operation: tool.operation,
-    providerKey: binding.providerKey,
-    connectionId: binding.connectionId,
-    riskLevel: operation.risk,
-    input: pinned,
-    inputHash,
-    idempotencyKey: call.idempotencyKey ?? null,
-    status: decision.kind === "require_approval" ? "waiting_for_approval" : "executing",
-    target,
-  });
+  let recorded: Awaited<ReturnType<typeof ports.log.recordAction>>;
+  try {
+    recorded = await ports.log.recordAction(ctx, {
+      toolName: tool.name,
+      capability: tool.capability,
+      operation: tool.operation,
+      providerKey: binding.providerKey,
+      connectionId: binding.connectionId,
+      riskLevel: operation.risk,
+      input: pinned,
+      inputHash,
+      idempotencyKey: call.idempotencyKey ?? null,
+      status: decision.kind === "require_approval" ? "waiting_for_approval" : "executing",
+      target,
+    });
+  } catch (error) {
+    // Nothing ran yet: this one action fails (the reply explains it), not the whole turn.
+    return trace(binding, null, fail(error));
+  }
 
   if (recorded.duplicate) {
     const previous = recorded.action;

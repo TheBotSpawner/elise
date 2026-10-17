@@ -1,6 +1,7 @@
 import { requireAuthContext } from "@/application/auth-context";
 import { listConnections } from "@/application/connections-service";
 import { spaceOptions } from "@/application/knowledge-service";
+import { marketsConfigured } from "@/application/markets-service";
 import { methodStore } from "@/application/methods-service";
 import { listSchedules } from "@/application/schedules-service";
 import { SECTION_ICONS } from "@/components/elise/navigation/nav-items";
@@ -49,6 +50,7 @@ export default async function SchedulesPage({ searchParams }: PageProps<"/schedu
         timezone={auth.profile.timezone}
         spaces={spaces}
         slackWorkspaces={slackWorkspaces}
+        marketsAvailable={marketsConfigured()}
         methods={methods.map((m) => ({ id: m.id, name: m.name }))}
         backgroundAvailable={backgroundAvailable}
         draft={parseDraft(params.draft)}

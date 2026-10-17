@@ -46,8 +46,7 @@ export default async function KnowledgeItemPage({
           {item.space && (
             <BackLink
               href={`/knowledge/spaces/${item.space.id}`}
-              label={item.space.path}
-              ariaLabel={t.knowledge.backTo(item.space.path)}
+              label={t.knowledge.backTo(item.space.path)}
             />
           )}
           <h1 className="text-[26px] leading-[1.2] font-light tracking-[-0.02em]">{item.title}</h1>

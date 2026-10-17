@@ -19,6 +19,8 @@ export type CapabilityKey =
   | "web_search"
   | "location"
   | "weather"
+  /** Public market data (ADR-074): quotes, history, followed assets. Not the user's money. */
+  | "markets"
   | "contexts"
   | "study"
   | "shortcuts"

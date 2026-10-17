@@ -10,6 +10,7 @@ import type { ImportSummary } from "@/application/finance-import";
 import type { FinanceGoogleAccount, FinanceSourceView } from "@/application/finance-sources";
 import { GoogleSheetsIcon } from "@/components/elise/brand-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Switch } from "@/components/ui/switch";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
@@ -56,6 +57,7 @@ export function SourcesView({
   workspaceId: string;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const router = useRouter();
   const relative = useRelative();
   const file = useRef<HTMLInputElement>(null);
@@ -206,9 +208,13 @@ export function SourcesView({
                       variant="ghost"
                       className="hover:text-danger-text"
                       disabled={pending}
-                      onClick={() => {
-                        if (window.confirm(t.finance.disconnectConfirm))
-                          act(() => removeSourceAction(s.id));
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: t.finance.disconnectConfirm,
+                          confirmLabel: t.finance.disconnect,
+                          destructive: true,
+                        });
+                        if (ok) act(() => removeSourceAction(s.id));
                       }}
                     >
                       {t.finance.disconnect}
@@ -265,8 +271,12 @@ export function SourcesView({
                     variant="ghost"
                     className="hover:text-danger-text"
                     disabled={pending}
-                    onClick={() => {
-                      if (!window.confirm(t.finance.undoConfirm(i.imported, i.label))) return;
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: t.finance.undoConfirm(i.imported, i.label),
+                        destructive: true,
+                      });
+                      if (!ok) return;
                       act(
                         () => financeToolAction("finance.undoImport", { importId: i.id }),
                         t.finance.undone(i.imported),

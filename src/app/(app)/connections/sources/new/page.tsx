@@ -1,7 +1,6 @@
-import Link from "next/link";
-
 import { requireAuthContext } from "@/application/auth-context";
 import { getStructuredSource, notionWorkspaces } from "@/application/structured-service";
+import { BackLink } from "@/components/shared/back-link";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { StructuredSetup } from "@/features/structured/setup";
 import { getT } from "@/lib/i18n/server";
@@ -17,9 +16,7 @@ export default async function NewStructuredSourcePage({
   ]);
   return (
     <PageContainer>
-      <Link href="/connections" className="text-[13px] text-muted hover:text-fg">
-        {t.structured.back}
-      </Link>
+      <BackLink href="/connections" label={t.common.backTo(t.structured.back)} />
       <PageHeader title={edit ? edit.name : t.structured.connect} info={[t.structured.subtitle]} />
       <StructuredSetup workspaces={workspaces} edit={edit} />
     </PageContainer>

@@ -194,6 +194,30 @@ export interface TransactionPage {
   truncated: boolean;
 }
 
+/** What the import pipeline understood of a file (the chat card and the model's summary). */
+export interface FinanceImportAnalysis {
+  importId: string;
+  label: string;
+  rows: number;
+  /** A recognized export ("Mercado Pago"). */
+  format: string | null;
+  dateRange: { from: string; to: string } | null;
+  willImport: number;
+  invalid: number;
+  duplicates: number;
+  /** Valid rows waiting for a name decision (only the full review can settle them). */
+  review: number;
+  /** File-level settings still missing ("defaultCurrency", "defaultType", …). */
+  needs: string[];
+  /** The file has no currency column: one currency applies to every row. */
+  fileCurrency: boolean;
+  currency: string | null;
+  typeStrategy: "column" | "sign" | "income" | "expense" | null;
+  accounts: { raw: string; name: string; how: string }[];
+  creates: { accounts: string[]; categories: string[] };
+  sameFile: boolean;
+}
+
 export interface FinanceProvider {
   readonly readOnly: boolean;
   sources(): Promise<FinanceSourceInfo[]>;
@@ -223,12 +247,21 @@ export interface FinanceProvider {
     id: string,
     patch: { name?: string; icon?: string | null; parentId?: string | null; archived?: boolean },
   ): Promise<FinanceCategory>;
+  /** What deleting a category touches: movements lose it, subcategories go top-level, its budgets go. */
+  categoryUsage?(id: string): Promise<{ transactions: number; budgets: number; children: number }>;
+  /** Deletes the category in one statement; its movements are kept, uncategorized (FK set null). */
+  deleteCategory?(id: string): Promise<void>;
   settings(): Promise<{ defaultCurrency: string | null; reportingCurrency: string | null }>;
   /** Currencies used most recently, most used first (to ask "ARS or USD?"). */
   recentCurrencies(): Promise<string[]>;
   /** Archives what one import created; returns how many. */
   undoImport(importId: string): Promise<{ archived: number; label: string }>;
   describeImport(importId: string): Promise<{ label: string; imported: number } | null>;
+  /**
+   * ADR-075: a spreadsheet attached in chat, read from its ORIGINAL stored bytes and analyzed
+   * by the same import pipeline as the Finance screen (nothing is written to Finance yet).
+   */
+  analyzeImportFile?(attachmentId: string): Promise<FinanceImportAnalysis>;
   /** ADR-052 — ELISE Finance only (connected sheets have none of these). */
   listBooks?(): Promise<FinanceBook[]>;
   saveBook?(
@@ -1360,7 +1393,7 @@ const emojiField = z.string().trim().refine(isSingleEmoji, "Expected one emoji")
 
 export const updateCategoryInput = z
   .object({
-    category: text(80).describe("The category's current name."),
+    category: text(80).describe("The category's id or current name."),
     name: text(80).overwrite(normalizeEntityTitle).optional(),
     icon: emojiField.nullable().optional().describe("One emoji; null removes it."),
     parent: z.string().trim().max(80).nullable().optional(),
@@ -1368,6 +1401,16 @@ export const updateCategoryInput = z
       .boolean()
       .optional()
       .describe("true hides it from new records; existing transactions keep it."),
+  })
+  .strict();
+
+export const deleteCategoryInput = z
+  .object({
+    category: text(80).describe("The category's id or current name."),
+    preview: z
+      .boolean()
+      .optional()
+      .describe("true only counts what would change, deleting nothing."),
   })
   .strict();
 

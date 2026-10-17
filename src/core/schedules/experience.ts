@@ -8,6 +8,7 @@ import {
   type BriefGoal,
   type BriefHabit,
   type BriefKnowledge,
+  type BriefMarkets,
   type BriefNews,
   type BriefSlack,
   type BriefTask,
@@ -48,6 +49,7 @@ export type ExperienceBlock =
   | { kind: "goals"; goals: BriefGoal[] }
   | { kind: "finance"; finance: NonNullable<MorningBrief["finance"]> }
   | { kind: "news"; news: BriefNews[] }
+  | { kind: "markets"; markets: BriefMarkets }
   | { kind: "knowledge"; knowledge: BriefKnowledge }
   | { kind: "slack"; slack: BriefSlack }
   | { kind: "focus"; focus: BriefFocus[] }
@@ -110,6 +112,7 @@ const LABELS: Record<Locale, Record<BriefTopic | "attention", string>> = {
     habits: "Hábitos",
     goals: "Objetivos",
     finance: "Finanzas",
+    markets: "Mercados",
     news: "Noticias",
     knowledge: "Conocimiento",
     attention: "Fuentes",
@@ -124,6 +127,7 @@ const LABELS: Record<Locale, Record<BriefTopic | "attention", string>> = {
     habits: "Habits",
     goals: "Goals",
     finance: "Finance",
+    markets: "Markets",
     news: "News",
     knowledge: "Knowledge",
     attention: "Sources",
@@ -233,6 +237,15 @@ function fallbackLine(topic: BriefTopic, b: MorningBrief, locale: Locale): strin
       return es ? "Así vienen tus objetivos." : "Here's where your goals stand.";
     case "finance":
       return es ? "Un vistazo a tus finanzas del mes." : "A quick look at this month's finances.";
+    case "markets": {
+      // The biggest mover, with its computed change: a fact, never a recommendation.
+      const top = b.markets!.items[0]!;
+      const pct = top.periodChangePercent ?? top.changePercent ?? 0;
+      const signed = `${pct > 0 ? "+" : ""}${pct.toFixed(2).replace(".", es ? "," : ".")}%`;
+      return es
+        ? `El mayor movimiento entre lo que seguís: ${top.symbol} (${signed}).`
+        : `The biggest move among what you follow: ${top.symbol} (${signed}).`;
+    }
     case "news":
       return es
         ? `${plural(b.news!.length, "novedad", "novedades")} de tus temas.`
@@ -302,6 +315,8 @@ function blocksFor(topic: BriefTopic, b: MorningBrief): ExperienceBlock[] {
       ];
     case "news":
       return [{ kind: "news", news: b.news! }];
+    case "markets":
+      return [{ kind: "markets", markets: b.markets! }];
     case "knowledge":
       return [{ kind: "knowledge", knowledge: b.knowledge! }];
     case "slack":

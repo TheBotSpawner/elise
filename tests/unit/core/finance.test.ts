@@ -19,6 +19,7 @@ import {
   type TransactionFilter,
   type TransactionPatch,
 } from "@/core/capabilities/finance";
+import { isSingleEmoji } from "@/core/emoji";
 import { AppError } from "@/core/errors";
 import { suggestMappingWithAI } from "@/core/finance/ai-mapping";
 import {
@@ -194,6 +195,31 @@ class MemoryFinance implements FinanceProvider {
     const category = { id: `c${this.categories.length + 1}`, parent: null, ...c };
     this.categories.push(category);
     return category;
+  }
+  async updateCategory(id: string, p: { name?: string; icon?: string | null }) {
+    const c = this.categories.find((x) => x.id === id)!;
+    if (
+      p.name &&
+      this.categories.some(
+        (x) => x.id !== id && x.type === c.type && x.name.toLowerCase() === p.name!.toLowerCase(),
+      )
+    )
+      throw new AppError("CONFLICT", "A category with that name already exists");
+    Object.assign(c, p.name ? { name: p.name } : {}, p.icon !== undefined ? { icon: p.icon } : {});
+    return c;
+  }
+  async categoryUsage(id: string) {
+    return {
+      transactions: this.rows.filter((r) => r.categoryId === id).length,
+      budgets: 0,
+      children: this.categories.filter((c) => c.parentId === id).length,
+    };
+  }
+  /** Like the database's FK: movements lose the category, never their row. */
+  async deleteCategory(id: string) {
+    for (const r of this.rows.filter((x) => x.categoryId === id))
+      Object.assign(r, { categoryId: null, category: null, categoryPath: [] });
+    this.categories = this.categories.filter((c) => c.id !== id);
   }
   async settings() {
     return { defaultCurrency: this.defaultCurrency, reportingCurrency: null };
@@ -705,6 +731,126 @@ const CSV = `Fecha;Tipo;Monto;Moneda;Medio de Pago;Categoría;Proveedor;Proyecto
 31/02/2026;Gasto;10;ARS;;;;;
 17/09/2026;Gasto;abc;ARS;;;;;
 `;
+
+describe("categories: rename, delete, icons (ADR-075)", () => {
+  const twins = () => {
+    const f = new MemoryFinance();
+    f.categories.push(
+      { id: "c-loan-out", name: "Préstamos", type: "expense", parentId: null, parent: null },
+      { id: "c-loan-in", name: "Préstamos", type: "income", parentId: null, parent: null },
+    );
+    return f;
+  };
+
+  it("renames by id: 'Préstamos' exists as expense and income, only the chosen one changes", async () => {
+    const { ports, native } = setup(twins());
+    native.add({
+      type: "expense",
+      amount: "10",
+      currency: "ARS",
+      date: "2026-09-01",
+      categoryId: "c-loan-out",
+    });
+    const out = await executeToolCall(ports, ctx, {
+      name: "finance.updateCategory",
+      args: { category: "c-loan-out", name: "Créditos" },
+    });
+    expect(out.status).toBe("succeeded");
+    expect(native.categories.find((c) => c.id === "c-loan-out")!.name).toBe("Créditos");
+    expect(native.categories.find((c) => c.id === "c-loan-in")!.name).toBe("Préstamos");
+    // The movement keeps pointing at the same category.
+    expect(native.rows[0]!.categoryId).toBe("c-loan-out");
+  });
+
+  it("accented and case-only renames save; a duplicate is a CONFLICT the UI words kindly", async () => {
+    const { ports, native } = setup(twins());
+    for (const name of ["Prestamos", "PRÉSTAMOS"]) {
+      const out = await executeToolCall(ports, ctx, {
+        name: "finance.updateCategory",
+        args: { category: "c-loan-out", name },
+      });
+      expect(out.status).toBe("succeeded");
+    }
+    const dup = await executeToolCall(ports, ctx, {
+      name: "finance.updateCategory",
+      args: { category: "c-loan-out", name: "Software" },
+    });
+    expect(dup).toMatchObject({ status: "failed", error: { code: "CONFLICT" } });
+    expect(native.categories.find((c) => c.id === "c-soft")!.name).toBe("Software");
+  });
+
+  it("by name, the same name in two types asks which — never renames the wrong one", async () => {
+    const { ports } = setup(twins());
+    const out = await executeToolCall(ports, ctx, {
+      name: "finance.updateCategory",
+      args: { category: "Préstamos", name: "X" },
+    });
+    expect(out).toMatchObject({ status: "failed", error: { code: "VALIDATION_ERROR" } });
+  });
+
+  it("delete: the preview counts the movements; deleting keeps them, uncategorized", async () => {
+    const { ports, native } = setup();
+    for (let i = 0; i < 3; i++)
+      native.add({
+        type: "expense",
+        amount: "5",
+        currency: "ARS",
+        date: "2026-09-02",
+        categoryId: "c-food",
+        category: "Supermercado",
+      });
+    const preview = await executeToolCall(
+      ports,
+      { ...ctx, origin: "user_ui" },
+      { name: "finance.deleteCategory", args: { category: "c-food", preview: true } },
+    );
+    expect(preview.status === "succeeded" && preview.output).toMatchObject({ transactions: 3 });
+    expect(native.categories.some((c) => c.id === "c-food")).toBe(true);
+    const out = await executeToolCall(
+      ports,
+      { ...ctx, origin: "user_ui" },
+      { name: "finance.deleteCategory", args: { category: "c-food" } },
+    );
+    expect(out.status).toBe("succeeded");
+    expect(native.categories.some((c) => c.id === "c-food")).toBe(false);
+    expect(native.rows).toHaveLength(3);
+    expect(native.rows.every((r) => r.categoryId === null && r.amount === "5")).toBe(true);
+  });
+
+  it("from chat, deleting a category always asks first", async () => {
+    const { ports, native } = setup();
+    const out = await executeToolCall(ports, ctx, {
+      name: "finance.deleteCategory",
+      args: { category: "Supermercado" },
+    });
+    expect(out.status).toBe("approval_required");
+    expect(native.categories.some((c) => c.id === "c-food")).toBe(true);
+  });
+
+  it.each(["🎁", "❤️", "👨‍💻", "👨‍👩‍👧", "🏳️‍🌈", "🇦🇷", "1️⃣", "🧑🏽‍⚕️"])(
+    "icon %s is one emoji, kept intact",
+    async (icon) => {
+      expect(isSingleEmoji(icon)).toBe(true);
+      const { ports, native } = setup();
+      const out = await executeToolCall(ports, ctx, {
+        name: "finance.updateCategory",
+        args: { category: "c-soft", icon },
+      });
+      expect(out.status).toBe("succeeded");
+      expect(native.categories.find((c) => c.id === "c-soft")!.icon).toBe(icon);
+    },
+  );
+
+  it("no icon is null; text is never an icon", async () => {
+    const { ports, native } = setup();
+    await executeToolCall(ports, ctx, {
+      name: "finance.updateCategory",
+      args: { category: "c-soft", icon: null },
+    });
+    expect(native.categories.find((c) => c.id === "c-soft")!.icon).toBeNull();
+    for (const bad of ["ab", "🎁🎁", "<svg>", "1"]) expect(isSingleEmoji(bad)).toBe(false);
+  });
+});
 
 describe("finance import", () => {
   const rows = parseCsv(CSV);

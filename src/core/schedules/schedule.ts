@@ -121,6 +121,8 @@ export const BRIEF_BLOCKS = [
   "habits",
   "goals",
   "finance",
+  /** Public markets (ADR-074): followed assets' quotes, never holdings. Opt-in. */
+  "markets",
   "news",
   "knowledge",
   "weather",
@@ -131,7 +133,12 @@ export const BRIEF_BLOCKS = [
  */
 export const DEFAULT_BRIEF_BLOCKS = BRIEF_BLOCKS.filter(
   (b) =>
-    b !== "finance" && b !== "news" && b !== "knowledge" && b !== "slack" && b !== "needs_reply",
+    b !== "finance" &&
+    b !== "markets" &&
+    b !== "news" &&
+    b !== "knowledge" &&
+    b !== "slack" &&
+    b !== "needs_reply",
 );
 
 /** The blocks a person chooses from: one "Correos" for all email (ADR-069). */
@@ -245,6 +252,35 @@ export const morningBriefConfigSchema = z
       channels: [],
       window: "since_previous",
     }),
+    /**
+     * Markets block (ADR-074): which assets (none → the person's followed assets), the period
+     * whose change it shows, and whether to add today's news for the biggest movers. Assets
+     * are stored resolved (symbol + name), never as free text.
+     */
+    markets: z
+      .object({
+        instruments: z
+          .array(
+            z
+              .object({
+                symbol: z
+                  .string()
+                  .trim()
+                  .regex(/^[A-Za-z0-9.^=-]{1,15}$/),
+                name: z.string().trim().min(1).max(200),
+                exchange: z.string().max(40).nullable().default(null),
+                currency: z.string().max(8).nullable().default(null),
+                type: z.enum(["equity", "etf", "index", "other"]).default("equity"),
+              })
+              .strict(),
+          )
+          .max(8)
+          .default([]),
+        period: z.enum(["today", "5d", "week", "month"]).default("today"),
+        news: z.boolean().default(false),
+      })
+      .strict()
+      .default({ instruments: [], period: "today", news: false }),
     /**
      * The Method that says HOW to do this run (ADR-040 §O): the schedule says when, the Method
      * how. Shapes the narration only; what is gathered and every permission stay the same.

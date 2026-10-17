@@ -30,6 +30,7 @@ import { compareAmounts } from "../finance/money";
 import { healthText, type GoalHealth } from "../goals/analytics";
 import { clipText } from "../text";
 import { addDays, toLocalDateTime, zonedDateTimeToUtc } from "../time";
+import type { SurfacePayloads } from "../workspace/registry";
 import {
   financeSummaryVisuals,
   goalPace,
@@ -123,7 +124,8 @@ export type SourceState =
   | "server_config"
   | "temporary"
   | "provider_error"
-  | "needs_topics";
+  | "needs_topics"
+  | "needs_assets";
 
 export function sourceState(code: string): SourceState {
   switch (code) {
@@ -144,9 +146,44 @@ export function sourceState(code: string): SourceState {
       return "temporary";
     case "NEEDS_TOPICS":
       return "needs_topics";
+    case "NEEDS_ASSETS":
+      return "needs_assets";
     default:
       return "provider_error";
   }
+}
+
+/**
+ * Followed assets for the brief (ADR-074): the biggest movers over the period first, a few
+ * only — a long watchlist never floods the morning. Numbers come from the provider or code.
+ */
+function briefMarkets(m: NonNullable<BriefData["markets"]>): BriefMarkets {
+  const moved = (symbol: string, day: number | null) =>
+    Math.abs((m.period === "today" ? day : (m.periodChange[symbol] ?? day)) ?? 0);
+  const items = [...m.quotes]
+    .sort((a, b) => moved(b.symbol, b.changePercent) - moved(a.symbol, a.changePercent))
+    .slice(0, CAPS.markets)
+    .map((q) => ({
+      symbol: q.symbol,
+      name: q.name,
+      price: q.price,
+      currency: q.currency,
+      changePercent: q.changePercent,
+      ...(m.period === "today" ? {} : { periodChangePercent: m.periodChange[q.symbol] ?? null }),
+      asOf: q.asOf,
+    }));
+  return {
+    period: m.period,
+    items,
+    total: m.quotes.length,
+    news: m.news.slice(0, CAPS.news).map((n) => ({
+      symbol: n.symbol,
+      headline: n.headline,
+      url: n.url,
+      domain: n.domain,
+      date: n.publishedAt?.slice(0, 10) ?? null,
+    })),
+  };
 }
 
 /** Email follow-ups are Email: one capability, one line. */
@@ -227,6 +264,8 @@ export interface MorningBrief {
   finance?: BriefFinance;
   /** A few recent, relevant news events for the user's topics, each with its sources. */
   news?: BriefNews[];
+  /** Followed assets (ADR-074): the biggest movers first, a few only; never holdings. */
+  markets?: BriefMarkets;
   /** Contexts with something concrete today (ADR-016 §17) — never every profile. */
   focus?: BriefFocus[];
   /**
@@ -254,6 +293,24 @@ export interface MorningBrief {
   warnings: BriefWarning[];
   /** AI-written summary (markdown). Null when synthesis was unavailable. */
   narrative: string | null;
+}
+
+export interface BriefMarkets {
+  period: "today" | "5d" | "week" | "month";
+  items: {
+    symbol: string;
+    name: string | null;
+    price: number;
+    currency: string | null;
+    /** Today's change (provider or computed). */
+    changePercent: number | null;
+    /** The period's change, when the period isn't today (computed from daily closes). */
+    periodChangePercent?: number | null;
+    asOf: string | null;
+  }[];
+  /** How many assets were read (the brief shows the few that moved most). */
+  total: number;
+  news: { symbol: string; headline: string; url: string; domain: string; date: string | null }[];
 }
 
 export interface BriefFocus {
@@ -346,6 +403,19 @@ export interface BriefData {
     }[];
   };
   weather?: WeatherPayload;
+  /** Followed assets' quotes, their change over the period, and news for the movers. */
+  markets?: {
+    period: "today" | "5d" | "week" | "month";
+    quotes: SurfacePayloads["market"]["quotes"];
+    periodChange: Record<string, number | null>;
+    news: {
+      symbol: string;
+      headline: string;
+      url: string;
+      domain: string;
+      publishedAt: string | null;
+    }[];
+  };
   /** Slack (ADR-062): recent messages of the channels the schedule names, read live. */
   slack?: BriefSlack;
   /** The user's language, for the few words charts carry. */
@@ -360,6 +430,7 @@ export interface BriefData {
 }
 
 const CAPS = {
+  markets: 5,
   events: 12,
   emails: 5,
   replies: 5,
@@ -641,6 +712,7 @@ export function assembleBrief(data: BriefData): MorningBrief {
     ...(data.goals ? { goals: briefGoals(data.goals, today) } : {}),
     ...(data.finance ? { finance: briefFinance(data.finance) } : {}),
     ...(data.news ? { news: briefNews(data.news) } : {}),
+    ...(data.markets?.quotes.length ? { markets: briefMarkets(data.markets) } : {}),
     ...(data.contexts ? { focus: briefFocus(data, today) } : {}),
     ...(data.range ? { period: data.range } : {}),
     ...(data.knowledge
@@ -779,6 +851,7 @@ export function isEmptyBrief(b: MorningBrief): boolean {
     !b.finance?.month.length &&
     !b.finance?.yesterday.length &&
     !b.news?.length &&
+    !b.markets?.items.length &&
     !b.focus?.length &&
     !b.knowledge?.changes.length &&
     !b.slack?.channels.some((c) => c.messages.length)
@@ -846,6 +919,10 @@ function forModel(b: MorningBrief) {
       ...(f.examDate ? { exam: f.examDate, toReview: f.review } : {}),
     })),
     knowledge: b.knowledge,
+    // Followed assets, computed numbers only; interest, never holdings (ADR-074).
+    ...(b.markets
+      ? { markets: { ...b.markets, note: "assets the user follows — not holdings" } }
+      : {}),
     // Third-party text, like email: data for the narration, never instructions.
     slack: b.slack?.channels
       .filter((c) => c.messages.length)
@@ -935,6 +1012,7 @@ export const BRIEF_TOPICS = [
   "habits",
   "goals",
   "finance",
+  "markets",
   "news",
   "knowledge",
 ] as const;
@@ -959,6 +1037,7 @@ export function briefTopics(b: MorningBrief): BriefTopic[] {
     goals: Boolean(b.goals?.length),
     finance: Boolean(b.finance && (b.finance.month.length || b.finance.yesterday.length)),
     news: Boolean(b.news?.length),
+    markets: Boolean(b.markets?.items.length),
     knowledge: Boolean(b.knowledge),
     // Hidden when the schedule has no Slack, or nothing was said in its channels.
     slack: Boolean(b.slack?.channels.some((c) => c.messages.length)),

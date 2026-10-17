@@ -10,6 +10,7 @@ type BriefCapability =
   | "web_search"
   | "knowledge"
   | "weather"
+  | "markets"
   | "team_messaging";
 
 /** Capabilities a Morning Brief uses, for validation and display (no schema code: the UI imports it). */

@@ -14,6 +14,7 @@ import {
   prepareFileImport,
   prepareSheetsImport,
   previewFinanceImport,
+  startFinanceImport,
 } from "@/application/finance-import";
 import { setFinanceDefaultCurrency } from "@/application/finance-service";
 import {
@@ -43,7 +44,7 @@ async function run<T>(fn: () => Promise<T>): Promise<FinanceResult<T>> {
 
 const id = z.uuid();
 const FINANCE_TOOL =
-  /^finance\.(createTransaction|updateTransaction|archiveTransaction|createAccount|updateAccount|createCategory|updateCategory|undoImport|restoreTransaction|saveBook|setBudget)$/;
+  /^finance\.(createTransaction|updateTransaction|archiveTransaction|createAccount|updateAccount|createCategory|updateCategory|deleteCategory|undoImport|restoreTransaction|saveBook|setBudget)$/;
 
 /**
  * Finance changes from the UI go through the Finance tools, exactly like Chat: the tool
@@ -65,6 +66,17 @@ export async function financeToolAction(
         idempotencyKey ? z.string().max(100).parse(idempotencyKey) : undefined,
       )
     ).display;
+  });
+}
+
+/** What deleting a category would touch, for its confirmation (nothing is deleted). */
+export async function categoryUsageAction(categoryId: string) {
+  return run(async () => {
+    const outcome = await runUserTool(await requireAuthContext(), "finance.deleteCategory", {
+      category: id.parse(categoryId),
+      preview: true,
+    });
+    return outcome.output as { transactions: number; budgets: number; children: number };
   });
 }
 
@@ -131,6 +143,20 @@ export async function previewImportAction(importId: string, mapping: unknown) {
 
 export async function confirmImportAction(importId: string) {
   return run(async () => confirmFinanceImport(await requireAuthContext(), id.parse(importId)));
+}
+
+/** "Importar" from the chat card (ADR-075): the file's currency, then the same confirm. */
+export async function startChatImportAction(importId: string, currency: string | null) {
+  return run(async () =>
+    startFinanceImport(await requireAuthContext(), id.parse(importId), {
+      defaultCurrency: currency
+        ? z
+            .string()
+            .regex(/^[A-Z]{3}$/)
+            .parse(currency)
+        : null,
+    }),
+  );
 }
 
 export async function cancelImportAction(importId: string) {

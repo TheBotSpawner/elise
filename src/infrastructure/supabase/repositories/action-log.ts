@@ -57,6 +57,12 @@ export class SupabaseActionLog implements ActionLog {
         throw new AppError("INTERNAL_ERROR", "Could not load action", { cause: existing.error });
       return { action: toStored(existing.data), duplicate: true };
     }
+    // A capability added by a migration this database doesn't have yet.
+    if (error?.code === "23503" && error.message.includes("capability_key"))
+      throw new AppError("CAPABILITY_UNAVAILABLE", "This needs the latest ELISE database update", {
+        recovery: "review",
+        cause: error,
+      });
     if (error) throw new AppError("INTERNAL_ERROR", "Could not record action", { cause: error });
     return { action: toStored(data), duplicate: false };
   }

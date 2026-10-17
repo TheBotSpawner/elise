@@ -69,6 +69,7 @@ export function SchedulesView({
   spaces: { id: string; path: string }[];
   /** Connected Slack workspaces, for briefs that read some of their channels. */
   slackWorkspaces?: { id: string; name: string }[];
+  marketsAvailable?: boolean;
   backgroundAvailable: boolean;
   /** A proposal from chat opened for editing. */
   draft: ScheduleInput | null;

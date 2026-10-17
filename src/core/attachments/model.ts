@@ -4,7 +4,8 @@
  * browser (early, friendly checks) and the server (authoritative: real bytes, real size).
  */
 
-export type AttachmentKind = "document" | "image";
+/** CSV and .xlsx are spreadsheets (ADR-075): structured, read from the stored original. */
+export type AttachmentKind = "document" | "spreadsheet" | "image";
 
 /** Draft lifecycle in the composer; only READY attachments travel with a message. */
 export type AttachmentStatus = "local" | "uploading" | "ready" | "failed" | "removed";
@@ -17,10 +18,10 @@ export const ATTACHMENT_TYPES: Record<string, { kind: AttachmentKind; ext: reado
   },
   "text/plain": { kind: "document", ext: ["txt"] },
   "text/markdown": { kind: "document", ext: ["md", "markdown"] },
-  "text/csv": { kind: "document", ext: ["csv"] },
+  "text/csv": { kind: "spreadsheet", ext: ["csv"] },
   "text/html": { kind: "document", ext: ["html", "htm"] },
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
-    kind: "document",
+    kind: "spreadsheet",
     ext: ["xlsx"],
   },
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": {
@@ -83,6 +84,35 @@ export function imageMatchesType(mime: string, data: Uint8Array): boolean {
     default:
       return false;
   }
+}
+
+/** What the model gets of a spreadsheet: its shape and first rows, never the whole file. */
+export interface SpreadsheetSummary {
+  sheets: { name: string; rows: number; columns: number; headers: string[]; sample: string[][] }[];
+}
+
+export const SPREADSHEET_SUMMARY = {
+  maxSheets: 8,
+  sampleRows: 8,
+  maxColumns: 30,
+  maxCell: 80,
+} as const;
+
+/** Sheets → the bounded summary (the header is the first non-empty row). */
+export function summarizeSpreadsheet(
+  sheets: { name: string; rows: string[][] }[],
+): SpreadsheetSummary {
+  const L = SPREADSHEET_SUMMARY;
+  const cut = (r: string[]) => r.slice(0, L.maxColumns).map((c) => c.slice(0, L.maxCell));
+  return {
+    sheets: sheets.slice(0, L.maxSheets).map((s) => ({
+      name: s.name,
+      rows: Math.max(0, s.rows.length - 1),
+      columns: Math.max(0, ...s.rows.slice(0, 50).map((r) => r.length)),
+      headers: cut(s.rows[0] ?? []),
+      sample: s.rows.slice(1, 1 + L.sampleRows).map(cut),
+    })),
+  };
 }
 
 /** What a sent message keeps of its attachments (transcript chips, provenance). */

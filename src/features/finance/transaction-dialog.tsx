@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { Dialog } from "@/components/ui/dialog";
+import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { Input, Label, Select } from "@/components/ui/input";
 import {
   suggestCategoryIcon,
@@ -17,7 +18,6 @@ import {
   type FinanceTransaction,
   type TransactionType,
 } from "@/core/capabilities/finance";
-import { isSingleEmoji } from "@/core/emoji";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -189,7 +189,6 @@ function NewCategory({
   const [icon, setIcon] = useState(suggestCategoryIcon(initialName) ?? "");
   const [parent, setParent] = useState("");
   const [pending, startTransition] = useTransition();
-  const iconOk = !icon || isSingleEmoji(icon);
   const save = () =>
     startTransition(async () => {
       const r = await financeToolAction("finance.createCategory", {
@@ -205,15 +204,8 @@ function NewCategory({
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-accent-line bg-surface-2/60 p-3">
       <p className="text-[13px] font-medium">{x.newCategory}</p>
-      <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
-        <Input
-          aria-label={x.icon}
-          value={icon}
-          maxLength={16}
-          aria-invalid={!iconOk}
-          onChange={(e) => setIcon(e.target.value.trim())}
-          className={cn(FIELD, "text-center text-[18px]")}
-        />
+      <div className="flex items-center gap-2">
+        <EmojiPicker value={icon} onChange={setIcon} label={x.icon} className="size-11" />
         <Input
           aria-label={x.name}
           autoFocus
@@ -224,10 +216,10 @@ function NewCategory({
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              if (name.trim() && iconOk) save();
+              if (name.trim()) save();
             }
           }}
-          className={FIELD}
+          className={cn(FIELD, "min-w-0 flex-1")}
         />
       </div>
       <Select
@@ -249,7 +241,7 @@ function NewCategory({
         <Button size="sm" variant="ghost" onClick={onCancel} disabled={pending}>
           {t.finance.cancel}
         </Button>
-        <Button size="sm" onClick={save} disabled={pending || !name.trim() || !iconOk}>
+        <Button size="sm" onClick={save} disabled={pending || !name.trim()}>
           {x.create}
         </Button>
       </div>

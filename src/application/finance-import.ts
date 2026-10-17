@@ -2,7 +2,12 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
-import { fingerprint as fp, norm, type TransactionType } from "@/core/capabilities/finance";
+import {
+  fingerprint as fp,
+  norm,
+  type FinanceImportAnalysis,
+  type TransactionType,
+} from "@/core/capabilities/finance";
 import { AppError, toAppError } from "@/core/errors";
 import { matchEntitiesWithAI, suggestMappingWithAI } from "@/core/finance/ai-mapping";
 import {
@@ -45,9 +50,11 @@ import { createAdminClient } from "@/infrastructure/supabase/admin";
 import type { ImportRow, Json } from "@/infrastructure/supabase/database.types";
 import {
   createFinanceUploadUrl,
+  downloadChatAttachment,
   downloadFinanceImport,
   financeImportPath,
   removeFinanceImport,
+  uploadFinanceImport,
 } from "@/infrastructure/supabase/storage";
 
 import type { AuthContext } from "./auth-context";
@@ -83,6 +90,8 @@ export interface ImportInspection {
   ignored: { header: string; reason: "duplicate" | "empty" | "unused" }[];
   /** A previous completed import of exactly the same file. */
   sameFile: { importedAt: string; imported: number } | null;
+  /** A recognized export ("Mercado Pago"), when one matched (ADR-075). */
+  format: { id: string; label: string } | null;
 }
 
 /** One name of the file and what it becomes (ADR-073). */
@@ -160,6 +169,19 @@ async function loadRows(
   return { sheets: parsed.map((s) => s.name), sheet: chosen.name, rows: chosen.rows };
 }
 
+/**
+ * The file's currency when it has no currency column (ADR-075): the workspace's Finance
+ * default, so a one-currency user isn't asked; otherwise the user picks it once for the file.
+ */
+async function workspaceCurrency(auth: AuthContext): Promise<string | null> {
+  const { data } = await auth.db
+    .from("finance_settings")
+    .select("default_currency")
+    .eq("workspace_id", auth.workspaceId)
+    .maybeSingle();
+  return data?.default_currency ?? null;
+}
+
 // ── Step 1: create the import and upload the file ────────────────────────────
 
 export async function prepareFileImport(
@@ -173,27 +195,145 @@ export async function prepareFileImport(
   if (file.size <= 0 || file.size > MAX_IMPORT_BYTES) {
     throw new AppError("VALIDATION_ERROR", "Files up to 20 MB", { recovery: "review" });
   }
+  const { importId, path } = await createFileImport(auth, file.name, kind);
+  const upload = await createFinanceUploadUrl(auth.workspaceId, path);
+  return { importId, path: upload.path, token: upload.token };
+}
+
+async function createFileImport(auth: AuthContext, name: string, kind: "csv" | "xlsx") {
   const { data, error } = await auth.db
     .from("imports")
     .insert({
       workspace_id: auth.workspaceId,
       import_type: "finance_transactions",
       source_type: kind,
-      source_reference: file.name.slice(0, 300),
-      source_label: file.name.slice(0, 300),
+      source_reference: name.slice(0, 300),
+      source_label: name.slice(0, 300),
       created_by_user_id: auth.userId,
     })
     .select("id")
     .single();
   if (error) throw new AppError("INTERNAL_ERROR", "Could not start the import", { cause: error });
-  const path = financeImportPath(auth.workspaceId, data.id, file.name);
+  const path = financeImportPath(auth.workspaceId, data.id, name);
   await auth.db
     .from("imports")
     .update({ file_path: path })
     .eq("id", data.id)
     .eq("workspace_id", auth.workspaceId);
-  const upload = await createFinanceUploadUrl(auth.workspaceId, path);
-  return { importId: data.id, path: upload.path, token: upload.token };
+  return { importId: data.id, path };
+}
+
+/**
+ * A spreadsheet attached in chat → the same import the Finance screen makes (ADR-075). The
+ * ORIGINAL stored bytes are copied into the import, never the text the model saw, then the same
+ * inspect + preview run. Nothing is written to Finance until the user starts it.
+ */
+export async function analyzeAttachmentImport(
+  auth: AuthContext,
+  attachmentId: string,
+): Promise<FinanceImportAnalysis> {
+  const { data: row } = await auth.db
+    .from("chat_attachments")
+    .select("id, name, mime_type, size_bytes, storage_path, status")
+    .eq("id", attachmentId)
+    .eq("workspace_id", auth.workspaceId)
+    .eq("user_id", auth.userId)
+    .maybeSingle();
+  if (!row || row.status === "uploading")
+    throw new AppError("NOT_FOUND", "That attachment isn't available", { recovery: "review" });
+  const kind = spreadsheetKind(row.name, row.mime_type);
+  if (!kind)
+    throw new AppError("VALIDATION_ERROR", "Only CSV and .xlsx files can be imported to Finance", {
+      recovery: "review",
+    });
+  const bytes = await downloadChatAttachment(auth.workspaceId, row.storage_path);
+  // Only what the bytes prove is reported as a broken upload — never a partial preview.
+  if (!bytes || bytes.byteLength === 0 || bytes.byteLength !== row.size_bytes)
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "The attachment didn't upload completely. Attach it again.",
+      {
+        recovery: "retry",
+        details: { problem: !bytes ? "missing" : "size_mismatch" },
+      },
+    );
+  if (bytes.byteLength > MAX_IMPORT_BYTES)
+    throw new AppError("VALIDATION_ERROR", "Files up to 20 MB", { recovery: "review" });
+  const { importId, path } = await createFileImport(auth, row.name, kind);
+  await uploadFinanceImport(auth.workspaceId, path, bytes, row.mime_type);
+  const inspection = await inspectImport(auth, importId);
+  const preview = await previewFinanceImport(auth, importId, inspection.mapping);
+  logger.info("finance_import_attachment", {
+    import_id: importId,
+    attachment_id: attachmentId,
+    file_name: row.name.slice(0, 120),
+    mime: row.mime_type,
+    stored_bytes: bytes.byteLength,
+    parser: kind,
+    rows: inspection.rows,
+    format: inspection.format?.id ?? null,
+    invalid: preview.invalid,
+  });
+  return importAnalysis(inspection, { ...preview, sameFile: inspection.sameFile });
+}
+
+/** The pipeline's result, in the shape the chat card and the model read. */
+export function importAnalysis(
+  inspection: ImportInspection,
+  preview: ImportPreviewView,
+): FinanceImportAnalysis {
+  const m = inspection.mapping;
+  return {
+    importId: inspection.importId,
+    label: inspection.label,
+    rows: preview.totalRows,
+    format: inspection.format?.label ?? null,
+    dateRange: preview.dateRange,
+    willImport: preview.willImport,
+    invalid: preview.invalid,
+    duplicates: preview.duplicates,
+    review: preview.review,
+    needs: preview.needs,
+    fileCurrency: m.columns.currency === undefined,
+    currency: m.defaultCurrency,
+    typeStrategy:
+      m.columns.type !== undefined
+        ? "column"
+        : m.columns.incomeAmount !== undefined
+          ? "column"
+          : m.defaultType,
+    accounts: preview.entities.accounts
+      .slice(0, 6)
+      .map((a) => ({ raw: a.raw, name: a.name, how: a.how })),
+    creates: preview.creates,
+    sameFile: Boolean(preview.sameFile),
+  };
+}
+
+/**
+ * "Importar" from the chat card: the file-level choice (its currency), then the same preview
+ * and the same confirm — and so the same background job — as the Finance screen.
+ */
+export async function startFinanceImport(
+  auth: AuthContext,
+  importId: string,
+  settings: { defaultCurrency?: string | null },
+) {
+  const imp = await own(auth.db, auth.workspaceId, importId);
+  if (imp.status !== "uploaded") return { status: "importing" as const };
+  const stored: StoredMapping = { ...(imp.mapping_config as StoredMapping) };
+  delete stored.sheet; // kept beside the mapping, not part of it (the schema is strict)
+  const mapping = financeMappingSchema.parse({
+    ...stored,
+    ...(settings.defaultCurrency ? { defaultCurrency: settings.defaultCurrency } : {}),
+  });
+  const preview = await previewFinanceImport(auth, importId, mapping);
+  if (preview.willImport === 0 || preview.needs.length)
+    throw new AppError("VALIDATION_ERROR", "This import needs a review first", {
+      recovery: "review",
+      details: { needs: preview.needs },
+    });
+  return confirmFinanceImport(auth, importId);
 }
 
 /** "Import to ELISE" from a Google Sheet: the rows become ELISE Finance transactions. */
@@ -271,17 +411,25 @@ export async function inspectImport(
   })();
   // Values decide first (ADR-073); the model only fills what they leave open.
   const inferred = inferFinanceMapping(headers, body);
-  const suggestion = await suggestMappingWithAI(ai, headers, body.slice(0, 5), {
-    columns: inferred.columns,
-    ignored: inferred.ignored.filter((i) => i.reason === "duplicate").map((i) => i.index),
-  });
+  // A recognized export format is already certain: no model call (ADR-075).
+  const suggestion = inferred.format
+    ? { columns: inferred.columns, fromAI: [] }
+    : await suggestMappingWithAI(ai, headers, body.slice(0, 5), {
+        columns: inferred.columns,
+        ignored: inferred.ignored.filter((i) => i.reason === "duplicate").map((i) => i.index),
+      });
   const formats = detectFormats(loaded.rows, suggestion.columns, headerRow);
   const mapping = financeMappingSchema.parse({
     columns: suggestion.columns,
     headerRow,
     numberFormat: formats.numberFormat,
     dateFormat: formats.dateFormat,
-    defaultCurrency: suggestion.columns.currency === undefined ? inferred.currency : null,
+    defaultCurrency:
+      suggestion.columns.currency === undefined
+        ? (inferred.currency ?? (await workspaceCurrency(auth)))
+        : null,
+    defaultType: suggestion.columns.type === undefined ? inferred.defaultType : null,
+    defaultAccount: suggestion.columns.account === undefined ? inferred.account : null,
   });
   const mappedColumns = new Set(Object.values(mapping.columns));
   await auth.db
@@ -297,6 +445,8 @@ export async function inspectImport(
     columns: headers.length,
     mapped: mappedColumns.size,
     ai_fields: suggestion.fromAI.length,
+    format: inferred.format?.id ?? null,
+    type_strategy: mapping.columns.type !== undefined ? "column" : (mapping.defaultType ?? "ask"),
     latency_ms: Date.now() - started,
   });
   return {
@@ -310,6 +460,7 @@ export async function inspectImport(
     rows: body.length,
     mapping,
     fromAI: suggestion.fromAI,
+    format: inferred.format,
     ignored: inferred.ignored
       .filter((i) => !mappedColumns.has(i.index))
       .map((i) => ({ header: (headers[i.index] ?? "").slice(0, 60), reason: i.reason })),
@@ -660,7 +811,9 @@ export async function confirmFinanceImport(
     .eq("workspace_id", auth.workspaceId)
     .eq("status", "uploaded");
 
-  if (imp.valid_rows <= SYNC_IMPORT_ROWS) {
+  // Durable whatever its size or origin (screen or chat, ADR-075): the background job survives
+  // navigation, a closed chat and the request ending. Inline only where there's no background.
+  if (!isBackgroundConfigured() && imp.valid_rows <= SYNC_IMPORT_ROWS) {
     const imported = await runFinanceImport(auth.workspaceId, importId);
     return { status: "completed", imported };
   }

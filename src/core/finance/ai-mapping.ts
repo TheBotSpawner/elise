@@ -3,6 +3,7 @@ import { z } from "zod";
 import { FINANCE_FIELDS, suggestFinanceMapping, type Cell, type FinanceField } from "./import";
 import type { AIProvider } from "../agents/ai-provider";
 import { MODEL_POLICY } from "../agents/model-policy";
+import { normalizeType } from "../capabilities/finance";
 
 /**
  * AI-assisted column mapping (docs/architecture/10 §38). The model sees only headers and a few
@@ -88,6 +89,12 @@ export async function suggestMappingWithAI(
     if (!(FINANCE_FIELDS as readonly string[]).includes(field)) continue;
     const f = field as FinanceField;
     if (columns[f] !== undefined || used.has(index) || index >= headers.length) continue;
+    // A type column must hold types: a provider's payment method ("bank_transfer") isn't one.
+    if (f === "type") {
+      const values = sample.map((r) => (r[index] ?? "").trim()).filter(Boolean);
+      if (!values.length || values.filter((v) => normalizeType(v)).length / values.length < 0.8)
+        continue;
+    }
     if (
       f !== "amount" &&
       columns.amount !== undefined &&

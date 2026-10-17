@@ -15,6 +15,14 @@ import { selectPassages } from "../web/extract";
 import { itemKey, looksLikeItemUrl, type WebItem } from "../web/items";
 import { WEB_LIMITS, type Recency, type WebCapability, type WebPage } from "../web/model";
 import { groupNews, isStale, isWeak, queryTerms, rankResults, reformulations } from "../web/rank";
+import {
+  assessEvidence,
+  freshnessOf,
+  temporalIntent,
+  temporalVariants,
+  type SearchConfidence,
+  type TemporalIntent,
+} from "../web/temporal";
 import { checkUrl, domainOf, normalizeUrl } from "../web/url";
 import { surfaceId, type WorkspaceOp } from "../workspace/model";
 import { draftDefaults, PAYLOADS, type SurfacePayloads } from "../workspace/registry";
@@ -91,6 +99,108 @@ async function searchStep(
 
 const present = (env: ToolRunEnv, op: WorkspaceOp) => env.ctx.workspace?.apply([op]);
 
+// ── Freshness (ADR-074) ──────────────────────────────────────────────────────
+
+/** How a time-sensitive answer must treat its evidence. */
+const TEMPORAL_RULES =
+  'This question is time-sensitive (see temporal). Answer only from sources whose freshness is within_window; undated ones only as unconfirmed. Never present an older_than_asked source as recent: if nothing is within the window, say so plainly and give the newest you found with its date (temporal.newest). A publication date isn\'t the event\'s date: check the passages for when it actually happened. Coverage isn\'t the thing itself: if you found articles about a speech/report/announcement but not the speech/report itself, say "encontré cobertura", not "encontré el discurso".';
+
+const NEWEST_WIDENING = [30, 90, 365];
+
+/**
+ * A bounded recovery for time-sensitive searches: judge the candidates against the window;
+ * if nothing in it supports the answer, run up to two more rounds that are actually different
+ * (current news + a dated variant, in parallel), then — only if still nothing — report the
+ * newest dated result outside the window, labeled as such. Logged as web_research.
+ */
+async function recoverFresh(
+  env: ToolRunEnv,
+  query: string,
+  intent: TemporalIntent,
+  recency: Recency | null,
+  domains: string[] | undefined,
+  first: ReturnType<typeof rankResults>,
+  attempts: string[],
+) {
+  const started = Date.now();
+  let results = first;
+  let assessed = assessEvidence(results, query, intent);
+  let rounds = 1;
+  const variants = temporalVariants(query, intent, env.ctx.locale).filter(
+    (v) => !attempts.includes(v),
+  );
+  while (assessed.confidence === "low" && rounds < 3) {
+    const variant = variants.shift();
+    const round = await Promise.all([
+      rounds === 1
+        ? searchStep(env, query, "news", recency, domains).catch(() => [])
+        : Promise.resolve([]),
+      variant
+        ? searchStep(env, variant, "web", recency, domains).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+    if (variant) attempts.push(variant);
+    if (!round.flat().length && !variant) break;
+    results = rankResults([...results, ...round.flat()], query, {
+      preferRecent: true,
+      now: env.ctx.now,
+    });
+    assessed = assessEvidence(results, query, intent);
+    rounds++;
+  }
+  // In-window first, then undated, then older: the search engine's order never decides "latest".
+  const order = { within_window: 0, undated: 1, older_than_asked: 2 } as const;
+  results = [...results].sort(
+    (a, b) => order[freshnessOf(a, intent)] - order[freshnessOf(b, intent)],
+  );
+  const dated = results
+    .filter((r) => r.publishedAt)
+    .sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""));
+  const newest = assessed.fresh.length ? null : (dated[0] ?? null);
+  const widenedTo = newest
+    ? (NEWEST_WIDENING.find(
+        (days) => Date.parse(newest.publishedAt!) >= env.ctx.now.getTime() - days * 86_400_000,
+      ) ?? null)
+    : null;
+  const confidence: SearchConfidence = assessed.confidence;
+  env.ctx.log?.("info", "web_research", {
+    time_sensitive: true,
+    temporal_mode: intent.mode,
+    search_rounds: rounds,
+    queries_count: attempts.length,
+    candidates_seen: results.length,
+    candidates_rejected: assessed.rejected,
+    final_confidence: confidence,
+    latency_ms: Date.now() - started,
+  });
+  return { results, confidence, rounds, rejected: assessed.rejected, newest, widenedTo };
+}
+
+function temporalSummary(
+  intent: TemporalIntent,
+  t: Awaited<ReturnType<typeof recoverFresh>>,
+  timezone: string,
+) {
+  return {
+    mode: intent.mode,
+    window: { from: intent.from, to: intent.to, timezone },
+    confidence: t.confidence,
+    searchRounds: t.rounds,
+    ...(Object.keys(t.rejected).length ? { rejected: t.rejected } : {}),
+    ...(t.newest
+      ? {
+          nothingWithinWindow: true,
+          newest: {
+            title: t.newest.title,
+            url: t.newest.url,
+            date: day(t.newest.publishedAt),
+            ...(t.widenedTo ? { withinLastDays: t.widenedTo } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 // ── Quick search ─────────────────────────────────────────────────────────────
 
 const searchInput = z
@@ -119,25 +229,39 @@ export const searchWebTool: ToolDefinition = {
   async run(raw, env) {
     const q = searchInput.parse(raw);
     const retrievedAt = env.ctx.now.toISOString();
-    let results = await searchStep(env, q.query, "web", q.recency ?? null, q.domains);
-    // Weak evidence → bounded reformulation (E2) before giving up; results are merged and
-    // ranked again, so a good first hit is never lost.
+    // "Hoy", "recientemente", "lo último" are constraints on the evidence (ADR-074): read from
+    // the user's own words, not left to an optional field the model may skip.
+    const intent = temporalIntent(
+      `${env.ctx.userMessage ?? ""} ${q.query}`,
+      env.ctx.now,
+      env.ctx.timezone,
+    );
+    const recency = q.recency ?? intent.recency;
+    let results = await searchStep(env, q.query, "web", recency, q.domains);
     const attempts = [q.query];
-    for (const next of isWeak(results, q.query) ? reformulations(q.query, q.recency ?? null) : []) {
+    // Weak evidence → bounded reformulation (E2) before giving up; results are merged and
+    // ranked again, so a good first hit is never lost. A time-sensitive search never drops its
+    // window here: widening is explicit and labeled (below).
+    for (const next of isWeak(results, q.query) ? reformulations(q.query, recency) : []) {
+      if (next.dropRecency && intent.timeSensitive) continue;
       const more = await searchStep(
         env,
         next.query,
         "web",
-        next.dropRecency ? null : (q.recency ?? null),
+        next.dropRecency ? null : recency,
         q.domains,
       ).catch(() => []);
       attempts.push(next.query);
       results = rankResults([...results, ...more], q.query, {
-        preferRecent: Boolean(q.recency),
+        preferRecent: Boolean(recency),
         now: env.ctx.now,
       });
       if (!isWeak(results, q.query)) break;
     }
+    const temporal = intent.timeSensitive
+      ? await recoverFresh(env, q.query, intent, recency, q.domains, results, attempts)
+      : null;
+    if (temporal) results = temporal.results;
     if (!results.length)
       return {
         output: {
@@ -174,7 +298,11 @@ export const searchWebTool: ToolDefinition = {
         domain: r.domain,
         published: day(page?.publishedAt ?? r.publishedAt),
         inspected: Boolean(page),
-        ...(isStale(r, q.recency ?? null, env.ctx.now) ? { olderThanAsked: true } : {}),
+        ...(temporal
+          ? { freshness: freshnessOf(r, intent) }
+          : isStale(r, q.recency ?? null, env.ctx.now)
+            ? { olderThanAsked: true }
+            : {}),
         untrustedSnippet: clip(r.snippet, 300),
         ...(page
           ? {
@@ -194,11 +322,12 @@ export const searchWebTool: ToolDefinition = {
         query: q.query,
         ...(attempts.length > 1 ? { attempts } : {}),
         retrievedAt,
+        ...(temporal ? { temporal: temporalSummary(intent, temporal, env.ctx.timezone) } : {}),
         sources,
         ...(q.inspect && byUrl.size < Math.min(WEB_LIMITS.quickFetch, results.length)
           ? { note: "Some pages couldn't be read; their snippets are weaker evidence." }
           : {}),
-        instructions: `${WEB_ANSWER}${QUICK_FOLLOW_UP}${
+        instructions: `${WEB_ANSWER}${temporal ? ` ${TEMPORAL_RULES}` : ""}${QUICK_FOLLOW_UP}${
           representationHint(sources.flatMap((x) => x.untrustedPassages ?? [])) === "temporal"
             ? ` ${TEMPORAL_HINT}`
             : ` ${ANSWER_HINT}`
@@ -237,7 +366,7 @@ const newsInput = z
       .min(2)
       .max(200)
       .describe('The subject, e.g. "OpenAI" or "Power Automate".'),
-    recency: z.enum(RECENCY).default("week"),
+    recency: z.enum(RECENCY).optional(),
   })
   .strict();
 
@@ -252,7 +381,19 @@ export const searchNewsTool: ToolDefinition = {
     return { summary: "Search news" };
   },
   async run(raw, env) {
-    const q = newsInput.parse(raw);
+    const parsed = newsInput.parse(raw);
+    // Omitted → the user's own words decide ("hoy" → day), else this week (ADR-074).
+    const q = {
+      ...parsed,
+      recency:
+        parsed.recency ??
+        temporalIntent(
+          `${env.ctx.userMessage ?? ""} ${parsed.query}`,
+          env.ctx.now,
+          env.ctx.timezone,
+        ).recency ??
+        ("week" as const),
+    };
     const retrievedAt = env.ctx.now.toISOString();
     const results = (await searchStep(env, q.query, "news", q.recency)).filter(
       (r) => !isStale(r, q.recency, env.ctx.now),

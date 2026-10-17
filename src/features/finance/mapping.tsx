@@ -166,41 +166,6 @@ export function MappingEditor({
               ))}
             </Select>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="map-currency">{w.defaultCurrency}</Label>
-            <Select
-              id="map-currency"
-              value={mapping.defaultCurrency ?? ""}
-              onChange={(e) => onChange({ ...mapping, defaultCurrency: e.target.value || null })}
-            >
-              <option value="">{t.finance.notSet}</option>
-              {COMMON_CURRENCIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="map-type">{w.defaultType}</Label>
-            <Select
-              id="map-type"
-              value={mapping.defaultType ?? "none"}
-              onChange={(e) =>
-                onChange({
-                  ...mapping,
-                  defaultType:
-                    e.target.value === "none" ? null : (e.target.value as "income" | "expense"),
-                })
-              }
-            >
-              {(["none", "expense", "income"] as const).map((f) => (
-                <option key={f} value={f}>
-                  {w.defaultTypes[f]}
-                </option>
-              ))}
-            </Select>
-          </div>
         </div>
       </section>
 
@@ -234,6 +199,85 @@ export function MappingEditor({
         </section>
       )}
     </div>
+  );
+}
+
+type TypeStrategy = "column" | "sign" | "income" | "expense" | "none";
+
+/**
+ * What applies to the whole file (ADR-075), beside what it changes: one currency when the file
+ * has none, and how each row's direction is known — never asked row by row.
+ */
+export function FileSettings({
+  headers,
+  mapping,
+  onChange,
+}: {
+  headers: string[];
+  mapping: FinanceMapping;
+  onChange: (m: FinanceMapping) => void;
+}) {
+  const { t } = useI18n();
+  const w = t.finance.wizard;
+  const typeColumn = mapping.columns.type;
+  const strategy: TypeStrategy =
+    typeColumn !== undefined ? "column" : (mapping.defaultType ?? "none");
+  const separateAmounts =
+    mapping.columns.amount === undefined && mapping.columns.incomeAmount !== undefined;
+  if (mapping.columns.currency !== undefined && (typeColumn !== undefined || separateAmounts))
+    return null;
+  return (
+    <section className="grid gap-3 sm:grid-cols-2">
+      {mapping.columns.currency === undefined && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="file-currency">{w.defaultCurrency}</Label>
+          <Select
+            id="file-currency"
+            value={mapping.defaultCurrency ?? ""}
+            aria-invalid={!mapping.defaultCurrency}
+            onChange={(e) => onChange({ ...mapping, defaultCurrency: e.target.value || null })}
+            className="h-11"
+          >
+            <option value="">{w.defaultTypes.none}</option>
+            {COMMON_CURRENCIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+      {!separateAmounts && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="file-type">{w.defaultType}</Label>
+          <Select
+            id="file-type"
+            value={strategy}
+            aria-invalid={strategy === "none"}
+            onChange={(e) => {
+              const next = e.target.value as TypeStrategy;
+              if (next === "column") return;
+              const columns = { ...mapping.columns };
+              delete columns.type;
+              onChange({ ...mapping, columns, defaultType: next === "none" ? null : next });
+            }}
+            className="h-11"
+          >
+            {typeColumn !== undefined && (
+              <option value="column">
+                {w.typeFromColumn(headers[typeColumn] || `#${typeColumn + 1}`)}
+              </option>
+            )}
+            {strategy === "none" && <option value="none">{w.defaultTypes.none}</option>}
+            {(["sign", "income", "expense"] as const).map((f) => (
+              <option key={f} value={f}>
+                {w.defaultTypes[f]}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+    </section>
   );
 }
 

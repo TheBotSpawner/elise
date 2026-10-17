@@ -1,3 +1,4 @@
+import { strToU8, zipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthContext } from "@/application/auth-context";
@@ -77,6 +78,41 @@ async function stageAndUpload(name: string, bytes: Uint8Array, auth = authFor())
   return s!;
 }
 
+/** A minimal one-sheet workbook ("Gastos": Fecha, Concepto, Monto + two rows). */
+function workbook(): Uint8Array {
+  const xml = (body: string) => `<?xml version="1.0" encoding="UTF-8"?>${body}`;
+  const ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+  const rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const cell = (r: string, v: string) => `<c r="${r}" t="inlineStr"><is><t>${v}</t></is></c>`;
+  return zipSync({
+    "[Content_Types].xml": strToU8(
+      xml(
+        `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
+      ),
+    ),
+    "_rels/.rels": strToU8(
+      xml(
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+      ),
+    ),
+    "xl/workbook.xml": strToU8(
+      xml(
+        `<workbook ${ns} xmlns:r="${rel}"><sheets><sheet name="Gastos" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+      ),
+    ),
+    "xl/_rels/workbook.xml.rels": strToU8(
+      xml(
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${rel}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+      ),
+    ),
+    "xl/worksheets/sheet1.xml": strToU8(
+      xml(
+        `<worksheet ${ns}><sheetData><row r="1">${cell("A1", "Fecha")}${cell("B1", "Concepto")}${cell("C1", "Monto")}</row><row r="2">${cell("A2", "2026-10-01")}${cell("B2", "Luz")}${cell("C2", "-8000")}</row><row r="3">${cell("A3", "2026-10-02")}${cell("B3", "Sueldo")}${cell("C3", "350000")}</row></sheetData></worksheet>`,
+      ),
+    ),
+  });
+}
+
 beforeEach(() => {
   rows = [];
   tables = new Set();
@@ -149,6 +185,33 @@ describe("attachments service", () => {
     expect(turn!.documents[0]).toMatchObject({ id: doc.id, name: "fechas.txt" });
     expect(turn!.documents[0]!.text).toContain("12 de octubre");
     expect(turn!.images[0]!.dataUrl.startsWith("data:image/png;base64,")).toBe(true);
+  });
+
+  it("an .xlsx is a spreadsheet: its sheets and headers reach the turn, never as truncated text", async () => {
+    const book = await stageAndUpload("presupuesto.xlsx", workbook());
+    await completeAttachment(authFor(), book.id);
+    const turn = await loadTurnAttachments(authFor(), [book.id]);
+    const doc = turn!.documents[0]!;
+    expect(doc).toMatchObject({ truncated: false, text: "" });
+    expect(doc.spreadsheet!.sheets[0]).toMatchObject({
+      name: "Gastos",
+      rows: 2,
+      headers: ["Fecha", "Concepto", "Monto"],
+    });
+    const content = (
+      buildContextPackage({
+        user: { displayName: null, locale: "es", timezone: "UTC" },
+        now: new Date("2026-10-03T12:00:00Z"),
+        availableCapabilities: [],
+        history: [],
+        userMessage: "¿Qué hojas y columnas tiene este Excel?",
+        attachments: { documents: turn!.documents, images: [] },
+      }).input.at(-1) as { content: string }
+    ).content;
+    expect(content).toContain('"kind":"spreadsheet"');
+    expect(content).toContain('"Gastos"');
+    expect(content).toContain("finance.importFile");
+    expect(content).not.toContain('"truncated"');
   });
 
   it("refuses the turn if a file is someone else's, another workspace's, or not ready", async () => {

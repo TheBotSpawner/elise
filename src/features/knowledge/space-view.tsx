@@ -211,15 +211,10 @@ export function SpaceView({
           {parent ? (
             <BackLink
               href={`/knowledge/spaces/${parent.id}`}
-              label={parent.name}
-              ariaLabel={t.knowledge.backTo(parent.name)}
+              label={t.knowledge.backTo(parent.name)}
             />
           ) : (
-            <BackLink
-              href="/knowledge"
-              label={t.knowledge.title}
-              ariaLabel={t.knowledge.backTo(t.knowledge.title)}
-            />
+            <BackLink href="/knowledge" label={t.knowledge.backTo(t.knowledge.title)} />
           )}
         </nav>
         <div className="flex flex-col gap-1.5">
