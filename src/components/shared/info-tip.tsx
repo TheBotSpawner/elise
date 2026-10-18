@@ -42,10 +42,14 @@ export function InfoTip({
   // "pinned" = opened by click/tap/keyboard (stays until dismissed); "hover" closes on leave.
   const [open, setOpen] = useState<"pinned" | "hover" | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  // Inside a modal <dialog> the rest of the page is inert and below the top layer: the card
+  // lives in that dialog, or it would never show (Programados' editor).
+  const [host, setHost] = useState<Element | null>(null);
   const leave = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useLayoutEffect(() => {
     if (!open || !button.current) return;
+    setHost(button.current.closest("dialog[open]") ?? document.body);
     const r = button.current.getBoundingClientRect();
     const width = Math.min(WIDTH, window.innerWidth - GUTTER * 2);
     const left = Math.min(
@@ -124,6 +128,7 @@ export function InfoTip({
         />
       </button>
       {open &&
+        host &&
         createPortal(
           <div
             ref={card}
@@ -150,7 +155,7 @@ export function InfoTip({
               </ul>
             ) : null}
           </div>,
-          document.body,
+          host,
         )}
     </>
   );

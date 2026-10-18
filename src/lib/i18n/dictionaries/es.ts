@@ -1964,7 +1964,7 @@ export const es: Dictionary = {
       habits: "Hábitos",
       goals: "Objetivos",
       finance: "Finanzas",
-      markets: "Mercados",
+      markets: "Inversiones",
       knowledge: "Conocimiento",
       weather: "Clima",
       slack: "Slack",
@@ -2043,7 +2043,7 @@ export const es: Dictionary = {
       habits: "Hábitos",
       goals: "Objetivos",
       finance: "Finanzas",
-      markets: "Mercados / Inversiones",
+      markets: "Inversiones",
       knowledge: "Cambios en Conocimiento (un Espacio)",
       weather: "Clima (pronóstico del día)",
       slack: "Slack (canales elegidos)",
@@ -2522,6 +2522,18 @@ export const es: Dictionary = {
     undoConfirm: (n: number, label: string) =>
       `¿Archivar los ${n} movimientos creados por “${label}”? Dejan de contar en todos los totales.`,
     undone: (n: number) => `${n} movimientos archivados`,
+    bulk: {
+      select: "Seleccionar",
+      selectAll: "Seleccionar todos",
+      selectNone: "Ninguno",
+      selected: (n: number) => (n === 1 ? "1 seleccionado" : `${n} seleccionados`),
+      delete: (n: number) => (n ? `Eliminar ${n}` : "Eliminar"),
+      confirmTitle: (n: number) =>
+        n === 1 ? "Eliminar 1 movimiento" : `Eliminar ${n} movimientos`,
+      confirmBody: "Dejan de contar en tus totales. Podés deshacerlo enseguida.",
+      deleted: (n: number) => (n === 1 ? "Movimiento eliminado." : `${n} movimientos eliminados.`),
+      undo: "Deshacer",
+    },
     chatImport: {
       found: (n: number) => (n === 1 ? "1 movimiento" : `${n} movimientos`),
       types: {
@@ -2790,6 +2802,9 @@ export const es: Dictionary = {
       billing: { title: "Facturación", hint: "Planes y pagos" },
     },
     general: {
+      dateFormat: "Formato de fecha",
+      dateFormatHint: "Cómo se muestran las fechas cortas en gráficos y tablas.",
+      dateFormats: { dmy: "Día y mes (05-10)", mdy: "Mes y día (10-05)" },
       profile: "Perfil",
       name: "Nombre",
       language: "Idioma de la interfaz",

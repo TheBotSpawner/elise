@@ -29,17 +29,73 @@ const ENTITIES: Record<string, string> = {
   lsquo: "‘",
   ldquo: "“",
   rdquo: "”",
+  sbquo: "‚",
+  bdquo: "„",
+  laquo: "«",
+  raquo: "»",
+  iexcl: "¡",
+  iquest: "¿",
+  ordf: "ª",
+  ordm: "º",
+  deg: "°",
+  middot: "·",
+  bull: "•",
+  copy: "©",
+  reg: "®",
+  trade: "™",
+  euro: "€",
+  pound: "£",
+  cent: "¢",
+  sect: "§",
+  para: "¶",
+  times: "×",
+  divide: "÷",
+  szlig: "ß",
+  shy: "",
+  zwj: "\u200d",
+  zwnj: "\u200c",
 };
 
-export function decodeEntities(s: string): string {
+/** Accented letters by name (`aacute`, `Ntilde`, `uuml`…): composed, not listed one by one. */
+const MARKS: Record<string, string> = {
+  acute: "\u0301",
+  grave: "\u0300",
+  circ: "\u0302",
+  tilde: "\u0303",
+  uml: "\u0308",
+  cedil: "\u0327",
+  ring: "\u030a",
+};
+function accented(name: string): string | null {
+  const m = /^([a-z])(acute|grave|circ|tilde|uml|cedil|ring)$/i.exec(name);
+  if (!m) return null;
+  const c = `${m[1]}${MARKS[m[2]!.toLowerCase()]}`.normalize("NFC");
+  return c.length === 1 ? c : null;
+}
+
+function decodeOnce(s: string): string {
   return s.replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (m, e: string) => {
     if (e[0] === "#") {
       const code =
         e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
       return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : m;
     }
-    return ENTITIES[e.toLowerCase()] ?? m;
+    return ENTITIES[e] ?? ENTITIES[e.toLowerCase()] ?? accented(e) ?? m;
   });
+}
+
+/**
+ * HTML entities → text. Some sites encode twice ("C&amp;aacute;mara"), so what a pass leaves
+ * that is still an entity is decoded again (at most three passes).
+ */
+export function decodeEntities(s: string): string {
+  let out = s;
+  for (let i = 0; i < 3; i++) {
+    const next = decodeOnce(out);
+    if (next === out) break;
+    out = next;
+  }
+  return out;
 }
 
 function meta(html: string, ...names: string[]): string | null {

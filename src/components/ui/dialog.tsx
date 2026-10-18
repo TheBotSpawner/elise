@@ -82,12 +82,15 @@ export function Dialog({
       ref={ref}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
+      // React passes a nested dialog's cancel/close up the component tree: only this dialog's
+      // own events close it (picking an emoji must not close the Categories dialog around it).
       onCancel={(e) => {
+        if (e.target !== e.currentTarget) return;
         e.preventDefault();
         if (!busy) onClose();
       }}
-      onClose={() => {
-        if (open) onClose();
+      onClose={(e) => {
+        if (e.target === e.currentTarget && open) onClose();
       }}
       onMouseDown={(e) => {
         // A press on the <dialog> itself (not its content) is a press on the backdrop.

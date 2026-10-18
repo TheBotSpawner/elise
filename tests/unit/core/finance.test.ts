@@ -158,6 +158,19 @@ class MemoryFinance implements FinanceProvider {
     this.rows = this.rows.filter((r) => r.id !== id);
     return row;
   }
+  archived: FinanceTransaction[] = [];
+  async archiveTransactions(ids: string[], restore = false) {
+    if (restore) {
+      const back = this.archived.filter((r) => ids.includes(r.id));
+      this.archived = this.archived.filter((r) => !ids.includes(r.id));
+      this.rows.push(...back);
+      return back.length;
+    }
+    const gone = this.rows.filter((r) => ids.includes(r.id));
+    this.rows = this.rows.filter((r) => !ids.includes(r.id));
+    this.archived.push(...gone);
+    return gone.length;
+  }
   async listAccounts() {
     return this.accounts;
   }
@@ -849,6 +862,38 @@ describe("categories: rename, delete, icons (ADR-075)", () => {
     });
     expect(native.categories.find((c) => c.id === "c-soft")!.icon).toBeNull();
     for (const bad of ["ab", "🎁🎁", "<svg>", "1"]) expect(isSingleEmoji(bad)).toBe(false);
+  });
+});
+
+describe("bulk delete (the list's selection)", () => {
+  const ID = (n: number) => `00000000-0000-4000-8000-00000000000${n}`;
+  it("archives the chosen movements in one go, and undo brings them back", async () => {
+    const { ports, native } = setup();
+    for (let i = 1; i <= 4; i++)
+      native.add({ id: ID(i), type: "expense", amount: "10", currency: "ARS", date: "2026-09-02" });
+    const ui = { ...ctx, origin: "user_ui" as const };
+    const out = await executeToolCall(ports, ui, {
+      name: "finance.archiveTransactions",
+      args: { transactions: [ID(1), ID(2), ID(3)] },
+    });
+    expect(out.status === "succeeded" && out.output).toEqual({ archived: 3 });
+    expect(native.rows.map((r) => r.id)).toEqual([ID(4)]);
+    await executeToolCall(ports, ui, {
+      name: "finance.archiveTransactions",
+      args: { transactions: [ID(1), ID(2), ID(3)], restore: true },
+    });
+    expect(native.rows).toHaveLength(4);
+  });
+
+  it("from chat it needs approval like a single archive", async () => {
+    const { ports, native } = setup();
+    native.add({ id: ID(1), type: "expense", amount: "10", currency: "ARS", date: "2026-09-02" });
+    const out = await executeToolCall(ports, ctx, {
+      name: "finance.archiveTransactions",
+      args: { transactions: [ID(1)] },
+    });
+    expect(out.status).not.toBe("succeeded");
+    expect(native.rows).toHaveLength(1);
   });
 });
 

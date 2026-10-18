@@ -19,7 +19,8 @@ import {
   updateVoiceSettings,
 } from "@/application/settings-service";
 import { deleteStoredFile } from "@/application/storage-service";
-import { toPublicError, type PublicError } from "@/core/errors";
+import { DATE_ORDER_PREFERENCE_KEY, DATE_ORDERS } from "@/core/dates";
+import { AppError, toPublicError, type PublicError } from "@/core/errors";
 import { PERSONALITIES } from "@/core/personality";
 import { isValidTimezone } from "@/core/time";
 import { VOICE_KEYS } from "@/core/voice/catalog";
@@ -137,6 +138,30 @@ export async function setPersonalityAction(
         "user_ui",
         from === "onboarding" ? "onboarding" : "user",
       );
+    },
+    "/",
+    "layout",
+  );
+}
+
+/** Short dates (ADR-078): day first by default; per person and workspace. */
+export async function setDateOrderAction(order: string): Promise<Result> {
+  return attempt(
+    async () => {
+      const value = z.enum(DATE_ORDERS).parse(order);
+      const auth = await requireAuthContext();
+      const { error } = await auth.db.from("user_preferences").upsert(
+        {
+          workspace_id: auth.workspaceId,
+          user_id: auth.userId,
+          key: DATE_ORDER_PREFERENCE_KEY,
+          value_json: value,
+          source: "user",
+        },
+        { onConflict: "workspace_id,user_id,key" },
+      );
+      if (error)
+        throw new AppError("INTERNAL_ERROR", "Could not save the date format", { cause: error });
     },
     "/",
     "layout",

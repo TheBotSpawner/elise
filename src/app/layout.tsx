@@ -61,7 +61,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: RESUME_SCRIPT }} />
       </head>
       <body className="min-h-full">
-        <I18nProvider locale={locale}>
+        <I18nProvider locale={locale} dateOrder={auth?.profile.dateOrder}>
           <ConfirmProvider>{children}</ConfirmProvider>
         </I18nProvider>
         {/* On phones: below the header and the notch, never over the top bar. */}

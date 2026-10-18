@@ -97,7 +97,20 @@ const TASKS = [
 
 function setup(over: { events?: CalendarEvent[]; news?: boolean } = {}) {
   const events = over.events ?? [];
+  const launch = {
+    headline: "A model launch",
+    items: [
+      {
+        title: "Launch",
+        url: "https://example.com/a",
+        domain: "example.com",
+        publishedAt: AT,
+        snippet: "…",
+      },
+    ],
+  };
   const brief = assembleBrief({
+    ...(over.news ? { news: [{ topic: "AI", events: [launch] }] } : {}),
     now: NOW,
     timezone: TZ,
     locale: "es",
@@ -203,7 +216,7 @@ describe("a brief's Surfaces are chosen by relevance", () => {
     expect(tasks.kind === "task_list" && tasks.tasks.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
   });
 
-  it("a day with meetings leads with the calendar; news with events joins quietly", () => {
+  it("a day with meetings leads with the calendar; the news shows too, below it", () => {
     const { brief, reads } = setup({
       events: [
         event("e1", "Client review", "2026-10-05T14:00:00-03:00", "2026-10-05T15:00:00-03:00"),
@@ -214,7 +227,9 @@ describe("a brief's Surfaces are chosen by relevance", () => {
     expect(items.find((i) => i.tool === "calendar.listEvents")!.priority).toBeGreaterThanOrEqual(
       70,
     );
-    expect(items.find((i) => i.tool === "web.searchNews")!.priority).toBeLessThan(40);
+    const news = items.find((i) => i.tool === "web.searchNews")!.priority;
+    expect(news).toBeGreaterThanOrEqual(40);
+    expect(news).toBeLessThan(items.find((i) => i.tool === "calendar.listEvents")!.priority);
   });
 
   it("the spoken synthesis is short, points to the screen, and never reads every item", () => {

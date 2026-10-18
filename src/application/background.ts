@@ -1,5 +1,6 @@
 import "server-only";
 
+import { DEFAULT_DATE_ORDER } from "@/core/dates";
 import { AppError } from "@/core/errors";
 import { PERSONALITY_PREFERENCE_KEY, resolvePersonality } from "@/core/personality";
 import {
@@ -58,6 +59,7 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
       // Background work never speaks: the default voice is enough here.
       voice: voicePreferences(profile, DEFAULT_VOICE),
       personality: resolvePersonality(pref?.value_json),
+      dateOrder: DEFAULT_DATE_ORDER,
     },
   };
 }

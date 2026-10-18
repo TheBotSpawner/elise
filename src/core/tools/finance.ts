@@ -727,6 +727,43 @@ export const archiveTransactionTool: ToolDefinition = {
   },
 };
 
+const bulkInput = z
+  .object({
+    transactions: z.array(z.uuid()).min(1).max(500).describe("Transaction ids."),
+    restore: z.boolean().optional().describe("true brings archived ones back (undo)."),
+  })
+  .strict();
+
+/** Several movements at once (the list's selection): one statement, restorable. */
+export const archiveTransactionsTool: ToolDefinition = {
+  name: "finance.archiveTransactions",
+  capability: "finance",
+  operation: "archiveTransaction",
+  description:
+    "Archive (remove from totals) several transactions by id at once, or restore them. Needs the user's approval.",
+  input: bulkInput,
+  route: nativeOnly,
+  async describe(raw, env) {
+    const q = bulkInput.parse(raw);
+    const n = q.transactions.length;
+    return {
+      summary:
+        env.ctx.locale === "es"
+          ? `${q.restore ? "Restaurar" : "Archivar"} ${n} movimiento${n === 1 ? "" : "s"}`
+          : `${q.restore ? "Restore" : "Archive"} ${n} transaction${n === 1 ? "" : "s"}`,
+    };
+  },
+  async run(raw, env) {
+    const q = bulkInput.parse(raw);
+    const p = writable(env);
+    const changed = await nativeFeature(p.archiveTransactions?.bind(p))(
+      q.transactions,
+      q.restore ?? false,
+    );
+    return { output: { [q.restore ? "restored" : "archived"]: changed } };
+  },
+};
+
 const undoInput = z.object({ importId: z.uuid() }).strict();
 
 export const undoImportTool: ToolDefinition = {
@@ -1320,6 +1357,7 @@ export const FINANCE_TOOLS = [
   createTransactionTool,
   updateTransactionTool,
   archiveTransactionTool,
+  archiveTransactionsTool,
   undoImportTool,
   createAccountTool,
   updateAccountTool,

@@ -391,6 +391,22 @@ export class EliseFinanceProvider implements FinanceProvider {
     return current;
   }
 
+  async archiveTransactions(ids: string[], restore = false) {
+    const valid = ids.filter((id) => UUID.test(id));
+    if (!valid.length) return 0;
+    const base = this.db
+      .from("finance_transactions")
+      .update({ archived_at: restore ? null : new Date().toISOString() })
+      .eq("workspace_id", this.workspaceId)
+      .in("id", valid);
+    const { data, error } = await (
+      restore ? base.not("archived_at", "is", null) : base.is("archived_at", null)
+    ).select("id");
+    check(error, restore ? "restore the transactions" : "archive the transactions");
+    this.invalidate();
+    return data?.length ?? 0;
+  }
+
   /** Undo of an archive (the record comes back exactly as it was). */
   async restoreTransaction(id: string) {
     if (!UUID.test(id)) throw new AppError("NOT_FOUND", "Transaction not found");

@@ -194,7 +194,6 @@ export function ScheduleForm({
   scheduleId,
   spaces,
   slackWorkspaces = [],
-  marketsAvailable = false,
   methods = [],
   onCancel,
   onSaved,
@@ -286,10 +285,12 @@ export function ScheduleForm({
   const needsSpace = blocks.includes("knowledge") && !v.configuration.knowledgeSpaceId;
   const slack = v.configuration.slack;
   const needsSlack = blocks.includes("slack") && (!slack.connectionId || !slack.channels.length);
+  // "Cambios en Conocimiento" is no longer offered; a schedule that has it can still uncheck it.
+  // Inversiones is always offered: its asset field says when market data isn't available.
   const offered = FORM_ORDER.filter(
     (b) =>
       (b !== "slack" || slackWorkspaces.length > 0 || blocks.includes("slack")) &&
-      (b !== "markets" || marketsAvailable || blocks.includes("markets")),
+      (b !== "knowledge" || blocks.includes("knowledge")),
   );
   const setConfig = (patch: Partial<ScheduleInput["configuration"]>) =>
     setV((s) => ({ ...s, configuration: { ...s.configuration, ...patch } }));

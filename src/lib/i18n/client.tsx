@@ -2,13 +2,26 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 
+import { DEFAULT_DATE_ORDER, type DateOrder } from "@/core/dates";
+
 import { getDictionary, type Dictionary, type Locale } from ".";
 
-const I18nContext = createContext<{ locale: Locale; t: Dictionary } | null>(null);
+const I18nContext = createContext<{ locale: Locale; t: Dictionary; dateOrder: DateOrder } | null>(
+  null,
+);
 
-export function I18nProvider({ locale, children }: { locale: Locale; children: ReactNode }) {
+export function I18nProvider({
+  locale,
+  dateOrder = DEFAULT_DATE_ORDER,
+  children,
+}: {
+  locale: Locale;
+  /** Short dates: day first by default (ADR-078). */
+  dateOrder?: DateOrder;
+  children: ReactNode;
+}) {
   return (
-    <I18nContext.Provider value={{ locale, t: getDictionary(locale) }}>
+    <I18nContext.Provider value={{ locale, t: getDictionary(locale), dateOrder }}>
       {children}
     </I18nContext.Provider>
   );

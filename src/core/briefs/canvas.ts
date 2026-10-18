@@ -121,7 +121,7 @@ export function briefCanvas(brief: MorningBrief, reads: readonly BriefRead[]): B
         if (r.args.period === "this_month" && brief.finance?.month.length) add(r, d, 40);
         break;
       case "web_news":
-        if (d.events.length) add(r, d, 35);
+        // One "Noticias" Surface for all topics, added below from the brief's own selection.
         break;
       case "market":
         // Followed assets: one compact list, the biggest movers first (ADR-074).
@@ -131,6 +131,24 @@ export function briefCanvas(brief: MorningBrief, reads: readonly BriefRead[]): B
         break;
     }
   }
+  // News (ADR-015): the brief's curated 3–5 across every topic (fresh, deduplicated), as one
+  // Surface that shows — not one ambient card per topic search.
+  const newsRead = reads.find((r) => r.display.kind === "web_news");
+  if (newsRead?.display.kind === "web_news" && brief.news?.length)
+    add(
+      newsRead,
+      {
+        kind: "web_news",
+        query: [...new Set(brief.news.map((n) => n.topic))].join(", ").slice(0, 200),
+        recency: newsRead.display.recency,
+        retrievedAt: newsRead.display.retrievedAt,
+        events: brief.news.map((n) => ({
+          headline: n.headline,
+          items: n.sources.map((s) => ({ ...s, publishedAt: n.publishedAt, snippet: "" })),
+        })),
+      },
+      55,
+    );
   const first = slack[0];
   if (first?.display.kind === "team_messages") {
     const messages = slack

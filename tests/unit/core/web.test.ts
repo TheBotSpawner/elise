@@ -6,7 +6,7 @@ import type { ProviderFactory } from "@/core/agents/tools";
 import { assembleBrief } from "@/core/briefs/morning-brief";
 import { morningBriefConfigSchema, newsTopics } from "@/core/schedules/schedule";
 import { toSpeakable } from "@/core/voice/speech-text";
-import { extractPage, selectPassages } from "@/core/web/extract";
+import { decodeEntities, extractPage, selectPassages } from "@/core/web/extract";
 import { WEB_LIMITS, type WebCapability, type WebPage, type WebResult } from "@/core/web/model";
 import { groupNews, isStale, rankResults } from "@/core/web/rank";
 import { checkUrl, isPrivateAddress, normalizeUrl } from "@/core/web/url";
@@ -151,6 +151,29 @@ describe("readable content", () => {
 });
 
 // ── Ranking and news ─────────────────────────────────────────────────────────
+
+describe("HTML entities", () => {
+  it("named accents and double-encoded text read as Spanish (Casa Rosada regression)", () => {
+    expect(
+      decodeEntities(
+        "C&aacute;mara de Comercio, desregulaci&oacute;n, a&ntilde;os, &iquest;qu&eacute;?",
+      ),
+    ).toBe("Cámara de Comercio, desregulación, años, ¿qué?");
+    expect(decodeEntities("C&amp;aacute;mara &amp;Uuml;ber")).toBe("Cámara Über");
+    expect(decodeEntities("Ma&#241;ana &#xe9; &laquo;ok&raquo;")).toBe("Mañana é «ok»");
+    // Unknown names are left as they are.
+    expect(decodeEntities("&foo; AT&T")).toBe("&foo; AT&T");
+  });
+
+  it("a page's text and title come out decoded", () => {
+    const page = extractPage(
+      "<html><head><title>Discurso en la C&amp;aacute;mara</title></head><body><article><p>Gracias a la C&amp;aacute;mara de Comercio por recibirnos y organizar este evento, que nos permite explicar c&oacute;mo vamos a crecer.</p></article></body></html>",
+    );
+    expect(page.title).toBe("Discurso en la Cámara");
+    expect(page.text).toContain("Gracias a la Cámara de Comercio");
+    expect(page.text).toContain("cómo vamos a crecer");
+  });
+});
 
 describe("source quality", () => {
   it("prefers the first-party docs, removes duplicates, limits each site", () => {

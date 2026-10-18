@@ -1933,7 +1933,7 @@ export const en = {
       habits: "Habits",
       goals: "Goals",
       finance: "Finance",
-      markets: "Markets",
+      markets: "Investments",
       knowledge: "Knowledge",
       weather: "Weather",
       slack: "Slack",
@@ -2012,7 +2012,7 @@ export const en = {
       habits: "Habits",
       goals: "Goals",
       finance: "Finance",
-      markets: "Markets / Investments",
+      markets: "Investments",
       knowledge: "Knowledge changes (one Space)",
       weather: "Weather (today's forecast)",
       slack: "Slack (chosen channels)",
@@ -2488,6 +2488,17 @@ export const en = {
     undoConfirm: (n: number, label: string) =>
       `Archive the ${n} transactions created by “${label}”? They stop counting in every total.`,
     undone: (n: number) => `${n} transactions archived`,
+    bulk: {
+      select: "Select",
+      selectAll: "Select all",
+      selectNone: "None",
+      selected: (n: number) => `${n} selected`,
+      delete: (n: number) => (n ? `Delete ${n}` : "Delete"),
+      confirmTitle: (n: number) => (n === 1 ? "Delete 1 transaction" : `Delete ${n} transactions`),
+      confirmBody: "They stop counting in your totals. You can undo it right away.",
+      deleted: (n: number) => (n === 1 ? "Transaction deleted." : `${n} transactions deleted.`),
+      undo: "Undo",
+    },
     chatImport: {
       found: (n: number) => (n === 1 ? "1 transaction" : `${n} transactions`),
       types: {
@@ -2759,6 +2770,9 @@ export const en = {
       billing: { title: "Billing", hint: "Plans and payments" },
     },
     general: {
+      dateFormat: "Date format",
+      dateFormatHint: "How short dates show in charts and tables.",
+      dateFormats: { dmy: "Day and month (05-10)", mdy: "Month and day (10-05)" },
       profile: "Profile",
       name: "Name",
       language: "Interface language",

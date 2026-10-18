@@ -3,6 +3,7 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { useState } from "react";
 
+import { withShortDays } from "@/core/dates";
 import type { VisualizationSpec } from "@/core/workspace/visualization";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -33,8 +34,10 @@ import { TemporalChart } from "./temporal-chart";
 const CHART_H: Record<ChartSize, number> = { small: 120, medium: 170, large: 230, focus: 380 };
 
 /** The Visualization Surface body: a validated spec, drawn by its template. */
-export function Visualization({ spec, size }: { spec: VisualizationSpec; size: ChartSize }) {
-  const { t } = useI18n();
+export function Visualization({ spec: raw, size }: { spec: VisualizationSpec; size: ChartSize }) {
+  const { t, dateOrder } = useI18n();
+  // Days arrive as ISO ("2026-10-05"); every label and cell shows them the user's way (ADR-078).
+  const spec = withShortDays(raw, dateOrder);
   const [view, setView] = useState<"chart" | "table">("chart");
   const series = spec.type === "line" || spec.type === "area" || spec.type === "bar";
   const points = spec.type === "dot" || spec.type === "range";

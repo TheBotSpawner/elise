@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 
 import { isSupabaseConfigured } from "@/config/env";
+import { DATE_ORDER_PREFERENCE_KEY, resolveDateOrder, type DateOrder } from "@/core/dates";
 import { AppError } from "@/core/errors";
 import {
   PERSONALITY_PREFERENCE_KEY,
@@ -48,6 +49,8 @@ export interface AuthContext {
     voice: VoicePreferences;
     /** ELISE's base personality (ADR-076): tone only. */
     personality: ElisePersonality;
+    /** Short dates: day first unless the user chose month first (ADR-078). */
+    dateOrder: DateOrder;
   };
 }
 
@@ -73,7 +76,7 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
       .from("user_preferences")
       .select("workspace_id, key, value_json")
       .eq("user_id", userId)
-      .in("key", [VOICE_PREFERENCE_KEY, PERSONALITY_PREFERENCE_KEY]),
+      .in("key", [VOICE_PREFERENCE_KEY, PERSONALITY_PREFERENCE_KEY, DATE_ORDER_PREFERENCE_KEY]),
   ]);
   if (profileRes.error || workspacesRes.error) {
     throw new AppError("INTERNAL_ERROR", "Could not load account", {
@@ -106,6 +109,7 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
       accent: profile.accent,
       voice: voicePreferences(profile, resolveVoice(storedVoice, availableVoiceKeys())),
       personality: resolvePersonality(stored(PERSONALITY_PREFERENCE_KEY)),
+      dateOrder: resolveDateOrder(stored(DATE_ORDER_PREFERENCE_KEY)),
     },
   };
 });

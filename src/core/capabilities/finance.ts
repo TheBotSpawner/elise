@@ -227,6 +227,11 @@ export interface FinanceProvider {
   createTransaction(t: NewTransaction, source: EntrySource): Promise<FinanceTransaction>;
   updateTransaction(id: string, patch: TransactionPatch): Promise<FinanceTransaction>;
   archiveTransaction(id: string): Promise<FinanceTransaction>;
+  /**
+   * Several at once, in one statement: archived (out of every total, restorable) or restored.
+   * Returns how many changed. ELISE Finance only.
+   */
+  archiveTransactions?(ids: string[], restore?: boolean): Promise<number>;
   listAccounts(): Promise<FinanceAccount[]>;
   createAccount(
     a: { name: string; type: AccountType; currency: string | null },

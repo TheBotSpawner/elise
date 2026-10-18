@@ -67,6 +67,12 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   },
   {
     section: "general",
+    anchor: "date-format",
+    label: (t) => t.settingsHub.general.dateFormat,
+    hint: (t) => `${t.settingsHub.general.dateFormatHint} dd-MM fecha date`,
+  },
+  {
+    section: "general",
     anchor: "location",
     label: (t) => t.settings.location.use,
     hint: (t) => t.settings.location.useHint,

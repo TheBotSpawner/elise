@@ -138,16 +138,19 @@ describe("one “Correos” for all email (ADR-069)", () => {
     const names = within(dialog)
       .getAllByRole("checkbox")
       .map((c) => c.closest("label")!.textContent);
-    expect(names.slice(0, 8)).toEqual([
+    expect(names.slice(0, 9)).toEqual([
       "Agenda",
       "Correos",
       "Tareas de hoy y vencidas",
       "Hábitos",
       "Objetivos",
       "Finanzas",
+      "Inversiones",
       "Noticias (tus temas)",
       "Clima (pronóstico del día)",
     ]);
+    // "Cambios en Conocimiento" is no longer offered to a schedule that doesn't use it.
+    expect(names.some((n) => n?.includes("Conocimiento"))).toBe(false);
   });
 });
 

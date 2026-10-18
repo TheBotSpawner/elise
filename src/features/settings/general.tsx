@@ -2,6 +2,7 @@
 
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -9,6 +10,7 @@ import { TimezonePicker } from "@/components/shared/timezone-picker";
 import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { DATE_ORDERS, type DateOrder } from "@/core/dates";
 import {
   enableDeviceLocation,
   setDeviceLocationEnabled,
@@ -17,7 +19,7 @@ import {
 import { LOCALES, type Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
-import { updateProfile } from "./actions";
+import { setDateOrderAction, updateProfile } from "./actions";
 import { SettingRow, SettingsCard } from "./shell";
 
 /** General (ADR-068): name, interface language and time zone — saved together, audited. */
@@ -86,6 +88,43 @@ export function ProfileSettings({
         </div>
       </SettingsCard>
     </form>
+  );
+}
+
+/** Short dates (ADR-078): day first ("05-10") by default, or month first. Saved at once. */
+export function DateOrderRow() {
+  const { t, dateOrder } = useI18n();
+  const g = t.settingsHub.general;
+  const router = useRouter();
+  const [value, setValue] = useState(dateOrder);
+  const [pending, startTransition] = useTransition();
+  return (
+    <SettingRow id="date-format" label={g.dateFormat} hint={g.dateFormatHint}>
+      <Select
+        aria-label={g.dateFormat}
+        value={value}
+        disabled={pending}
+        onChange={(e) => {
+          const next = e.target.value as DateOrder;
+          const before = value;
+          setValue(next);
+          startTransition(async () => {
+            const r = await setDateOrderAction(next);
+            if (!r.ok) {
+              setValue(before);
+              toast.error(t.errors.codes[r.error.code]);
+            } else router.refresh();
+          });
+        }}
+        className="sm:w-56"
+      >
+        {DATE_ORDERS.map((o) => (
+          <option key={o} value={o}>
+            {g.dateFormats[o]}
+          </option>
+        ))}
+      </Select>
+    </SettingRow>
   );
 }
 

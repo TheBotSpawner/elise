@@ -1,7 +1,7 @@
 import { requireAuthContext } from "@/application/auth-context";
 import { getT } from "@/lib/i18n/server";
 
-import { LinkRow, LocationRow, ProfileSettings } from "./general";
+import { DateOrderRow, LinkRow, LocationRow, ProfileSettings } from "./general";
 import { SettingsCard, SettingsPage } from "./shell";
 
 /**
@@ -22,6 +22,7 @@ export async function GeneralSection() {
         }}
       />
       <SettingsCard>
+        <DateOrderRow />
         <LocationRow />
         <LinkRow
           id="my-elise"

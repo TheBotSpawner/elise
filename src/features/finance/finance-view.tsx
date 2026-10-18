@@ -4,6 +4,7 @@ import {
   ArrowDownRight,
   ArrowLeftRight,
   ArrowUpRight,
+  Check,
   ChevronLeft,
   ChevronRight,
   FileText,
@@ -576,10 +577,13 @@ function TransactionRow({
   tx,
   icon,
   onOpen,
+  selection,
 }: {
   tx: FinanceTransaction;
   icon: string;
   onOpen: (tx: FinanceTransaction) => void;
+  /** While selecting: a tap toggles the row instead of opening it. */
+  selection?: { selected: boolean; onToggle: (tx: FinanceTransaction) => void } | null;
 }) {
   const { t } = useI18n();
   const money = useMoney();
@@ -594,14 +598,34 @@ function TransactionRow({
   ]
     .filter(Boolean)
     .join(" · ");
+  const selectable = Boolean(selection) && !tx.readOnly;
   return (
     <li>
       <button
         type="button"
         data-tx=""
-        onClick={() => onOpen(tx)}
-        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-active focus-visible:bg-active focus-visible:outline-none"
+        role={selection ? "checkbox" : undefined}
+        aria-checked={selection ? selection.selected : undefined}
+        disabled={Boolean(selection) && !selectable}
+        onClick={() => (selection ? selection.onToggle(tx) : onOpen(tx))}
+        className={cn(
+          "flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-active focus-visible:bg-active focus-visible:outline-none disabled:opacity-50",
+          selection?.selected && "bg-accent-soft hover:bg-accent-soft",
+        )}
       >
+        {selection && (
+          <span
+            aria-hidden
+            className={cn(
+              "grid size-5 shrink-0 place-items-center rounded-md border",
+              selection.selected
+                ? "border-accent bg-accent text-accent-fg"
+                : "border-border-strong",
+            )}
+          >
+            {selection.selected && <Check className="size-3.5" />}
+          </span>
+        )}
         <span
           aria-hidden
           className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-[17px]"
@@ -643,6 +667,8 @@ function TransactionList({
   iconOf,
   complete,
   onOpen,
+  selected = null,
+  onToggle,
 }: {
   rows: FinanceTransaction[];
   today: string;
@@ -650,6 +676,9 @@ function TransactionList({
   /** False when the list is cut: the oldest day may be partial, so it gets no total. */
   complete: boolean;
   onOpen: (tx: FinanceTransaction) => void;
+  /** Selection mode (bulk delete): the chosen ids, or null when not selecting. */
+  selected?: ReadonlySet<string> | null;
+  onToggle?: (tx: FinanceTransaction) => void;
 }) {
   const { t, locale } = useI18n();
   const money = useMoney();
@@ -702,12 +731,105 @@ function TransactionList({
             </header>
             <ul className={cn(CARD, "divide-y divide-border overflow-hidden")}>
               {txs.map((tx) => (
-                <TransactionRow key={tx.id} tx={tx} icon={iconOf(tx)} onOpen={onOpen} />
+                <TransactionRow
+                  key={tx.id}
+                  tx={tx}
+                  icon={iconOf(tx)}
+                  onOpen={onOpen}
+                  selection={
+                    selected && onToggle ? { selected: selected.has(tx.id), onToggle } : null
+                  }
+                />
               ))}
             </ul>
           </section>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Select several movements and delete them at once: one archive (out of every total), with an
+ * ELISE confirmation and an undo. Read-only rows (connected sheets) can't be selected.
+ */
+function BulkBar({
+  rows,
+  selected,
+  onChange,
+}: {
+  rows: FinanceTransaction[];
+  selected: Set<string> | null;
+  onChange: (s: Set<string> | null) => void;
+}) {
+  const { t } = useI18n();
+  const b = t.finance.bulk;
+  const confirm = useConfirm();
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const selectable = rows.filter((r) => !r.readOnly);
+  if (!selectable.length) return null;
+  const run = (ids: string[], restore: boolean) =>
+    financeToolAction("finance.archiveTransactions", { transactions: ids, restore });
+  if (!selected)
+    return (
+      <div className="-mb-2 flex justify-end">
+        <Button size="sm" variant="ghost" onClick={() => onChange(new Set())}>
+          {b.select}
+        </Button>
+      </div>
+    );
+  const all = selected.size === selectable.length;
+  return (
+    <div className="sticky top-2 z-10 -mb-2 flex flex-wrap items-center gap-2 rounded-2xl border border-border-strong bg-[var(--overlay-bg)] px-3 py-2 backdrop-blur-xl">
+      <span className="text-[13.5px]" aria-live="polite">
+        {b.selected(selected.size)}
+      </span>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onChange(all ? new Set() : new Set(selectable.map((r) => r.id)))}
+      >
+        {all ? b.selectNone : b.selectAll}
+      </Button>
+      <div className="ml-auto flex gap-2">
+        <Button size="sm" variant="ghost" disabled={pending} onClick={() => onChange(null)}>
+          {t.common.cancel}
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
+          disabled={pending || selected.size === 0}
+          onClick={async () => {
+            const ids = [...selected];
+            const ok = await confirm({
+              title: b.confirmTitle(ids.length),
+              body: b.confirmBody,
+              confirmLabel: b.delete(ids.length),
+              destructive: true,
+            });
+            if (!ok) return;
+            startTransition(async () => {
+              const r = await run(ids, false);
+              if (!r.ok) return void toast.error(errorText(t, r.error));
+              onChange(null);
+              router.refresh();
+              toast.success(b.deleted(ids.length), {
+                action: {
+                  label: b.undo,
+                  onClick: () =>
+                    void run(ids, true).then((u) =>
+                      u.ok ? router.refresh() : toast.error(errorText(t, u.error)),
+                    ),
+                },
+              });
+            });
+          }}
+        >
+          <Trash2 />
+          {b.delete(selected.size)}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1719,7 +1841,7 @@ function Statistics({
           type: "line",
           title: v.evolution,
           format: { kind: "currency", currency },
-          x: series.keys.slice(-62).map((k) => (series.granularity === "month" ? k : k.slice(5))),
+          x: series.keys.slice(-62),
           series: [
             {
               name: t.finance.expenses,
@@ -2037,6 +2159,8 @@ export function FinanceView({
   const [duplicating, setDuplicating] = useState<FinanceTransaction | null>(null);
   const [viewing, setViewing] = useState<FinanceTransaction | null>(null);
   const [managing, setManaging] = useState<"categories" | "accounts" | null>(null);
+  // Bulk delete: null = not selecting.
+  const [selected, setSelected] = useState<Set<string> | null>(null);
   const [q, setQ] = useState(overview.filters.q ?? "");
   const [chartCurrency, setChartCurrency] = useState<string | null>(null);
   useRealtimeRefresh(workspaceId, [
@@ -2229,12 +2353,23 @@ export function FinanceView({
               </div>
             ) : (
               <>
+                <BulkBar rows={overview.transactions} selected={selected} onChange={setSelected} />
                 <TransactionList
                   rows={overview.transactions}
                   today={overview.today}
                   iconOf={iconOf}
                   complete={overview.matching <= overview.transactions.length}
                   onOpen={setViewing}
+                  selected={selected}
+                  onToggle={(tx) =>
+                    setSelected((s) => {
+                      if (!s) return s;
+                      const next = new Set(s);
+                      if (next.has(tx.id)) next.delete(tx.id);
+                      else next.add(tx.id);
+                      return next;
+                    })
+                  }
                 />
                 {overview.matching > overview.transactions.length && (
                   <p className="px-1 text-[12.5px] text-faint">

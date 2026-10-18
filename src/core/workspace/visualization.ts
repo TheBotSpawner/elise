@@ -661,7 +661,7 @@ export function financeSummaryVisuals(
         ],
         rows: largest
           .slice(0, 6)
-          .map((t) => [t.date.slice(5, 10), t.label.slice(0, 80), String(round(num(t.amount)))]),
+          .map((t) => [t.date.slice(0, 10), t.label.slice(0, 80), String(round(num(t.amount)))]),
       },
     });
   return out;
@@ -681,7 +681,7 @@ export function financeBreakdownVisual(
   const temporal = b.groupBy === "month" || b.groupBy === "week" || b.groupBy === "day";
   if (temporal) {
     const sorted = [...groups].sort((a, c) => a.key.localeCompare(c.key)).slice(-31);
-    const x = sorted.map((g) => (b.groupBy === "month" ? g.key : g.key.slice(5)));
+    const x = sorted.map((g) => g.key);
     const vals = sorted.map((g) => round(num(g.total)));
     const peak = vals.indexOf(Math.max(...vals));
     if (b.groupBy === "day" && sorted.length >= 8)
@@ -759,7 +759,7 @@ export function financeTrendVisual(
 ): BuiltVisualization | null {
   if (series.keys.length < 2) return null;
   const t = vizText(locale);
-  const x = series.keys.map((k) => (series.granularity === "month" ? k : k.slice(5)));
+  const x = [...series.keys];
   const income = series.income.map((v) => round(num(v)));
   const expense = series.expense.map((v) => round(num(v)));
   const fmt = { kind: "currency" as const, currency: series.currency };
@@ -946,7 +946,7 @@ export function habitStatsVisuals(
       while (week.length < 7) week.push(null);
       const first = week.find((d) => d)!;
       rows.push({
-        label: first.date.slice(5),
+        label: first.date.slice(0, 10),
         days: week.map((d) => (d ? gridState(d, today) : ("rest" as const))),
         summary: `${week.filter((d) => d?.met).length}`,
       });
@@ -987,9 +987,7 @@ export function habitStatsVisuals(
         type: "line",
         title: es ? "Evolución del cumplimiento" : "Completion over time",
         format: { kind: "percent" },
-        x: points
-          .slice(-62)
-          .map((p) => (report.trend.granularity === "month" ? p.key : p.key.slice(5))),
+        x: points.slice(-62).map((p) => p.key),
         series: [
           {
             name: es ? "Cumplimiento" : "Completion",

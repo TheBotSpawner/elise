@@ -9,6 +9,7 @@ import { imageMatchesType } from "@/core/attachments/model";
 import { AppError } from "@/core/errors";
 import { parseCsv as csvRows } from "@/core/finance/import";
 import type { DocumentSection, NormalizedDocument } from "@/core/knowledge/model";
+import { decodeEntities as decodeHtmlEntities } from "@/core/web/extract";
 
 /**
  * Text extraction into ELISE's normalized document (docs/architecture/09 §25-26, ADR-036).
@@ -182,16 +183,9 @@ async function parseXlsx(title: string, data: Uint8Array): Promise<NormalizedDoc
 
 // ── HTML and DOCX (through mammoth's semantic HTML) ─────────────────────────
 
+// Tags out, then every entity (named, numeric, double-encoded) — the same decoder as the web.
 const decodeEntities = (s: string) =>
-  s
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+  decodeHtmlEntities(s.replace(/<[^>]+>/g, ""))
     .replace(/\s+/g, " ")
     .trim();
 

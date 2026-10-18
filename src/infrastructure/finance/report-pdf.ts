@@ -3,6 +3,7 @@ import "server-only";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 
 import type { FinanceTransaction, GroupTotal } from "@/core/capabilities/finance";
+import { shortDay } from "@/core/dates";
 import { compareAmounts, formatMoney, toUnits } from "@/core/finance/money";
 import type { FinanceReport } from "@/core/finance/report";
 import type { Dictionary, Locale } from "@/lib/i18n";
@@ -254,7 +255,7 @@ export async function renderFinanceReportPdf(
         w.rect(x + 0.5, base, bw, h * ratio(s.expense[i]!, max), ACCENT);
         const every = Math.ceil(n / 12);
         if (i % every === 0) {
-          const label = s.granularity === "month" ? k : k.slice(5);
+          const label = s.granularity === "month" ? k : shortDay(k);
           const lw = w.font.widthOfTextAtSize(label, 7);
           w.page.drawText(label, {
             x: x - lw / 2,

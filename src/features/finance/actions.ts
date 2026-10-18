@@ -44,7 +44,7 @@ async function run<T>(fn: () => Promise<T>): Promise<FinanceResult<T>> {
 
 const id = z.uuid();
 const FINANCE_TOOL =
-  /^finance\.(createTransaction|updateTransaction|archiveTransaction|createAccount|updateAccount|createCategory|updateCategory|deleteCategory|undoImport|restoreTransaction|saveBook|setBudget)$/;
+  /^finance\.(createTransaction|updateTransaction|archiveTransaction|archiveTransactions|createAccount|updateAccount|createCategory|updateCategory|deleteCategory|undoImport|restoreTransaction|saveBook|setBudget)$/;
 
 /**
  * Finance changes from the UI go through the Finance tools, exactly like Chat: the tool
