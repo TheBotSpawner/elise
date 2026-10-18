@@ -47,8 +47,12 @@ export function FinanceImportCard({ p }: { p: Import }) {
 
   const needsCurrency = p.fileCurrency && !currency;
   const blocking = p.needs.filter((n) => n !== "defaultCurrency");
-  const canStart = !needsCurrency && !blocking.length && p.review === 0 && p.willImport > 0;
-  const count = p.invalid > 0 || p.review > 0 ? p.willImport : p.rows - p.duplicates;
+  // Only the file's currency missing: every row waits on that one choice (the select above),
+  // not on "attention" — so the card offers all of them.
+  const onlyCurrency = p.needs.length > 0 && !blocking.length && p.review === 0;
+  const count =
+    onlyCurrency || (p.invalid === 0 && p.review === 0) ? p.rows - p.duplicates : p.willImport;
+  const canStart = !needsCurrency && !blocking.length && p.review === 0 && count > 0;
   return (
     <div className="flex flex-col gap-3 text-[14px]">
       <div className="flex flex-col gap-0.5">
@@ -92,12 +96,12 @@ export function FinanceImportCard({ p }: { p: Import }) {
           </Select>
         </div>
       )}
-      {(p.invalid > 0 || p.review > 0 || p.duplicates > 0) && (
+      {((!onlyCurrency && p.invalid > 0) || p.review > 0 || p.duplicates > 0) && (
         <p className="text-[13px] text-muted">
           {[
             p.duplicates > 0 ? w.duplicates(p.duplicates) : null,
             p.review > 0 ? c.review(p.review) : null,
-            p.invalid - p.review > 0 ? w.attention(p.invalid - p.review) : null,
+            !onlyCurrency && p.invalid - p.review > 0 ? w.attention(p.invalid - p.review) : null,
           ]
             .filter(Boolean)
             .join(" · ")}

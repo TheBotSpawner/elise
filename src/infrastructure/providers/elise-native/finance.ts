@@ -651,6 +651,8 @@ export class EliseFinanceProvider implements FinanceProvider {
       .eq("id", id)
       .eq("workspace_id", this.workspaceId)
       .select("id");
+    // No DELETE grant yet (migration 048 not applied): an update, not a failure.
+    if (error?.code === "42501") throw needsUpdate();
     check(error, "delete the category");
     // The caller resolved it from this workspace's list: no row deleted means RLS has no delete
     // policy yet (migration 048 not applied).

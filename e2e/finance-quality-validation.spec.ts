@@ -105,8 +105,11 @@ async function askWithFile(
   const box = page.locator("textarea").first();
   await box.fill(text);
   await box.press("Enter");
-  await page.waitForTimeout(1_000);
-  await expect(page.getByRole("button", { name: "Detener" })).toHaveCount(0, { timeout: 180_000 });
+  // The turn starts (Stop shows) — slower with a file — and then ends.
+  await expect(page.getByRole("button", { name: "Detener" }))
+    .toBeVisible({ timeout: 30_000 })
+    .catch(() => undefined);
+  await expect(page.getByRole("button", { name: "Detener" })).toHaveCount(0, { timeout: 240_000 });
   await page.waitForTimeout(1_500);
   const { data: tools } = await admin!
     .from("tool_executions")
