@@ -77,6 +77,12 @@ test("setup", async ({ page }) => {
     .eq("owner_user_id", userId)
     .single();
   workspaceId = ws!.id as string;
+  // Something for Home's news: an overdue task.
+  await admin!.from("tasks").insert({
+    workspace_id: workspaceId,
+    title: "Pagar la luz",
+    due_date: "2026-10-01",
+  });
 });
 
 const PHONES = [
@@ -112,16 +118,31 @@ test("phone Home: the Orb leads, fits, and grows with the screen", async ({ page
     await page.screenshot({ path: `${OUT}/home-${w}x${h}.png` });
     sizes[`${w}x${h}`] = m;
     expect(m.overflowX).toBe(false);
-    expect(m.orb!.width).toBeLessThanOrEqual(w);
+    // The box may pass the width (its glow is clipped); the page never scrolls sideways.
+    expect(m.orb!.width).toBeLessThanOrEqual(w * 1.2 + 1);
     // Visible without scrolling: the Orb sits inside the viewport.
     expect(m.orb!.top).toBeGreaterThanOrEqual(0);
     expect(m.orb!.bottom).toBeLessThanOrEqual(m.vh);
   }
   report.phones = sizes;
+  // The news lives behind the header's bell on phones, not under the Orb.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByText("¿Qué hacemos ahora?")).toBeVisible();
+  await expect(page.locator("[data-ambient]")).toBeHidden();
+  const bell = page.getByRole("button", { name: /novedad/ });
+  await expect(bell).toBeVisible();
+  await bell.click();
+  const sheet = page.getByRole("dialog", { name: "Novedades" });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByText(/vencida/i).first()).toBeVisible();
+  await page.screenshot({ path: `${OUT}/phone-notices.png` });
   const width = (k: string) => (sizes[k] as { orb: { width: number } }).orb.width;
   // Taller and wider phones get a bigger Orb; even the smallest is larger than before (190px).
   expect(width("430x932")).toBeGreaterThan(width("375x667"));
-  expect(width("375x667")).toBeGreaterThan(220);
+  expect(width("375x667")).toBeGreaterThan(330);
+  expect(width("390x844")).toBeGreaterThan(420);
 });
 
 test("desktop Home keeps its proportions", async ({ page }) => {

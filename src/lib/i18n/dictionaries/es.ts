@@ -25,6 +25,8 @@ export const es: Dictionary = {
     pendingApprovals: (n: number) => `${n} esperando aprobación`,
   },
   home: {
+    notices: (n: number) => (n === 1 ? "1 novedad" : `${n} novedades`),
+    noticesTitle: "Novedades",
     greeting: {
       morning: (name: string) => (name ? `Buen día, ${name}` : "Buen día"),
       afternoon: (name: string) => (name ? `Buenas tardes, ${name}` : "Buenas tardes"),
@@ -3073,7 +3075,7 @@ export const es: Dictionary = {
     arrangeTime: "Ver como línea de tiempo",
     arrangeRelevance: "Volver al panorama",
     now: "Ahora",
-    headline: "¿Qué necesitás?",
+    headline: "¿Qué hacemos ahora?",
     next: "Próximo",
     ask: "Hablá o escribí lo que necesitás",
     askMobile: "Hablá o tocá para escribir",

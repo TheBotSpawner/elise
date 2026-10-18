@@ -29,6 +29,7 @@ import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 import { NewChatButton } from "./continuity";
+import { usePublishHomeNotices } from "./home-notices";
 import type { ChatMessage } from "./types";
 import { useEliseChat } from "./use-elise-chat";
 
@@ -105,6 +106,8 @@ export function ChatSurface({
   space?: { id: string; path: string; icon: string; color: string } | null;
 }) {
   const { t } = useI18n();
+  // Phones show these behind the header's bell, not under the Orb (ADR-077).
+  usePublishHomeNotices(ambient);
   const presence = useOrbPresence();
   const online = useOnline();
   const {
@@ -448,7 +451,11 @@ export function ChatSurface({
           ) : null,
           below: (
             <>
-              {ambient && <Ambient ambient={ambient} />}
+              {ambient && (
+                <div className="w-full max-lg:hidden">
+                  <Ambient ambient={ambient} />
+                </div>
+              )}
               {firstPrompts && firstPrompts.length > 0 && (
                 <div className="mt-6 flex max-w-[720px] flex-col items-center gap-3">
                   <p className="type-label text-faint">{t.onboarding.firstPromptsTitle}</p>

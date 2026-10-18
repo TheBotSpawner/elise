@@ -170,14 +170,28 @@ export type WeatherPlace = z.infer<typeof weatherPlaceSchema>;
 /** Channels a brief may read in one run: Slack's history limits make every read count. */
 export const MAX_BRIEF_CHANNELS = 5;
 
+/** Every chosen channel knows its workspace (its own, or the schedule's for older ones). */
+export const slackReady = (s: {
+  connectionId: string | null;
+  channels: { connectionId?: string }[];
+}) => s.channels.length > 0 && s.channels.every((c) => c.connectionId ?? s.connectionId);
+
 const slackConfigSchema = z
   .object({
-    /** The workspace connection (a Slack account); never "all". */
+    /**
+     * The workspace whose channels the form shows, and the one older channels (saved without
+     * their own workspace) belong to; never "all".
+     */
     connectionId: z.uuid().nullable().default(null),
+    /** Channels from one or more workspaces: each names its own workspace connection. */
     channels: z
       .array(
         z
-          .object({ id: z.string().min(1).max(500), name: z.string().trim().min(1).max(120) })
+          .object({
+            id: z.string().min(1).max(500),
+            name: z.string().trim().min(1).max(120),
+            connectionId: z.uuid().optional(),
+          })
           .strict(),
       )
       .max(MAX_BRIEF_CHANNELS)
@@ -294,7 +308,7 @@ export const morningBriefConfigSchema = z
     message: "Choose which Knowledge Space to summarize",
     path: ["knowledgeSpaceId"],
   })
-  .refine((c) => !c.blocks.includes("slack") || (c.slack.connectionId && c.slack.channels.length), {
+  .refine((c) => !c.blocks.includes("slack") || slackReady(c.slack), {
     message: "Choose a Slack workspace and at least one channel",
     path: ["slack"],
   });

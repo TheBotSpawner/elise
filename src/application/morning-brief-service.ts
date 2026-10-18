@@ -17,6 +17,7 @@ import type { ActionHandler } from "@/core/schedules/runner";
 import {
   morningBriefConfigSchema,
   newsTopics,
+  slackReady,
   previousOccurrence,
   type MorningBriefConfig,
 } from "@/core/schedules/schedule";
@@ -194,13 +195,13 @@ export async function gatherBrief(
       : undefined,
   ]);
 
-  // Slack (ADR-062): only the channels the schedule names, in its one workspace, for a bounded
+  // Slack (ADR-062): only the channels the schedule names, each in its workspace, for a bounded
   // window — one history read per channel, one after another (Slack's history limits are
   // per minute). Never Real-time Search in the background, never a crawl of the workspace.
   const slack = want.has("slack") ? await gatherSlack() : undefined;
   async function gatherSlack(): Promise<BriefData["slack"]> {
     const s = config.slack;
-    if (!s.connectionId || !s.channels.length) return undefined;
+    if (!slackReady(s)) return undefined;
     const day = 86_400_000;
     const since =
       s.window === "since_previous" &&
@@ -215,7 +216,8 @@ export async function gatherBrief(
         "slack",
         "teamMessaging.getRecent",
         { channel: c.id, after, limit: 10 },
-        s.connectionId,
+        // Each channel is read in its own workspace (several may be chosen).
+        c.connectionId ?? s.connectionId!,
       );
       if (d?.kind !== "team_messages") continue;
       channels.push({

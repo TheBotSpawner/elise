@@ -371,12 +371,15 @@ function IdleHero({
   return (
     // Phones (ADR-077): the Orb is ELISE's presence, so it gets the screen. The stage (Orb,
     // greeting, question) takes every pixel between the header and the fixed dock + navigation
-    // and centers itself in it; the Orb is sized by width AND by the height left after the
-    // chrome (~380px: header, greeting, question, a context row, dock, nav, safe area), so it
-    // grows on tall phones and never overflows short ones (320×568). Desktop is unchanged.
+    // and centers itself in it. The Orb is sized by width and by the height left after the
+    // chrome (~300px: header, greeting, question, dock, nav, safe area; the context rows live
+    // behind the header's bell), so it grows on tall phones and never overflows short ones
+    // (320×568). The globe is ~3/4 of its box, the rest is glow: the box may be wider than the
+    // screen (up to 120vw) with its glow clipped, so the globe itself fills the width.
+    // Desktop is unchanged.
     <div
       data-hero
-      className="flex flex-1 flex-col items-center [--orb:clamp(176px,min(86vw,calc(100dvh-380px-env(safe-area-inset-bottom))),480px)] md:flex-none md:pt-2 md:[--orb:clamp(250px,min(42vw,46dvh),620px)]"
+      className="flex flex-1 flex-col items-center overflow-x-clip [--orb:clamp(200px,min(120vw,calc(100dvh-300px-env(safe-area-inset-bottom))),560px)] md:flex-none md:overflow-x-visible md:pt-2 md:[--orb:clamp(250px,min(42vw,46dvh),620px)]"
     >
       <div
         data-orb-stage

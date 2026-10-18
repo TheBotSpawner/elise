@@ -14,6 +14,7 @@ import {
   DEFAULT_BRIEF_BLOCKS,
   normalizeBlocks,
   MAX_BRIEF_CHANNELS,
+  slackReady,
   type BriefBlock,
   type BriefHorizon,
   type ScheduleInput,
@@ -284,7 +285,7 @@ export function ScheduleForm({
   const blocks = v.configuration.blocks;
   const needsSpace = blocks.includes("knowledge") && !v.configuration.knowledgeSpaceId;
   const slack = v.configuration.slack;
-  const needsSlack = blocks.includes("slack") && (!slack.connectionId || !slack.channels.length);
+  const needsSlack = blocks.includes("slack") && !slackReady(slack);
   // "Cambios en Conocimiento" is no longer offered; a schedule that has it can still uncheck it.
   // Inversiones is always offered: its asset field says when market data isn't available.
   const offered = FORM_ORDER.filter(
@@ -582,8 +583,9 @@ export function ScheduleForm({
 type SlackConfig = ScheduleInput["configuration"]["slack"];
 
 /**
- * Which Slack conversations a brief reads (ADR-062): one workspace, a few chosen channels and a
- * window. ELISE reads only these, live, at run time — never the whole workspace.
+ * Which Slack conversations a brief reads (ADR-062): a few chosen channels, from one or more
+ * workspaces, and a window. The workspace select only says whose channels are listed; switching
+ * it keeps what was chosen elsewhere. ELISE reads only these, live — never a whole workspace.
  */
 function SlackBriefSettings({
   workspaces,
@@ -613,16 +615,27 @@ function SlackBriefSettings({
     };
   }, [connectionId, t]);
 
-  const chosen = new Set(value.channels.map((c) => c.id));
-  // Channels already chosen stay visible even before the list loads (or if it can't).
-  const shown = [...value.channels, ...(channels ?? []).filter((c) => !chosen.has(c.id))];
-  const toggle = (c: { id: string; name: string }) =>
+  const workspaceOf = (c: SlackConfig["channels"][number]) => c.connectionId ?? value.connectionId;
+  const key = (c: { id: string }, ws: string | null) => `${ws}:${c.id}`;
+  const chosen = new Set(value.channels.map((c) => key(c, workspaceOf(c))));
+  const nameOf = (id: string | null) => workspaces.find((w) => w.id === id)?.name ?? "Slack";
+  const several = new Set(value.channels.map(workspaceOf)).size > 1 || workspaces.length > 1;
+  // Chosen channels (any workspace) first, then this workspace's others.
+  const shown = [
+    ...value.channels.map((c) => ({ ...c, connectionId: workspaceOf(c) ?? undefined })),
+    ...(channels ?? [])
+      .filter((c) => !chosen.has(key(c, connectionId)))
+      .map((c) => ({ ...c, connectionId: connectionId ?? undefined })),
+  ];
+  const toggle = (c: { id: string; name: string; connectionId?: string }) => {
+    const k = key(c, c.connectionId ?? null);
     onChange({
       ...value,
-      channels: chosen.has(c.id)
-        ? value.channels.filter((x) => x.id !== c.id)
+      channels: chosen.has(k)
+        ? value.channels.filter((x) => key(x, workspaceOf(x)) !== k)
         : [...value.channels, c].slice(0, MAX_BRIEF_CHANNELS),
     });
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -632,11 +645,19 @@ function SlackBriefSettings({
           <Select
             id="schedule-slack-workspace"
             value={connectionId ?? ""}
-            required
+            required={!value.channels.length}
             onChange={(e) => {
               setChannels(null);
               setError(null);
-              onChange({ ...value, connectionId: e.target.value || null, channels: [] });
+              // Older channels (saved without their workspace) keep the one they belonged to.
+              onChange({
+                ...value,
+                connectionId: e.target.value || null,
+                channels: value.channels.map((c) => ({
+                  ...c,
+                  connectionId: c.connectionId ?? value.connectionId ?? undefined,
+                })),
+              });
             }}
           >
             <option value="">{f.slackWorkspacePlaceholder}</option>
@@ -661,7 +682,7 @@ function SlackBriefSettings({
           </Select>
         </div>
       </div>
-      {connectionId && (
+      {(connectionId || value.channels.length > 0) && (
         <fieldset className="flex flex-col gap-1.5">
           <legend className="mb-1 text-[13px] text-muted">
             {f.slackChannels(MAX_BRIEF_CHANNELS)}
@@ -672,23 +693,29 @@ function SlackBriefSettings({
             <p className="text-[12.5px] text-faint">{f.slackLoading}</p>
           ) : (
             <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto">
-              {shown.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  aria-pressed={chosen.has(c.id)}
-                  disabled={!chosen.has(c.id) && value.channels.length >= MAX_BRIEF_CHANNELS}
-                  onClick={() => toggle(c)}
-                  className={cn(
-                    "h-8 rounded-full border px-3 text-[13px] transition-colors disabled:opacity-40",
-                    chosen.has(c.id)
-                      ? "border-accent bg-accent-soft text-accent-text"
-                      : "border-border-strong text-muted hover:text-fg",
-                  )}
-                >
-                  {c.name}
-                </button>
-              ))}
+              {shown.map((c) => {
+                const on = chosen.has(key(c, c.connectionId ?? null));
+                return (
+                  <button
+                    key={key(c, c.connectionId ?? null)}
+                    type="button"
+                    aria-pressed={on}
+                    disabled={!on && value.channels.length >= MAX_BRIEF_CHANNELS}
+                    onClick={() => toggle(c)}
+                    className={cn(
+                      "h-8 rounded-full border px-3 text-[13px] transition-colors disabled:opacity-40",
+                      on
+                        ? "border-accent bg-accent-soft text-accent-text"
+                        : "border-border-strong text-muted hover:text-fg",
+                    )}
+                  >
+                    {c.name}
+                    {several && on && (
+                      <span className="text-faint"> · {nameOf(c.connectionId ?? null)}</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
           {!value.channels.length && (

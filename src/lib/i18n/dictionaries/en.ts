@@ -23,6 +23,8 @@ export const en = {
     pendingApprovals: (n: number) => `${n} waiting for approval`,
   },
   home: {
+    notices: (n: number) => (n === 1 ? "1 update" : `${n} updates`),
+    noticesTitle: "Updates",
     greeting: {
       morning: (name: string) => (name ? `Good morning, ${name}` : "Good morning"),
       afternoon: (name: string) => (name ? `Good afternoon, ${name}` : "Good afternoon"),
@@ -3039,7 +3041,7 @@ export const en = {
     arrangeTime: "Show as timeline",
     arrangeRelevance: "Back to overview",
     now: "Now",
-    headline: "What do you need?",
+    headline: "What should we do now?",
     next: "Next",
     ask: "Speak, or type a request",
     askMobile: "Speak, or tap to type",

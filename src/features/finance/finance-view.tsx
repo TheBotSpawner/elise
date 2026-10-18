@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  ListChecks,
   Plus,
   Search,
   Trash2,
@@ -774,7 +775,8 @@ function BulkBar({
   if (!selected)
     return (
       <div className="-mb-2 flex justify-end">
-        <Button size="sm" variant="ghost" onClick={() => onChange(new Set())}>
+        <Button size="sm" variant="secondary" onClick={() => onChange(new Set())}>
+          <ListChecks />
           {b.select}
         </Button>
       </div>
