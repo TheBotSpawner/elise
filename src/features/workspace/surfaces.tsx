@@ -72,6 +72,7 @@ import { MediaBody } from "./canvas/media";
 import { WeatherView } from "./canvas/weather";
 import { MarketBody } from "./market-view";
 import { FinanceImportCard } from "../finance/chat-import-card";
+import { PersonalityPicker } from "../settings/personality-picker";
 import { Visualization } from "./viz/visualization";
 
 /**
@@ -129,6 +130,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   answer: Sparkles,
   market: TrendingUp,
   finance_import: FileSpreadsheet,
+  personality: Sparkles,
 };
 
 export interface SurfaceHandlers {
@@ -1056,6 +1058,8 @@ export function SurfaceBody({
       return <MarketBody p={p} timezone={timezone} />;
     case "finance_import":
       return <FinanceImportCard p={p} />;
+    case "personality":
+      return <PersonalityPicker p={p} />;
     case "schedule": {
       const sp = surface.payload as SurfacePayloads["schedule"];
       const proposal = sp.proposal as ToolDisplay | undefined;

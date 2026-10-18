@@ -558,7 +558,12 @@ export function Ambient({ ambient }: { ambient: HomeAmbient }) {
     // share a baseline (the small mono eyebrow sits on the text's line, not above or below it).
     // On wide screens the row never wraps: fixed items keep their size and the "continue" preview
     // takes only the room left, ending in an ellipsis.
-    <ul className="mx-auto mt-6 flex w-full max-w-[66rem] min-w-0 flex-col items-center gap-1 px-4 text-[13px] leading-5 text-muted md:flex-row md:flex-nowrap md:justify-center md:gap-x-8">
+    // Phones (ADR-077): one compact strip under the Orb — no gaps between rows (each keeps its
+    // 44px tap target), so the height saved goes to the Orb.
+    <ul
+      data-ambient
+      className="mx-auto mt-2 flex w-full max-w-[66rem] min-w-0 flex-col items-center gap-0 px-4 text-[13px] leading-5 text-muted md:mt-6 md:flex-row md:flex-nowrap md:justify-center md:gap-x-8"
+    >
       {brief && (
         <li className="flex h-8 shrink-0 items-center whitespace-nowrap">
           <span className="flex items-baseline gap-3">

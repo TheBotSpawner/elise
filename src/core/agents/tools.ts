@@ -59,6 +59,7 @@ import type { KnowledgeManager } from "../knowledge/admin";
 import type { KnowledgeReader } from "../knowledge/model";
 import type { LatLng, LocationCapability } from "../location/model";
 import type { MarketsPort } from "../markets/model";
+import type { ElisePersonality } from "../personality";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
 import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
@@ -402,6 +403,8 @@ export type ToolDisplay =
       accent: Accent;
       previous?: { theme: Theme; accent: Accent };
     }
+  /** "Cambiá tu personalidad" with no target (ADR-076): the five choices, never a guess. */
+  | { kind: "personality"; current: ElisePersonality }
   /** ELISE changed one of its own settings (time zone, notifications, a Schedule's status). */
   | {
       kind: "setting_changed";
@@ -416,6 +419,7 @@ export type ToolDisplay =
           | "continuous"
           | "voice_language"
           | "voice"
+          | "personality"
           | "memory";
         from: string | null;
         to: string;

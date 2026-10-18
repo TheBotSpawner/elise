@@ -511,6 +511,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     });
 
   const context = buildContextPackage({
+    personality: auth.profile.personality,
     user: auth.profile,
     now: new Date(),
     availableCapabilities: [...capabilities],

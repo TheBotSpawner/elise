@@ -72,6 +72,8 @@ export const en = {
       "ELISE needs a Supabase project for accounts and data. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local, apply the migrations and restart.",
   },
   onboarding: {
+    personalityTitle: "How should ELISE be?",
+    personalityBody: "It changes how she talks to you, not what she can do. Change it anytime.",
     voiceTitle: "Voice conversations",
     voiceBody: "ELISE keeps listening between replies.",
     voiceOn: "Turn on continuous conversation",
@@ -2748,6 +2750,7 @@ export const en = {
       general: { title: "General", hint: "Language, time zone, profile and location" },
       appearance: { title: "Appearance", hint: "Mode and accent color" },
       voice: { title: "Voice", hint: "Continuous conversation, language and voice" },
+      personality: { title: "Personality", hint: "How ELISE talks to you" },
       memory: { title: "Memory", hint: "What ELISE remembers about you" },
       storage: { title: "Storage", hint: "Files ELISE keeps" },
       shortcuts: { title: "Shortcuts", hint: "Your phrases for things ELISE already does" },
@@ -3175,6 +3178,7 @@ export const en = {
       answer: "Answer",
       market: "Markets",
       finance_import: "Finance import",
+      personality: "Personality",
     },
     states: {
       loading: "Loading",
@@ -3296,6 +3300,7 @@ export const en = {
       continuous: "Continuous conversation",
       voice_language: "Voice language",
       voice: "Voice",
+      personality: "Personality",
       memory: "Memory",
     },
     applied: "Applied",
@@ -3843,6 +3848,40 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
     recentsIn: (where: string) => `Recent in ${where}`,
     spaces: "Spaces",
     seeAll: "See all",
+  },
+  personality: {
+    title: "Personality",
+    base: "Base personality",
+    hint: "Changes how ELISE talks to you, never what she can do: permissions and approvals stay the same.",
+    previewLabel: "How ELISE would reply",
+    saved: "Done, ELISE talks like this now.",
+    options: {
+      efficient: {
+        name: "Helpful and efficient",
+        description: "Direct, decisive and focused on saving you steps.",
+        sample: "I moved the meeting to 3 pm and told the guests.",
+      },
+      motivating: {
+        name: "Positive and motivating",
+        description: "Upbeat, notices your progress and helps you keep the pace.",
+        sample: "Five days in a row! Meeting moved to 3 pm — you're doing great.",
+      },
+      demanding: {
+        name: "Demanding and direct",
+        description: "Gets to the point, questions excuses and pushes you to finish.",
+        sample: "Moved to 3 pm. Two tasks from yesterday are still open: close them today.",
+      },
+      friendly: {
+        name: "Warm and friendly",
+        description: "Warmer, more casual and conversational.",
+        sample: "All set, meeting's at 3 now. Grab a coffee first!",
+      },
+      provocative: {
+        name: "Witty and provocative",
+        description: "Dry humor, a bit of sarcasm and some pressure — still helping.",
+        sample: "Meeting at 3, done. The report? Right, tomorrow. Like yesterday.",
+      },
+    },
   },
   common: {
     loading: "Loading…",

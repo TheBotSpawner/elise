@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { PERSONALITIES } from "../personality";
 import { CALENDAR_VIEWS, MAX_CALENDAR_EVENTS } from "./calendar";
 import { mapPayload, placePayload, type MapPayload } from "./location";
 import { mediaPayload } from "./media";
@@ -275,6 +276,7 @@ const change = z.object({
     "continuous",
     "voice_language",
     "voice",
+    "personality",
     "memory",
   ]),
   from: text(120).nullable(),
@@ -909,6 +911,7 @@ export const PAYLOADS = {
   answer: answerPayload,
   market: marketPayload,
   finance_import: financeImportPayload,
+  personality: z.object({ current: z.enum(PERSONALITIES) }),
 } satisfies Record<SurfaceType, z.ZodType>;
 
 export type SurfacePayloads = { [K in SurfaceType]: z.infer<(typeof PAYLOADS)[K]> };
@@ -1485,6 +1488,14 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     priority: 40,
     actions: () => [],
     describe: (p) => p.display.kind,
+  },
+  // The personality choices (ADR-076): picking one saves it, like Settings.
+  personality: {
+    sizes: ["medium", "large"],
+    size: "medium",
+    priority: 85,
+    actions: () => [],
+    describe: (p) => `Personality choices (current: ${p.current})`,
   },
   // A file to import (ADR-075): what ELISE understood and the one thing to decide.
   finance_import: {

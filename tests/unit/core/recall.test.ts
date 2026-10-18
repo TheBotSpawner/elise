@@ -18,6 +18,7 @@ import {
   type MemoryFact,
   type RememberInput,
 } from "@/core/memory/model";
+import type { ElisePersonality } from "@/core/personality";
 import { indexSession, type IndexPorts } from "@/core/recall/indexer";
 import {
   chunkTurns,
@@ -337,6 +338,14 @@ class FakeSettings implements SettingsStore {
   async setVoice(key: VoiceKey) {
     this.voiceState.current = key;
     return key;
+  }
+  personalityState: ElisePersonality = "efficient";
+  async personality() {
+    return this.personalityState;
+  }
+  async setPersonality(p: ElisePersonality) {
+    this.personalityState = p;
+    return p;
   }
   moduleState: Record<string, boolean> = { tasks: true, habits: false, finance: true };
   async modules() {

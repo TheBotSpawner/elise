@@ -74,6 +74,8 @@ export const es: Dictionary = {
       "ELISE necesita un proyecto de Supabase para cuentas y datos. Configurá NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY en .env.local, aplicá las migraciones y reiniciá.",
   },
   onboarding: {
+    personalityTitle: "¿Cómo querés que sea ELISE?",
+    personalityBody: "Cambia cómo te habla, no lo que puede hacer. Lo cambiás cuando quieras.",
     voiceTitle: "Conversaciones por voz",
     voiceBody: "ELISE sigue escuchando entre respuestas.",
     voiceOn: "Activar conversación continua",
@@ -2779,6 +2781,7 @@ export const es: Dictionary = {
       general: { title: "General", hint: "Idioma, zona horaria, perfil y ubicación" },
       appearance: { title: "Apariencia", hint: "Modo y color de acento" },
       voice: { title: "Voz", hint: "Conversación continua, idioma y voz" },
+      personality: { title: "Personalidad", hint: "Cómo te habla ELISE" },
       memory: { title: "Memoria", hint: "Lo que ELISE recuerda de vos" },
       storage: { title: "Storage", hint: "Archivos que ELISE guarda" },
       shortcuts: { title: "Atajos", hint: "Tus frases para cosas que ELISE ya hace" },
@@ -3208,6 +3211,7 @@ export const es: Dictionary = {
       answer: "Respuesta",
       market: "Mercados",
       finance_import: "Importación de finanzas",
+      personality: "Personalidad",
     },
     states: {
       loading: "Cargando",
@@ -3329,6 +3333,7 @@ export const es: Dictionary = {
       continuous: "Conversación continua",
       voice_language: "Idioma de la voz",
       voice: "Voz",
+      personality: "Personalidad",
       memory: "Memoria",
     },
     applied: "Aplicado",
@@ -3875,6 +3880,40 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
     recentsIn: (where: string) => `Recientes en ${where}`,
     spaces: "Espacios",
     seeAll: "Ver todas",
+  },
+  personality: {
+    title: "Personalidad",
+    base: "Personalidad base",
+    hint: "Cambia cómo te habla ELISE, nunca lo que puede hacer: permisos y aprobaciones son siempre los mismos.",
+    previewLabel: "Así te respondería ELISE",
+    saved: "Listo, ELISE ya habla así.",
+    options: {
+      efficient: {
+        name: "Servicial y eficiente",
+        description: "Directa, resolutiva y enfocada en ahorrarte pasos.",
+        sample: "Moví la reunión a las 15 y avisé a los invitados.",
+      },
+      motivating: {
+        name: "Positiva y motivadora",
+        description: "Te acompaña con energía, reconoce avances y te ayuda a mantener el ritmo.",
+        sample: "¡Ya van 5 días seguidos! Moví la reunión a las 15; vas muy bien.",
+      },
+      demanding: {
+        name: "Exigente y directa",
+        description: "Va al punto, cuestiona excusas y te empuja a terminar lo que empezaste.",
+        sample: "Movida a las 15. Te quedan 2 tareas de ayer: cerralas hoy.",
+      },
+      friendly: {
+        name: "Cercana y amistosa",
+        description: "Más cálida, informal y conversacional.",
+        sample: "Listo, te pasé la reunión a las 15. ¡Respirá un poco antes!",
+      },
+      provocative: {
+        name: "Ácida y provocadora",
+        description: "Humor seco, sarcasmo y un poco de presión, sin dejar de ayudarte.",
+        sample: "Reunión a las 15, hecho. ¿Y el informe? Ah, cierto, mañana. Como ayer.",
+      },
+    },
   },
   common: {
     loading: "Cargando…",

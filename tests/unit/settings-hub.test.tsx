@@ -59,6 +59,7 @@ describe("settings registry (ADR-068)", () => {
       "general",
       "appearance",
       "voice",
+      "personality",
       "memory",
       "storage",
       "shortcuts",

@@ -13,12 +13,14 @@ import {
   setMemoryEnabled,
 } from "@/application/memory-service";
 import {
+  setPersonality,
   setPreferredVoice,
   updatePreferences,
   updateVoiceSettings,
 } from "@/application/settings-service";
 import { deleteStoredFile } from "@/application/storage-service";
 import { toPublicError, type PublicError } from "@/core/errors";
+import { PERSONALITIES } from "@/core/personality";
 import { isValidTimezone } from "@/core/time";
 import { VOICE_KEYS } from "@/core/voice/catalog";
 import { VOICE_LANGUAGES } from "@/core/voice/preferences";
@@ -112,6 +114,29 @@ export async function setVoicePreferences(input: z.input<typeof voiceSchema>): P
         result: "success",
         metadata: v,
       });
+    },
+    "/",
+    "layout",
+  );
+}
+
+/**
+ * ELISE's personality (ADR-076), from Settings or onboarding: the same preference chat and
+ * voice change. Tone only — permissions and approvals never depend on it.
+ */
+export async function setPersonalityAction(
+  personality: string,
+  from: "settings" | "onboarding" = "settings",
+): Promise<Result> {
+  return attempt(
+    async () => {
+      const p = z.enum(PERSONALITIES).parse(personality);
+      await setPersonality(
+        await requireAuthContext(),
+        p,
+        "user_ui",
+        from === "onboarding" ? "onboarding" : "user",
+      );
     },
     "/",
     "layout",

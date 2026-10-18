@@ -2,6 +2,7 @@ import type { AIImageInput, AIInputItem } from "./ai-provider";
 import { explicitStructured } from "./tool-selection";
 import type { SentAttachment, SpreadsheetSummary } from "../attachments/model";
 import type { CapabilityKey } from "../capabilities/types";
+import { DEFAULT_PERSONALITY, personalitySection, type ElisePersonality } from "../personality";
 import type { RecallResult } from "../recall/model";
 import { describeNow } from "../time";
 import { voiceForModel, type VoiceKey } from "../voice/catalog";
@@ -19,6 +20,8 @@ export interface HistoryMessage {
 
 export interface ContextInput {
   user: { displayName: string | null; locale: "es" | "en"; timezone: string };
+  /** ELISE's base personality (ADR-076): tone only; default "efficient". */
+  personality?: ElisePersonality;
   now: Date;
   availableCapabilities: readonly CapabilityKey[];
   history: readonly HistoryMessage[];
@@ -412,7 +415,11 @@ export function buildContextPackage(input: ContextInput): ContextPackage {
   // Prompt caching (ADR-025): everything stable for this user and modality comes first, in a
   // fixed order; what changes per turn (time, accounts, visible Surfaces, context, evidence)
   // goes last, so consecutive turns share the longest possible cached prefix.
-  const sections = [CORE_INSTRUCTIONS];
+  // Stable per user: right after the identity, inside the cached prefix (ADR-076).
+  const sections = [
+    CORE_INSTRUCTIONS,
+    personalitySection(input.personality ?? DEFAULT_PERSONALITY),
+  ];
   const dynamic = [
     `Session:
 - Current date and time: ${describeNow(input.user.timezone, input.now)}. Resolve relative dates ("mañana", "next Friday") from this.

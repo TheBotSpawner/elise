@@ -1,5 +1,6 @@
 import { AppError } from "../errors";
 import type { MemoryFact, RememberInput, RememberResult } from "../memory/model";
+import type { ElisePersonality } from "../personality";
 import { isValidTimezone } from "../time";
 import type { VoiceKey } from "../voice/catalog";
 import type { VoiceLanguage } from "../voice/preferences";
@@ -69,6 +70,9 @@ export interface SettingsStore {
   voices(): Promise<{ current: VoiceKey; available: VoiceKey[] }>;
   /** Sets the voice: the same preference Settings writes; validated and audited. */
   setVoice(key: VoiceKey): Promise<VoiceKey>;
+  /** ELISE's base personality (ADR-076): the same preference Settings › Personalidad writes. */
+  personality(): Promise<ElisePersonality>;
+  setPersonality(p: ElisePersonality): Promise<ElisePersonality>;
   /** Mi ELISE (ADR-064): which native modules this person uses, in Mi ELISE order. */
   modules(): Promise<{ key: string; enabled: boolean }[]>;
   /** Turns modules on or off (audited); data is never touched. */

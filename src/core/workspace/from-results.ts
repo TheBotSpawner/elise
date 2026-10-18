@@ -941,6 +941,14 @@ export function surfacesFromOutcome(
         }),
       );
     }
+    case "personality":
+      return one(
+        draft("personality", "personality", { current: d.current }, opts, {
+          title: opts.locale === "es" ? "Personalidad" : "Personality",
+          source: { capability: "settings", label: null },
+          ref: { resource: "settings", id: "personality" },
+        }),
+      );
     case "finance_import":
       return one(
         draft("finance_import", d.financeImport.importId, d.financeImport, opts, {

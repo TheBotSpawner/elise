@@ -65,6 +65,8 @@ export const SURFACE_TYPES = [
   "market",
   /** A spreadsheet from chat, analyzed by the Finance import pipeline (ADR-075). */
   "finance_import",
+  /** "Cambiá tu personalidad" with no target (ADR-076): the five choices. */
+  "personality",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
 

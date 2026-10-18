@@ -453,6 +453,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       getVoice: READ,
       listVoices: READ,
       setVoice: WRITE,
+      // ELISE's personality (ADR-076): tone only, never permissions; reversible.
+      setPersonality: WRITE,
       listConnections: READ,
       // Mi ELISE (ADR-064): the person's own choice of modules; reversible, audited.
       listModules: READ,

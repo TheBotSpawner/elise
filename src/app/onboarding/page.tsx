@@ -64,6 +64,7 @@ export default async function OnboardingPage({ searchParams }: PageProps<"/onboa
   return (
     <main className="elise-halo flex min-h-dvh items-center justify-center px-4 py-12">
       <OnboardingFlow
+        personality={auth.profile.personality}
         initial={progress}
         modules={modules}
         profile={{

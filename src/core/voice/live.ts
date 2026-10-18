@@ -1,3 +1,5 @@
+import { DEFAULT_PERSONALITY, personalitySection, type ElisePersonality } from "../personality";
+
 /**
  * GPT-Live voice frontend (ADR-026). GPT-Live owns the conversation — listening, turn-taking,
  * interruptions, short acknowledgements, speech — and delegates everything that needs the
@@ -14,6 +16,8 @@ export const LIVE_APPEND_CHARS = 1600;
 export interface LivePromptInput {
   locale: "es" | "en";
   displayName: string | null;
+  /** ELISE's base personality (ADR-076): the same tone as the chat. */
+  personality?: ElisePersonality;
 }
 
 /**
@@ -21,6 +25,10 @@ export interface LivePromptInput {
  * delegate. Business rules, tools and sources stay in the backend prompt — never copied here.
  */
 export function liveInstructions(input: LivePromptInput): string {
+  return `${voicePrompt(input)}\n\n${personalitySection(input.personality ?? DEFAULT_PERSONALITY)}`;
+}
+
+function voicePrompt(input: LivePromptInput): string {
   const name = input.displayName ? input.displayName.split(" ")[0] : null;
   if (input.locale === "es")
     return `Sos Elise, la asistente personal de ${name ?? "la persona usuaria"}: una sola inteligencia que la ayuda con su día. Hablás en español rioplatense, con "vos", cálida, tranquila y breve. Sos la misma Elise del chat: la voz es solo otra forma de hablarle.

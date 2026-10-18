@@ -369,53 +369,68 @@ function IdleHero({
     />
   );
   return (
-    // Phones (ADR-066): the idle Orb leads but leaves room for the greeting, the dock and the
-    // navigation, even on short screens (320×568).
-    <div className="flex flex-col items-center pt-4 [--orb:clamp(190px,min(54vw,34dvh),420px)] md:pt-2 md:[--orb:clamp(250px,min(42vw,46dvh),620px)]">
-      <motion.div
-        layoutId={ORB_LAYOUT_ID}
-        transition={ORB_MOVE}
-        className="size-[var(--orb)] shrink-0"
+    // Phones (ADR-077): the Orb is ELISE's presence, so it gets the screen. The stage (Orb,
+    // greeting, question) takes every pixel between the header and the fixed dock + navigation
+    // and centers itself in it; the Orb is sized by width AND by the height left after the
+    // chrome (~380px: header, greeting, question, a context row, dock, nav, safe area), so it
+    // grows on tall phones and never overflows short ones (320×568). Desktop is unchanged.
+    <div
+      data-hero
+      className="flex flex-1 flex-col items-center [--orb:clamp(176px,min(86vw,calc(100dvh-380px-env(safe-area-inset-bottom))),480px)] md:flex-none md:pt-2 md:[--orb:clamp(250px,min(42vw,46dvh),620px)]"
+    >
+      <div
+        data-orb-stage
+        className="flex w-full flex-1 flex-col items-center justify-center py-2 md:flex-none md:py-0"
       >
-        {voice ? (
-          // The Orb is ELISE's voice presence: tap it to talk.
-          <button
-            type="button"
-            onClick={
-              phase === "idle" || phase === "sleeping"
-                ? voice.handlers.start
-                : phase === "listening" || phase === "user_speaking"
-                  ? voice.handlers.finishNow
-                  : voice.handlers.interrupt
-            }
-            aria-label={phase === "idle" ? t.voice.start : t.voice.finish}
-            className="block size-full rounded-full"
-          >
-            {orb}
-          </button>
-        ) : (
-          orb
-        )}
-      </motion.div>
-      {hearing ? (
-        <div
-          aria-live="polite"
-          className="-mt-4 flex max-w-[900px] flex-col items-center gap-3 px-4 text-center"
+        <motion.div
+          layoutId={ORB_LAYOUT_ID}
+          transition={ORB_MOVE}
+          className="size-[var(--orb)] shrink-0"
         >
-          <span className="font-mono text-[11px] tracking-[0.16em] text-fg2 uppercase">
-            {t.canvas.you}
-          </span>
-          <p className="text-[24px] leading-[1.3] font-light tracking-[-0.02em] text-balance md:text-[34px]">
-            {hearing}
-          </p>
-          <span className="text-[12.5px] text-faint">{t.canvas.listeningHint}</span>
-        </div>
-      ) : (
+          {voice ? (
+            // The Orb is ELISE's voice presence: tap it to talk.
+            <button
+              type="button"
+              onClick={
+                phase === "idle" || phase === "sleeping"
+                  ? voice.handlers.start
+                  : phase === "listening" || phase === "user_speaking"
+                    ? voice.handlers.finishNow
+                    : voice.handlers.interrupt
+              }
+              aria-label={phase === "idle" ? t.voice.start : t.voice.finish}
+              className="block size-full rounded-full"
+            >
+              {orb}
+            </button>
+          ) : (
+            orb
+          )}
+        </motion.div>
+        {hearing ? (
+          <div
+            aria-live="polite"
+            className="-mt-4 flex max-w-[900px] flex-col items-center gap-3 px-4 text-center"
+          >
+            <span className="font-mono text-[11px] tracking-[0.16em] text-fg2 uppercase">
+              {t.canvas.you}
+            </span>
+            <p className="text-[24px] leading-[1.3] font-light tracking-[-0.02em] text-balance md:text-[34px]">
+              {hearing}
+            </p>
+            <span className="text-[12.5px] text-faint">{t.canvas.listeningHint}</span>
+          </div>
+        ) : (
+          <>
+            <div className="mt-[calc(var(--orb)*-0.08)]">{status}</div>
+            <h1 className="mt-3 text-center text-[28px] leading-[1.1] font-light tracking-[-0.025em] md:text-[46px]">
+              {t.canvas.headline}
+            </h1>
+          </>
+        )}
+      </div>
+      {!hearing && (
         <>
-          <div className="mt-[calc(var(--orb)*-0.08)]">{status}</div>
-          <h1 className="mt-3 text-center text-[28px] leading-[1.1] font-light tracking-[-0.025em] md:text-[46px]">
-            {t.canvas.headline}
-          </h1>
           {dock}
           {context}
           {below}

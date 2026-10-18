@@ -10,6 +10,7 @@ import {
 } from "../capabilities/settings";
 import { AppError } from "../errors";
 import { NATIVE_MODULES, type NativeModuleKey } from "../modules/registry";
+import { PERSONALITIES, PERSONALITY_NAMES, type ElisePersonality } from "../personality";
 import {
   DEFAULT_VOICE,
   nextVoice,
@@ -39,15 +40,23 @@ export const getSettingsTool: ToolDefinition = {
   name: "settings.get",
   capability: "settings",
   operation: "get",
-  description: "The user's ELISE settings: language, time zone, theme and accent color.",
+  description:
+    "The user's ELISE settings: language, time zone, theme, accent color and ELISE's personality.",
   input: z.object({}).strict(),
   async describe() {
     return { summary: "Read settings" };
   },
   async run(_raw, env) {
     const p = await store(env).get();
+    const personality = await store(env).personality();
     return {
-      output: { language: p.language, timezone: p.timezone, theme: p.theme, accent: p.accent },
+      output: {
+        language: p.language,
+        timezone: p.timezone,
+        theme: p.theme,
+        accent: p.accent,
+        personality: PERSONALITY_NAMES[personality].en,
+      },
     };
   },
 };
@@ -693,6 +702,70 @@ function moduleTool(on: boolean): ToolDefinition {
 export const enableModulesTool = moduleTool(true);
 export const disableModulesTool = moduleTool(false);
 
+// ── Personality (ADR-076) ────────────────────────────────────────────────────
+
+const personalityInput = z
+  .object({
+    personality: z
+      .enum(PERSONALITIES)
+      .optional()
+      .describe(
+        '"Ponete exigente" → demanding; "más motivadora" → motivating; "hablame como una amiga", "más cercana" → friendly; "ponete sarcástica", "modo ácido" → provocative; "volvé a lo normal", "la de siempre", "por defecto" → efficient. Omit it when the user didn\'t say which ("cambiá tu personalidad"): the choices are shown.',
+      ),
+  })
+  .strict();
+
+export const setPersonalityTool: ToolDefinition = {
+  name: "settings.setPersonality",
+  capability: "settings",
+  operation: "setPersonality",
+  description:
+    'Change ELISE\'s saved base personality — the same choice as Settings › Personalidad, from the next reply on (chat and voice). Only when the user clearly wants it changed ("cambiá tu personalidad a exigente", "quiero que seas más amistosa desde ahora"); a one-off "hoy hablame más tranquila" is not a change: just adapt this conversation. Tone only — it never changes permissions or approvals — and the voice stays the same.',
+  input: personalityInput,
+  confirm(output, locale) {
+    const o = output as { personality?: string; changed?: boolean; choose?: boolean };
+    if (o.choose || !o.personality) return null;
+    return locale === "es"
+      ? o.changed
+        ? `Listo. Ahora estoy en modo ${o.personality}.`
+        : `Ya estoy en modo ${o.personality}.`
+      : o.changed
+        ? `Done. I'm in ${o.personality} mode now.`
+        : `I'm already in ${o.personality} mode.`;
+  },
+  async describe(raw, env) {
+    const { personality } = personalityInput.parse(raw);
+    return {
+      summary: personality
+        ? `Personality → ${PERSONALITY_NAMES[personality][env.ctx.locale]}`
+        : "Choose a personality",
+    };
+  },
+  async run(raw, env) {
+    const { personality } = personalityInput.parse(raw);
+    const current = await store(env).personality();
+    const name = (p: ElisePersonality) => PERSONALITY_NAMES[p][env.ctx.locale];
+    // No target: never guess — the five choices go on screen.
+    if (!personality)
+      return {
+        output: {
+          choose: true,
+          current: name(current),
+          instructions: "The choices are on screen. Ask in a few words which one they want.",
+        },
+        display: { kind: "personality" as const, current },
+      };
+    const after = personality === current ? current : await store(env).setPersonality(personality);
+    return {
+      output: { personality: name(after), changed: after !== current },
+      display: {
+        kind: "setting_changed" as const,
+        changes: [{ setting: "personality" as const, from: name(current), to: name(after) }],
+      },
+    };
+  },
+};
+
 export const SETTINGS_TOOLS = [
   getSettingsTool,
   updateSettingsTool,
@@ -708,6 +781,7 @@ export const SETTINGS_TOOLS = [
   listVoicesTool,
   setVoiceTool,
   nextVoiceTool,
+  setPersonalityTool,
   listMemoryTool,
   rememberTool,
   forgetTool,

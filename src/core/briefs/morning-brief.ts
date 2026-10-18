@@ -28,6 +28,7 @@ import {
 } from "../contexts/model";
 import { compareAmounts } from "../finance/money";
 import { healthText, type GoalHealth } from "../goals/analytics";
+import { DEFAULT_PERSONALITY, personalitySection, type ElisePersonality } from "../personality";
 import { clipText } from "../text";
 import { addDays, toLocalDateTime, zonedDateTimeToUtc } from "../time";
 import type { SurfacePayloads } from "../workspace/registry";
@@ -1081,12 +1082,18 @@ function narrationSchema(topics: readonly BriefTopic[]) {
 export async function narrateBrief(
   ai: AIProvider,
   brief: MorningBrief,
-  options: { userName: string | null; locale: "es" | "en"; instructions: string | null },
+  options: {
+    userName: string | null;
+    locale: "es" | "en";
+    instructions: string | null;
+    personality?: ElisePersonality;
+  },
 ): Promise<BriefNarration | null> {
   const topics = briefTopics(brief);
   const language = options.locale === "es" ? 'Spanish (Rioplatense, "vos")' : "English";
   const instructions = [
     NARRATION_INSTRUCTIONS,
+    personalitySection(options.personality ?? DEFAULT_PERSONALITY),
     `Speak ${language}. ${options.userName ? `The user's name is ${options.userName}.` : ""}`,
     options.instructions ? `User's instructions for this brief:\n${options.instructions}` : "",
   ]

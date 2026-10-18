@@ -539,6 +539,7 @@ export function morningBriefHandler(deps: {
       brief.narration = await narrateBrief(deps.ai(), brief, {
         userName: auth.profile.displayName,
         locale: auth.profile.locale,
+        personality: auth.profile.personality,
         instructions:
           [
             followed &&

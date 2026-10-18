@@ -58,6 +58,7 @@ export async function createLiveSession(auth: AuthContext, sdp: string) {
     instructions: liveInstructions({
       locale: auth.profile.locale,
       displayName: auth.profile.displayName,
+      personality: auth.profile.personality,
     }),
     // GPT-Live speaks with its own voices: the chosen voice's stand-in, fixed for the session.
     voice: openaiVoiceFor(auth.profile.voice.voice),

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { AppError } from "@/core/errors";
+import { PERSONALITY_PREFERENCE_KEY, resolvePersonality } from "@/core/personality";
 import {
   dispatchDue,
   executeRun,
@@ -34,6 +35,14 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
     .eq("id", userId)
     .maybeSingle();
   if (!profile) throw new AppError("AUTH_ERROR", "The schedule owner no longer exists");
+  // Background narration (the Morning Brief) speaks in the owner's personality (ADR-076).
+  const { data: pref } = await db
+    .from("user_preferences")
+    .select("value_json")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", userId)
+    .eq("key", PERSONALITY_PREFERENCE_KEY)
+    .maybeSingle();
   return {
     db,
     userId,
@@ -48,6 +57,7 @@ export async function ownerContext(workspaceId: string, userId: string): Promise
       accent: profile.accent,
       // Background work never speaks: the default voice is enough here.
       voice: voicePreferences(profile, DEFAULT_VOICE),
+      personality: resolvePersonality(pref?.value_json),
     },
   };
 }

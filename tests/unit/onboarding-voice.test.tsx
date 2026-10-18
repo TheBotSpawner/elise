@@ -8,6 +8,7 @@ import { I18nProvider } from "@/lib/i18n/client";
 
 const settings = vi.hoisted(() => ({
   chooseContinuousConversation: vi.fn(),
+  setPersonalityAction: vi.fn(),
   updateProfile: vi.fn(),
 }));
 const onboarding = vi.hoisted(() => ({
@@ -27,11 +28,12 @@ vi.mock("@/features/connections/actions", () => ({
 }));
 vi.mock("@/components/elise/orb/orb", () => ({ Orb: () => null }));
 
-function flow() {
+function flow(step: "voice" | "personality" = "voice") {
   return render(
     <I18nProvider locale="es">
       <OnboardingFlow
-        initial={{ step: "voice" }}
+        initial={{ step }}
+        personality="efficient"
         profile={{ displayName: "Leo", language: "es", timezone: "UTC" }}
         accounts={[]}
         googleAvailable
@@ -46,6 +48,7 @@ function flow() {
 
 beforeEach(() => {
   settings.chooseContinuousConversation.mockReset().mockResolvedValue({ ok: true });
+  settings.setPersonalityAction.mockReset().mockResolvedValue({ ok: true });
   onboarding.saveOnboardingProgress.mockReset().mockResolvedValue(undefined);
 });
 
@@ -64,9 +67,9 @@ describe("onboarding: continuous conversation (ADR-068)", () => {
       fireEvent.click(screen.getByRole("button", { name: "Activar conversación continua" }));
     });
     expect(settings.chooseContinuousConversation).toHaveBeenCalledWith(true, "onboarding");
-    // Then on to connecting accounts.
+    // Then on to ELISE's personality (ADR-076).
     expect(onboarding.saveOnboardingProgress).toHaveBeenLastCalledWith(
-      expect.objectContaining({ step: "connect" }),
+      expect.objectContaining({ step: "personality" }),
     );
   });
 
@@ -76,5 +79,32 @@ describe("onboarding: continuous conversation (ADR-068)", () => {
       fireEvent.click(screen.getByRole("button", { name: "Ahora no" }));
     });
     expect(settings.chooseContinuousConversation).toHaveBeenCalledWith(false, "onboarding");
+  });
+});
+
+describe("onboarding: ELISE's personality (ADR-076)", () => {
+  it("offers the five, with Servicial y eficiente chosen; Continuar keeps it and moves on", async () => {
+    flow("personality");
+    expect(
+      screen.getByRole("heading", { name: "¿Cómo querés que sea ELISE?" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("radio")).toHaveLength(5);
+    expect(screen.getByRole("radio", { name: /Servicial y eficiente/ })).toBeChecked();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    });
+    expect(settings.setPersonalityAction).toHaveBeenCalledWith("efficient", "onboarding");
+    expect(onboarding.saveOnboardingProgress).toHaveBeenLastCalledWith(
+      expect.objectContaining({ step: "connect" }),
+    );
+  });
+
+  it("a different choice is the one saved", async () => {
+    flow("personality");
+    fireEvent.click(screen.getByRole("radio", { name: /Exigente y directa/ }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    });
+    expect(settings.setPersonalityAction).toHaveBeenCalledWith("demanding", "onboarding");
   });
 });

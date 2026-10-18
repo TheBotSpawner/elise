@@ -13,10 +13,16 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import type { CapabilityKey } from "@/core/capabilities/types";
 import { availableModules, type NativeModuleKey } from "@/core/modules/registry";
+import type { ElisePersonality } from "@/core/personality";
 import type { ConnectionHealth } from "@/core/providers/health";
 import { connectGoogle, connectNotion } from "@/features/connections/actions";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
-import { chooseContinuousConversation, updateProfile } from "@/features/settings/actions";
+import {
+  chooseContinuousConversation,
+  setPersonalityAction,
+  updateProfile,
+} from "@/features/settings/actions";
+import { PersonalityOptions } from "@/features/settings/personality-options";
 import { errorText, LOCALES, type Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -69,7 +75,10 @@ export function OnboardingFlow({
   spaces,
   returned,
   modules,
+  personality,
 }: {
+  /** ELISE's personality (ADR-076): the saved one, or the default. */
+  personality: ElisePersonality;
   /** Mi ELISE modules shown as chosen at first (their saved choice, or the suggestions). */
   modules: NativeModuleKey[];
   initial: OnboardingProgress;
@@ -152,7 +161,17 @@ export function OnboardingFlow({
             <UsesStep initial={modules} onBack={() => go("profile")} onDone={() => go("voice")} />
           )}
 
-          {step === "voice" && <VoiceStep onBack={() => go("uses")} onDone={() => go("connect")} />}
+          {step === "voice" && (
+            <VoiceStep onBack={() => go("uses")} onDone={() => go("personality")} />
+          )}
+
+          {step === "personality" && (
+            <PersonalityStep
+              initial={personality}
+              onBack={() => go("voice")}
+              onDone={() => go("connect")}
+            />
+          )}
 
           {step === "connect" && (
             <ConnectStep
@@ -160,7 +179,7 @@ export function OnboardingFlow({
               googleAvailable={googleAvailable}
               notionAvailable={notionAvailable}
               returned={returned}
-              onBack={() => go("voice")}
+              onBack={() => go("personality")}
               onNext={() => go("space")}
             />
           )}
@@ -348,6 +367,57 @@ function VoiceStep({ onBack, onDone }: { onBack: () => void; onDone: () => void 
         </Button>
       </div>
       <p className="mt-4 text-[12.5px] text-faint">{o.voiceChange}</p>
+    </div>
+  );
+}
+
+/** "¿Cómo querés que sea ELISE?" (ADR-076): the default is chosen; Continue keeps it. */
+function PersonalityStep({
+  initial,
+  onBack,
+  onDone,
+}: {
+  initial: ElisePersonality;
+  onBack: () => void;
+  onDone: () => void;
+}) {
+  const { t } = useI18n();
+  const o = t.onboarding;
+  const [value, setValue] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  return (
+    <div className="flex w-full flex-col items-center">
+      <h1 id="onboarding-personality" className="text-2xl font-semibold tracking-tight">
+        {o.personalityTitle}
+      </h1>
+      <p className="mt-2 max-w-md text-sm text-muted">{o.personalityBody}</p>
+      <div className="mt-6 w-full text-left">
+        <PersonalityOptions name="personality-onboarding" value={value} onChange={setValue} />
+      </div>
+      {error && (
+        <p role="alert" className="mt-4 text-sm text-danger-text">
+          {error}
+        </p>
+      )}
+      <div className="mt-8 flex flex-col-reverse gap-2 sm:flex-row">
+        <Button variant="ghost" onClick={onBack} disabled={pending}>
+          {o.back}
+        </Button>
+        <Button
+          onClick={() =>
+            start(async () => {
+              setError(null);
+              const r = await setPersonalityAction(value, "onboarding");
+              if (!r.ok) return setError(errorText(t, r.error));
+              onDone();
+            })
+          }
+          disabled={pending}
+        >
+          {o.next}
+        </Button>
+      </div>
     </div>
   );
 }

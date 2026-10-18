@@ -12,6 +12,11 @@ import {
 } from "@/core/capabilities/settings";
 import { AppError } from "@/core/errors";
 import { availableModules, type NativeModuleKey } from "@/core/modules/registry";
+import {
+  isPersonality,
+  PERSONALITY_PREFERENCE_KEY,
+  type ElisePersonality,
+} from "@/core/personality";
 import { canonicalTimezone, isValidTimezone } from "@/core/time";
 import { isVoiceKey, type VoiceKey } from "@/core/voice/catalog";
 import { VOICE_LANGUAGES } from "@/core/voice/preferences";
@@ -159,6 +164,8 @@ export function settingsStore(auth: AuthContext): SettingsStore {
     },
     voices: async () => ({ current: auth.profile.voice.voice, available: availableVoiceKeys() }),
     setVoice: (key) => setPreferredVoice(auth, key, "ai"),
+    personality: async () => auth.profile.personality,
+    setPersonality: (p) => setPersonality(auth, p, "ai"),
     memory: () => getMemory(auth),
     async remember(input) {
       const r = await rememberFact(auth, input);
@@ -205,6 +212,40 @@ export async function setPreferredVoice(
   auth.profile.voice.voice = key;
   if (from !== key) await audit(auth, origin, "settings.voice_changed", { from, voice: key });
   return key;
+}
+
+/**
+ * ELISE's base personality (ADR-076): one preference whoever changes it — Settings, onboarding,
+ * chat or voice. Validated against the presets; the request's context follows at once, so the
+ * rest of this turn already sounds that way. Tone only: nothing about permissions changes.
+ */
+export async function setPersonality(
+  auth: AuthContext,
+  personality: ElisePersonality,
+  origin: Origin,
+  source: "user" | "onboarding" = "user",
+): Promise<ElisePersonality> {
+  if (!isPersonality(personality))
+    throw new AppError("VALIDATION_ERROR", "That personality doesn't exist", {
+      recovery: "review",
+    });
+  const from = auth.profile.personality;
+  const { error } = await auth.db.from("user_preferences").upsert(
+    {
+      workspace_id: auth.workspaceId,
+      user_id: auth.userId,
+      key: PERSONALITY_PREFERENCE_KEY,
+      value_json: personality,
+      source,
+    },
+    { onConflict: "workspace_id,user_id,key" },
+  );
+  if (error)
+    throw new AppError("INTERNAL_ERROR", "Could not save the personality", { cause: error });
+  auth.profile.personality = personality;
+  if (from !== personality)
+    await audit(auth, origin, "settings.personality_changed", { from, personality });
+  return personality;
 }
 
 /** Voice behavior (ADR-068): the same columns the Settings page writes. */

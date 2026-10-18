@@ -4,6 +4,11 @@ import { cache } from "react";
 
 import { isSupabaseConfigured } from "@/config/env";
 import { AppError } from "@/core/errors";
+import {
+  PERSONALITY_PREFERENCE_KEY,
+  resolvePersonality,
+  type ElisePersonality,
+} from "@/core/personality";
 import { resolveVoice, type VoiceKey } from "@/core/voice/catalog";
 import { voicePreferences } from "@/core/voice/preferences";
 import { availableVoiceKeys } from "@/infrastructure/ai/voices";
@@ -41,6 +46,8 @@ export interface AuthContext {
     theme: "system" | "dark" | "light";
     accent: "cyan" | "blue" | "violet" | "green" | "amber";
     voice: VoicePreferences;
+    /** ELISE's base personality (ADR-076): tone only. */
+    personality: ElisePersonality;
   };
 }
 
@@ -64,9 +71,9 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
     db.from("workspaces").select("id, type").is("archived_at", null).order("created_at"),
     db
       .from("user_preferences")
-      .select("workspace_id, value_json")
+      .select("workspace_id, key, value_json")
       .eq("user_id", userId)
-      .eq("key", VOICE_PREFERENCE_KEY),
+      .in("key", [VOICE_PREFERENCE_KEY, PERSONALITY_PREFERENCE_KEY]),
   ]);
   if (profileRes.error || workspacesRes.error) {
     throw new AppError("INTERNAL_ERROR", "Could not load account", {
@@ -82,7 +89,9 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
 
   const profile = profileRes.data;
   // A failed read never blocks the request: the voice falls back to ELISE.
-  const storedVoice = voiceRes.data?.find((r) => r.workspace_id === workspace.id)?.value_json;
+  const stored = (key: string) =>
+    voiceRes.data?.find((r) => r.workspace_id === workspace.id && r.key === key)?.value_json;
+  const storedVoice = stored(VOICE_PREFERENCE_KEY);
   return {
     db,
     userId,
@@ -96,6 +105,7 @@ export const getAuthContext = cache(async (): Promise<AuthContext | null> => {
       theme: profile.theme,
       accent: profile.accent,
       voice: voicePreferences(profile, resolveVoice(storedVoice, availableVoiceKeys())),
+      personality: resolvePersonality(stored(PERSONALITY_PREFERENCE_KEY)),
     },
   };
 });

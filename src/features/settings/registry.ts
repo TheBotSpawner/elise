@@ -6,6 +6,7 @@ import {
   HardDrive,
   Palette,
   SlidersHorizontal,
+  Sparkles,
   UserRound,
   Zap,
   type LucideIcon,
@@ -22,6 +23,7 @@ export const SETTINGS_SECTIONS = [
   { id: "general", group: "personal", icon: SlidersHorizontal },
   { id: "appearance", group: "personal", icon: Palette },
   { id: "voice", group: "personal", icon: AudioLines },
+  { id: "personality", group: "personal", icon: Sparkles },
   { id: "memory", group: "personal", icon: Brain },
   { id: "storage", group: "personal", icon: HardDrive },
   { id: "shortcuts", group: "personal", icon: Zap },
@@ -116,6 +118,15 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
     anchor: "interaction-sounds",
     label: (t) => t.settings.interaction.sound,
     hint: (t) => t.settings.interaction.soundHint,
+  },
+  {
+    section: "personality",
+    anchor: "base",
+    label: (t) => t.personality.base,
+    hint: (t) =>
+      `${t.personality.hint} ${Object.values(t.personality.options)
+        .map((o) => o.name)
+        .join(" ")} tono tone`,
   },
   {
     section: "memory",
