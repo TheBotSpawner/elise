@@ -1368,6 +1368,134 @@ export type MethodUseRow = {
   created_at: Ts;
 };
 
+// ── ELISE Home (ADR-079) ─────────────────────────────────────────────────────
+
+export type HomeRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  timezone: string | null;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type HomeHubRow = {
+  id: string;
+  workspace_id: string;
+  home_id: string;
+  name: string;
+  provider: "home_assistant";
+  host_kind: "desktop" | "service" | "hardware";
+  runtime_state: "initializing" | "ready" | "error";
+  token_prefix: string;
+  last_seen_at: Ts | null;
+  provider_connected: boolean;
+  agent_version: string | null;
+  protocol_version: number | null;
+  provider_version: string | null;
+  last_sync_at: Ts | null;
+  revoked_at: Ts | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type HomeHubCredentialRow = { hub_id: string; token_hash: string; created_at: Ts };
+
+export type HomePairingCodeRow = {
+  id: string;
+  workspace_id: string;
+  home_id: string;
+  code_hash: string;
+  expires_at: Ts;
+  used_at: Ts | null;
+  created_by_user_id: string | null;
+  created_at: Ts;
+};
+
+export type HomeRoomRow = {
+  id: string;
+  workspace_id: string;
+  home_id: string;
+  provider_area_id: string | null;
+  name: string;
+  display_name: string | null;
+  icon: string | null;
+  aliases: string[];
+  favorite: boolean;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type HomeDeviceRow = {
+  id: string;
+  workspace_id: string;
+  home_id: string;
+  hub_id: string;
+  provider_key: string;
+  provider_device_id: string | null;
+  provider_entity_ids: string[];
+  name: string;
+  display_name: string | null;
+  aliases: string[];
+  room_id: string | null;
+  room_override: boolean;
+  device_type: "light" | "switch" | "climate" | "fan" | "humidifier" | "media_player" | "sensor";
+  capabilities: Json;
+  state: Json;
+  available: boolean;
+  state_updated_at: Ts | null;
+  favorite: boolean;
+  hidden: boolean;
+  removed_at: Ts | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type HomeGroupRow = {
+  id: string;
+  workspace_id: string;
+  home_id: string;
+  name: string;
+  aliases: string[];
+  device_ids: string[];
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type HomeSceneRow = {
+  id: string;
+  workspace_id: string;
+  home_id: string;
+  name: string;
+  icon: string | null;
+  aliases: string[];
+  actions: Json;
+  favorite: boolean;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type HomeCommandRow = {
+  id: string;
+  workspace_id: string;
+  home_id: string;
+  hub_id: string;
+  device_id: string;
+  actions: Json;
+  status: "queued" | "delivered" | "executing" | "succeeded" | "failed" | "expired" | "cancelled";
+  origin: "user_ui" | "ai" | "schedule" | "system";
+  risk: "low" | "medium" | "high";
+  idempotency_key: string | null;
+  created_by_user_id: string | null;
+  created_at: Ts;
+  expires_at: Ts;
+  delivered_at: Ts | null;
+  finished_at: Ts | null;
+  error_code: string | null;
+  result: Json | null;
+};
+
 export type TimerRow = {
   id: string;
   workspace_id: string;
@@ -1430,6 +1558,24 @@ export type Database = {
         "workspace_id" | "name" | "description" | "instructions" | "created_by_user_id"
       >;
       timers: Table<TimerRow, "workspace_id" | "user_id" | "kind" | "state">;
+      homes: Table<HomeRow, "workspace_id" | "name">;
+      home_hubs: Table<HomeHubRow, "workspace_id" | "home_id" | "token_prefix">;
+      home_hub_credentials: Table<HomeHubCredentialRow, "hub_id" | "token_hash">;
+      home_pairing_codes: Table<
+        HomePairingCodeRow,
+        "workspace_id" | "home_id" | "code_hash" | "expires_at"
+      >;
+      home_rooms: Table<HomeRoomRow, "workspace_id" | "home_id" | "name">;
+      home_devices: Table<
+        HomeDeviceRow,
+        "workspace_id" | "home_id" | "hub_id" | "provider_key" | "name" | "device_type"
+      >;
+      home_groups: Table<HomeGroupRow, "workspace_id" | "home_id" | "name">;
+      home_scenes: Table<HomeSceneRow, "workspace_id" | "home_id" | "name">;
+      home_commands: Table<
+        HomeCommandRow,
+        "workspace_id" | "home_id" | "hub_id" | "device_id" | "actions" | "expires_at"
+      >;
       method_versions: Table<MethodVersionRow, "workspace_id" | "method_id" | "version">;
       method_references: Table<
         MethodReferenceRow,

@@ -23,6 +23,7 @@ import {
   Telescope,
   TrendingUp,
   FileSpreadsheet,
+  House,
   Compass,
   FolderPlus,
   Handshake,
@@ -72,6 +73,7 @@ import { MediaBody } from "./canvas/media";
 import { WeatherView } from "./canvas/weather";
 import { MarketBody } from "./market-view";
 import { FinanceImportCard } from "../finance/chat-import-card";
+import { HomeResultBody } from "../home/home-result";
 import { PersonalityPicker } from "../settings/personality-picker";
 import { Visualization } from "./viz/visualization";
 
@@ -131,6 +133,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   market: TrendingUp,
   finance_import: FileSpreadsheet,
   personality: Sparkles,
+  home: House,
 };
 
 export interface SurfaceHandlers {
@@ -1060,6 +1063,8 @@ export function SurfaceBody({
       return <FinanceImportCard p={p} />;
     case "personality":
       return <PersonalityPicker p={p} />;
+    case "home":
+      return <HomeResultBody p={p} />;
     case "schedule": {
       const sp = surface.payload as SurfacePayloads["schedule"];
       const proposal = sp.proposal as ToolDisplay | undefined;

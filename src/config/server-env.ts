@@ -57,6 +57,11 @@ const serverEnvSchema = z.object({
   GOOGLE_MAPS_SERVER_API_KEY: z.string().min(1).optional(),
   /** Weather (ADR-038): Open-Meteo commercial key; without it, the free non-commercial API. */
   OPEN_METEO_API_KEY: z.string().min(1).optional(),
+  /**
+   * ELISE Desktop builds (ADR-080), as JSON: [{"platform":"windows","version":"1.0.0",
+   * "downloadUrl":"https://…"}]. Unset: the download page says Desktop isn't available yet.
+   */
+  ELISE_DESKTOP_RELEASES: z.string().min(2).optional(),
   /** Market data (ADR-074): Financial Modeling Prep, server-only. Unset: no market tools. */
   FMP_API_KEY: z.string().min(1).optional(),
   /** Music (ADR-042): a Spotify app (Web API + Web Playback SDK). Redirect defaults to the app URL. */

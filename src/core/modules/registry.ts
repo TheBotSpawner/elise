@@ -108,6 +108,29 @@ export const NATIVE_MODULES = [
       "expenses",
     ],
   },
+  {
+    // ELISE Home (ADR-079): hiding it never unpairs the hub or deletes rooms, modes or aliases.
+    key: "home",
+    capability: "home",
+    route: "/my-elise/home",
+    order: 70,
+    available: true,
+    defaultForExistingUsers: true,
+    defaultForNewUsers: false,
+    suggested: false,
+    searchTerms: [
+      "hogar",
+      "casa",
+      "luces",
+      "aire",
+      "dispositivos",
+      "domotica",
+      "smart home",
+      "home",
+      "lights",
+      "devices",
+    ],
+  },
 ] as const satisfies readonly NativeModuleDefinition[];
 
 export type NativeModuleKey = (typeof NATIVE_MODULES)[number]["key"];

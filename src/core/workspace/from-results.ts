@@ -941,6 +941,14 @@ export function surfacesFromOutcome(
         }),
       );
     }
+    case "home":
+      return one(
+        draft("home", `home:${d.home.title}`, d.home, opts, {
+          title: d.home.title,
+          source: { capability: "home", label: null },
+          ref: null,
+        }),
+      );
     case "personality":
       return one(
         draft("personality", "personality", { current: d.current }, opts, {

@@ -24,6 +24,7 @@ import { FINANCE_TOOLS } from "@/core/tools/finance";
 import { GOAL_TOOLS } from "@/core/tools/goals";
 import { HABIT_TOOLS } from "@/core/tools/habits";
 import { HISTORY_TOOLS } from "@/core/tools/history";
+import { HOME_TOOLS } from "@/core/tools/home";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { KNOWLEDGE_ADMIN_TOOLS } from "@/core/tools/knowledge-admin";
 import { LIST_TOOLS } from "@/core/tools/lists";
@@ -100,6 +101,7 @@ import { SupabaseRecallReader } from "@/infrastructure/supabase/repositories/rec
 
 import type { AuthContext } from "./auth-context";
 import { contextStore } from "./contexts-service";
+import { homeStore } from "./home-service";
 import { knowledgeManager } from "./knowledge-admin";
 import { liveKnowledge } from "./knowledge-live";
 import { locationCapability } from "./location-service";
@@ -137,6 +139,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...LOCATION_TOOLS,
   ...WEATHER_TOOLS,
   ...MARKET_TOOLS,
+  ...HOME_TOOLS,
   ...CONTEXT_TOOLS,
   ...STUDY_TOOLS,
   ...PLANNING_TOOLS,
@@ -478,6 +481,10 @@ function providerFactory(
     },
     // Forecasts: server-provided, no user connection (ADR-038).
     // Public market data: server-provided, no user connection (ADR-074).
+    // ELISE Home: the person's own devices, through their paired hub (ADR-079).
+    home() {
+      return homeStore(auth);
+    },
     markets() {
       return {
         ...marketsCapability(),

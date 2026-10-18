@@ -185,6 +185,33 @@ const answerPayload = z.object({
   total: z.number().int().min(0).max(100_000).optional(),
 });
 
+/** Home devices as a command left them (ADR-079): names, a state line, no provider ids. */
+export const homePayload = z.object({
+  title: text(120),
+  hub: z.enum(["online", "degraded", "offline"]),
+  items: z
+    .array(
+      z.object({
+        deviceId: z.uuid(),
+        name: text(120),
+        room: text(80).nullable(),
+        type: z.enum(["light", "switch", "climate", "fan", "humidifier", "media_player", "sensor"]),
+        status: z.enum([
+          "state",
+          "succeeded",
+          "failed",
+          "expired",
+          "offline",
+          "unavailable",
+          "pending",
+        ]),
+        detail: text(120),
+        updatedAt: text(40).nullable(),
+      }),
+    )
+    .max(24),
+});
+
 /** A chat attachment analyzed by the Finance import pipeline (ADR-075): counts, never rows. */
 export const financeImportPayload = z.object({
   importId: z.uuid(),
@@ -912,6 +939,7 @@ export const PAYLOADS = {
   market: marketPayload,
   finance_import: financeImportPayload,
   personality: z.object({ current: z.enum(PERSONALITIES) }),
+  home: homePayload,
 } satisfies Record<SurfaceType, z.ZodType>;
 
 export type SurfacePayloads = { [K in SurfaceType]: z.infer<(typeof PAYLOADS)[K]> };
@@ -1488,6 +1516,15 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     priority: 40,
     actions: () => [],
     describe: (p) => p.display.kind,
+  },
+  // Home (ADR-079): what a command or mode did, compact; the full dashboard is a page away.
+  home: {
+    sizes: ["small", "medium", "large"],
+    size: "small",
+    priority: 86,
+    actions: () => [],
+    describe: (p) =>
+      `${p.title} (hub ${p.hub}): ${p.items.map((i) => `${i.name} ${i.status === "state" ? "" : `${i.status} `}${i.detail}`).join("; ")}`,
   },
   // The personality choices (ADR-076): picking one saves it, like Settings.
   personality: {

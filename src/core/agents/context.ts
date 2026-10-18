@@ -91,6 +91,8 @@ export interface ContextInput {
   web?: boolean;
   /** Structured market data is configured (ADR-074). */
   markets?: boolean;
+  /** The message is about the home (ADR-079): devices, rooms, modes. */
+  home?: boolean;
   /**
    * Maps (ADR-023): configured (`here`: the user shared their position this session), null when
    * no Maps key is configured, undefined when unknown.
@@ -291,6 +293,19 @@ const MUSIC_GUIDANCE = `Music (the user's own player — music.* tools; controls
 - "En YouTube" / "de YouTube" → provider "youtube" (never switch provider silently). For a specific song pass artist and track ("One More Time de Daft Punk" → artist "Daft Punk", track "One More Time"); a version they asked for ("en vivo", "karaoke") stays in query.
 - A YouTube link or video already found (a web result, a page) → music.play with its url; don't search again.
 - Finding a video is not playing it: say "Lo encontré: <título>. Arrancando…" — never "está sonando" until the Music Surface says it is playing. If the browser blocked audio, tell them to tap Reproducir.`;
+
+/**
+ * ELISE Home (ADR-079): the person's devices by capability — never a provider, entity or
+ * service name; ELISE validates every value against the device before anything is sent.
+ */
+const HOME_GUIDANCE = `Home (the user's own devices, rooms and modes — home.* tools):
+- Act on explicit commands at once: "prendé la luz del escritorio" → home.control; "activá Modo Estudio" → home.runScene. Pass devices, rooms and modes as the user said them; never invent a device.
+- Qualitative words become values: "bajita"/"tenue" ≈ brightness 25, "a media luz" ≈ 50, "más tenue" → brightness -20 relative, "un poco más" → +10/+15 relative, "bajá el aire dos grados" → temperature -2 relative.
+- A follow-up ("bajala al 20%", "subilo", "apagala") is about the device you just controlled: pass its name.
+- If the tool says several devices match, ask which in a few words. If the hub is offline, say nothing was sent; cached states are the last known ones, never current.
+- "Apagá todo" only touches lights, plugs, fans, media and humidifiers (climate only if named). Locks, alarms and similar aren't controllable.
+- Scheduling ("a las 23 activá Modo Dormir") is not supported yet: say so plainly.
+- Confirm briefly ("Listo.", "Modo Estudio activado."); never mention providers, hubs' internals or ids.`;
 
 const TIME_GUIDANCE = `Time (the user's own timers, Pomodoros and stopwatches — time.* tools; never need approval):
 - Act at once, no questions when it's clear: "poneme 20 minutos" → time.start; "pomodoro de 50 y 10" → kind pomodoro, focusMinutes 50, breakMinutes 10; "arrancá un cronómetro" → kind stopwatch. Give a short label when they said what it's for ("para la pasta" → "Pasta"); studying inside a Knowledge Section → the Section's name.
@@ -516,6 +531,7 @@ ${input.knowledgeMap
     dynamic.push(voiceSection(input.voice));
   sections.push(SOURCE_GUIDANCE, WEATHER_GUIDANCE);
   if (input.markets) sections.push(MARKETS_GUIDANCE);
+  if (input.home) sections.push(HOME_GUIDANCE);
   if (input.web) sections.push(WEB_GUIDANCE);
   if (input.location === null)
     sections.push(

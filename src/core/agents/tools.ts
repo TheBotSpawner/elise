@@ -55,6 +55,7 @@ import type {
   VisionSummary,
 } from "../goals/analytics";
 import type { HabitStatsReport } from "../habits/analytics";
+import type { HomePort } from "../home/model";
 import type { KnowledgeManager } from "../knowledge/admin";
 import type { KnowledgeReader } from "../knowledge/model";
 import type { LatLng, LocationCapability } from "../location/model";
@@ -158,6 +159,8 @@ export interface CapabilityProviders {
   weather: WeatherCapability;
   /** Public market data and the person's followed assets (ADR-074). */
   markets: MarketsPort;
+  /** ELISE Home: devices, rooms and modes through the person's hub (ADR-079). */
+  home: HomePort;
   /** Context Profiles and people: the organizational layer (ADR-016). */
   contexts: ContextStore;
   /** Study sessions and progress, plus AI for questions and evaluation (ADR-016). */
@@ -512,6 +515,8 @@ export type ToolDisplay =
   | { kind: "market"; market: SurfacePayloads["market"] }
   /** A spreadsheet from chat, analyzed by the Finance import pipeline (ADR-075). */
   | { kind: "finance_import"; financeImport: SurfacePayloads["finance_import"] }
+  /** Home devices and what a command did to them (ADR-079). */
+  | { kind: "home"; home: SurfacePayloads["home"] }
   /**
    * Music playback (ADR-042): the canonical Music Surface's payload, and — for an embedded
    * player the browser holds — what the page must do with it.

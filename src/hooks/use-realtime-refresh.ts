@@ -6,6 +6,9 @@ import { useEffect, useRef } from "react";
 import { createClient } from "@/infrastructure/supabase/client";
 
 type RealtimeTable =
+  | "home_devices"
+  | "home_hubs"
+  | "home_commands"
   | "tasks"
   | "task_lists"
   | "approvals"

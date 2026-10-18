@@ -67,6 +67,8 @@ export const SURFACE_TYPES = [
   "finance_import",
   /** "Cambiá tu personalidad" with no target (ADR-076): the five choices. */
   "personality",
+  /** Home devices and the result of a command or mode (ADR-079). */
+  "home",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
 

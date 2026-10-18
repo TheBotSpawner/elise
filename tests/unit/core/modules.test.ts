@@ -35,6 +35,7 @@ describe("native module registry", () => {
       "goals",
       "notes",
       "finance",
+      "home",
     ]);
     for (const k of keys)
       for (const t of [es, en]) {
@@ -47,7 +48,10 @@ describe("native module registry", () => {
   });
 
   it("never chose → defaults; a saved choice always wins; unknown keys are ignored", () => {
-    expect(visibleModuleKeys(effectiveModules(null))).toHaveLength(NATIVE_MODULES.length);
+    // Hogar needs ELISE Desktop first: shown to existing people, not to someone who never chose.
+    expect(visibleModuleKeys(effectiveModules(null))).toEqual(
+      NATIVE_MODULES.filter((m) => m.defaultForNewUsers).map((m) => m.key),
+    );
     const saved = effectiveModules({ finance: false, unknown: true });
     expect(saved.finance).toBe(false);
     expect(saved.tasks).toBe(true);
@@ -121,6 +125,7 @@ describe("modules service", () => {
     goals: "goals",
     notes: "notes",
     finance: "finance_transactions",
+    home: "home_devices",
   };
 
   it.each(availableModules().map((m) => m.key))(
@@ -141,10 +146,11 @@ describe("modules service", () => {
       await setModuleVisibility(a, { [key]: true }, "user_ui");
       expect(await visibleModules(a)).toContain(key);
       expect(db.rows(DATA[key]!)).toEqual([row]);
-      expect(db.rows("audit_events").map((e) => e.event_type)).toEqual([
-        "module.hidden",
-        "module.shown",
-      ]);
+      // Hiding what was already hidden by default isn't a change, so it isn't audited.
+      const shownByDefault = NATIVE_MODULES.find((m) => m.key === key)!.defaultForNewUsers;
+      expect(db.rows("audit_events").map((e) => e.event_type)).toEqual(
+        shownByDefault ? ["module.hidden", "module.shown"] : ["module.shown"],
+      );
     },
   );
 

@@ -2,13 +2,14 @@ import {
   BookOpenCheck,
   Brain,
   CalendarClock,
-  History,
-  Plug,
   CheckSquare,
-  Target,
+  History,
+  House,
   ListChecks,
+  Plug,
   Repeat,
   StickyNote,
+  Target,
   Timer,
   Wallet,
   Zap,
@@ -55,6 +56,7 @@ export const MY_ELISE_ICONS = {
   shortcuts: Zap,
   methods: BookOpenCheck,
   time: Timer,
+  home: House,
   // Every Mi ELISE module must have its icon (a new module fails to compile without one).
 } as const satisfies Partial<Record<CapabilityKey, LucideIcon>> &
   Record<NativeModuleKey, LucideIcon>;

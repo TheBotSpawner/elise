@@ -30,7 +30,9 @@ export type CapabilityKey =
   | "music"
   | "time"
   /** Workspace messaging: Slack today, Microsoft Teams later (ADR-062). */
-  | "team_messaging";
+  | "team_messaging"
+  /** ELISE Home (ADR-079): the user's devices, rooms and modes, through their local hub. */
+  | "home";
 
 /** docs/architecture/15-tools-actions-approvals.md §9 */
 export type OperationKind =

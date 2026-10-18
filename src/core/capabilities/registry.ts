@@ -285,6 +285,21 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     internal: true,
     operations: { current: READ, forecast: READ },
   },
+  // ELISE Home (ADR-079): the person's own devices through their paired hub. Reading is free;
+  // an explicit command on a low-risk device (lights, plugs, climate within its range…) runs
+  // at once; deleting a mode asks. Locks, alarms and the like aren't controllable at all.
+  home: {
+    key: "home",
+    status: "available",
+    internal: true,
+    operations: {
+      status: READ,
+      control: WRITE,
+      runScene: WRITE,
+      saveScene: WRITE,
+      deleteScene: { kind: "destructive", risk: "medium", defaultApproval: "always_ask" },
+    },
+  },
   // Public market data (ADR-074): server-provided (FMP), no user connection. Reads need no
   // approval; following an asset is the person's own low-risk preference. No trading, ever.
   markets: {

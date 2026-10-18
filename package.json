@@ -14,7 +14,8 @@
     "trigger:dev": "trigger.dev dev",
     "format:check": "prettier --check .",
     "test:e2e": "playwright test",
-    "test:db": "vitest run tests/integration"
+    "test:db": "vitest run tests/integration",
+    "home-hub": "npx --yes tsx@4.19.2 --tsconfig tsconfig.json home-hub/cli.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

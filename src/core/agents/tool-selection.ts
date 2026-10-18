@@ -45,6 +45,10 @@ const TICKER = /(?<!\p{L})[A-Z]{2,5}(?=\s*(\?|$|,| hoy| ahora| esta| en bolsa))/
 /** "Seguí Alphabet en mis resúmenes", "lo que sigo": following assets names no market word. */
 const FOLLOWING =
   /(?<!\p{L})(segu[ií]|seguir|follow|dej[aá] de seguir|sac[aá])(?!\p{L})[^.?!]*(?<!\p{L})(res[uú]menes|resumen|brief|programados)(?!\p{L})|(?<!\p{L})(lo que sigo|what I follow)(?!\p{L})/iu;
+/** "Prendé la luz", "poné el aire a 24", "apagá todo el living", "activá Modo Estudio". */
+const HOME_WORDS =
+  /(?<!\p{L})(luz|luces|l[aá]mpara\p{L}*|foco\p{L}*|aire( acondicionado)?|split|ventilador\p{L}*|humidificador\p{L}*|enchufe\p{L}*|tele|tv|televisor|calefacci[oó]n|termostato|persiana\p{L}*|living|dormitorio|habitaci[oó]n|cocina|ba[ñn]o|modo (estudio|cine|dormir|trabajo|lectura|fiesta)|modos?|escenas?|hogar|dispositivos?|prend[eéií]\p{L}*|apag[aáuo]\p{L}*|encend[eé]\p{L}*|light|lights|lamp|thermostat|turn (on|off)|scene)(?!\p{L})/iu;
+export const HOME_SIGNAL = { test: (m: string) => HOME_WORDS.test(m) };
 export const MARKET_SIGNAL = {
   test: (m: string) => MARKET_WORDS.test(m) || TICKER.test(m) || FOLLOWING.test(m),
 };
@@ -93,6 +97,8 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   ["location", LOCATION_SIGNAL],
   // Public markets (ADR-074): tickers, listed companies in a market context, prices, indices.
   ["markets", MARKET_SIGNAL],
+  // ELISE Home (ADR-079): devices, rooms, modes, on/off — never a Finance or Knowledge question.
+  ["home", HOME_SIGNAL],
   [
     "music",
     /\b(m[uú]sica|music|canci[oó]n\w*|songs?|temas?|playlists?|[aá]lbum(es)?|albums?|spotify|youtube|reproduc\w*|pon[eé]me|pas[aá] (esta|este)|siguiente canci[oó]n|paus[aá] la m[uú]sica|volumen|volume|subilo|bajalo|parlante|speaker)\b/i,
@@ -143,6 +149,7 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   place: "location",
   weather: "weather",
   market: "markets",
+  home: "home",
   music: "music",
   timer: "time",
   clock: "time",

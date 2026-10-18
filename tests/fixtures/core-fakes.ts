@@ -20,6 +20,7 @@ import { FINANCE_TOOLS } from "@/core/tools/finance";
 import { GOAL_TOOLS } from "@/core/tools/goals";
 import { HABIT_TOOLS } from "@/core/tools/habits";
 import { HISTORY_TOOLS } from "@/core/tools/history";
+import { HOME_TOOLS } from "@/core/tools/home";
 import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { KNOWLEDGE_ADMIN_TOOLS } from "@/core/tools/knowledge-admin";
 import { LIST_TOOLS } from "@/core/tools/lists";
@@ -256,6 +257,7 @@ export function makePorts(
       ...LOCATION_TOOLS,
       ...WEATHER_TOOLS,
       ...MARKET_TOOLS,
+      ...HOME_TOOLS,
       ...CONTEXT_TOOLS,
       ...STUDY_TOOLS,
       ...PLANNING_TOOLS,

@@ -13,6 +13,7 @@ const BY_PREFIX: Record<string, ActivityKey> = {
   location: "location",
   weather: "weather",
   markets: "markets",
+  home: "home",
   contexts: "contexts",
   work: "contexts",
   study: "study",
