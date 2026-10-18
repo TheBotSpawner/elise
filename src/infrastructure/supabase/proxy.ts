@@ -54,7 +54,7 @@ export async function updateSession(
   if (!signedIn && !isPublicPath(request.nextUrl.pathname)) {
     const loginUrl = new URL("/login", request.url);
     if (request.nextUrl.pathname !== "/")
-      loginUrl.searchParams.set("next", request.nextUrl.pathname);
+      loginUrl.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
     return NextResponse.redirect(loginUrl);
   }
   if (signedIn && request.nextUrl.pathname === "/login") {

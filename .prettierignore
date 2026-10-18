@@ -8,3 +8,5 @@ next-env.d.ts
 docs/
 # Claude Design visual reference (development material, never bundled or served).
 design-reference/
+desktop/.vite
+desktop/out

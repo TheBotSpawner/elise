@@ -28,6 +28,7 @@ import {
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
+import { useFeature } from "@/lib/platform/platform";
 import { cn } from "@/lib/utils";
 
 import {
@@ -136,6 +137,8 @@ function SetupPanel({
 }) {
   const { t, locale } = useI18n();
   const s = t.smartHome.setup;
+  // Already in ELISE Desktop (ADR-081): nothing to download or open — this computer is the host.
+  const onDesktop = useFeature({ capability: "home_hub" }) === "supported";
   const [triedOpen, setTriedOpen] = useState(false);
   const step = STEP_OF[state];
   const lastSeen = snapshot.hub?.lastSeenAt
@@ -152,8 +155,8 @@ function SetupPanel({
   > = {
     desktop_not_configured: {
       title: s.notConfiguredTitle,
-      body: s.notConfiguredBody,
-      action: "download",
+      body: onDesktop ? s.onThisComputerBody : s.notConfiguredBody,
+      action: onDesktop ? null : "download",
     },
     desktop_offline: {
       title: s.offlineTitle,
@@ -167,6 +170,7 @@ function SetupPanel({
     hub_ready: { title: s.detected, body: s.searching, action: null },
   };
   const c = content[state];
+  if (onDesktop && c.action === "open") c.action = null;
   return (
     <div className="flex flex-col gap-5">
       <ol aria-label={t.smartHome.title} className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">

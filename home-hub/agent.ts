@@ -4,6 +4,9 @@ import { HomeAssistantClient } from "./home-assistant-client";
 import {
   HOME_PROTOCOL_VERSION,
   hubCommandSchema,
+  validateAction,
+  type HomeAction,
+  type HomeActionInput,
   type HomeState,
   type HubCommand,
 } from "../src/core/home/model";
@@ -35,6 +38,8 @@ export class HubAgent {
   private byEntity = new Map<string, string>();
   private executed = new Set<string>();
   private pendingStates = new Map<string, HaState>();
+  /** Latest state of each device's primary entity: local reads never need the cloud. */
+  private latest = new Map<string, HaState>();
   private stopped = false;
   private connected = false;
 
@@ -47,7 +52,10 @@ export class HubAgent {
   }
 
   async start() {
-    await this.beat("initializing");
+    // ELISE Cloud may be down: the home keeps working locally (ADR-081).
+    await this.beat("initializing").catch((e) =>
+      log("home_heartbeat_failed", { message: (e as Error).message }),
+    );
     void this.heartbeats();
     void this.commandLoop();
     for (;;) {
@@ -92,8 +100,16 @@ export class HubAgent {
     this.byEntity = new Map(
       registry.devices.flatMap((d) => d.entityIds.map((e) => [e, d.providerKey] as const)),
     );
-    const r = await this.cloud.sync(registry);
-    log("home_sync", { devices: r.devices, rooms: r.rooms, latency_ms: Date.now() - started });
+    this.latest = new Map(
+      states.filter((s) => this.byEntity.has(s.entity_id)).map((s) => [s.entity_id, s] as const),
+    );
+    // The registry is usable locally right away; ELISE Cloud catches up when reachable.
+    try {
+      const r = await this.cloud.sync(registry);
+      log("home_sync", { devices: r.devices, rooms: r.rooms, latency_ms: Date.now() - started });
+    } catch (e) {
+      log("home_sync_deferred", { message: (e as Error).message });
+    }
   }
 
   /** Meaningful changes only: a device's primary entity, batched for a moment. */
@@ -101,6 +117,7 @@ export class HubAgent {
     const key = this.byEntity.get(s.entity_id);
     const device = key ? this.devices.get(key) : undefined;
     if (!device || device.entityIds[0] !== s.entity_id) return;
+    this.latest.set(s.entity_id, s);
     const first = this.pendingStates.size === 0;
     this.pendingStates.set(key!, s);
     if (first) setTimeout(() => void this.flushStates(), 1500);
@@ -162,6 +179,58 @@ export class HubAgent {
         log("home_commands_poll_failed", { message: (e as Error).message });
         await new Promise((r) => setTimeout(r, 5000));
       }
+    }
+  }
+
+  /** What this hub sees right now (ADR-081): for the local runtime, no secrets. */
+  status() {
+    return { providerConnected: this.connected, devices: this.devices.size };
+  }
+
+  localDevices() {
+    return [...this.devices.values()].map((d) => {
+      const s = this.latest.get(d.entityIds[0]!);
+      return {
+        providerKey: d.providerKey,
+        name: d.name,
+        type: d.type,
+        capabilities: d.capabilities,
+        state: s ? stateOf(s) : d.state,
+        available: s ? s.state !== "unavailable" : d.available,
+      };
+    });
+  }
+
+  /**
+   * A local control with ELISE Cloud unreachable: the same canonical validation as every other
+   * path, against the home's own source of truth. Never a raw provider call.
+   */
+  async executeLocal(
+    providerKey: string,
+    inputs: HomeActionInput[],
+  ): Promise<{ ok: true; state: HomeState | null } | { ok: false; error: string }> {
+    const device = this.devices.get(providerKey);
+    if (!device) return { ok: false, error: "UNKNOWN_TARGET" };
+    if (!this.connected) return { ok: false, error: "PROVIDER_OFFLINE" };
+    const s = this.latest.get(device.entityIds[0]!);
+    const current = { ...device, state: s ? stateOf(s) : device.state };
+    const actions: HomeAction[] = [];
+    for (const input of inputs) {
+      const v = validateAction(current, input);
+      if (!v.ok) return { ok: false, error: v.message };
+      actions.push(v.action);
+    }
+    const started = Date.now();
+    try {
+      for (const call of toServiceCalls(device.entityIds[0]!, actions))
+        await this.ha.callService(call);
+      const fresh = (await this.ha.states()).find((x) => x.entity_id === device.entityIds[0]);
+      if (fresh) this.latest.set(fresh.entity_id, fresh);
+      log("home_local_command", { status: "succeeded", latency_ms: Date.now() - started });
+      return { ok: true, state: fresh ? stateOf(fresh) : null };
+    } catch (e) {
+      log("home_local_command", { status: "failed", latency_ms: Date.now() - started });
+      return { ok: false, error: String((e as Error).message).slice(0, 60) };
     }
   }
 

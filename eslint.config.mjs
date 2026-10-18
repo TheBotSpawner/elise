@@ -59,6 +59,15 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // ELISE Desktop (ADR-081): its own tsconfig resolves Electron and the shared @/ source.
+    files: ["desktop/**"],
+    settings: {
+      "import/core-modules": ["electron"],
+      "import/internal-regex": "^@/",
+      "import/resolver": { typescript: { project: "desktop/tsconfig.json" }, node: true },
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
@@ -69,6 +78,9 @@ const eslintConfig = defineConfig([
     ".trigger/**",
     // Claude Design visual reference: development material, never imported or served.
     "design-reference/**",
+    // ELISE Desktop build output.
+    "desktop/.vite/**",
+    "desktop/out/**",
   ]),
 ]);
 

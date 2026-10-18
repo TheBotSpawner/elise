@@ -1,0 +1,47 @@
+import { contextBridge, ipcRenderer } from "electron";
+
+import { DESKTOP_BRIDGE_PROTOCOL_VERSION, type EliseDesktopBridge } from "@/core/platform/platform";
+
+import { EVENTS, INVOKE } from "../shared/channels";
+
+/**
+ * window.eliseDesktop (ADR-081): a frozen, typed API. No ipcRenderer, no Node, no channel names
+ * reach the page; listeners get data only (never the IPC event). The main process validates
+ * every call again.
+ */
+const invoke = (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args);
+
+function subscribe<T>(channel: string, listener: (value: T) => void) {
+  const handler = (_e: unknown, value: T) => listener(value);
+  ipcRenderer.on(channel, handler);
+  return () => void ipcRenderer.removeListener(channel, handler);
+}
+
+const bridge: EliseDesktopBridge = {
+  protocolVersion: DESKTOP_BRIDGE_PROTOCOL_VERSION,
+  getDesktopInfo: () => invoke(INVOKE.desktopInfo),
+  getConnectivity: () => invoke(INVOKE.connectivity),
+  onConnectivity: (l) => subscribe(EVENTS.connectivity, l),
+  openExternal: (url) => invoke(INVOKE.openExternal, url),
+  getSession: () => invoke(INVOKE.session),
+  signIn: () => invoke(INVOKE.signIn),
+  signOut: () => invoke(INVOKE.signOut),
+  onSession: (l) => subscribe(EVENTS.session, l),
+  getAccessToken: () => invoke(INVOKE.accessToken),
+  getUpdateState: () => invoke(INVOKE.updateState),
+  onUpdate: (l) => subscribe(EVENTS.update, l),
+  checkForUpdates: () => invoke(INVOKE.checkUpdates),
+  installUpdate: () => invoke(INVOKE.installUpdate),
+  getPreferences: () => invoke(INVOKE.getPreferences),
+  setPreferences: (patch) => invoke(INVOKE.setPreferences, patch),
+  getHomeHubState: () => invoke(INVOKE.homeState),
+  listLocalHomeDevices: () => invoke(INVOKE.homeDevices),
+  executeLocalHome: (command) => invoke(INVOKE.homeExecute, command),
+  cacheGet: (key) => invoke(INVOKE.cacheGet, key),
+  cacheSet: (key, value, sourceUpdatedAt) =>
+    invoke(INVOKE.cacheSet, key, value, sourceUpdatedAt ?? null),
+  onNavigate: (l) => subscribe(EVENTS.navigate, l),
+  collectDiagnostics: () => invoke(INVOKE.diagnostics),
+};
+
+contextBridge.exposeInMainWorld("eliseDesktop", Object.freeze(bridge));

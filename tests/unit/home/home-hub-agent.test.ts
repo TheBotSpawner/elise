@@ -78,6 +78,33 @@ describe("the hub agent's own checks", () => {
     expect(results.map((r) => r.error)).toEqual(["EXPIRED", "UNKNOWN_TARGET"]);
   });
 
+  it("local control without ELISE Cloud: same canonical validation, never a raw call (ADR-081)", async () => {
+    const { a, calls } = agent();
+    expect(await a.executeLocal("dev_lamp", [{ type: "brightness", value: 40 }])).toMatchObject({
+      ok: true,
+    });
+    expect(calls).toEqual([
+      {
+        domain: "light",
+        service: "turn_on",
+        target: { entity_id: "light.escritorio" },
+        service_data: { brightness_pct: 40 },
+      },
+    ]);
+    expect(await a.executeLocal("dev_lock", [{ type: "power", value: true }])).toEqual({
+      ok: false,
+      error: "UNKNOWN_TARGET",
+    });
+    expect(await a.executeLocal("dev_lamp", [{ type: "brightness", value: 400 }])).toMatchObject({
+      ok: false,
+    });
+    expect(calls).toHaveLength(1);
+    expect(a.localDevices().find((d) => d.providerKey === "dev_lamp")).toMatchObject({
+      name: expect.any(String),
+      available: true,
+    });
+  });
+
   it("only a local Home Assistant is ever contacted (no network pivot)", () => {
     expect(isLocalProvider("http://localhost:8123")).toBe(true);
     expect(isLocalProvider("http://192.168.1.20:8123")).toBe(true);

@@ -41,6 +41,8 @@ These documents are the source of truth for product and architecture decisions. 
 | `23-music-setup.md`                | Music providers setup (ADR-042) |
 | `24-microsoft-setup.md`            | Microsoft / Outlook setup (ADR-058) |
 | `25-slack-setup.md`                | Slack setup and app manifest (ADR-062) |
+| `26-elise-home-hub-dev.md`         | ELISE Home Hub development (ADR-079/080) |
+| `27-elise-desktop.md`              | ELISE Desktop: develop, release, operate (ADR-081) |
 
 ## roadmap/
 

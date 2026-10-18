@@ -1,0 +1,19 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["../src/*"] },
+    "types": ["node", "google.maps"],
+    "plugins": [],
+    "incremental": false
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "*.ts",
+    "*.mts",
+    "../src/**/*.d.ts",
+    "../tests/unit/desktop/**/*.ts"
+  ],
+  "exclude": ["node_modules", ".vite", "out"]
+}

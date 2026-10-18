@@ -15,7 +15,12 @@
     "format:check": "prettier --check .",
     "test:e2e": "playwright test",
     "test:db": "vitest run tests/integration",
-    "home-hub": "npx --yes tsx@4.19.2 --tsconfig tsconfig.json home-hub/cli.ts"
+    "home-hub": "npx --yes tsx@4.19.2 --tsconfig tsconfig.json home-hub/cli.ts",
+    "dev:desktop": "npm run dev --prefix desktop",
+    "typecheck:desktop": "tsc -p desktop/tsconfig.json --noEmit",
+    "package:desktop": "npm run package --prefix desktop",
+    "make:desktop": "npm run make --prefix desktop",
+    "smoke:desktop": "node desktop/scripts/smoke.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

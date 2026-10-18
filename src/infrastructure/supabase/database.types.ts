@@ -1396,8 +1396,37 @@ export type HomeHubRow = {
   provider_version: string | null;
   last_sync_at: Ts | null;
   revoked_at: Ts | null;
+  /** The ELISE Desktop installation hosting this hub (ADR-081), when known. */
+  installation_id: string | null;
   created_at: Ts;
   updated_at: Ts;
+};
+
+export type DesktopInstallationRow = {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  installation_id: string;
+  name: string;
+  platform: "windows" | "macos" | "linux";
+  desktop_version: string | null;
+  bridge_protocol_version: number | null;
+  capabilities: string[];
+  last_seen_at: Ts | null;
+  revoked_at: Ts | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type DesktopAuthCodeRow = {
+  code_hash: string;
+  challenge: string;
+  user_id: string;
+  workspace_id: string;
+  installation_id: string;
+  expires_at: Ts;
+  used_at: Ts | null;
+  created_at: Ts;
 };
 
 export type HomeHubCredentialRow = { hub_id: string; token_hash: string; created_at: Ts };
@@ -1575,6 +1604,14 @@ export type Database = {
       home_commands: Table<
         HomeCommandRow,
         "workspace_id" | "home_id" | "hub_id" | "device_id" | "actions" | "expires_at"
+      >;
+      desktop_installations: Table<
+        DesktopInstallationRow,
+        "user_id" | "workspace_id" | "installation_id" | "platform"
+      >;
+      desktop_auth_codes: Table<
+        DesktopAuthCodeRow,
+        "code_hash" | "challenge" | "user_id" | "workspace_id" | "installation_id" | "expires_at"
       >;
       method_versions: Table<MethodVersionRow, "workspace_id" | "method_id" | "version">;
       method_references: Table<

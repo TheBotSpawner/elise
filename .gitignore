@@ -53,3 +53,7 @@ supabase/.temp
 /test-results/
 /playwright-report/
 /blob-report/
+# ELISE Desktop build output
+/desktop/.vite/
+/desktop/node_modules/
+/desktop/out/

@@ -239,6 +239,7 @@ const pairInput = z
     name: z.string().trim().min(1).max(80).optional(),
     agentVersion: z.string().max(40).optional(),
     protocolVersion: z.number().int().optional(),
+    installationId: z.uuid().optional(),
   })
   .strict();
 
@@ -272,6 +273,7 @@ export async function redeemPairingCode(raw: unknown) {
       token_prefix: token.slice(0, 8),
       agent_version: input.agentVersion ?? null,
       protocol_version: input.protocolVersion ?? null,
+      installation_id: input.installationId ?? null,
     })
     .select("id, home_id")
     .single();
@@ -289,6 +291,7 @@ const desktopInput = z
     name: z.string().trim().min(1).max(80).optional(),
     agentVersion: z.string().max(40).optional(),
     protocolVersion: z.number().int().optional(),
+    installationId: z.uuid().optional(),
   })
   .strict();
 
@@ -319,6 +322,7 @@ export async function registerDesktopHub(auth: AuthContext, raw: unknown) {
       token_prefix: token.slice(0, 8),
       agent_version: input.agentVersion ?? null,
       protocol_version: input.protocolVersion ?? null,
+      installation_id: input.installationId ?? null,
     })
     .select("id, home_id")
     .single();

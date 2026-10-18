@@ -1,0 +1,111 @@
+name: ELISE Desktop
+
+# ADR-081. PRs: compile and type-check Desktop (cheap). main: package + smoke-test on Windows
+# when Desktop-related code changes. Tags desktop-vX.Y.Z: signed installers for Windows and
+# macOS, published as a draft release (nobody is offered it until it's reviewed and published).
+on:
+  pull_request:
+    paths: ["desktop/**", "home-hub/**", "src/core/platform/**", "src/app/api/desktop/**"]
+  push:
+    branches: [main]
+    paths: ["desktop/**", "home-hub/**", "src/core/platform/**", "src/app/api/desktop/**"]
+    tags: ["desktop-v*"]
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    name: Desktop · types · renderer build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix desktop
+      - run: npm run typecheck:desktop
+      # The renderer is the shared web source compiled for Desktop: server-only code fails here.
+      - run: npx vite build -c vite.renderer.config.ts
+        working-directory: desktop
+        env:
+          ELISE_CLOUD_URL: https://cloud.example.invalid
+
+  package-smoke:
+    name: Desktop · package + smoke (Windows)
+    if: github.event_name == 'push'
+    needs: compile
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix desktop
+      - run: npx playwright install chromium
+      # Unreachable cloud on purpose: the app must boot from its own assets.
+      - run: npm run package:desktop
+        env:
+          ELISE_CLOUD_URL: https://cloud.example.invalid
+      - run: npm run smoke:desktop -- desktop/out/ELISE-win32-x64/elise.exe
+
+  release:
+    name: Desktop · release (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: compile
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      ELISE_CLOUD_URL: ${{ vars.ELISE_CLOUD_URL }}
+      ELISE_UPDATE_FEED: ${{ vars.ELISE_UPDATE_FEED }}
+      ELISE_DESKTOP_CHANNEL: ${{ vars.ELISE_DESKTOP_CHANNEL || 'stable' }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      ELISE_RELEASE_OWNER: ${{ github.repository_owner }}
+      ELISE_RELEASE_REPO: ${{ github.event.repository.name }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Signing material only from secrets (unsigned builds otherwise — development only).
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix desktop
+      - name: Check the tag matches desktop/package.json
+        shell: bash
+        run: |
+          v=$(node -p "require('./desktop/package.json').version")
+          test "desktop-v$v" = "${GITHUB_REF_NAME}" || { echo "Tag ${GITHUB_REF_NAME} ≠ desktop-v$v"; exit 1; }
+      - name: Windows certificate
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE_PASSWORD != ''
+        shell: bash
+        run: |
+          echo "${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/cert.pfx"
+          echo "WINDOWS_CERTIFICATE_FILE=$RUNNER_TEMP/cert.pfx" >> "$GITHUB_ENV"
+      - run: npm run publish --prefix desktop
