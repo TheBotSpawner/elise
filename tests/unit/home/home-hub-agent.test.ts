@@ -133,3 +133,32 @@ describe("removing a device", () => {
     expect(results.map((r) => r.status)).toEqual(["executing", "succeeded"]);
   });
 });
+
+/** "Apagá la tele" with YouTube open: the first power press can just close the app. */
+describe("turning a TV off", () => {
+  vi.spyOn(console, "log").mockImplementation(() => undefined);
+  const tvOff = command({
+    target: { providerKey: "dev_tv", entityIds: ["media_player.tv"] },
+    actions: [{ type: "power", on: false }],
+  });
+
+  it("presses power again when the TV still reports on", async () => {
+    const { a, calls } = agent();
+    (a as unknown as { offRecheckMs: number }).offRecheckMs = 0;
+    await a.execute(tvOff);
+    expect(calls.map((c) => (c as { service: string }).service)).toEqual(["turn_off", "turn_off"]);
+  });
+
+  it("presses once when it did turn off", async () => {
+    const { a, calls } = agent();
+    const internals = a as unknown as {
+      offRecheckMs: number;
+      ha: { states: () => Promise<unknown[]> };
+    };
+    internals.offRecheckMs = 0;
+    internals.ha.states = async () =>
+      HA_STATES.map((s) => (s.entity_id === "media_player.tv" ? { ...s, state: "off" } : s));
+    await a.execute(tvOff);
+    expect(calls).toHaveLength(1);
+  });
+});
