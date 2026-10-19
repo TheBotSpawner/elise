@@ -913,6 +913,8 @@ export type FinanceBudgetRow = {
   id: string;
   workspace_id: string;
   book_id: string | null;
+  /** ADR-087 (migration 055). */
+  book_ids?: string[];
   /** Legacy single category; the link table holds every category (migration 052). */
   category_id: string | null;
   name?: string | null;

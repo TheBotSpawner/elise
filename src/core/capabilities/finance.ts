@@ -309,6 +309,9 @@ export interface Budget {
   icon?: string | null;
   bookId: string | null;
   book: string | null;
+  /** ADR-087: every Ámbito it covers (the first is `bookId`); empty = every Ámbito. */
+  bookIds?: string[];
+  books?: string[];
   /** Every category it covers (one or more). */
   categoryIds: string[];
   categories: string[];
@@ -443,6 +446,10 @@ export function normalizeStatus(value: string | null | undefined): TransactionSt
 export { comparisonPeriod, PERIODS, resolvePeriod, type Period, type PeriodPreset };
 
 // ── Filtering ────────────────────────────────────────────────────────────────
+
+/** Every Ámbito a budget covers (ADR-087); empty = all of them. */
+export const budgetBookIds = (b: Pick<Budget, "bookId" | "bookIds">): string[] =>
+  b.bookIds?.length ? b.bookIds : b.bookId ? [b.bookId] : [];
 
 /** Every Ámbito of a movement (ADR-087), also for rows from before several were possible. */
 export const bookIdsOf = (t: Pick<FinanceTransaction, "bookId" | "bookIds">): string[] =>
@@ -1083,7 +1090,8 @@ export const BUDGET_WARNING_TENTHS = 800;
 /** Does this transaction count against the budget (Book + category or its children + sub)? */
 export function inBudget(t: FinanceTransaction, b: Budget): boolean {
   if (t.type !== "expense") return false;
-  if (b.bookId && !bookIdsOf(t).includes(b.bookId)) return false;
+  const scope = budgetBookIds(b);
+  if (scope.length && !bookIdsOf(t).some((id) => scope.includes(id))) return false;
   // Any of its categories, or a subcategory of one of them.
   const names = new Set(b.categories.map(norm));
   const inCategory =
@@ -1547,6 +1555,13 @@ export const setBudgetInput = z
     icon: z.string().max(16).optional().describe("Optional single emoji."),
     subcategory: text(80).optional().describe("Only with a single category."),
     book: text(60).optional().describe("Ámbito; omit for the default Book."),
+    books: z
+      .array(text(60))
+      .max(5)
+      .optional()
+      .describe(
+        'Several Ámbitos in ONE budget ("salidas, personal y de la empresa"), instead of book. [] = every Ámbito.',
+      ),
     amount: amountField.describe('Monthly amount ("200 lucas" → 200000).'),
     currency: currencyField.optional(),
     archived: z.boolean().optional().describe("true removes the budget."),

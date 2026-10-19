@@ -62,7 +62,7 @@ beforeAll(async () => {
       [alice.workspaceId, personal],
     )
   ).id;
-  await migrateFrom(db, "20261104000053");
+  await migrateFrom(db, "20261104000053"); // 053 and later (055: budgets)
 });
 
 describe("several Ámbitos per movement", () => {
@@ -145,6 +145,15 @@ describe("several Ámbitos per movement", () => {
         [alice.workspaceId, bobs.id],
       ),
     ).rejects.toThrow(/same workspace/);
+  });
+
+  it("a budget covers several Ámbitos, kept in step with its primary", async () => {
+    const b = await one<{ book_id: string | null; book_ids: string[] }>(
+      alice,
+      "insert into public.finance_budgets (workspace_id, currency, amount, book_ids) values ($1, 'ARS', 1000, $2) returning book_id, book_ids",
+      [alice.workspaceId, [firbot, personal]],
+    );
+    expect(b).toEqual({ book_id: firbot, book_ids: [firbot, personal] });
   });
 
   it("another workspace's Ámbito is refused", async () => {

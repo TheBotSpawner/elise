@@ -79,7 +79,19 @@ function iconPath() {
     : join(__dirname, "../../assets/icon.png");
 }
 
-function createWindow() {
+/**
+ * (Re)loads the app. A failed load is retried with a pause: a window must never be left on its
+ * dark background with nothing in it.
+ */
+function loadApp(win: BrowserWindow, path = "/", attempt = 0) {
+  if (win.isDestroyed()) return;
+  win.loadURL(`${APP_ORIGIN}${path}`).catch((error: Error) => {
+    log("desktop_load_failed", { attempt, message: error.message.slice(0, 120) });
+    if (attempt < 5) setTimeout(() => loadApp(win, path, attempt + 1), 1000 * (attempt + 1));
+  });
+}
+
+function createWindow(path = "/") {
   const saved = loadState().window;
   const win = new BrowserWindow({
     width: saved?.width ?? 1280,
@@ -103,7 +115,8 @@ function createWindow() {
   });
   if (saved?.maximized) win.maximize();
   win.once("ready-to-show", () => win.show());
-  void win.loadURL(`${APP_ORIGIN}/`);
+  // A deep link that opens the window goes straight to its page (nothing to lose in transit).
+  loadApp(win, path);
 
   const remember = () => {
     if (win.isDestroyed() || win.isMinimized()) return;
@@ -123,14 +136,16 @@ function createWindow() {
   });
   win.on("closed", () => (window = null));
 
-  // A crashed renderer comes back by itself, a few times; then the person decides.
+  // A crashed or killed renderer (memory pressure, sleep, a GPU reset…) comes back by itself, a
+  // few times; then the person decides. Reloading inside the event itself can be dropped, so it
+  // waits a tick.
   let crashes: number[] = [];
   win.webContents.on("render-process-gone", async (_e, details) => {
     log("desktop_renderer_gone", { reason: details.reason });
     if (details.reason === "clean-exit") return;
     const now = Date.now();
     crashes = [...crashes.filter((t) => now - t < 60_000), now];
-    if (crashes.length <= 3) return void win.loadURL(`${APP_ORIGIN}/`);
+    if (crashes.length <= 3) return void setTimeout(() => loadApp(win), 300);
     const w = words();
     const { response } = await dialog.showMessageBox(win, {
       type: "error",
@@ -140,22 +155,44 @@ function createWindow() {
     });
     if (response === 0) {
       crashes = [];
-      void win.loadURL(`${APP_ORIGIN}/`);
+      loadApp(win);
     } else if (response === 1) {
       app.relaunch();
       quit();
     } else quit();
   });
-  win.webContents.on("unresponsive", () => log("desktop_renderer_unresponsive"));
+  // A page hung for 8 s is restarted (the handler above brings it back) instead of staying frozen.
+  let hung: ReturnType<typeof setTimeout> | null = null;
+  win.webContents.on("unresponsive", () => {
+    log("desktop_renderer_unresponsive");
+    hung ??= setTimeout(() => {
+      hung = null;
+      if (!win.isDestroyed()) win.webContents.forcefullyCrashRenderer();
+    }, 8000);
+  });
+  win.webContents.on("responsive", () => {
+    if (hung) clearTimeout(hung);
+    hung = null;
+  });
   return win;
 }
 
 function showWindow(path?: string) {
-  if (!window || window.isDestroyed()) window = createWindow();
+  if (!window || window.isDestroyed()) {
+    window = createWindow(path);
+    return;
+  }
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
-  if (path) window.webContents.send(EVENTS.navigate, path);
+  const contents = window.webContents;
+  // Its page died while hidden: bring it back (at the asked page) instead of showing it empty.
+  if (contents.isCrashed()) return loadApp(window, path);
+  if (!path) return;
+  // Still loading: the page can't hear yet; tell it once it can.
+  if (contents.isLoading())
+    contents.once("did-finish-load", () => contents.send(EVENTS.navigate, path));
+  else contents.send(EVENTS.navigate, path);
 }
 
 function broadcast(channel: string, value: unknown) {

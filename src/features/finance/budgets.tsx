@@ -154,8 +154,13 @@ function BudgetDialog({
   const [name, setName] = useState(budget?.name ?? "");
   const [ids, setIds] = useState<string[]>(budget?.categoryIds ?? []);
   const [subcategory, setSubcategory] = useState(budget?.subcategory ?? "");
-  const [book, setBook] = useState(
-    budget?.book ?? current?.name ?? overview.books.find((x) => x.isDefault)?.name ?? "",
+  // ADR-087: every Ámbito it covers (none = all of them).
+  const [books, setBooks] = useState<string[]>(
+    budget
+      ? (budget.books ?? (budget.book ? [budget.book] : []))
+      : [current?.name ?? overview.books.find((x) => x.isDefault)?.name].filter((x): x is string =>
+          Boolean(x),
+        ),
   );
   const [amount, setAmount] = useState(
     budget ? (locale === "es" ? budget.amount.replace(".", ",") : budget.amount) : "",
@@ -183,7 +188,7 @@ function BudgetDialog({
         currency,
         ...(name.trim() ? { name: name.trim() } : {}),
         ...(icon ? { icon } : {}),
-        ...(book ? { book } : {}),
+        ...(overview.books.length ? { books } : {}),
         ...(names.length === 1 && subcategory.trim() ? { subcategory: subcategory.trim() } : {}),
         ...(archived ? { archived: true } : {}),
       });
@@ -285,18 +290,38 @@ function BudgetDialog({
           {overview.books.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="bud-book">{b.scope}</Label>
-              <Select
+              <div
                 id="bud-book"
-                value={book}
-                onChange={(e) => setBook(e.target.value)}
-                className="h-10"
+                role="group"
+                className="flex min-h-10 flex-wrap items-center gap-1.5"
               >
-                {overview.books.map((x) => (
-                  <option key={x.id} value={x.name}>
-                    {x.name}
-                  </option>
-                ))}
-              </Select>
+                {overview.books.map((x) => {
+                  const on = books.includes(x.name);
+                  return (
+                    <button
+                      key={x.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() =>
+                        setBooks(on ? books.filter((n) => n !== x.name) : [...books, x.name])
+                      }
+                      className={cn(
+                        "inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[13px] transition-colors",
+                        on
+                          ? "border-accent bg-accent-soft text-fg"
+                          : "border-border text-muted hover:border-border-strong hover:text-fg",
+                      )}
+                    >
+                      {on && <Check className="size-3.5" aria-hidden />}
+                      {x.icon ? `${x.icon} ` : ""}
+                      {x.name}
+                    </button>
+                  );
+                })}
+                {books.length === 0 && (
+                  <span className="text-[12.5px] text-faint">{b.allScopes}</span>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -409,7 +434,7 @@ function BudgetCard({ u, onOpen }: { u: BudgetUsage; onOpen: () => void }) {
         </span>
         <span className="text-faint">
           {[
-            u.book,
+            u.books?.length ? u.books.join(" + ") : u.book,
             u.pending ? t.finance.ws.budgetPending(u.pending) : "",
             u.otherCurrencies ? t.finance.ws.budgetOther(u.otherCurrencies) : "",
           ]

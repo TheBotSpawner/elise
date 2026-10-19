@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pickOne, sourceOf } from "./native-common";
 import type { ToolDefinition, ToolRunEnv, ToolRunResult } from "../agents/tools";
 import {
+  budgetBookIds,
   budgetUsage,
   budgetsInput,
   comparisonPeriod,
@@ -1220,7 +1221,7 @@ export const budgetsTool: ToolDefinition = {
       p.transactions({ from, to, type: "expense" }, MAX_ROWS),
     ]);
     const usages = budgets
-      .filter((b) => !bookId || b.bookId === bookId)
+      .filter((b) => !bookId || budgetBookIds(b).includes(bookId))
       .map((b) => budgetUsage(b, page.rows))
       .filter((u) => !input.onlyAtRisk || u.state !== "ok")
       .sort((a, b) => b.percentTenths - a.percentTenths);
@@ -1283,15 +1284,22 @@ export const setBudgetTool: ToolDefinition = {
     const existing = b.id ? (await p.listBudgets?.())?.find((x) => x.id === b.id) : undefined;
     if (b.id && !existing) throw new AppError("NOT_FOUND", "Budget not found");
     const books = (await p.listBooks?.()) ?? [];
-    const bookId = b.book
-      ? (await resolveBook(p, b.book)).id
-      : (existing?.bookId ?? books.find((x) => x.isDefault)?.id ?? null);
+    // ADR-087: several Ámbitos, or one, or what it had, or the default Book.
+    const bookIds = b.books
+      ? [...new Set(await Promise.all(b.books.map(async (n) => (await resolveBook(p, n)).id)))]
+      : b.book
+        ? [(await resolveBook(p, b.book)).id]
+        : existing
+          ? budgetBookIds(existing)
+          : [books.find((x) => x.isDefault)?.id].filter((x): x is string => Boolean(x));
+    const bookId = bookIds[0] ?? null;
     const currency = await currencyFor(p, b.currency, null);
     const saved = await nativeFeature(p.saveBudget?.bind(p))({
       ...(b.id ? { id: b.id } : {}),
       name: b.name ?? existing?.name ?? null,
       icon: b.icon ?? existing?.icon ?? null,
       bookId,
+      bookIds,
       categoryIds: picked.length ? picked.map((c) => c.id) : (existing?.categoryIds ?? []),
       subcategory: b.subcategory ?? null,
       currency,

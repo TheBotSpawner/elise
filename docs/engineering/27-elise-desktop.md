@@ -165,6 +165,17 @@ published. A real publish needs the tag pushed (the release must match committed
 - **Updates** stop the runtime cleanly before installing. Pairing, configuration and cache
   survive, so there's nothing to re-pair.
 
+## Window resilience
+
+- A renderer that crashes, is killed (memory pressure, sleep, a GPU reset) or hangs for 8 s
+  reloads by itself, after a short pause (a reload inside the crash event can be dropped). A
+  failed load is retried with backoff. After three crashes in a minute, the person chooses.
+- Showing a window whose page died while it was hidden reloads it first, so it is never shown
+  empty.
+- A deep link that creates the window loads its page directly, and one that reaches a page
+  still loading waits for it. Before, the first "Abrir" from the web could land before the page
+  could hear it, so it took a second try.
+
 ## Manual validation still owed
 
 Automated today:

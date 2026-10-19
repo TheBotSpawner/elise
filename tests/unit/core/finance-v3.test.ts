@@ -189,3 +189,23 @@ describe("several Ámbitos per movement (ADR-087)", () => {
     });
   });
 });
+
+describe("budgets over several Ámbitos (ADR-087)", () => {
+  const b = {
+    bookId: "personal",
+    bookIds: ["personal", "empresa"],
+    categoryIds: ["c"],
+    categories: ["Salidas"],
+    subcategory: null,
+  } as unknown as Budget;
+  const spend = (bookIds: string[]) =>
+    tx({ bookIds, bookId: bookIds[0] ?? null, categoryId: "c", categoryPath: ["Salidas"] });
+  it("counts an expense of any of its Ámbitos, and none of another", () => {
+    expect(inBudget(spend(["empresa"]), b)).toBe(true);
+    expect(inBudget(spend(["personal", "otro"]), b)).toBe(true);
+    expect(inBudget(spend(["otro"]), b)).toBe(false);
+  });
+  it("no Ámbito = every Ámbito", () => {
+    expect(inBudget(spend(["otro"]), { ...b, bookId: null, bookIds: [] })).toBe(true);
+  });
+});

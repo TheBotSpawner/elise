@@ -1,4 +1,5 @@
 import {
+  budgetBookIds,
   budgetUsage,
   computeBreakdown,
   computeTotals,
@@ -97,7 +98,12 @@ export function buildFinanceReport(input: {
     );
   const months = monthsIn(filter);
   const budgets = input.budgets
-    .filter((b) => !input.book || b.bookId === filter.book || b.book === input.book)
+    .filter(
+      (b) =>
+        !input.book ||
+        budgetBookIds(b).includes(filter.book ?? "") ||
+        (b.books ?? (b.book ? [b.book] : [])).includes(input.book),
+    )
     .map((b) => {
       const scaled = { ...b, amount: multiplyByRate(b.amount, String(months.length)) };
       return budgetUsage(

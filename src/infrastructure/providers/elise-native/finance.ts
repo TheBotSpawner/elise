@@ -106,6 +106,8 @@ interface Catalog {
   /** ADR-087 (migration 053): several Ámbitos per movement. */
   v4: boolean;
   defaultAccountId: string | null;
+  /** ADR-087 (migration 055): budgets over several Ámbitos. */
+  budgetBooks: boolean;
 }
 
 const duplicateName = () =>
@@ -129,23 +131,25 @@ export class EliseFinanceProvider implements FinanceProvider {
 
   private load() {
     this.catalog ??= (async () => {
-      const [accounts, categories, books, v3probe, v4probe, defaults] = await Promise.all([
-        this.db.from("finance_accounts").select("*").eq("workspace_id", this.workspaceId),
-        this.db.from("finance_categories").select("*").eq("workspace_id", this.workspaceId),
-        this.db
-          .from("finance_books")
-          .select("*")
-          .eq("workspace_id", this.workspaceId)
-          .is("archived_at", null)
-          .order("created_at"),
-        this.db.from("finance_budget_categories").select("budget_id").limit(1),
-        this.db.from("finance_transactions").select("book_ids").limit(1),
-        this.db
-          .from("finance_settings")
-          .select("default_account_id")
-          .eq("workspace_id", this.workspaceId)
-          .maybeSingle(),
-      ]);
+      const [accounts, categories, books, v3probe, v4probe, defaults, budgetBooks] =
+        await Promise.all([
+          this.db.from("finance_accounts").select("*").eq("workspace_id", this.workspaceId),
+          this.db.from("finance_categories").select("*").eq("workspace_id", this.workspaceId),
+          this.db
+            .from("finance_books")
+            .select("*")
+            .eq("workspace_id", this.workspaceId)
+            .is("archived_at", null)
+            .order("created_at"),
+          this.db.from("finance_budget_categories").select("budget_id").limit(1),
+          this.db.from("finance_transactions").select("book_ids").limit(1),
+          this.db
+            .from("finance_settings")
+            .select("default_account_id")
+            .eq("workspace_id", this.workspaceId)
+            .maybeSingle(),
+          this.db.from("finance_budgets").select("book_ids").limit(1),
+        ]);
       check(accounts.error, "load accounts");
       check(categories.error, "load categories");
       const v2 = !books.error;
@@ -159,6 +163,7 @@ export class EliseFinanceProvider implements FinanceProvider {
         v4: !v4probe.error,
         // Before migration 053 the column doesn't exist: no default account.
         defaultAccountId: defaults.error ? null : (defaults.data?.default_account_id ?? null),
+        budgetBooks: !budgetBooks.error,
       };
     })();
     return this.catalog;
@@ -911,9 +916,11 @@ export class EliseFinanceProvider implements FinanceProvider {
     const { data, error } = await this.db
       .from("finance_budgets")
       .select(
-        catalog.v3
-          ? "id, book_id, category_id, subcategory, currency, amount::text, name, icon"
-          : "id, book_id, category_id, subcategory, currency, amount::text",
+        `${
+          catalog.v3
+            ? "id, book_id, category_id, subcategory, currency, amount::text, name, icon"
+            : "id, book_id, category_id, subcategory, currency, amount::text"
+        }${catalog.budgetBooks ? ", book_ids" : ""}`,
       )
       .eq("workspace_id", this.workspaceId)
       .is("archived_at", null)
@@ -928,6 +935,7 @@ export class EliseFinanceProvider implements FinanceProvider {
       amount: string;
       name?: string | null;
       icon?: string | null;
+      book_ids?: string[];
     }[];
     const links = new Map<string, string[]>();
     if (catalog.v3 && rows.length) {
@@ -953,6 +961,10 @@ export class EliseFinanceProvider implements FinanceProvider {
         icon: row.icon && isSingleEmoji(row.icon) ? row.icon : null,
         bookId: row.book_id,
         book: catalog.books.find((b) => b.id === row.book_id)?.name ?? null,
+        bookIds: row.book_ids?.length ? row.book_ids : row.book_id ? [row.book_id] : [],
+        books: (row.book_ids?.length ? row.book_ids : row.book_id ? [row.book_id] : [])
+          .map((id) => catalog.books.find((b) => b.id === id)?.name)
+          .filter((n): n is string => Boolean(n)),
         categoryIds,
         categories,
         category: row.name ?? categories.join(" · "),
@@ -969,8 +981,10 @@ export class EliseFinanceProvider implements FinanceProvider {
       archived?: boolean;
     },
   ): Promise<Budget> {
-    const { v2, v3 } = await this.load();
+    const { v2, v3, budgetBooks } = await this.load();
     if (!v2) throw needsUpdate();
+    const bookIds = b.bookIds ?? (b.bookId ? [b.bookId] : []);
+    if (bookIds.length > 1 && !budgetBooks) throw needsUpdate();
     const ids = [...new Set(b.categoryIds)];
     if (!ids.length) throw new AppError("VALIDATION_ERROR", "A budget needs a category");
     if (!v3 && (ids.length > 1 || b.name || b.icon)) throw needsUpdate();
@@ -981,7 +995,7 @@ export class EliseFinanceProvider implements FinanceProvider {
       (!b.id && ids.length === 1
         ? all.find(
             (x) =>
-              x.bookId === b.bookId &&
+              x.bookId === (bookIds[0] ?? null) &&
               x.categoryIds.length === 1 &&
               x.categoryIds[0] === ids[0] &&
               norm(x.subcategory ?? "") === norm(b.subcategory ?? "") &&
@@ -990,7 +1004,8 @@ export class EliseFinanceProvider implements FinanceProvider {
         : undefined);
     if (b.id && !existing) throw new AppError("NOT_FOUND", "Budget not found");
     const fields = {
-      book_id: b.bookId,
+      book_id: bookIds[0] ?? null,
+      ...(budgetBooks ? { book_ids: bookIds } : {}),
       // Legacy column: the single category (older readers), null for several.
       category_id: ids.length === 1 ? ids[0]! : null,
       subcategory: ids.length === 1 ? b.subcategory : null,
