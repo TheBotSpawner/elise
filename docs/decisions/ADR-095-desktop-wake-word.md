@@ -92,8 +92,11 @@ The set is synthetic: it is a proxy, and real voices must still be tested by han
      `VoiceController.deviceWake`).
    - The session starts resting if none existed. When the room is still being calibrated, the
      words wait for it instead of being lost (bug fixed in `wakeUp`).
-   - The session tells the device its phase, so only one of them holds the microphone. The
-     detector stops while ELISE speaks or listens, which also prevents self-activation.
+   - The session tells the device its phase. The detector stops listening while ELISE speaks
+     or listens, which also prevents self-activation.
+   - The detector keeps its microphone open through the conversation and hears nothing
+     (`hold`). Releasing and reopening it around every conversation made Bluetooth headsets
+     switch in and out of "call" mode, and they beep when they do.
 4. **Never invasive.**
    - Nothing shows, focuses or raises the window: no `show()`, `focus()`, overlay or toast. If
      the session isn't on Inicio, the renderer navigates there inside the window.
@@ -120,6 +123,11 @@ The set is synthetic: it is a proxy, and real voices must still be tested by han
      - Its page (`renderer/orb.html`) draws the real Orb renderer, and nothing else: no
        preload, no bridge.
      - It hides while ELISE's own window is in use.
+     - A tap on it ends the conversation. Its page reports the tap as an in-page navigation to
+       `#end`, so it still needs no bridge.
+     - The orb's window is kept loaded and hidden while "ELISE" is on, so it appears the moment
+       a conversation starts. While the words after "ELISE" are transcribed it already counts
+       as a conversation.
      - A setting turns it off (`wakeOrb`, on by default).
    - A missing or denied microphone, or a failed model, shows the real state and retries every
      30 s.

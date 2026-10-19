@@ -5,6 +5,7 @@ import { toRendererState, type OrbState } from "@/components/elise/orb/orb-state
  * The background conversation's orb (ADR-095), in its own tiny window: ELISE's real Orb renderer
  * on a canvas, nothing else (no React, no bridge). The main process tells it what the
  * conversation is doing (`eliseOrb.state`) and pops it in when it appears (`eliseOrb.pop`).
+ * A tap ends the conversation: the main process watches for "#end" (no bridge here).
  */
 const canvas = document.querySelector("canvas")!;
 const ctx = canvas.getContext("2d")!;
@@ -21,11 +22,16 @@ const setState = (s: string) => {
   state: setState,
   pop: (s: string) => {
     setState(s);
-    canvas.classList.remove("in");
+    canvas.classList.remove("in", "out");
     void canvas.offsetWidth; // restart the transition
     canvas.classList.add("in");
   },
 };
+
+canvas.addEventListener("click", () => {
+  canvas.classList.add("out");
+  location.hash = `end-${Date.now()}`;
+});
 
 const loop = (now: number) => {
   requestAnimationFrame(loop);

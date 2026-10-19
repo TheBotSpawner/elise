@@ -182,6 +182,10 @@ Every app route renders in Desktop from the same code as the web:
 - Desktop fetches props from `/api/desktop/page?path=`. Loader redirects and not-found work as on
   the web.
 - Links to ELISE Cloud's own routes stay in the window. Everything else opens in the browser.
+- YouTube's embedded player refuses a page without a web origin (Error 153). The app's
+  `elise-app://` origin isn't one. So the main process sets the `Referer` of YouTube's
+  `/embed/` requests to ELISE Cloud's address (`hardenSessions`, `security.ts`). It changes
+  only those requests and only that header.
 
 ## "ELISE" in the background (ADR-095)
 

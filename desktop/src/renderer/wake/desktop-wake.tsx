@@ -10,6 +10,7 @@ import {
   deviceMayListen,
   onVoicePhase,
   requestDeviceWake,
+  requestVoiceEnd,
 } from "@/features/voice/device-wake";
 
 import { VoskWakeDetector, wav } from "./vosk-detector";
@@ -94,10 +95,16 @@ export function useWakeReport(): WakeReport {
   );
 }
 
-function reportFor(control: WakeControl, phase: VoicePhase, detector: DetectorState): WakeReport {
+function reportFor(
+  control: WakeControl,
+  phase: VoicePhase,
+  detector: DetectorState,
+  handingOff: boolean,
+): WakeReport {
   if (!control.enabled) return "off";
   if (control.paused || control.suspended) return "paused";
-  if (!deviceMayListen(phase)) return "in_conversation";
+  // From the word on (its words still being transcribed) it is a conversation.
+  if (handingOff || !deviceMayListen(phase)) return "in_conversation";
   if (detector === "listening" || detector === "capturing") return "listening";
   if (detector === "no_microphone" || detector === "mic_denied" || detector === "model_failed")
     return detector;
@@ -112,7 +119,12 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     const bridge = window.eliseDesktop;
     if (!bridge?.getWakeControl) return;
     void bridge.getWakeControl().then(setControl);
-    return bridge.onWakeControl(setControl);
+    const offEnd = bridge.onVoiceEnd?.(requestVoiceEnd);
+    const offControl = bridge.onWakeControl(setControl);
+    return () => {
+      offEnd?.();
+      offControl();
+    };
   }, []);
 
   const controlRef = useRef(control);
@@ -132,7 +144,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let disposed = false;
 
-    const update = () => report(reportFor(controlRef.current, phase, detector.state));
+    const update = () => report(reportFor(controlRef.current, phase, detector.state, handingOff));
     const failed = () =>
       detector.state === "no_microphone" ||
       detector.state === "mic_denied" ||
@@ -141,13 +153,18 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     const sync = () => {
       if (disposed) return;
       const c = controlRef.current;
-      const want = c.enabled && !c.paused && !c.suspended && deviceMayListen(phase) && !handingOff;
-      if (!want) {
+      const on = c.enabled && !c.paused && !c.suspended;
+      if (!on) {
         if (detector.state !== "stopped" && !failed()) detector.stop();
         return update();
       }
+      // A conversation has the floor: the word isn't listened for, the microphone stays open.
+      if (!deviceMayListen(phase) || handingOff) {
+        detector.hold();
+        return update();
+      }
       if (failed() && Date.now() < retryAt) return update();
-      if (detector.state === "stopped" || failed()) {
+      if (detector.state === "stopped" || detector.state === "held" || failed()) {
         void detector.start({
           model: MODEL,
           onState: (s) => {
@@ -177,9 +194,9 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     async function handOff(
       capture: Parameters<Parameters<VoskWakeDetector["start"]>[0]["onCaptured"]>[0],
     ) {
-      // The session will open the microphone: release it now (one capture at a time).
+      // The session takes the conversation: stop listening for the word (the mic stays open).
       handingOff = true;
-      detector.stop();
+      detector.hold();
       report("in_conversation");
       if (!navigator.onLine) {
         tone("error");

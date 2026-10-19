@@ -428,9 +428,10 @@ function YouTubeFrame() {
       const w = slot ? slot.width : Math.min(corner.w, window.innerWidth - 32);
       const h = slot ? slot.height : Math.max(200, corner.h);
       el.style.left = `${slot ? slot.left : window.innerWidth - w - 16}px`;
-      // In its corner it sits above the navigation and the dock (ADR-066).
+      // In its corner it sits above the navigation and the dock (ADR-066), and above the
+      // floating voice Orb (ADR-096).
       el.style.top = slot ? `${slot.top}px` : "auto";
-      el.style.bottom = slot ? "auto" : "var(--activity-bottom)";
+      el.style.bottom = slot ? "auto" : "calc(var(--activity-bottom) + var(--quick-voice-space))";
       el.style.width = `${w}px`;
       el.style.height = `${h}px`;
       el.dataset.docked = slot ? "true" : "false";
@@ -442,7 +443,8 @@ function YouTubeFrame() {
     <div
       ref={frame}
       className={cn(
-        "fixed z-40 overflow-hidden rounded-2xl border border-border bg-black data-[docked=false]:shadow-2xl",
+        // Content level: under the navigation (and its menus) and any dialog, never over them.
+        "fixed z-30 overflow-hidden rounded-2xl border border-border bg-black data-[docked=false]:shadow-2xl",
         // Visible whenever YouTube is active, at least 200×200 px (YouTube's minimum viewport).
         active ? "opacity-100" : "pointer-events-none invisible opacity-0",
       )}

@@ -46,8 +46,22 @@ export function openExternalSafely(url: string) {
   void shell.openExternal(url);
 }
 
+/**
+ * YouTube's embedded player refuses to play without a web page behind it (Error 153, "Video
+ * player configuration error"): the app's own elise-app:// origin isn't one. Its embed requests
+ * name ELISE's web address instead — only those, only the Referer.
+ */
+const YOUTUBE_EMBEDS = [
+  "https://www.youtube-nocookie.com/embed/*",
+  "https://www.youtube.com/embed/*",
+];
+
 export function hardenSessions() {
   const s = session.defaultSession;
+  const referer = `${new URL(__ELISE_BUILD__.cloudUrl).origin}/`;
+  s.webRequest.onBeforeSendHeaders({ urls: YOUTUBE_EMBEDS }, (details, callback) =>
+    callback({ requestHeaders: { ...details.requestHeaders, Referer: referer } }),
+  );
   s.setPermissionRequestHandler((wc, permission, callback, details) => {
     const ok = ALLOWED_PERMISSIONS.has(permission) && isAppUrl(details.requestingUrl);
     if (!ok) log("desktop_permission_denied", { permission });

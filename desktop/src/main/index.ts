@@ -23,7 +23,7 @@ import {
   updateState as currentUpdate,
 } from "./updater";
 import { applyWakeTo, setWakePaused, wake, wakeControl, wakeStatus, watchSystem } from "./wake";
-import { closeWakeOrb, updateWakeOrb } from "./wake-orb";
+import { closeWakeOrb, updateWakeOrb, wakeOrb } from "./wake-orb";
 import { EVENTS } from "../shared/channels";
 
 /**
@@ -392,6 +392,8 @@ async function main() {
   host.start();
   registerIpc(host, applyLoginItem, (path) => showWindow(path));
   watchSystem();
+  // A tap on the corner Orb ends the background conversation (the session lives in the window).
+  wakeOrb.on("end", () => broadcast(EVENTS.voiceEnd, null));
   wake.on("change", () => {
     refreshTray();
     refreshOrb();

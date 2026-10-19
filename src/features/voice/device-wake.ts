@@ -39,6 +39,18 @@ export function onDeviceWake(listener: WakeListener): () => void {
   };
 }
 
+const endListeners = new Set<() => void>();
+
+/** The device asks the session to end (the corner Orb was tapped). */
+export function requestVoiceEnd() {
+  for (const l of endListeners) l();
+}
+
+export function onVoiceEnd(listener: () => void): () => void {
+  endListeners.add(listener);
+  return () => void endListeners.delete(listener);
+}
+
 type PhaseListener = (phase: VoicePhase) => void;
 const phaseListeners = new Set<PhaseListener>();
 let lastPhase: VoicePhase = "idle";

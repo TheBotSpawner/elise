@@ -358,11 +358,7 @@ export class VoiceController {
     if (phase !== "idle" && phase !== "error" && phase !== "sleeping") return;
     this.deps.wake?.stop();
     this.ensurePlayer();
-    // The acknowledgements in this voice are synthesized ahead, once: they play at once later.
-    if (this.prefs.speak && !this.warmed) {
-      this.warmed = true;
-      this.deps.warmAcknowledgements?.(this.prefs.language);
-    }
+    this.warmUp();
     this.act({
       type: "start",
       speak: this.prefs.speak,
@@ -1188,14 +1184,23 @@ export class VoiceController {
    * transcribed what followed. With no session yet, one starts resting and wakes at once — the
    * same path as the browser's wake phrase, never a second session.
    */
+  /**
+   * The acknowledgements in this voice are synthesized ahead, once: they play at once later.
+   * A device wake word sends its turn the moment it arrives (its words are already transcribed),
+   * so Desktop warms them as soon as the session exists — else the reply beats a cold "Ya lo
+   * reviso" and it is dropped.
+   */
+  warmUp() {
+    if (!this.prefs.speak || this.warmed) return;
+    this.warmed = true;
+    this.deps.warmAcknowledgements?.(this.prefs.language);
+  }
+
   async deviceWake(remainder: string) {
     const phase = this.state.phase;
     if (phase === "idle" || phase === "error") {
       this.ensurePlayer();
-      if (this.prefs.speak && !this.warmed) {
-        this.warmed = true;
-        this.deps.warmAcknowledgements?.(this.prefs.language);
-      }
+      this.warmUp();
       this.act({
         type: "rest",
         speak: this.prefs.speak,

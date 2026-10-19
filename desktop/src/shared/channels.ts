@@ -44,4 +44,6 @@ export const EVENTS = {
   update: "elise:on-update",
   home: "elise:on-home",
   wake: "elise:on-wake",
+  /** The person tapped the corner Orb: end the background conversation. */
+  voiceEnd: "elise:on-voice-end",
 } as const;

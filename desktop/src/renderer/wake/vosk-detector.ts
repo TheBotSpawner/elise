@@ -71,8 +71,11 @@ export class VoskWakeDetector implements WakeDetector {
   private end = new EndOfSpeech();
   private lastDetection = 0;
   private generation = 0;
+  /** Kept for resuming after a hold: the model and the callbacks of the running start(). */
+  private resumeWith: { m: VoskWorker; opts: Parameters<WakeDetector["start"]>[0] } | null = null;
 
   async start(opts: Parameters<WakeDetector["start"]>[0]) {
+    if (this.state === "held" && this.resumeWith) return this.resume();
     if (this.state !== "stopped" && this.state !== "model_failed" && !this.failedMic()) return;
     const gen = ++this.generation;
     const set = (s: DetectorState) => {
@@ -110,6 +113,7 @@ export class VoskWakeDetector implements WakeDetector {
     // ScriptProcessor is enough here (and runs with the window hidden); 128 ms frames.
     this.node = this.ctx.createScriptProcessor(FRAME, 1, 1);
     this.rec = this.recognizer(m, opts);
+    this.resumeWith = { m, opts };
     this.node.onaudioprocess = (e) =>
       this.frame(new Float32Array(e.inputBuffer.getChannelData(0)), opts);
     source.connect(this.node);
@@ -166,6 +170,7 @@ export class VoskWakeDetector implements WakeDetector {
   }
 
   private frame(x: Float32Array, opts: Parameters<WakeDetector["start"]>[0]) {
+    if (this.state === "held") return;
     const energy = rms(x);
     if (this.post) {
       this.post.push(x);
@@ -232,7 +237,30 @@ export class VoskWakeDetector implements WakeDetector {
   stop() {
     this.generation++;
     this.release();
+    this.resumeWith = null;
     this.state = "stopped";
+  }
+
+  hold() {
+    if (this.state !== "listening" && this.state !== "capturing") return;
+    this.state = "held";
+    this.post = null;
+    this.pre = [];
+    this.ring = [];
+    this.gate = 0;
+  }
+
+  /** After a conversation: a fresh recognizer (nothing half-heard carries over). */
+  private resume() {
+    const { m, opts } = this.resumeWith!;
+    try {
+      this.rec?.remove();
+    } catch {
+      // Already gone.
+    }
+    this.rec = this.recognizer(m, opts);
+    this.state = "listening";
+    opts.onState("listening");
   }
 }
 

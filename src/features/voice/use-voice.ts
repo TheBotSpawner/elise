@@ -8,7 +8,7 @@ import { initialVoice, type VoiceState } from "@/core/voice/session";
 import type { SendOptions, StreamListener } from "@/features/chat/use-elise-chat";
 import { useI18n } from "@/lib/i18n/client";
 
-import { onDeviceWake, publishVoicePhase, useDeviceWake } from "./device-wake";
+import { onDeviceWake, onVoiceEnd, publishVoicePhase, useDeviceWake } from "./device-wake";
 import { Microphone, MicError } from "./microphone";
 import { SpeechPlayer } from "./speech-player";
 import {
@@ -122,6 +122,14 @@ export function useVoice({
   useEffect(() => {
     if (!deviceWake) return;
     return onDeviceWake((remainder) => void controller.deviceWake(remainder));
+  }, [controller, deviceWake]);
+  useEffect(
+    () => (deviceWake ? onVoiceEnd(() => controller.end()) : undefined),
+    [controller, deviceWake],
+  );
+  // A wake word's turn goes out at once: its acknowledgements must be ready before it.
+  useEffect(() => {
+    if (deviceWake) controller.warmUp();
   }, [controller, deviceWake]);
   useEffect(() => {
     if (deviceWake) publishVoicePhase(state.phase);

@@ -224,6 +224,8 @@ export interface EliseDesktopBridge {
   /** ADR-095: the wake word's control (setting, pause, lock) and what the listener reports. */
   getWakeControl(): Promise<WakeControl>;
   onWakeControl(listener: (c: WakeControl) => void): () => void;
+  /** The corner Orb was tapped: end the background conversation. */
+  onVoiceEnd?(listener: () => void): () => void;
   setWakePaused(paused: boolean): Promise<WakeControl>;
   reportWake(status: WakeReport): Promise<void>;
   /** What a background conversation is doing, for the corner Orb (ADR-095). Never words. */

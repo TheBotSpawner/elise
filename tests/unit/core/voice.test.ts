@@ -1642,6 +1642,8 @@ describe("a device's wake word hands over to the session", () => {
     expect(sent.map((s) => s.text)).toEqual(["¿qué tengo mañana?"]);
     expect(player.chimes).toBe(0); // the device played its own sound already
     expect(["thinking", "speaking"]).toContain(controller.state.phase);
+    // A lookup is acknowledged at once, as when the words are heard by the session itself.
+    expect(player.spoken).toHaveLength(1);
   });
 
   it("the word alone: the session listens for what comes next", async () => {

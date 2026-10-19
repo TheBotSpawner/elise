@@ -282,6 +282,8 @@ export type DetectorState =
   | "loading"
   | "listening"
   | "capturing"
+  /** A conversation has the floor: the microphone stays open (no Bluetooth "call" switching), nothing is heard. */
+  | "held"
   | "no_microphone"
   | "mic_denied"
   | "model_failed";
@@ -304,8 +306,13 @@ export interface WakeDetector {
     onCaptured: (capture: WakeCapture) => void;
     onState: (state: DetectorState) => void;
   }): Promise<void>;
-  /** Releases the microphone at once (a conversation takes over, a pause, a lock). */
+  /** Releases the microphone at once (a pause, a lock, the setting off). */
   stop(): void;
+  /**
+   * A conversation takes over: stop listening but keep the microphone open, so a Bluetooth
+   * headset doesn't switch in and out of "call" mode (and beep) around every conversation.
+   */
+  hold(): void;
 }
 
 /**
