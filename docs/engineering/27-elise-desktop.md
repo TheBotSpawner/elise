@@ -41,7 +41,7 @@ npm run dev:desktop         # Electron + renderer HMR (loads through elise-app:/
 | `npm run test:run` | Includes `tests/unit/desktop/*` (bridge, IPC validation, CSP, redaction, state migration, PKCE, RPC allowlist) and `tests/integration/desktop.test.ts` (RLS) |
 | `ELISE_CLOUD_URL=… npm run package:desktop` | Packaged app in `desktop/out/` |
 | `npm run smoke:desktop -- desktop/out/ELISE-win32-x64/elise.exe` | Boots with the cloud unreachable, with no remote request to render; bridge without Node; single instance; renderer crash recovery with the runtime alive |
-| `npm run make:desktop -- --targets @electron-forge/maker-squirrel` | The real Windows installer: `desktop/out/make/squirrel.windows/x64/ELISE-<version> Setup.exe`, plus `RELEASES` and the `.nupkg` the updater uses |
+| `npm run make:desktop -- --targets @electron-forge/maker-squirrel` | The real Windows installer: `desktop/out/make/squirrel.windows/x64/ELISE-Setup-<version>.exe`, plus `RELEASES` and the `.nupkg` the updater uses |
 | `node desktop/scripts/installer-smoke.mjs "<Setup.exe>"` | Installs per user (no admin), checks `elise://` and the uninstall entry, launches, runs ELISE Home's requirements check (never the admin step), uninstalls |
 | `tests/unit/desktop/home-runtime.test.ts` | The managed Home runtime with a fake backend: phases, progress, checksum, resume after restart, retry, update and rollback, reset |
 
@@ -102,7 +102,7 @@ Trigger.dev uses none of these.
 | Path | What |
 |---|---|
 | `desktop/out/ELISE-win32-x64/` | The **unpacked** app, from `npm run package:desktop`. For development and `smoke:desktop`; **never** a download |
-| `desktop/out/make/squirrel.windows/x64/ELISE-<version> Setup.exe` | The **Windows installer**, from `npm run make:desktop -- --targets @electron-forge/maker-squirrel`. This is what people get (published as `ELISE-Setup-<version>.exe`) |
+| `desktop/out/make/squirrel.windows/x64/ELISE-Setup-<version>.exe` | The **Windows installer**, from `npm run make:desktop -- --targets @electron-forge/maker-squirrel`. This is what people get |
 | `…/RELEASES` + `…/elise_desktop-<nuget-version>-full.nupkg` | The Squirrel update feed: what the updater consumes |
 
 ## Download (web)

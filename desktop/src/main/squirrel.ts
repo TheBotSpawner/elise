@@ -1,5 +1,6 @@
 import { app } from "electron";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 /**
@@ -9,7 +10,12 @@ import { basename, dirname, join, resolve } from "node:path";
  * app-x.y.z folder; the stub elise_desktop\elise.exe always launches the current one — so the
  * elise:// protocol and start-at-login point at the stub and survive updates.
  */
-export const isSquirrelWindows = () => process.platform === "win32" && app.isPackaged;
+// Installed by Squirrel, not merely packaged: a build run straight from out\ELISE-win32-x64 has
+// no Update.exe above it, and must register elise:// to itself, not to a stub that isn't there.
+export const isSquirrelWindows = () =>
+  process.platform === "win32" &&
+  app.isPackaged &&
+  existsSync(resolve(dirname(process.execPath), "..", "Update.exe"));
 
 /** The stable launcher path (never a versioned folder). */
 export function stableExe() {

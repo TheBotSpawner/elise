@@ -22,7 +22,7 @@ opened `http://localhost:3999/desktop/connect`. The causes:
 | Path | What | Who uses it |
 |---|---|---|
 | `desktop/out/ELISE-win32-x64/` | the unpacked app | development, `smoke:desktop`. Never a download |
-| `desktop/out/make/squirrel.windows/x64/ELISE-<version> Setup.exe` | the Windows installer | people (published as `ELISE-Setup-<version>.exe`) |
+| `desktop/out/make/squirrel.windows/x64/ELISE-Setup-<version>.exe` | the Windows installer | people |
 | `…/RELEASES`, `…/elise_desktop-<nuget version>-full.nupkg` | the Squirrel update feed | ELISE Desktop's updater |
 
 **Build guard.** A packaged (production) build fails unless `ELISE_CLOUD_URL` is a non-local

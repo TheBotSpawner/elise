@@ -74,6 +74,11 @@ export const musicPayload = playbackSchema
     results: z.array(musicItem).max(10).optional(),
     /** A one-line reason something couldn't happen (Premium, no device…). */
     notice: text(300).nullable().optional(),
+    /** ADR-085: the YouTube channel this conversation is on ("otro de ese canal"). */
+    channel: z
+      .object({ id: text(40), title: text(200), handle: text(60).nullable(), url: href })
+      .strict()
+      .optional(),
   })
   .strict();
 

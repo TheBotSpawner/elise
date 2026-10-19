@@ -101,7 +101,7 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   ["home", HOME_SIGNAL],
   [
     "music",
-    /\b(m[uú]sica|music|canci[oó]n\w*|songs?|temas?|playlists?|[aá]lbum(es)?|albums?|spotify|youtube|reproduc\w*|pon[eé]me|pas[aá] (esta|este)|siguiente canci[oó]n|paus[aá] la m[uú]sica|volumen|volume|subilo|bajalo|parlante|speaker)\b/i,
+    /\b(m[uú]sica|music|canci[oó]n\w*|songs?|temas?|playlists?|[aá]lbum(es)?|albums?|spotify|youtube|reproduc\w*|videos?|videoclips?|canal(es)? de youtube|youtube channels?|pon[eé]me|pas[aá] (esta|este)|siguiente canci[oó]n|paus[aá] la m[uú]sica|volumen|volume|subilo|bajalo|parlante|speaker)\b/i,
   ],
   [
     "methods",

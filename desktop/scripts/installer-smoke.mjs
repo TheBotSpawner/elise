@@ -2,9 +2,9 @@
 // silently (per user, no admin), checks what the installer must do, launches the installed app,
 // asks ELISE Home to check this computer's requirements (never enabling anything: no admin
 // prompt), then uninstalls.
-//   node desktop/scripts/installer-smoke.mjs "desktop/out/make/squirrel.windows/x64/ELISE-0.1.0 Setup.exe"
+//   node desktop/scripts/installer-smoke.mjs "desktop/out/make/squirrel.windows/x64/ELISE-Setup-0.1.0.exe"
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
@@ -36,6 +36,12 @@ try {
   for (let i = 0; i < 30 && !existsSync(stub); i++) await wait(1000);
   check(existsSync(stub), `installed per user at ${root} (no admin)`);
   check(existsSync(join(root, "Update.exe")), "uninstaller/updater registered (Update.exe)");
+  if (!existsSync(stub)) {
+    // Squirrel says why only in its own log.
+    const log = join(process.env.LOCALAPPDATA, "SquirrelTemp", "SquirrelSetup.log");
+    console.log(existsSync(log) ? readFileSync(log, "utf8").slice(-4000) : `(no ${log})`);
+    throw new Error("installer did not install");
+  }
   await wait(4000);
   killAll(); // Squirrel's first run
 

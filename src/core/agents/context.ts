@@ -292,6 +292,8 @@ const MUSIC_GUIDANCE = `Music (the user's own player — music.* tools; controls
 - YouTube plays on screen; "quiero verlo" / a video → video:true. A plain music request stays compact.
 - "En YouTube" / "de YouTube" → provider "youtube" (never switch provider silently). For a specific song pass artist and track ("One More Time de Daft Punk" → artist "Daft Punk", track "One More Time"); a version they asked for ("en vivo", "karaoke") stays in query.
 - A YouTube link or video already found (a web result, a page) → music.play with its url; don't search again.
+- A YouTube CHANNEL ("el canal X", "un video de X" when X is a creator/channel, "el último video de X", "otro de ese canal") → music.channel (action find / latest / random / search). It resolves the channel itself (name, @handle, link, spelling): never web.search to find or "confirm" a channel, and never play a video from another channel. If the user spelled it ("L-U-M-E-N"), pass the spelling. "Otro de ese canal" → music.channel action random without channel (the one on screen). Any other YouTube video ("poné un video de gatos", a song) stays music.play with provider youtube.
+- If YouTube itself can't be reached, say "No puedo consultar YouTube ahora mismo" — that is not "channel not found".
 - Finding a video is not playing it: say "Lo encontré: <título>. Arrancando…" — never "está sonando" until the Music Surface says it is playing. If the browser blocked audio, tell them to tap Reproducir.`;
 
 /**

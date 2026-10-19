@@ -13,6 +13,17 @@ import {
   type MusicRequest,
   type RankedCandidate,
 } from "@/core/capabilities/music-match";
+import {
+  channelKey,
+  decideChannel,
+  handleGuesses,
+  looksLikeShort,
+  parseChannelRef,
+  slipVariants,
+  type ChannelDecision,
+  type ChannelVideo,
+  type YouTubeChannel,
+} from "@/core/capabilities/youtube-channel";
 import { AppError } from "@/core/errors";
 import { logger } from "@/infrastructure/observability/logger";
 
@@ -57,6 +68,34 @@ interface SearchItem {
     thumbnails?: Record<string, { url: string }>;
   };
 }
+
+interface ChannelResource {
+  id: string;
+  snippet: { title: string; customUrl?: string; thumbnails?: Record<string, { url: string }> };
+  contentDetails?: { relatedPlaylists?: { uploads?: string } };
+  statistics?: { videoCount?: string };
+}
+
+interface VideoResource {
+  id: string;
+  snippet?: {
+    title: string;
+    channelId: string;
+    channelTitle: string;
+    publishedAt?: string;
+    liveBroadcastContent?: string;
+    thumbnails?: Record<string, { url: string }>;
+  };
+  status?: { embeddable?: boolean; privacyStatus?: string; uploadStatus?: string };
+  contentDetails?: { duration?: string };
+}
+
+/** Resolved channels, per server instance: a channel id doesn't change (quota: search is 100). */
+const CHANNEL_CACHE = new Map<
+  string,
+  { at: number; decision: ChannelDecision & { corrected?: boolean } }
+>();
+const CHANNEL_CACHE_MS = 6 * 60 * 60_000;
 
 interface VideoDetails {
   id: string;
@@ -218,6 +257,188 @@ export class YouTubeMusicProvider implements MusicProvider {
       if ((ranked[0]?.confidence ?? 0) >= PLAY_CONFIDENCE) break;
     }
     return { ranked, attempts };
+  }
+
+  // ── Channels (ADR-085) ──────────────────────────────────────────────────────
+
+  /** Channel details by id or handle (channels.list: 1 quota unit). */
+  private async channels(by: { id: string[] } | { forHandle: string }): Promise<YouTubeChannel[]> {
+    if ("id" in by && !by.id.length) return [];
+    const json = await this.get<{ items?: ChannelResource[] }>("channels", {
+      part: "snippet,contentDetails,statistics",
+      ...("id" in by
+        ? { id: by.id.join(","), maxResults: "50" }
+        : { forHandle: `@${by.forHandle}` }),
+    });
+    return (json.items ?? []).flatMap((c) => {
+      const uploads = c.contentDetails?.relatedPlaylists?.uploads;
+      if (!uploads) return [];
+      const thumb = c.snippet.thumbnails;
+      const handle = c.snippet.customUrl?.startsWith("@") ? c.snippet.customUrl.slice(1) : null;
+      return [
+        {
+          provider: "youtube" as const,
+          channelId: c.id,
+          handle,
+          title: decodeEntities(c.snippet.title),
+          url: handle
+            ? `https://www.youtube.com/@${handle}`
+            : `https://www.youtube.com/channel/${c.id}`,
+          thumbnailUrl: (thumb?.high ?? thumb?.medium ?? thumb?.default)?.url ?? null,
+          videoCount: c.statistics?.videoCount ? Number(c.statistics.videoCount) : null,
+          uploadsPlaylistId: uploads,
+        },
+      ];
+    });
+  }
+
+  private async byHandles(handles: string[]): Promise<YouTubeChannel[]> {
+    const found = await Promise.all(
+      handles.map((h) => this.channels({ forHandle: h }).catch(() => [] as YouTubeChannel[])),
+    );
+    return found.flat();
+  }
+
+  /**
+   * A channel from what the user said (ADR-085), in a fixed order: link/handle/id exactly; a
+   * name → handles it could have (1 unit each) + YouTube's channel search (100 units); only if
+   * nothing is close, the name with one letter less (speech slips) as handles. Never a web page.
+   */
+  async resolveChannel(raw: string): Promise<ChannelDecision & { corrected?: boolean }> {
+    const started = Date.now();
+    const ref = parseChannelRef(raw);
+    const cacheKey = `${ref.kind}:${ref.kind === "id" ? ref.id : ref.kind === "handle" ? ref.handle : channelKey(ref.name)}`;
+    const hit = CHANNEL_CACHE.get(cacheKey);
+    if (hit && Date.now() - hit.at < CHANNEL_CACHE_MS) return hit.decision;
+
+    let decision: ChannelDecision & { corrected?: boolean };
+    if (ref.kind === "id" || ref.kind === "handle") {
+      const found = await this.channels(
+        ref.kind === "id" ? { id: [ref.id] } : { forHandle: ref.handle },
+      );
+      decision = found[0]
+        ? { kind: "resolved", channel: found[0], confidence: 1 }
+        : { kind: "not_found", candidates: [] };
+    } else {
+      const [guessed, searched] = await Promise.all([
+        this.byHandles(handleGuesses(ref.name)),
+        this.get<{ items?: { id: { channelId?: string } }[] }>("search", {
+          part: "snippet",
+          q: ref.name,
+          type: "channel",
+          maxResults: "8",
+        }).then((r) => (r.items ?? []).flatMap((i) => (i.id.channelId ? [i.id.channelId] : []))),
+      ]);
+      const details = await this.channels({
+        id: searched.filter((id) => !guessed.some((g) => g.channelId === id)),
+      });
+      decision = decideChannel([...guessed, ...details], ref.name);
+      if (decision.kind === "not_found") {
+        // "Lumena Academy" (heard) → "Lumen Academy" (the channel): only as exact handles,
+        // and only kept when the channel is still a near match for what was said.
+        const slips = slipVariants(ref.name).flatMap(handleGuesses).slice(0, 24);
+        const near = decideChannel(
+          [...(await this.byHandles(slips)), ...decision.candidates],
+          ref.name,
+        );
+        if (near.kind !== "not_found") decision = { ...near, corrected: true };
+      }
+    }
+    logger.info("youtube_channel_resolution", {
+      ref: ref.kind,
+      outcome: decision.kind,
+      candidate_count: decision.kind === "resolved" ? 1 : decision.candidates.length,
+      confidence: decision.kind === "resolved" ? decision.confidence : null,
+      corrected: Boolean(decision.corrected),
+      latency_ms: Date.now() - started,
+    });
+    if (decision.kind !== "not_found") {
+      CHANNEL_CACHE.set(cacheKey, { at: Date.now(), decision });
+      if (CHANNEL_CACHE.size > 500) CHANNEL_CACHE.delete(CHANNEL_CACHE.keys().next().value!);
+    }
+    return decision;
+  }
+
+  /**
+   * A channel's videos (ADR-085): its newest uploads (uploads playlist, 1 unit per 50), or a
+   * search inside the channel only. Each confirmed by videos.list — public, processed,
+   * embeddable, and really from this channel (anything else is dropped).
+   */
+  async channelVideos(
+    channel: YouTubeChannel,
+    opts: { query?: string; limit?: number } = {},
+  ): Promise<ChannelVideo[]> {
+    const started = Date.now();
+    const limit = Math.min(100, opts.limit ?? 50);
+    let ids: string[] = [];
+    if (opts.query) {
+      const json = await this.get<{ items?: SearchItem[] }>("search", {
+        part: "snippet",
+        channelId: channel.channelId,
+        q: opts.query,
+        type: "video",
+        maxResults: "25",
+      });
+      ids = (json.items ?? []).flatMap((i) => (i.id.videoId ? [i.id.videoId] : []));
+    } else {
+      let pageToken: string | undefined;
+      while (ids.length < limit) {
+        const page = await this.get<{
+          items?: { contentDetails?: { videoId?: string } }[];
+          nextPageToken?: string;
+        }>("playlistItems", {
+          part: "contentDetails",
+          playlistId: channel.uploadsPlaylistId,
+          maxResults: "50",
+          ...(pageToken ? { pageToken } : {}),
+        });
+        ids.push(
+          ...(page.items ?? []).flatMap((i) =>
+            i.contentDetails?.videoId ? [i.contentDetails.videoId] : [],
+          ),
+        );
+        pageToken = page.nextPageToken;
+        if (!pageToken) break;
+      }
+      ids = ids.slice(0, limit);
+    }
+    const videos: ChannelVideo[] = [];
+    for (let i = 0; i < ids.length; i += 50) {
+      const json = await this.get<{ items?: VideoResource[] }>("videos", {
+        part: "snippet,status,contentDetails",
+        id: ids.slice(i, i + 50).join(","),
+        maxResults: "50",
+      });
+      for (const v of json.items ?? []) {
+        if (v.snippet?.channelId !== channel.channelId) continue; // never another channel's
+        const durationMs = isoDurationMs(v.contentDetails?.duration);
+        const title = decodeEntities(v.snippet.title);
+        const thumb = v.snippet.thumbnails;
+        videos.push({
+          videoId: v.id,
+          title,
+          channelId: v.snippet.channelId,
+          channelTitle: decodeEntities(v.snippet.channelTitle),
+          publishedAt: v.snippet.publishedAt ?? null,
+          durationMs,
+          thumbnailUrl: (thumb?.high ?? thumb?.medium ?? thumb?.default)?.url ?? null,
+          url: `https://www.youtube.com/watch?v=${v.id}`,
+          isLive: (v.snippet.liveBroadcastContent ?? "none") !== "none",
+          isShort: looksLikeShort(title, durationMs),
+          playable:
+            v.status?.embeddable !== false &&
+            (v.status?.privacyStatus ?? "public") === "public" &&
+            (!v.status?.uploadStatus || v.status.uploadStatus === "processed"),
+        });
+      }
+    }
+    logger.info("youtube_video_search", {
+      scope: opts.query ? "channel_search" : "channel_uploads",
+      candidate_count: ids.length,
+      playable: videos.filter((v) => v.playable).length,
+      latency_ms: Date.now() - started,
+    });
+    return videos;
   }
 
   /** The browser holds the player: its state comes with each turn, never from here. */

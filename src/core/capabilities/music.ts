@@ -1,6 +1,7 @@
 import { DUCK_FACTOR, type VoiceDelivery } from "@/core/voice/delivery";
 
 import type { MusicRequest, RankedCandidate } from "./music-match";
+import type { ChannelDecision, ChannelVideo, YouTubeChannel } from "./youtube-channel";
 
 /**
  * Music (ADR-042): a canonical ELISE capability. The model and the UI speak this contract —
@@ -144,6 +145,13 @@ export interface MusicProvider {
    * (ADR-044): best first, only playable candidates.
    */
   resolve?(req: MusicRequest): Promise<{ ranked: RankedCandidate[]; attempts: number }>;
+  /** ADR-085: a channel from a name, @handle, link or id (YouTube). */
+  resolveChannel?(ref: string): Promise<ChannelDecision & { corrected?: boolean }>;
+  /** ADR-085: that channel's newest uploads, or a search inside it only. */
+  channelVideos?(
+    channel: YouTubeChannel,
+    opts?: { query?: string; limit?: number },
+  ): Promise<ChannelVideo[]>;
 }
 
 /** The browser's own view of an embedded player, sent with each turn (never stored). */

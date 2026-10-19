@@ -21,6 +21,12 @@ import {
   youtubeVideoId,
   type MusicCandidate,
 } from "../capabilities/music-match";
+import {
+  latestVideo,
+  randomVideo,
+  type ChannelVideo,
+  type YouTubeChannel,
+} from "../capabilities/youtube-channel";
 import { AppError } from "../errors";
 import type { ProviderKey } from "../providers/types";
 import type { WorkspaceState } from "../workspace/model";
@@ -576,6 +582,206 @@ export const playMusicTool: ToolDefinition = {
   },
 };
 
+// ── YouTube channels (ADR-085) ───────────────────────────────────────────────
+
+const channelInput = z
+  .object({
+    channel: z
+      .string()
+      .trim()
+      .min(2)
+      .max(200)
+      .optional()
+      .describe(
+        'The channel as the user gave it: a name ("Lumen Academy"), @handle, or link. If they SPELLED it ("L-U-M-E-N Academy"), pass the spelling exactly — it overrides what speech heard. Omit for "ese canal" / "otro de ese canal": the channel on screen is used.',
+      ),
+    action: z
+      .enum(["find", "latest", "random", "search"])
+      .describe(
+        'find: "buscá el canal X" (show it). latest: "el último video de X". random: "un video (aleatorio) de X", "otro de ese canal". search: a topic inside the channel ("el de Power Automate en X") with query.',
+      ),
+    query: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .optional()
+      .describe("search: what video, inside the channel."),
+    video: z
+      .boolean()
+      .default(true)
+      .describe("Show the video (default) — false only to just listen."),
+  })
+  .strict();
+
+/** Random picks (tests replace it for determinism). */
+export const channelChoice = { random: Math.random };
+
+const channelInfo = (c: YouTubeChannel) => ({
+  title: c.title,
+  handle: c.handle ? `@${c.handle}` : null,
+  url: c.url,
+});
+
+/** The channel this conversation is on (the Music Surface remembers it). */
+function channelOnScreen(env: ToolRunEnv): { id: string; title: string } | null {
+  const surface = env.ctx.workspace
+    ?.state()
+    ?.surfaces.find((s) => (s.payload as { channel?: unknown } | null)?.channel);
+  const c = (surface?.payload as { channel?: { id: string; title: string } } | undefined)?.channel;
+  return c?.id ? c : null;
+}
+
+const asItem = (v: ChannelVideo): MusicItem => ({
+  ref: `yt:video:${v.videoId}`,
+  kind: "video",
+  title: v.title,
+  subtitle: v.channelTitle,
+  artwork: v.thumbnailUrl,
+  durationMs: v.durationMs,
+  url: v.url,
+  provider: "youtube",
+});
+
+export const channelTool: ToolDefinition = {
+  name: "music.channel",
+  capability: "music",
+  operation: "play",
+  description:
+    'YouTube channels, as channels (never a web search): "buscá el canal Lumen Academy", "el último video de X", "un video aleatorio de X", "otro de ese canal", "el video de Power Automate en X". Resolves the channel (name, @handle, link or spelling) and only ever plays videos from that channel.',
+  input: channelInput,
+  // Channels are YouTube's: whatever the default music provider is.
+  route: () => ({ providerKey: "youtube" }),
+  async describe(raw) {
+    const c = channelInput.parse(raw);
+    return { summary: `YouTube: ${c.channel ?? "canal"} (${c.action})` };
+  },
+  async run(raw, env) {
+    const c = channelInput.parse(raw);
+    const p = provider(env);
+    if (!p.resolveChannel || !p.channelVideos)
+      throw new AppError("CAPABILITY_UNAVAILABLE", "YouTube channels aren't available here.", {
+        recovery: "none",
+      });
+    const remembered = channelOnScreen(env);
+    const ref = c.channel ?? remembered?.id;
+    if (!ref)
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "Which YouTube channel? Ask for its name, @handle or link.",
+        {
+          recovery: "review",
+        },
+      );
+    const decision = await p.resolveChannel(ref);
+    if (decision.kind === "not_found")
+      return {
+        output: {
+          found: false,
+          instructions:
+            "No YouTube channel could be confirmed for that name. Say exactly that («No encontré un canal de YouTube que pueda confirmar con ese nombre») and ask for its @handle, link or spelling. Never search the web to guess it, never play another channel.",
+        },
+      };
+    if (decision.kind === "ambiguous")
+      return {
+        output: {
+          found: false,
+          needsChoice: decision.candidates.map(channelInfo),
+          instructions:
+            "Several channels match. Ask which one in one short line, listing title and @handle; then call music.channel with that @handle.",
+        },
+      };
+    const channel = decision.channel;
+    const remember = {
+      id: channel.channelId,
+      title: channel.title,
+      handle: channel.handle,
+      url: channel.url,
+    };
+    const videos = await p.channelVideos(channel, {
+      ...(c.action === "search" && c.query ? { query: c.query } : {}),
+      limit: c.action === "random" ? 100 : 50,
+    });
+    const pb = await current(p, env);
+    const playing = pb?.item?.ref.startsWith("yt:video:") ? [pb.item.ref.slice(9)] : [];
+
+    if (c.action === "find") {
+      const recent = videos
+        .filter((v) => v.playable && !v.isLive)
+        .slice(0, 8)
+        .map(asItem);
+      return {
+        output: {
+          found: true,
+          channel: channelInfo(channel),
+          ...(decision.corrected ? { heardAs: c.channel, correctedTo: channel.title } : {}),
+          recentVideos: recent.slice(0, 5).map((v) => v.title),
+          instructions:
+            "Say you found the channel (title and @handle); its latest videos are on screen.",
+        },
+        display: {
+          kind: "music",
+          music: { ...musicPayloadOf(p, pb, { results: recent }), channel: remember },
+        },
+      };
+    }
+
+    const chosen =
+      c.action === "latest"
+        ? latestVideo(videos)
+        : c.action === "random"
+          ? randomVideo(videos, channelChoice.random, playing)
+          : (videos.find((v) => v.playable && !v.isLive) ?? null);
+    if (!chosen)
+      return {
+        output: {
+          found: false,
+          channel: channelInfo(channel),
+          instructions:
+            c.action === "search"
+              ? "That channel has no playable video about that. Say so in one line; don't search other channels."
+              : "That channel has no playable public video right now. Say so in one line.",
+        },
+      };
+    const item = asItem(chosen);
+    const command = await p.play({ item, deviceId: null });
+    const cmd =
+      command && command.action === "load"
+        ? { ...command, video: c.video }
+        : (command ?? undefined);
+    const requested: Playback = {
+      provider: p.key,
+      playing: false,
+      state: "play_requested",
+      item,
+      context: null,
+      progressMs: 0,
+      durationMs: item.durationMs ?? 0,
+      device: null,
+      volume: pb?.volume ?? null,
+      at: new Date().toISOString(),
+      ...(embedded(p) ? { video: c.video } : {}),
+    };
+    return {
+      output: {
+        found: true,
+        confirmed: false,
+        playing: false,
+        title: item.title,
+        channel: channelInfo(channel),
+        ...(decision.corrected ? { heardAs: c.channel, correctedTo: channel.title } : {}),
+        publishedAt: chosen.publishedAt,
+        instructions: `${PENDING}${decision.corrected ? " Mention the channel's real name once (you heard it differently)." : ""}`,
+      },
+      display: {
+        kind: "music",
+        music: { ...musicPayloadOf(p, requested), channel: remember },
+        ...(cmd ? { command: cmd } : {}),
+      },
+    };
+  },
+};
+
 // ── Controls ─────────────────────────────────────────────────────────────────
 
 /** The browser refused to start audio until a real tap on the page (no voice can give it). */
@@ -805,6 +1011,7 @@ export const transferMusicTool: ToolDefinition = {
 };
 
 export const MUSIC_TOOLS = [
+  channelTool,
   searchMusicTool,
   getPlaybackTool,
   listDevicesTool,

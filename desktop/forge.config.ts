@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
@@ -14,6 +16,7 @@ import type { ForgeConfig } from "@electron-forge/shared-types";
  * Without them the build is unsigned (development only).
  */
 const env = process.env;
+const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 const macSigning = env.APPLE_SIGNING_IDENTITY
   ? {
       osxSign: { identity: env.APPLE_SIGNING_IDENTITY },
@@ -41,8 +44,11 @@ const config: ForgeConfig = {
   },
   makers: [
     new MakerSquirrel({
-      name: "ELISE",
-      setupExe: "ELISE-Setup.exe",
+      // The package id: the install folder (%LocalAppData%\elise_desktop), the uninstall entry
+      // and the update feed all hang on it — never change it after a release.
+      name: "elise_desktop",
+      title: "ELISE",
+      setupExe: `ELISE-Setup-${version}.exe`,
       ...(env.WINDOWS_CERTIFICATE_FILE
         ? {
             certificateFile: env.WINDOWS_CERTIFICATE_FILE,

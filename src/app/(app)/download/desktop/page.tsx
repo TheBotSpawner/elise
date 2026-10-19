@@ -46,7 +46,10 @@ export default async function DesktopDownloadPage({
   ]);
   const release = main ?? (platform ? null : (all[0] ?? null));
   const fromHome = params.from === "home";
-  const others = DESKTOP_PLATFORMS.filter((p) => p !== release?.platform);
+  // Only builds that exist, never the one this page is already about.
+  const others = DESKTOP_PLATFORMS.filter(
+    (p) => p !== (release?.platform ?? platform) && all.some((r) => r.platform === p),
+  );
 
   return (
     <PageContainer>
@@ -96,20 +99,22 @@ export default async function DesktopDownloadPage({
             ))}
           </ul>
         </section>
-        <p className="text-[13.5px] text-muted">
-          {d.others}{" "}
-          {others.map((p, i) => (
-            <span key={p}>
-              {i > 0 && " · "}
-              <Link
-                href={`/download/desktop?os=${p}${fromHome ? "&from=home" : ""}`}
-                className="text-accent-text hover:underline"
-              >
-                {d.platforms[p]}
-              </Link>
-            </span>
-          ))}
-        </p>
+        {others.length > 0 && (
+          <p className="text-[13.5px] text-muted">
+            {d.others}{" "}
+            {others.map((p, i) => (
+              <span key={p}>
+                {i > 0 && " · "}
+                <Link
+                  href={`/download/desktop?os=${p}${fromHome ? "&from=home" : ""}`}
+                  className="text-accent-text hover:underline"
+                >
+                  {d.platforms[p]}
+                </Link>
+              </span>
+            ))}
+          </p>
+        )}
       </div>
     </PageContainer>
   );
