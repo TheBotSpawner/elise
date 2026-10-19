@@ -33,6 +33,7 @@ export const INVOKE = {
   wakeControl: "elise:wake-control",
   wakePause: "elise:wake-pause",
   wakeReport: "elise:wake-report",
+  voiceOrb: "elise:voice-orb",
   showApp: "elise:show-app",
 } as const;
 

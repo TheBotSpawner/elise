@@ -56,6 +56,7 @@ const bridge: EliseDesktopBridge = {
   onWakeControl: (l) => subscribe(EVENTS.wake, l),
   setWakePaused: (paused) => invoke(INVOKE.wakePause, paused),
   reportWake: (status) => invoke(INVOKE.wakeReport, status),
+  reportVoiceOrb: (state) => invoke(INVOKE.voiceOrb, state),
   showApp: (path) => invoke(INVOKE.showApp, path ?? null),
 };
 

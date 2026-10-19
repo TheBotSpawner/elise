@@ -82,7 +82,7 @@ function QuickVoiceSession({
       title={active ? t.voice.end : t.voice.start}
       aria-pressed={active}
       // Centered on Finance's "+" (52 px, 56 px from md); the Orb draws past its 64 px target.
-      className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music)-6px)] z-30 grid size-16 place-items-center rounded-full opacity-90 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none aria-pressed:opacity-100 md:right-8 md:bottom-7"
+      className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music)-6px)] z-30 grid size-16 place-items-center rounded-full opacity-90 transition-[opacity,transform,background-color,box-shadow] duration-200 ease-out hover:scale-105 hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none active:scale-90 aria-pressed:scale-110 aria-pressed:bg-[var(--accent-soft)] aria-pressed:opacity-100 aria-pressed:shadow-[0_0_28px_2px_var(--accent-line)] md:right-8 md:bottom-7"
     >
       <Orb state={state} size={88} className="pointer-events-none -m-3" levelSource={level} />
     </button>

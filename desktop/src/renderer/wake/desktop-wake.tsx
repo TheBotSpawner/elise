@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
+import { voicePhaseOrb } from "@/components/elise/orb/orb-states";
 import type { WakeControl, WakeReport } from "@/core/platform/platform";
 import type { VoicePhase } from "@/core/voice/session";
 import { matchWake } from "@/core/voice/wake";
@@ -213,6 +214,14 @@ export function DesktopWake({ children }: { children: ReactNode }) {
 
     const offPhase = onVoicePhase((p) => {
       phase = p;
+      // The corner Orb follows the conversation (states only, never words).
+      const orb = voicePhaseOrb(p)[0];
+      if (orb)
+        void window.eliseDesktop
+          ?.reportVoiceOrb?.(
+            orb === "listening" || orb === "user_speaking" || orb === "speaking" ? orb : "thinking",
+          )
+          .catch(() => undefined);
       // The session took over (or ended): the hand-off is done.
       if (handingOff && !deviceMayListen(p)) {
         handingOff = false;

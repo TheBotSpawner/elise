@@ -113,6 +113,10 @@ The set is synthetic: it is a proxy, and real voices must still be tested by han
      Orb shows in the bottom-right corner of the screen. It never shows while she only waits
      for "ELISE".
      - It is its own tiny window: it never takes focus or clicks.
+     - It pops in when the conversation starts and follows it: listening, the person speaking,
+       thinking, answering. The renderer reports only that state (`reportVoiceOrb`), never
+       words.
+     - Its size is 7.5 % of the screen's height (80–140 px), with the margins scaled to match.
      - Its page (`renderer/orb.html`) draws the real Orb renderer, and nothing else: no
        preload, no bridge.
      - It hides while ELISE's own window is in use.

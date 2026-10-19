@@ -120,6 +120,10 @@ export interface WakeControl {
 }
 
 /** What the listener is doing (renderer → main), for the tray and settings — never audio. */
+/** The corner Orb's states during a background voice conversation (ADR-095). */
+export const VOICE_ORB_STATES = ["listening", "user_speaking", "thinking", "speaking"] as const;
+export type VoiceOrbState = (typeof VOICE_ORB_STATES)[number];
+
 export type WakeReport =
   | "off"
   | "starting"
@@ -222,6 +226,8 @@ export interface EliseDesktopBridge {
   onWakeControl(listener: (c: WakeControl) => void): () => void;
   setWakePaused(paused: boolean): Promise<WakeControl>;
   reportWake(status: WakeReport): Promise<void>;
+  /** What a background conversation is doing, for the corner Orb (ADR-095). Never words. */
+  reportVoiceOrb?(state: VoiceOrbState): Promise<void>;
   /** Only when the person asked to see ELISE ("abrí ELISE"): never on a wake word alone. */
   showApp(path?: string): Promise<void>;
 }
