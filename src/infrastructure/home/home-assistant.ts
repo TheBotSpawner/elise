@@ -1,4 +1,10 @@
-import type { HomeAction, HomeCapability, HomeDeviceType, HomeState } from "@/core/home/model";
+import type {
+  HomeAction,
+  HomeApp,
+  HomeCapability,
+  HomeDeviceType,
+  HomeState,
+} from "@/core/home/model";
 
 /**
  * Home Assistant as ELISE Home's first provider (ADR-079): pure translation, no I/O, shared by
@@ -26,6 +32,8 @@ export interface HaEntityEntry {
   disabled_by?: string | null;
   name?: string | null;
   original_name?: string | null;
+  /** The integration that provides it ("androidtv_remote"). */
+  platform?: string | null;
 }
 
 /** Device and area names, from the documented template API. */
@@ -104,6 +112,7 @@ const MP = {
   VOLUME_SET: 4,
   TURN_ON: 128,
   TURN_OFF: 256,
+  PLAY_MEDIA: 512,
   SELECT_SOURCE: 2048,
   PLAY: 16384,
 };
@@ -261,9 +270,15 @@ export function normalizeRegistry(
     const primary =
       CONTROL_PRIORITY.map((d) => members.find((m) => domainOf(m.entity_id) === d)).find(Boolean) ??
       members[0]!;
-    const kind = capabilitiesOf(primary)!;
-    const info = providerDeviceId ? deviceName.get(providerDeviceId) : undefined;
     const entry = entryOf.get(primary.entity_id);
+    const kind = capabilitiesOf(primary)!;
+    // Android TVs open apps by link (play_media "app"); other players take media there instead.
+    if (
+      entry?.platform === "androidtv_remote" &&
+      (num(primary.attributes.supported_features) ?? 0) & MP.PLAY_MEDIA
+    )
+      kind.capabilities.push({ type: "app" });
+    const info = providerDeviceId ? deviceName.get(providerDeviceId) : undefined;
     const name =
       info?.name ??
       entry?.name ??
@@ -315,6 +330,15 @@ export function namesTemplate(deviceIds: readonly string[]): string {
   const ids = JSON.stringify(deviceIds.filter((d) => /^[a-zA-Z0-9_-]+$/.test(d)));
   return `{% set ns = namespace(d=[], a=[]) %}{% for id in ${ids} %}{% set ns.d = ns.d + [{"id": id, "name": device_attr(id, "name_by_user") or device_attr(id, "name"), "area": area_id(id)}] %}{% endfor %}{% for a in areas() %}{% set ns.a = ns.a + [{"id": a, "name": area_name(a)}] %}{% endfor %}{{ {"devices": ns.d, "areas": ns.a} | tojson }}`;
 }
+
+/** The app links Android TV opens (Home Assistant's androidtv_remote documents these). */
+const APP_LINKS: Record<HomeApp, string> = {
+  youtube: "https://www.youtube.com",
+  netflix: "https://www.netflix.com/title",
+  prime_video: "https://app.primevideo.com",
+  disney_plus: "https://www.disneyplus.com",
+  max: "https://play.max.com",
+};
 
 export interface HaServiceCall {
   domain: string;
@@ -386,6 +410,11 @@ export function toServiceCalls(entityId: string, actions: readonly HomeAction[])
         break;
       case "source":
         calls.push(call("select_source", { source: a.source }));
+        break;
+      case "app":
+        calls.push(
+          call("play_media", { media_content_type: "app", media_content_id: APP_LINKS[a.app] }),
+        );
         break;
       default:
         // Brightness, color and white tone only exist on lights (validated before).

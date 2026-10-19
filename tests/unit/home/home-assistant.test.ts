@@ -140,3 +140,47 @@ describe("ELISE actions → Home Assistant actions", () => {
     ]);
   });
 });
+
+/** "Abrí YouTube en la tele" (Android TV): an app link, or the TV's own source when it lists it. */
+describe("opening apps on a TV", () => {
+  const tv = {
+    entity_id: "media_player.tv_dormitorio",
+    state: "on",
+    attributes: { friendly_name: "TV del dormitorio", supported_features: 128 | 256 | 4 | 512 },
+  };
+  const entry = { entity_id: tv.entity_id, device_id: "d1", platform: "androidtv_remote" };
+  const names = { devices: [{ id: "d1", name: "TV del dormitorio", area: null }], areas: [] };
+
+  it("an Android TV can open apps; another player with the same features can't", () => {
+    const [android] = normalizeRegistry([tv], [entry], names).devices;
+    expect(android!.capabilities).toContainEqual({ type: "app" });
+    const [cast] = normalizeRegistry([tv], [{ ...entry, platform: "cast" }], names).devices;
+    expect(cast!.capabilities).not.toContainEqual({ type: "app" });
+  });
+
+  it("validates the app by the words people use and opens it by link", () => {
+    const [d] = normalizeRegistry([tv], [entry], names).devices;
+    const device = { ...d!, id: "x", aliases: [], roomId: null, favorite: false } as HomeDevice;
+    const v = validateAction(device, { type: "app", value: "YouTube" });
+    expect(v).toEqual({ ok: true, action: { type: "app", app: "youtube" } });
+    expect(validateAction(device, { type: "app", value: "Kodi" })).toMatchObject({ ok: false });
+    expect(toServiceCalls(tv.entity_id, [{ type: "app", app: "youtube" }])).toEqual([
+      {
+        domain: "media_player",
+        service: "play_media",
+        target: { entity_id: tv.entity_id },
+        service_data: { media_content_type: "app", media_content_id: "https://www.youtube.com" },
+      },
+    ]);
+  });
+
+  it("a TV that lists the app as a source switches to it instead", () => {
+    const device = {
+      capabilities: [{ type: "source", sources: ["HDMI 1", "Netflix"] }],
+    } as unknown as HomeDevice;
+    expect(validateAction(device, { type: "app", value: "netflix" })).toEqual({
+      ok: true,
+      action: { type: "source", source: "Netflix" },
+    });
+  });
+});

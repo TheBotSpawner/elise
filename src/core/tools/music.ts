@@ -319,7 +319,9 @@ const playInput = z
       .min(1)
       .max(120)
       .optional()
-      .describe('Where to play ("el parlante del living"), only if the user said it.'),
+      .describe(
+        'A music provider\'s device to play on (Spotify: "el parlante del living"), only if the user said it. Never a TV of the home: that is home.control.',
+      ),
     provider: providerInput,
   })
   .strict()
@@ -515,7 +517,12 @@ export const playMusicTool: ToolDefinition = {
 
     let deviceId: string | null = null;
     if (q.device) {
-      need(p, "devices", "Choosing a device");
+      // YouTube plays on ELISE's own screen: a TV of the home is Home's (it opens the app there).
+      if (!p.features.has("devices"))
+        throw new AppError(
+          "VALIDATION_ERROR",
+          `${p.key} plays on ELISE's screen and can't choose a device. If "${q.device}" is a TV of the user's home, use home.control on it with action app (e.g. "youtube").`,
+        );
       const found = pickDevice(await p.devices!(), q.device);
       if (found.kind !== "found")
         throw new AppError(

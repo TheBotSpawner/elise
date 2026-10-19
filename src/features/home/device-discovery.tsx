@@ -1,7 +1,19 @@
 "use client";
 
-import { Check, RotateCw, Wifi } from "lucide-react";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  Check,
+  Eye,
+  EyeOff,
+  Lightbulb,
+  Plug,
+  RotateCw,
+  Router,
+  Speaker,
+  Tv,
+  Wifi,
+  type LucideIcon,
+} from "lucide-react";
+import { createElement, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
@@ -45,6 +57,23 @@ type Status =
   | { kind: "gone" }
   | { kind: "message"; text: string }
   | { kind: "form"; step: Extract<DiscoveryStep, { kind: "form" | "confirm" }> };
+
+/** What a found device probably is, from its integration ("cast" → a TV): a hint, never a claim. */
+const KIND_ICONS: [RegExp, LucideIcon][] = [
+  [/cast|tv|roku|webos|bravia|vizio|androidtv|apple_tv|samsung|philips_js|dlna_dmr/, Tv],
+  [/sonos|speaker|denon|yamaha|heos|bose|linkplay|soundtouch/, Speaker],
+  [/hue|lifx|yeelight|wiz|nanoleaf|tradfri|govee|light/, Lightbulb],
+  [/shelly|tplink|kasa|tuya|meross|plug|switch|wemo/, Plug],
+  [/huawei|router|upnp|igd|fritz|netgear|asus|unifi|mikrotik|tplink_omada/, Router],
+];
+const kindIcon = (kind: string) => KIND_ICONS.find(([re]) => re.test(kind))?.[1] ?? Wifi;
+
+/** "pin" → "PIN", "pairing_code" → "Código de vinculación"; unknown names get capitalized. */
+function fieldLabel(name: string, known: Record<string, string>) {
+  if (known[name]) return known[name];
+  const words = name.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 /** Re-asked while the screen is open: devices keep being found for a while. */
 const POLL_MS = 10_000;
@@ -169,10 +198,17 @@ export function DeviceDiscovery({
             return (
               <li
                 key={device.flowId}
-                className="flex flex-col gap-3 rounded-2xl border border-border px-4 py-3"
+                className={cn(
+                  "flex flex-col gap-3 rounded-2xl border bg-surface px-3.5 py-3 transition-colors",
+                  s.kind === "form"
+                    ? "border-accent-line"
+                    : s.kind === "added"
+                      ? "border-success/40"
+                      : "border-border",
+                )}
               >
                 <div className="flex items-center gap-3">
-                  <Wifi className="size-4 shrink-0 text-muted" aria-hidden />
+                  <DeviceKindIcon kind={device.kind} added={s.kind === "added"} />
                   <span className="min-w-0 flex-1 truncate text-[14.5px]">{device.name}</span>
                   {s.kind === "added" ? (
                     <span className="flex items-center gap-1 text-[13px] text-success">
@@ -256,6 +292,7 @@ function StepForm({
       {fields.map((f) => {
         const id = `discovery-${f.name}`;
         const error = errors[f.name];
+        const label = fieldLabel(f.name, d.fields);
         return (
           <div key={f.name} className="flex flex-col gap-1.5">
             {f.type === "boolean" ? (
@@ -265,11 +302,11 @@ function StepForm({
                   checked={values[f.name] === true}
                   onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.checked }))}
                 />
-                {f.name.replace(/_/g, " ")}
+                {label}
               </label>
             ) : (
               <>
-                <Label htmlFor={id}>{f.name.replace(/_/g, " ")}</Label>
+                <Label htmlFor={id}>{label}</Label>
                 {f.type === "select" ? (
                   <Select
                     id={id}
@@ -285,13 +322,18 @@ function StepForm({
                       </option>
                     ))}
                   </Select>
+                ) : f.type === "password" ? (
+                  <SecretInput
+                    id={id}
+                    required={f.required}
+                    value={String(values[f.name] ?? "")}
+                    onChange={(value) => setValues((v) => ({ ...v, [f.name]: value }))}
+                  />
                 ) : (
                   <Input
                     id={id}
                     required={f.required}
-                    type={
-                      f.type === "password" ? "password" : f.type === "number" ? "number" : "text"
-                    }
+                    type={f.type === "number" ? "number" : "text"}
                     autoComplete="off"
                     value={String(values[f.name] ?? "")}
                     onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
@@ -322,5 +364,61 @@ function StepForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+function DeviceKindIcon({ kind, added }: { kind: string; added: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "grid size-9 shrink-0 place-items-center rounded-xl",
+        added ? "bg-success/15 text-success" : "bg-surface-2 text-muted",
+      )}
+    >
+      {createElement(kindIcon(kind), { className: "size-[18px]", strokeWidth: 1.7 })}
+    </span>
+  );
+}
+
+/** A pairing code or password, hidden by default; the eye shows what was typed. */
+function SecretInput({
+  id,
+  required,
+  value,
+  onChange,
+}: {
+  id: string;
+  required: boolean;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { t } = useI18n();
+  const d = t.smartHome.setup.discover;
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        data-autofocus
+        required={required}
+        type={shown ? "text" : "password"}
+        autoComplete="off"
+        spellCheck={false}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-11 pr-11 font-mono tracking-wider"
+      />
+      <button
+        type="button"
+        aria-label={shown ? d.hideValue : d.showValue}
+        aria-pressed={shown}
+        aria-controls={id}
+        onClick={() => setShown((v) => !v)}
+        className="absolute top-1/2 right-1 grid size-9 -translate-y-1/2 place-items-center rounded-full text-faint transition-colors hover:bg-active hover:text-fg"
+      >
+        {shown ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+      </button>
+    </div>
   );
 }

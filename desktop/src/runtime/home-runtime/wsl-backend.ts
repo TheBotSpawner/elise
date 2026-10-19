@@ -378,8 +378,9 @@ export class WslContainerBackend implements HomeRuntimeBackend {
 
   async healthy() {
     try {
-      const res = await fetch(`${ENGINE_URL}/api/`, { signal: AbortSignal.timeout(5000) });
-      return res.status === 401 || res.ok; // up (and asking for auth)
+      // A public page: probing /api/ without a token logged a failed login every 30 s.
+      const res = await fetch(`${ENGINE_URL}/manifest.json`, { signal: AbortSignal.timeout(5000) });
+      return res.ok;
     } catch {
       return false;
     }

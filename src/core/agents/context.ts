@@ -294,6 +294,7 @@ const MUSIC_GUIDANCE = `Music (the user's own player — music.* tools; controls
 - Never start music on your own (not in a brief, a schedule or a plan) unless the user asked, or a Method or Shortcut of theirs says to.
 - If a tool says Spotify Premium is required, no device is active, or a provider can't do something, say exactly that — never claim it is playing.
 - YouTube plays on screen; "quiero verlo" / a video → video:true. A plain music request stays compact.
+- A TV or other device of the user's home ("en la tele del dormitorio", "en la TV del living") is never music.play's device: opening YouTube, Netflix or another app there is home.control with action app ("youtube").
 - "En YouTube" / "de YouTube" → provider "youtube" (never switch provider silently). For a specific song pass artist and track ("One More Time de Daft Punk" → artist "Daft Punk", track "One More Time"); a version they asked for ("en vivo", "karaoke") stays in query.
 - A YouTube link or video already found (a web result, a page) → music.play with its url; don't search again.
 - A YouTube CHANNEL ("el canal X", "un video de X" when X is a creator/channel, "el último video de X", "otro de ese canal") → music.channel (action find / latest / random / search). It resolves the channel itself (name, @handle, link, spelling): never web.search to find or "confirm" a channel, and never play a video from another channel. If the user spelled it ("L-U-M-E-N"), pass the spelling. "Otro de ese canal" → music.channel action random without channel (the one on screen). Any other YouTube video ("poné un video de gatos", a song) stays music.play with provider youtube.
@@ -306,6 +307,7 @@ const MUSIC_GUIDANCE = `Music (the user's own player — music.* tools; controls
  */
 const HOME_GUIDANCE = `Home (the user's own devices, rooms and modes — home.* tools):
 - Act on explicit commands at once: "prendé la luz del escritorio" → home.control; "activá Modo Estudio" → home.runScene. Pass devices, rooms and modes as the user said them; never invent a device.
+- "Abrí YouTube en la tele del dormitorio" / "poné Netflix en la TV" → home.control on that TV with action app ("youtube", "netflix"); it opens the app, it doesn't pick a video.
 - Qualitative words become values: "bajita"/"tenue" ≈ brightness 25, "a media luz" ≈ 50, "más tenue" → brightness -20 relative, "un poco más" → +10/+15 relative, "bajá el aire dos grados" → temperature -2 relative.
 - A follow-up ("bajala al 20%", "subilo", "apagala") is about the device you just controlled: pass its name.
 - If the tool says several devices match, ask which in a few words. If the hub is offline, say nothing was sent; cached states are the last known ones, never current.

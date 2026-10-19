@@ -231,7 +231,7 @@ export const homeControlTool: ToolDefinition = {
   capability: "home",
   operation: "control",
   description:
-    '"Prendé la luz del escritorio", "poné el aire a 24", "bajá la luz del living al 30%", "la luz en verde y tenue", "apagá todo el living", "subí el volumen de la tele": change the user\'s own devices — one device, a room, a group or the whole home (broad commands touch lights, plugs, fans, media and humidifiers only; climate only if named). ELISE checks every value against the device.',
+    '"Prendé la luz del escritorio", "poné el aire a 24", "bajá la luz del living al 30%", "la luz en verde y tenue", "apagá todo el living", "subí el volumen de la tele", "abrí YouTube en la tele del dormitorio" (action app): change the user\'s own devices — one device, a room, a group or the whole home (broad commands touch lights, plugs, fans, media and humidifiers only; climate only if named). ELISE checks every value against the device.',
   input: controlInput,
   async describe(raw) {
     const q = controlInput.parse(raw);

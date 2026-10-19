@@ -48,6 +48,8 @@ export const homeCapabilitySchema = z.discriminatedUnion("type", [
   /** Play / pause / next / previous. */
   z.object({ type: z.literal("media") }),
   z.object({ type: z.literal("source"), sources: z.array(z.string().max(80)).max(40) }),
+  /** Opens one of HOME_APPS on a TV ("abrí YouTube en la tele"). */
+  z.object({ type: z.literal("app") }),
 ]);
 export type HomeCapability = z.infer<typeof homeCapabilitySchema>;
 export type HomeCapabilityType = HomeCapability["type"];
@@ -137,6 +139,7 @@ export const HOME_ACTION_TYPES = [
   "volume",
   "media",
   "source",
+  "app",
 ] as const;
 export type HomeActionType = (typeof HOME_ACTION_TYPES)[number];
 
@@ -147,7 +150,7 @@ export const homeActionInputSchema = z
      * power: true/false · brightness, fan_speed, volume: 0–100 · temperature: °C · humidity: % ·
      * color: a name ("verde", "warm white") or #RRGGBB · color_temp: kelvin, or "warm" / "neutral"
      * / "cool" · hvac_mode, fan_mode, source: one of the device's own · media: play / pause /
-     * next / previous.
+     * next / previous · app: an app to open on a TV ("youtube", "netflix").
      */
     value: z.union([z.boolean(), z.number(), z.string().trim().min(1).max(40)]),
     /** true: value is a change ("+10", "-2"), applied to the current state and clamped. */
@@ -169,7 +172,22 @@ export type HomeAction =
   | { type: "humidity"; value: number }
   | { type: "volume"; value: number }
   | { type: "media"; command: "play" | "pause" | "next" | "previous" }
-  | { type: "source"; source: string };
+  | { type: "source"; source: string }
+  | { type: "app"; app: HomeApp };
+
+/** Apps ELISE can open on a TV, by the words people use for them. */
+export const HOME_APPS = {
+  youtube: ["youtube", "yt"],
+  netflix: ["netflix"],
+  prime_video: ["prime video", "prime", "amazon prime", "amazon"],
+  disney_plus: ["disney", "disney plus", "disney+"],
+  max: ["max", "hbo", "hbo max"],
+} as const;
+export type HomeApp = keyof typeof HOME_APPS;
+const appOf = (said: string) =>
+  (Object.keys(HOME_APPS) as HomeApp[]).find((k) =>
+    HOME_APPS[k].some((w) => fold(said) === w || fold(said) === `la app de ${w}`),
+  );
 
 export const homeActionSchema: z.ZodType<HomeAction> = z.discriminatedUnion("type", [
   z.object({ type: z.literal("power"), on: z.boolean() }),
@@ -191,6 +209,10 @@ export const homeActionSchema: z.ZodType<HomeAction> = z.discriminatedUnion("typ
   z.object({ type: z.literal("volume"), value: z.number().min(0).max(100) }),
   z.object({ type: z.literal("media"), command: z.enum(["play", "pause", "next", "previous"]) }),
   z.object({ type: z.literal("source"), source: z.string().min(1).max(80) }),
+  z.object({
+    type: z.literal("app"),
+    app: z.enum(Object.keys(HOME_APPS) as [HomeApp, ...HomeApp[]]),
+  }),
 ]);
 
 export type HomeValidation =
@@ -399,6 +421,16 @@ export function validateAction(
       if (!source) return bad(`${device.name} sources: ${cap.sources.slice(0, 12).join(", ")}`);
       return { ok: true, action: { type: "source", source } };
     }
+    case "app": {
+      const said = String(input.value);
+      // A TV that lists the app among its own sources opens it that way.
+      const listed = has(device, "source")?.sources.find((x) => fold(x) === fold(said));
+      if (listed) return { ok: true, action: { type: "source", source: listed } };
+      if (!has(device, "app")) return unsupported(device, "opening apps");
+      const app = appOf(said);
+      if (!app) return bad(`apps ELISE can open: ${Object.keys(HOME_APPS).join(", ")}`);
+      return { ok: true, action: { type: "app", app } };
+    }
   }
 }
 
@@ -524,6 +556,8 @@ export function applyAction(state: HomeState, a: HomeAction): HomeState {
         : state;
     case "source":
       return { ...state, source: a.source };
+    case "app":
+      return { ...state, on: true };
   }
 }
 

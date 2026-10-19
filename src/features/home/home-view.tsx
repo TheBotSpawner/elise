@@ -1,6 +1,19 @@
 "use client";
 
-import { Minus, Pencil, Play, Plus, Search, Star, X } from "lucide-react";
+import {
+  DoorOpen,
+  HouseWifi,
+  Minus,
+  Pencil,
+  Play,
+  Plus,
+  Radar,
+  Search,
+  Sparkles,
+  Star,
+  Wifi,
+  X,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -9,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Select } from "@/components/ui/input";
+import { OverflowMenu, type MenuAction } from "@/components/ui/sheet-menu";
 import { Switch } from "@/components/ui/switch";
 import { relativeWhen } from "@/core/history/links";
 import {
@@ -148,7 +162,7 @@ export function HomeView({
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
 function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: string }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const h = t.smartHome;
   const command = useCommand();
   const [room, setRoom] = useState<string | null>(null);
@@ -156,8 +170,9 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<HomeDevice | null>(null);
   const [editing, setEditing] = useState<HomeScene | "new" | null>(null);
-  const [adding, setAdding] = useState<"menu" | "room" | "devices" | null>(null);
+  const [adding, setAdding] = useState<"room" | "devices" | null>(null);
   const hub = snapshot.hub!;
+  const hasDevices = snapshot.devices.length > 0;
   const types = [...new Set(snapshot.devices.map((d) => d.type))];
   const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
   const shown = useMemo(
@@ -170,82 +185,104 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
     [snapshot.devices, room, type, q],
   );
   const roomName = (id: string | null) => snapshot.rooms.find((r) => r.id === id)?.name ?? null;
+  const addItems: MenuAction[] = [
+    { label: h.setup.discover.scan, icon: Wifi, onClick: () => setAdding("devices") },
+    { label: h.add.room, icon: DoorOpen, onClick: () => setAdding("room") },
+    { label: h.add.mode, icon: Sparkles, onClick: () => setEditing("new"), disabled: !hasDevices },
+  ];
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="flex items-center gap-2 text-[13.5px]">
-          <span
-            aria-hidden
-            className={cn(
-              "size-2 rounded-full",
-              hub.status === "online"
-                ? "bg-success"
-                : hub.status === "degraded"
-                  ? "bg-approval"
-                  : "bg-danger",
-            )}
-          />
-          {h.hub[hub.status]}
-        </span>
-        <span className="text-[12.5px] text-faint">
-          {[
-            hub.lastSyncAt
-              ? h.hub.lastSync(relativeWhen(hub.lastSyncAt, new Date(), locale, timezone))
-              : null,
-            h.hub.devices(snapshot.devices.length),
-            snapshot.rooms.length ? h.hub.rooms(snapshot.rooms.length) : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
-        <Button
-          size="sm"
-          variant="secondary"
-          className="ml-auto"
-          onClick={() => setAdding("menu")}
-          aria-label={h.add.label}
-        >
-          <Plus />
-          <span className="max-sm:sr-only">{h.add.label}</span>
-        </Button>
-      </div>
+    <div className="flex flex-col gap-8">
+      <HubCard snapshot={snapshot} timezone={timezone} addItems={addItems} />
 
-      <section className="flex flex-col gap-2">
-        <h2 className="type-label text-faint">{h.modes}</h2>
-        <div className="flex flex-wrap gap-2">
-          {snapshot.scenes.map((s) => (
-            <span key={s.id} className={cn(CARD, "flex items-center rounded-full")}>
-              <button
-                type="button"
-                disabled={command.pending}
-                onClick={() => command.runScene(s)}
-                aria-label={h.scene.run(s.name)}
-                className="flex min-h-10 items-center gap-1.5 rounded-l-full pr-1.5 pl-3.5 text-[13.5px] hover:bg-active"
-              >
-                <Play className="size-3.5 text-accent-text" aria-hidden />
-                {s.name}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditing(s)}
-                aria-label={`${h.scene.edit}: ${s.name}`}
-                className="grid size-10 place-items-center rounded-r-full text-faint hover:bg-active hover:text-fg"
-              >
-                <Pencil className="size-3.5" aria-hidden />
-              </button>
-            </span>
-          ))}
-          <Button size="sm" variant="ghost" onClick={() => setEditing("new")}>
-            <Plus />
-            {h.scene.new}
-          </Button>
+      <section aria-labelledby="home-modes" className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <h2 id="home-modes" className="mr-auto type-label text-faint">
+            {h.modes}
+          </h2>
+          {hasDevices && snapshot.scenes.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => setEditing("new")}>
+              <Plus />
+              {h.scene.new}
+            </Button>
+          )}
         </div>
-        {!snapshot.scenes.length && <p className="text-[12.5px] text-faint">{h.noModes}</p>}
+        {snapshot.scenes.length ? (
+          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+            {snapshot.scenes.map((s) => (
+              <li key={s.id}>
+                <ModeTile
+                  scene={s}
+                  disabled={command.pending}
+                  onRun={() => command.runScene(s)}
+                  onEdit={() => setEditing(s)}
+                />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <button
+            type="button"
+            disabled={!hasDevices}
+            onClick={() => setEditing("new")}
+            className="group flex items-center gap-3.5 rounded-2xl border border-dashed border-border-strong px-4 py-4 text-left transition-colors enabled:hover:border-accent-line enabled:hover:bg-accent-soft/40 disabled:cursor-default"
+          >
+            <span
+              aria-hidden
+              className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-2 text-muted transition-colors group-enabled:group-hover:text-accent-text"
+            >
+              <Sparkles className="size-[18px]" strokeWidth={1.7} />
+            </span>
+            <span className="min-w-0 flex-1">
+              {hasDevices && <span className="block text-[14.5px]">{h.scene.new}</span>}
+              <span className="block text-[13px] text-muted">
+                {hasDevices ? h.noModes : h.modesNeedDevices}
+              </span>
+            </span>
+            {hasDevices && <Plus className="size-4 shrink-0 text-faint" aria-hidden />}
+          </button>
+        )}
       </section>
 
-      {snapshot.rooms.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h2 className="type-label text-faint">{h.rooms}</h2>
+      <section aria-labelledby="home-devices" className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 id="home-devices" className="type-label text-faint max-sm:w-full sm:mr-auto">
+            {h.devices}
+          </h2>
+          {hasDevices && (
+            <>
+              <label className="relative flex-1 sm:max-w-64">
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint"
+                  aria-hidden
+                />
+                <Input
+                  type="search"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder={h.search}
+                  aria-label={h.search}
+                  className="h-10 rounded-full pl-9"
+                />
+              </label>
+              {types.length > 1 && (
+                <Select
+                  aria-label={h.allTypes}
+                  value={type}
+                  onChange={(e) => setType(e.target.value as HomeDeviceType | "")}
+                  className="h-10 w-auto rounded-full"
+                >
+                  <option value="">{h.allTypes}</option>
+                  {types.map((x) => (
+                    <option key={x} value={x}>
+                      {h.types[x]}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </>
+          )}
+        </div>
+        {snapshot.rooms.length > 0 && hasDevices && (
           <div
             role="radiogroup"
             aria-label={h.rooms}
@@ -259,69 +296,33 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
                 aria-checked={room === r.id}
                 onClick={() => setRoom(r.id)}
                 className={cn(
-                  "min-h-10 shrink-0 rounded-full border px-3.5 text-[13.5px] transition-colors",
+                  "h-10 shrink-0 rounded-full border px-3.5 text-[14px] transition-colors md:h-8 md:px-3 md:text-[13px]",
                   room === r.id
-                    ? "border-accent bg-accent-soft text-accent-text"
-                    : "border-border text-muted hover:text-fg",
+                    ? "border-accent-line bg-accent-soft text-accent-text"
+                    : "border-border text-muted hover:border-border-strong hover:text-fg",
                 )}
               >
                 {r.name}
               </button>
             ))}
           </div>
-        </section>
-      )}
-
-      <section className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="mr-auto type-label text-faint">{h.devices}</h2>
-          <label className="relative flex-1 sm:max-w-64">
-            <Search
-              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint"
-              aria-hidden
-            />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={h.search}
-              aria-label={h.search}
-              className="h-10 pl-9"
-            />
-          </label>
-          {types.length > 1 && (
-            <Select
-              aria-label={h.allTypes}
-              value={type}
-              onChange={(e) => setType(e.target.value as HomeDeviceType | "")}
-              className="h-10 w-auto"
-            >
-              <option value="">{h.allTypes}</option>
-              {types.map((x) => (
-                <option key={x} value={x}>
-                  {h.types[x]}
-                </option>
-              ))}
-            </Select>
-          )}
-        </div>
-        {shown.length ? (
-          <ul
-            className={cn(
-              CARD,
-              "divide-y divide-border overflow-hidden md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-border",
-            )}
-          >
+        )}
+        {!hasDevices ? (
+          <EmptyDevices onScan={() => setAdding("devices")} />
+        ) : shown.length ? (
+          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {shown.map((d) => (
-              <DeviceRow
-                key={d.id}
-                device={d}
-                room={room ? null : roomName(d.roomId)}
-                stale={hub.status === "offline"}
-                timezone={timezone}
-                onOpen={() => setOpen(d)}
-                onToggle={(on) => command.control(d, [{ type: "power", value: on }])}
-                pending={command.pending}
-              />
+              <li key={d.id}>
+                <DeviceTile
+                  device={d}
+                  room={room ? null : roomName(d.roomId)}
+                  stale={hub.status === "offline"}
+                  timezone={timezone}
+                  onOpen={() => setOpen(d)}
+                  onToggle={(on) => command.control(d, [{ type: "power", value: on }])}
+                  pending={command.pending}
+                />
+              </li>
             ))}
           </ul>
         ) : (
@@ -344,30 +345,11 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
           onClose={() => setEditing(null)}
         />
       )}
-      <Dialog open={adding === "menu"} onClose={() => setAdding(null)} title={h.add.label}>
-        <div className="flex flex-col gap-2">
-          <Button variant="secondary" onClick={() => setAdding("devices")}>
-            {t.smartHome.setup.discover.scan}
-          </Button>
-          <Button variant="secondary" onClick={() => setAdding("room")}>
-            {h.add.room}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setAdding(null);
-              setEditing("new");
-            }}
-          >
-            {h.add.mode}
-          </Button>
-        </div>
-      </Dialog>
       {adding === "room" && <NewRoom onClose={() => setAdding(null)} />}
       <Dialog
         open={adding === "devices"}
         onClose={() => setAdding(null)}
-        title={t.smartHome.setup.discover.title}
+        title={h.setup.discover.title}
       >
         <DeviceDiscovery onDone={() => setAdding(null)} addedCount={snapshot.devices.length} />
       </Dialog>
@@ -375,7 +357,161 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
   );
 }
 
-function DeviceRow({
+/** The hub at a glance: is ELISE Home reachable, when it last synced, what's on. */
+function HubCard({
+  snapshot,
+  timezone,
+  addItems,
+}: {
+  snapshot: HomeSnapshot;
+  timezone: string;
+  addItems: MenuAction[];
+}) {
+  const { t, locale } = useI18n();
+  const h = t.smartHome;
+  const hub = snapshot.hub!;
+  const online = hub.status === "online";
+  const dot = online ? "bg-success" : hub.status === "degraded" ? "bg-approval" : "bg-danger";
+  const stats = [
+    { label: h.devices, value: snapshot.devices.length },
+    { label: h.onNow, value: snapshot.devices.filter((d) => d.available && d.state.on).length },
+    { label: h.rooms, value: snapshot.rooms.length },
+  ];
+  return (
+    <section
+      aria-label={h.hub[hub.status]}
+      className="relative rounded-3xl border border-border bg-surface p-4 md:p-5"
+    >
+      {online && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl"
+        >
+          <div className="absolute -top-28 -right-20 size-72 rounded-full bg-accent/10 blur-3xl" />
+        </div>
+      )}
+      <div className="relative flex items-center gap-3.5">
+        <span
+          aria-hidden
+          className={cn(
+            "relative grid size-11 shrink-0 place-items-center rounded-2xl",
+            online ? "bg-accent-soft text-accent-text" : "bg-surface-2 text-muted",
+          )}
+        >
+          <HouseWifi className="size-5" strokeWidth={1.7} />
+          <span className="absolute -right-0.5 -bottom-0.5 grid size-3.5 place-items-center rounded-full bg-surface">
+            {online && (
+              <span className="absolute size-2 rounded-full bg-success opacity-60 motion-safe:animate-ping" />
+            )}
+            <span className={cn("relative size-2 rounded-full", dot)} />
+          </span>
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-medium">{h.hub[hub.status]}</p>
+          {hub.lastSyncAt && (
+            <p className="truncate text-[12.5px] text-faint">
+              {h.hub.lastSync(relativeWhen(hub.lastSyncAt, new Date(), locale, timezone))}
+            </p>
+          )}
+        </div>
+        <div className="shrink-0">
+          <OverflowMenu
+            label={h.add.label}
+            items={addItems}
+            trigger={
+              <>
+                <Plus className="size-4" aria-hidden />
+                <span className="max-sm:sr-only">{h.add.label}</span>
+              </>
+            }
+            className="flex size-auto h-10 gap-2 border border-border-strong px-3.5 text-[14px] font-medium text-fg md:size-auto md:h-9"
+          />
+        </div>
+      </div>
+      <dl className="relative mt-4 grid grid-cols-3 gap-2">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-2xl bg-surface-2/60 px-3 py-2.5 md:px-4">
+            <dt className="truncate text-[12px] text-faint">{s.label}</dt>
+            <dd className="text-[22px] leading-tight font-light tabular-nums">{s.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function ModeTile({
+  scene,
+  disabled,
+  onRun,
+  onEdit,
+}: {
+  scene: HomeScene;
+  disabled: boolean;
+  onRun: () => void;
+  onEdit: () => void;
+}) {
+  const { t } = useI18n();
+  const h = t.smartHome;
+  return (
+    <div className="relative h-full">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onRun}
+        aria-label={h.scene.run(scene.name)}
+        className="flex h-full w-full flex-col items-start gap-3 rounded-2xl border border-border bg-surface p-3.5 text-left transition-colors hover:border-accent-line hover:bg-accent-soft/40 disabled:opacity-60"
+      >
+        <span
+          aria-hidden
+          className="grid size-9 place-items-center rounded-full bg-accent-soft text-accent-text"
+        >
+          <Play className="size-3.5 translate-x-px fill-current" />
+        </span>
+        <span className="max-w-full min-w-0 pr-8">
+          <span className="block truncate text-[14.5px] font-medium">{scene.name}</span>
+          <span className="block text-[12.5px] text-faint">
+            {h.hub.devices(scene.actions.length)}
+          </span>
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label={`${h.scene.edit}: ${scene.name}`}
+        className="absolute top-2 right-2 grid size-9 place-items-center rounded-full text-faint transition-colors hover:bg-active hover:text-fg"
+      >
+        <Pencil className="size-3.5" aria-hidden />
+      </button>
+    </div>
+  );
+}
+
+function EmptyDevices({ onScan }: { onScan: () => void }) {
+  const { t } = useI18n();
+  const e = t.smartHome.empty;
+  return (
+    <div className="relative flex flex-col items-center gap-4 overflow-hidden rounded-3xl border border-border bg-surface px-6 py-10 text-center">
+      <div aria-hidden className="canvas-dots pointer-events-none absolute inset-0 opacity-60" />
+      <span
+        aria-hidden
+        className="relative grid size-14 place-items-center rounded-2xl bg-accent-soft text-accent-text"
+      >
+        <Radar className="size-6" strokeWidth={1.6} />
+      </span>
+      <div className="relative flex max-w-md flex-col gap-1.5">
+        <h3 className="text-[18px] font-light tracking-[-0.01em]">{e.title}</h3>
+        <p className="text-[14px] text-muted">{e.body}</p>
+      </div>
+      <Button className="relative" onClick={onScan}>
+        <Wifi />
+        {e.scan}
+      </Button>
+    </div>
+  );
+}
+
+function DeviceTile({
   device: d,
   room,
   stale,
@@ -395,24 +531,30 @@ function DeviceRow({
   const { t, locale } = useI18n();
   const h = t.smartHome;
   const power = cap(d, "power") && d.available && !stale;
+  const lit = Boolean(d.state.on) && d.available;
   return (
-    <li className="flex items-center gap-3 bg-surface px-4 py-2.5">
+    <div
+      className={cn(
+        "flex h-full items-center gap-3 rounded-2xl border bg-surface px-3.5 py-3 transition-colors",
+        lit ? "border-accent-line" : "border-border",
+      )}
+    >
       <button
         type="button"
         onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-xl text-left focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
       >
         <span
           aria-hidden
           className={cn(
-            "grid size-9 shrink-0 place-items-center rounded-xl bg-surface-2",
-            d.state.on && d.available ? "text-accent-text" : "text-muted",
+            "grid size-10 shrink-0 place-items-center rounded-xl transition-colors",
+            lit ? "bg-accent-soft text-accent-text" : "bg-surface-2 text-muted",
           )}
         >
-          <DeviceIcon type={d.type} className="size-4.5" />
+          <DeviceIcon type={d.type} className="size-[18px]" />
         </span>
         <span className="min-w-0">
-          <span className="flex items-center gap-1.5 text-[14px]">
+          <span className="flex items-center gap-1.5 text-[14.5px]">
             <span className="truncate">{d.name}</span>
             {d.favorite && (
               <Star className="size-3 shrink-0 fill-current text-approval" aria-hidden />
@@ -420,8 +562,8 @@ function DeviceRow({
           </span>
           <span
             className={cn(
-              "block truncate text-[12px]",
-              d.available ? "text-faint" : "text-danger-text",
+              "block truncate text-[12.5px]",
+              !d.available ? "text-danger-text" : lit ? "text-accent-text" : "text-faint",
             )}
           >
             {!d.available && <span aria-hidden>● </span>}
@@ -440,7 +582,7 @@ function DeviceRow({
           onCheckedChange={onToggle}
         />
       )}
-    </li>
+    </div>
   );
 }
 
@@ -529,7 +671,12 @@ function DeviceSheet({
     });
   return (
     <Dialog open onClose={onClose} title={d.name} description={describeState(d, locale)}>
-      {!live && <p className="text-[13px] text-danger-text">● {h.unavailable}</p>}
+      {!live && (
+        <div className="flex flex-col gap-1">
+          <p className="text-[13px] text-danger-text">● {h.unavailable}</p>
+          {d.type === "media_player" && <p className="text-[13px] text-muted">{h.unavailableTv}</p>}
+        </div>
+      )}
       {d.stateUpdatedAt && (
         <p className="-mt-2 text-[12px] text-faint">
           {relativeWhen(d.stateUpdatedAt, new Date(), locale, timezone)}
@@ -920,9 +1067,9 @@ function SceneEditor({
   const confirm = useConfirm();
   const [name, setName] = useState(scene?.name ?? "");
   const [rows, setRows] = useState<Draft[]>(scene?.actions.map(toDraft) ?? []);
-  const [pick, setPick] = useState("");
   const [pending, start] = useTransition();
   const controllable = devices.filter((d) => d.type !== "sensor");
+  const remaining = controllable.filter((d) => !rows.some((r) => r.deviceId === d.id));
   const byId = new Map(devices.map((d) => [d.id, d]));
   const set = (i: number, patch: Partial<Draft>) =>
     setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -1060,46 +1207,39 @@ function SceneEditor({
             );
           })}
         </ul>
-        <div className="flex gap-2">
-          <Select
-            aria-label={x.addDevice}
-            value={pick}
-            onChange={(e) => setPick(e.target.value)}
-            className="h-10 flex-1"
-          >
-            <option value="">{x.chooseDevice}</option>
-            {controllable
-              .filter((d) => !rows.some((r) => r.deviceId === d.id))
-              .map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
+        {remaining.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className="type-label text-faint">{x.addDevice}</span>
+            <ul className="flex flex-wrap gap-2">
+              {remaining.map((d) => (
+                <li key={d.id}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRows([
+                        ...rows,
+                        {
+                          deviceId: d.id,
+                          power: "on",
+                          brightness: "",
+                          color: "",
+                          temperature: "",
+                          humidity: "",
+                          volume: "",
+                        },
+                      ])
+                    }
+                    className="flex h-10 items-center gap-2 rounded-full border border-border bg-surface pr-3.5 pl-2.5 text-[13.5px] transition-colors hover:border-accent-line hover:bg-accent-soft/40"
+                  >
+                    <Plus className="size-3.5 text-accent-text" aria-hidden />
+                    <DeviceIcon type={d.type} className="size-4 text-muted" />
+                    {d.name}
+                  </button>
+                </li>
               ))}
-          </Select>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={!pick}
-            onClick={() => {
-              setRows([
-                ...rows,
-                {
-                  deviceId: pick,
-                  power: "on",
-                  brightness: "",
-                  color: "",
-                  temperature: "",
-                  humidity: "",
-                  volume: "",
-                },
-              ]);
-              setPick("");
-            }}
-          >
-            <Plus />
-            {x.addDevice}
-          </Button>
-        </div>
+            </ul>
+          </div>
+        )}
         {!rows.length && <p className="text-[12.5px] text-faint">{x.empty}</p>}
         <div data-sheet-actions className="flex flex-wrap justify-between gap-2">
           {scene ? (

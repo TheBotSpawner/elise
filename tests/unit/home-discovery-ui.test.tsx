@@ -76,7 +76,11 @@ describe("devices step", () => {
     expect(r.answerDiscovery).toHaveBeenCalledWith(TV, {});
     // …and a pairing code.
     await act(async () => fireEvent.click(hueAdd!));
-    const code = screen.getByLabelText("pairing code");
+    const code = screen.getByLabelText("Código de vinculación");
+    // Hidden by default; the eye shows what was typed.
+    expect(code).toHaveAttribute("type", "password");
+    fireEvent.click(screen.getByRole("button", { name: "Mostrar" }));
+    expect(code).toHaveAttribute("type", "text");
     fireEvent.change(code, { target: { value: "123-45-678" } });
     await act(async () =>
       fireEvent.click(within(code.closest("form")!).getByRole("button", { name: "Continuar" })),
