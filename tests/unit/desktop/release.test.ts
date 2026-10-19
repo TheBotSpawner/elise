@@ -62,6 +62,7 @@ describe("release policy", () => {
     channel: "beta",
     signed: false,
     cloudUrl: "https://elise-lime.vercel.app",
+    updateFeed: "https://github.com/TheBotSpawner/elise/releases/download",
     installerName: "ELISE-0.1.0-beta.1 Setup.exe",
   };
   it("an unsigned beta with the production Cloud can be published", () => {
@@ -74,6 +75,9 @@ describe("release policy", () => {
     expect(() => assertPublishable({ ...base, installerName: "ELISE-0.1.0 Setup.exe" })).toThrow(
       /doesn't match/,
     );
+  });
+  it("never a build that can't update itself (no feed)", () => {
+    expect(() => assertPublishable({ ...base, updateFeed: "" })).toThrow(/ELISE_UPDATE_FEED/);
   });
   it("stable needs a signed, non-prerelease build; beta never lands on stable", () => {
     expect(() =>

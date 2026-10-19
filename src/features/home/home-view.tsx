@@ -8,9 +8,11 @@ import {
   Play,
   Plus,
   Radar,
+  RotateCw,
   Search,
   Sparkles,
   Star,
+  Trash2,
   Wifi,
   X,
 } from "lucide-react";
@@ -47,6 +49,7 @@ import {
   controlDeviceAction,
   createRoomAction,
   deleteSceneAction,
+  removeDeviceAction,
   runSceneAction,
   saveSceneAction,
   updateDeviceAction,
@@ -171,6 +174,8 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
   const [open, setOpen] = useState<HomeDevice | null>(null);
   const [editing, setEditing] = useState<HomeScene | "new" | null>(null);
   const [adding, setAdding] = useState<"room" | "devices" | null>(null);
+  const router = useRouter();
+  const [refreshing, startRefresh] = useTransition();
   const hub = snapshot.hub!;
   const hasDevices = snapshot.devices.length > 0;
   const types = [...new Set(snapshot.devices.map((d) => d.type))];
@@ -245,9 +250,24 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
 
       <section aria-labelledby="home-devices" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 id="home-devices" className="type-label text-faint max-sm:w-full sm:mr-auto">
-            {h.devices}
-          </h2>
+          <div className="flex items-center gap-1 max-sm:w-full sm:mr-auto">
+            <h2 id="home-devices" className="mr-auto type-label text-faint">
+              {h.devices}
+            </h2>
+            {/* Just added something? It shows within seconds; this reads again right now. */}
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={refreshing}
+              onClick={() => startRefresh(() => router.refresh())}
+              aria-label={h.refresh}
+              title={h.refresh}
+              className="text-muted"
+            >
+              <RotateCw className={cn(refreshing && "motion-safe:animate-spin")} />
+              <span className="max-sm:sr-only">{h.refresh}</span>
+            </Button>
+          </div>
           {hasDevices && (
             <>
               <label className="relative flex-1 sm:max-w-64">
@@ -654,8 +674,10 @@ function DeviceSheet({
   const [aliases, setAliases] = useState(d.aliases.join(", "));
   const [roomId, setRoomId] = useState(d.roomId ?? "");
   const [saving, startSave] = useTransition();
+  const confirm = useConfirm();
   const s = d.state;
   const live = d.available;
+  const lit = Boolean(s.on) && live;
   const temp = cap(d, "temperature");
   const hvac = cap(d, "hvac_mode");
   const fanMode = cap(d, "fan_mode");
@@ -663,37 +685,77 @@ function DeviceSheet({
   const tone = cap(d, "color_temp");
   const source = cap(d, "source");
   const send = (actions: HomeActionInput[]) => command.control(d, actions);
-  const save = (patch: Record<string, unknown>) =>
+  const save = (patch: Record<string, unknown>, close = false) =>
     startSave(async () => {
       const r = await updateDeviceAction(d.id, patch);
       if (!r.ok) return void toast.error(errorText(t, r.error));
       router.refresh();
+      if (close) onClose();
     });
+  const remove = async () => {
+    const ok = await confirm({
+      title: x.removeTitle(d.name),
+      body: x.removeBody,
+      confirmLabel: x.remove,
+      destructive: true,
+    });
+    if (!ok) return;
+    startSave(async () => {
+      const r = await removeDeviceAction(d.id);
+      if (!r.ok) return void toast.error(errorText(t, r.error));
+      toast.success(x.removed(d.name));
+      router.refresh();
+      onClose();
+    });
+  };
+  // Controls other than power go in their own card (power sits in the header).
+  const controls = d.capabilities.some((c) => c.type !== "power" && c.type !== "app");
   return (
-    <Dialog open onClose={onClose} title={d.name} description={describeState(d, locale)}>
-      {!live && (
-        <div className="flex flex-col gap-1">
-          <p className="text-[13px] text-danger-text">● {h.unavailable}</p>
-          {d.type === "media_player" && <p className="text-[13px] text-muted">{h.unavailableTv}</p>}
-        </div>
-      )}
-      {d.stateUpdatedAt && (
-        <p className="-mt-2 text-[12px] text-faint">
-          {relativeWhen(d.stateUpdatedAt, new Date(), locale, timezone)}
-        </p>
-      )}
-      <section className="flex flex-col gap-4" aria-label={x.controls}>
-        {cap(d, "power") && (
-          <label className="flex items-center justify-between gap-3 text-[14px]">
-            {s.on ? h.turnOff : h.turnOn}
-            <Switch
-              checked={Boolean(s.on)}
-              disabled={!live || command.pending}
-              aria-label={h.toggle(d.name)}
-              onCheckedChange={(on) => send([{ type: "power", value: on }])}
-            />
-          </label>
+    <Dialog open onClose={onClose} title={d.name} busy={saving}>
+      <div
+        className={cn(
+          "-mt-1 flex items-center gap-3.5 rounded-2xl border p-3.5",
+          lit ? "border-accent-line bg-accent-soft/30" : "border-border bg-surface",
         )}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "grid size-12 shrink-0 place-items-center rounded-2xl",
+            lit ? "bg-accent-soft text-accent-text" : "bg-surface-2 text-muted",
+          )}
+        >
+          <DeviceIcon type={d.type} className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={cn("text-[15px]", !live && "text-danger-text")}>
+            {live ? describeState(d, locale) : `● ${h.unavailable}`}
+          </p>
+          {d.stateUpdatedAt && (
+            <p className="text-[12.5px] text-faint">
+              {relativeWhen(d.stateUpdatedAt, new Date(), locale, timezone)}
+            </p>
+          )}
+        </div>
+        {cap(d, "power") && (
+          <Switch
+            checked={Boolean(s.on)}
+            disabled={!live || command.pending}
+            aria-label={h.toggle(d.name)}
+            onCheckedChange={(on) => send([{ type: "power", value: on }])}
+          />
+        )}
+      </div>
+      {!live && d.type === "media_player" && (
+        <p className="-mt-2 text-[13px] text-muted">{h.unavailableTv}</p>
+      )}
+      <section
+        className={cn(
+          "flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4",
+          !controls && "hidden",
+        )}
+        aria-label={x.controls}
+      >
         {cap(d, "brightness") && (
           <Slider
             label={x.brightness}
@@ -899,7 +961,7 @@ function DeviceSheet({
         ) : null}
       </section>
 
-      <section className="flex flex-col gap-3 border-t border-border pt-4" aria-label={x.settings}>
+      <section className="flex flex-col gap-3.5" aria-label={x.settings}>
         <h3 className="type-label text-faint">{x.settings}</h3>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="home-device-name">{x.name}</Label>
@@ -939,7 +1001,7 @@ function DeviceSheet({
             </Select>
           </div>
         )}
-        <label className="flex items-center justify-between text-[14px]">
+        <label className="flex items-center justify-between rounded-2xl border border-border bg-surface px-4 py-3 text-[14px]">
           {x.favorite}
           <Switch
             checked={d.favorite}
@@ -947,21 +1009,33 @@ function DeviceSheet({
             onCheckedChange={(v) => save({ favorite: v })}
           />
         </label>
-        <div data-sheet-actions className="flex flex-wrap justify-between gap-2">
-          <Button variant="ghost" disabled={saving} onClick={() => save({ hidden: true })}>
-            {x.hide}
+        <div
+          data-sheet-actions
+          className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4"
+        >
+          <Button
+            variant="ghost"
+            disabled={saving}
+            onClick={() => void remove()}
+            className="text-danger-text hover:bg-danger/10 hover:text-danger-text"
+          >
+            <Trash2 />
+            {x.remove}
           </Button>
           <Button
             disabled={saving}
             onClick={() =>
-              save({
-                displayName: name.trim() && name.trim() !== d.name ? name.trim() : undefined,
-                aliases: aliases
-                  .split(",")
-                  .map((a) => a.trim())
-                  .filter(Boolean),
-                ...(roomId !== (d.roomId ?? "") ? { roomId: roomId || null } : {}),
-              })
+              save(
+                {
+                  displayName: name.trim() && name.trim() !== d.name ? name.trim() : undefined,
+                  aliases: aliases
+                    .split(",")
+                    .map((a) => a.trim())
+                    .filter(Boolean),
+                  ...(roomId !== (d.roomId ?? "") ? { roomId: roomId || null } : {}),
+                },
+                true,
+              )
             }
           >
             {x.save}

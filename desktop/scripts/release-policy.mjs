@@ -5,7 +5,14 @@ const LOCAL = /^https?:\/\/(localhost|127(?:\.\d+){3}|0\.0\.0\.0|\[::1\])(?::\d+
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/;
 
 /** Throws when this build must not be published on this channel. */
-export function assertPublishable({ version, channel, signed, cloudUrl, installerName }) {
+export function assertPublishable({
+  version,
+  channel,
+  signed,
+  cloudUrl,
+  updateFeed,
+  installerName,
+}) {
   if (!SEMVER.test(version)) throw new Error(`Version ${version} isn't SemVer`);
   if (!installerName || !installerName.includes(version))
     throw new Error(`Installer ${installerName} doesn't match version ${version}`);
@@ -13,6 +20,9 @@ export function assertPublishable({ version, channel, signed, cloudUrl, installe
     throw new Error(
       `This build talks to ${cloudUrl || "nothing"}: rebuild with a production ELISE_CLOUD_URL`,
     );
+  // Without its feed an installed copy never hears of the next version: people stay behind.
+  if (!updateFeed?.startsWith("https://"))
+    throw new Error("This build has no update feed: rebuild with ELISE_UPDATE_FEED set");
   if (channel === "stable") {
     if (!signed)
       throw new Error("A stable release must be signed (publish unsigned builds on beta)");

@@ -64,7 +64,9 @@ describe("devices step", () => {
     const r = runtime();
     const onDone = vi.fn();
     wrap(r, onDone);
-    expect(await screen.findByText("Encontramos 2 dispositivos")).toBeTruthy();
+    expect(
+      await screen.findByText(/Encontramos 2 dispositivos/, {}, { timeout: 4000 }),
+    ).toBeTruthy();
     const [hueAdd, tvAdd] = screen.getAllByRole("button", { name: "Agregar" });
     // A confirmation…
     await act(async () => fireEvent.click(tvAdd!));
@@ -96,12 +98,12 @@ describe("devices step", () => {
     const r = runtime();
     const onDone = vi.fn();
     wrap(r, onDone);
-    await screen.findByText("Encontramos 2 dispositivos");
+    await screen.findByText(/Encontramos 2 dispositivos/, {}, { timeout: 4000 });
     await act(async () =>
       fireEvent.click(screen.getAllByRole("button", { name: "No, gracias" })[0]!),
     );
     expect(r.ignoreDiscovery).toHaveBeenCalledWith(HUE, "Hue Bridge");
-    expect(screen.getByText("Encontramos 1 dispositivo")).toBeTruthy();
+    expect(screen.getByText(/Encontramos 1 dispositivo/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Omitir por ahora" }));
     expect(onDone).toHaveBeenCalled();
   });

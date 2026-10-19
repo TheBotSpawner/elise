@@ -20,6 +20,7 @@ export class HomeAssistantClient {
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
   private listeners = new Set<(s: HaState) => void>();
+  private registryListeners = new Set<() => void>();
   version: string | null = null;
   onClose: (() => void) | null = null;
 
@@ -92,6 +93,10 @@ export class HomeAssistantClient {
       for (const l of this.listeners) l(msg.event.data.new_state);
       return;
     }
+    if (msg.type === "event" && msg.event?.event_type.endsWith("_registry_updated")) {
+      for (const l of this.registryListeners) l();
+      return;
+    }
     const p = this.pending.get(msg.id);
     if (!p || msg.type !== "result") return;
     this.pending.delete(msg.id);
@@ -118,6 +123,53 @@ export class HomeAssistantClient {
   async subscribeStates(listener: (s: HaState) => void) {
     this.listeners.add(listener);
     await this.command({ type: "subscribe_events", event_type: "state_changed" });
+  }
+
+  /** A device or entity added, removed or renamed in the engine. */
+  async subscribeRegistry(listener: () => void) {
+    this.registryListeners.add(listener);
+    for (const event_type of ["device_registry_updated", "entity_registry_updated"])
+      await this.command({ type: "subscribe_events", event_type });
+  }
+
+  deviceRegistry = () =>
+    this.command<{ id: string; config_entries: string[] }[]>({
+      type: "config/device_registry/list",
+    });
+
+  /**
+   * Takes a device out of the engine. Its integration entry goes when the device is its only
+   * one (the TV and its pairing); otherwise only this device leaves the entry.
+   */
+  async removeDevice(deviceId: string | null, entityIds: readonly string[]) {
+    if (!deviceId) {
+      for (const entity_id of entityIds)
+        await this.command({ type: "config/entity_registry/remove", entity_id });
+      return;
+    }
+    const registry = await this.deviceRegistry();
+    const device = registry.find((d) => d.id === deviceId);
+    if (!device) return;
+    for (const entry of device.config_entries) {
+      const shared = registry.some((d) => d.id !== deviceId && d.config_entries.includes(entry));
+      if (shared)
+        await this.command({
+          type: "config/device_registry/remove_config_entry",
+          device_id: deviceId,
+          config_entry_id: entry,
+        });
+      else {
+        const r = await fetch(
+          new URL(`/api/config/config_entries/entry/${encodeURIComponent(entry)}`, this.baseUrl),
+          {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${this.token}` },
+            signal: AbortSignal.timeout(30_000),
+          },
+        );
+        if (!r.ok) throw new Error(`remove ${r.status}`);
+      }
+    }
   }
 
   callService = (c: HaServiceCall) =>

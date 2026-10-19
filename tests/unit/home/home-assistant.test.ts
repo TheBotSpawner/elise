@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { validateAction, type HomeDevice } from "@/core/home/model";
 import { normalizeRegistry, toServiceCalls } from "@/infrastructure/home/home-assistant";
@@ -181,6 +181,43 @@ describe("opening apps on a TV", () => {
     expect(validateAction(device, { type: "app", value: "netflix" })).toEqual({
       ok: true,
       action: { type: "source", source: "Netflix" },
+    });
+  });
+});
+
+describe("removing from the engine", async () => {
+  const { HomeAssistantClient } = await import("../../../home-hub/home-assistant-client");
+  const setup = (registry: { id: string; config_entries: string[] }[]) => {
+    const c = new HomeAssistantClient("http://ha.local", "t");
+    const sent: unknown[] = [];
+    (c as unknown as { command: (p: unknown) => Promise<unknown> }).command = async (p) => {
+      sent.push(p);
+      return (p as { type: string }).type === "config/device_registry/list" ? registry : null;
+    };
+    return { c, sent };
+  };
+
+  it("a device alone in its entry (a paired TV) takes the entry with it", async () => {
+    const { c } = setup([{ id: "tv", config_entries: ["e1"] }]);
+    const fetch = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    await c.removeDevice("tv", ["media_player.tv"]);
+    expect(String((fetch.mock.calls[0] as unknown[])[0])).toBe(
+      "http://ha.local/api/config/config_entries/entry/e1",
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("a device sharing its entry (a bridge's light) leaves only that entry", async () => {
+    const { c, sent } = setup([
+      { id: "lamp", config_entries: ["bridge"] },
+      { id: "other", config_entries: ["bridge"] },
+    ]);
+    await c.removeDevice("lamp", ["light.lamp"]);
+    expect(sent).toContainEqual({
+      type: "config/device_registry/remove_config_entry",
+      device_id: "lamp",
+      config_entry_id: "bridge",
     });
   });
 });

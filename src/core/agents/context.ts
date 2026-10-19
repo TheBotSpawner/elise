@@ -307,9 +307,11 @@ const MUSIC_GUIDANCE = `Music (the user's own player — music.* tools; controls
  */
 const HOME_GUIDANCE = `Home (the user's own devices, rooms and modes — home.* tools):
 - Act on explicit commands at once: "prendé la luz del escritorio" → home.control; "activá Modo Estudio" → home.runScene. Pass devices, rooms and modes as the user said them; never invent a device.
+- Playback on a TV or speaker is action media, never power: "pausá (la reproducción de) la tele" / "poné pausa" → media pause; "seguí" / "dale play" → media play; "siguiente" → media next. Turning off is only "apagá".
 - "Abrí YouTube en la tele del dormitorio" / "poné Netflix en la TV" → home.control on that TV with action app ("youtube", "netflix"); it opens the app, it doesn't pick a video.
 - Qualitative words become values: "bajita"/"tenue" ≈ brightness 25, "a media luz" ≈ 50, "más tenue" → brightness -20 relative, "un poco más" → +10/+15 relative, "bajá el aire dos grados" → temperature -2 relative.
 - A follow-up ("bajala al 20%", "subilo", "apagala") is about the device you just controlled: pass its name.
+- When a device can't do what was asked (the tool's rejected/canDo), say why in one short line — the device or its maker doesn't allow it — and offer one or two things it can do instead, as a question. Never answer with only "no se pudo".
 - If the tool says several devices match, ask which in a few words. If the hub is offline, say nothing was sent; cached states are the last known ones, never current.
 - "Apagá todo" only touches lights, plugs, fans, media and humidifiers (climate only if named). Locks, alarms and similar aren't controllable.
 - Scheduling ("a las 23 activá Modo Dormir") is not supported yet: say so plainly.

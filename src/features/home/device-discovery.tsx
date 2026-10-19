@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   Lightbulb,
+  Loader2,
   Plug,
   RotateCw,
   Router,
@@ -76,6 +77,7 @@ function fieldLabel(name: string, known: Record<string, string>) {
 }
 
 /** Re-asked while the screen is open: devices keep being found for a while. */
+const MIN_SCAN_MS = 2200;
 const POLL_MS = 10_000;
 
 /**
@@ -100,24 +102,35 @@ export function DeviceDiscovery({
   const [status, setStatus] = useState<Record<string, Status>>({});
   const set = (id: string, s: Status) => setStatus((m) => ({ ...m, [id]: s }));
 
-  const scan = useCallback(async () => {
-    if (!runtime) return;
-    setScanning(true);
-    try {
-      setFound(await runtime.discoveries());
-    } catch {
-      setFound((f) => f ?? []);
-    } finally {
-      setScanning(false);
-    }
-  }, [runtime]);
+  /**
+   * One search. A search the person sees (the first, "Buscar de nuevo") stays on screen a moment
+   * even when the engine answers at once, so it reads as searching; background polls stay quiet.
+   */
+  const scan = useCallback(
+    async (shown = true) => {
+      if (!runtime) return;
+      if (shown) setScanning(true);
+      try {
+        const [list] = await Promise.all([
+          runtime.discoveries(),
+          shown ? new Promise((r) => setTimeout(r, MIN_SCAN_MS)) : null,
+        ]);
+        setFound(list);
+      } catch {
+        setFound((f) => f ?? []);
+      } finally {
+        if (shown) setScanning(false);
+      }
+    },
+    [runtime],
+  );
 
   useEffect(() => {
     if (!runtime) return;
     // First search right after mount (not inside the effect itself), then while it's open.
     const first = setTimeout(() => void scan(), 0);
     const timer = setInterval(() => {
-      if (document.visibilityState === "visible") void scan();
+      if (document.visibilityState === "visible") void scan(false);
     }, POLL_MS);
     return () => {
       clearTimeout(first);
@@ -172,14 +185,17 @@ export function DeviceDiscovery({
     <div className="flex flex-col gap-4">
       <p className="max-w-xl text-[15px] text-muted">{d.body}</p>
       <div
-        className="flex flex-wrap items-center gap-2 text-[13.5px] text-muted"
+        className="flex flex-wrap items-center gap-2.5 text-[13.5px] text-muted"
         aria-live="polite"
       >
-        {scanning && found === null ? (
-          <span>{d.scanning}</span>
-        ) : (
-          <span>{visible.length ? d.found(visible.length) : d.none}</span>
-        )}
+        <SearchPulse active={scanning} />
+        <span>
+          {scanning
+            ? d.scanning
+            : visible.length
+              ? `${d.found(visible.length)} · ${d.stillLooking}`
+              : d.noneShort}
+        </span>
         <Button
           size="sm"
           variant="ghost"
@@ -191,6 +207,16 @@ export function DeviceDiscovery({
           {found === null ? d.scan : d.scanAgain}
         </Button>
       </div>
+      {scanning && !visible.length ? (
+        <Scanning />
+      ) : (
+        found !== null &&
+        !visible.length && (
+          <p className="rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-[13.5px] text-muted">
+            {d.none}
+          </p>
+        )
+      )}
       {visible.length > 0 && (
         <ul className="flex flex-col gap-2">
           {visible.map((device) => {
@@ -232,7 +258,10 @@ export function DeviceDiscovery({
                       </Button>
                     </>
                   ) : s.kind === "busy" ? (
-                    <span className="text-[13px] text-muted">{d.adding}</span>
+                    <span className="flex items-center gap-1.5 text-[13px] text-muted">
+                      <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+                      {d.adding}
+                    </span>
                   ) : null}
                 </div>
                 {s.kind === "message" && <p className="text-[13px] text-muted">{s.text}</p>}
@@ -419,6 +448,52 @@ function SecretInput({
       >
         {shown ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
       </button>
+    </div>
+  );
+}
+
+/** A small live dot: brighter, with a ripple, while a search is running. */
+function SearchPulse({ active }: { active: boolean }) {
+  return (
+    <span aria-hidden className="relative grid size-3 place-items-center">
+      <span
+        className={cn(
+          "absolute size-3 rounded-full bg-accent/50",
+          active ? "motion-safe:animate-ping" : "opacity-0",
+        )}
+      />
+      <span
+        className={cn(
+          "relative size-2 rounded-full transition-colors",
+          active ? "bg-accent" : "bg-accent/60",
+        )}
+      />
+    </span>
+  );
+}
+
+/** The first search: a radar sweeping the network, so waiting never looks stuck. */
+function Scanning() {
+  const { t } = useI18n();
+  const d = t.smartHome.setup.discover;
+  return (
+    <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-surface px-4 py-8 text-center">
+      <span aria-hidden className="relative grid size-24 place-items-center">
+        {[0, 0.6, 1.2].map((delay) => (
+          <span
+            key={delay}
+            className="absolute inset-0 rounded-full border border-accent/40 motion-safe:animate-ping"
+            style={{ animationDuration: "1.8s", animationDelay: `${delay}s` }}
+          />
+        ))}
+        <span className="relative grid size-12 place-items-center rounded-full bg-accent-soft text-accent-text">
+          <Wifi className="size-5" strokeWidth={1.7} />
+        </span>
+      </span>
+      <div className="flex flex-col gap-1">
+        <p className="text-[14.5px]">{d.scanning}</p>
+        <p className="text-[12.5px] text-faint">{d.scanHint}</p>
+      </div>
     </div>
   );
 }

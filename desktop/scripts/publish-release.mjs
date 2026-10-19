@@ -139,7 +139,14 @@ if (info.version !== version)
 if (info.channel !== channel)
   throw new Error(`Build is for ${info.channel}, publishing to ${channel}: rebuild`);
 const cloud = info.cloudUrl;
-assertPublishable({ version, channel, signed, cloudUrl: cloud, installerName: setup });
+assertPublishable({
+  version,
+  channel,
+  signed,
+  cloudUrl: cloud,
+  updateFeed: info.updateFeed,
+  installerName: setup,
+});
 step(`ELISE Desktop ${version} · ${channel} · ${signed ? "signed" : "unsigned"} · cloud ${cloud}`);
 
 // A stable, space-free asset name (GitHub would rewrite spaces).

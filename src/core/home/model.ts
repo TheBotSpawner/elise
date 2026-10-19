@@ -173,7 +173,9 @@ export type HomeAction =
   | { type: "volume"; value: number }
   | { type: "media"; command: "play" | "pause" | "next" | "previous" }
   | { type: "source"; source: string }
-  | { type: "app"; app: HomeApp };
+  | { type: "app"; app: HomeApp }
+  /** Takes the device out of the home (the person's "Quitar"); never chosen by the model. */
+  | { type: "remove" };
 
 /** Apps ELISE can open on a TV, by the words people use for them. */
 export const HOME_APPS = {
@@ -213,6 +215,7 @@ export const homeActionSchema: z.ZodType<HomeAction> = z.discriminatedUnion("typ
     type: z.literal("app"),
     app: z.enum(Object.keys(HOME_APPS) as [HomeApp, ...HomeApp[]]),
   }),
+  z.object({ type: z.literal("remove") }),
 ]);
 
 export type HomeValidation =
@@ -558,6 +561,8 @@ export function applyAction(state: HomeState, a: HomeAction): HomeState {
       return { ...state, source: a.source };
     case "app":
       return { ...state, on: true };
+    case "remove":
+      return state;
   }
 }
 

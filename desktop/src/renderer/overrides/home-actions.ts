@@ -15,6 +15,7 @@ import { CloudUnavailableError } from "../rpc";
 export const {
   runSceneAction,
   updateDeviceAction,
+  removeDeviceAction,
   createRoomAction,
   saveSceneAction,
   deleteSceneAction,

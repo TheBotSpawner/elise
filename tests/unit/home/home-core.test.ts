@@ -373,3 +373,19 @@ describe("Desktop / hub presence (ADR-080)", () => {
     expect(homeSetupState(hub({}), now)).toBe("hub_ready");
   });
 });
+
+/** When a device can't do something, ELISE knows what to offer instead. */
+describe("what a device can do", () => {
+  it("lists a TV's abilities in plain words", async () => {
+    const { canDo } = await import("@/core/tools/home");
+    const tv = dev(70, {
+      type: "media_player",
+      capabilities: [
+        { type: "power" },
+        { type: "volume" },
+        { type: "source", sources: ["HDMI 1", "Netflix"] },
+      ],
+    });
+    expect(canDo(tv)).toEqual(["turn on/off", "volume", "input or app: HDMI 1, Netflix"]);
+  });
+});

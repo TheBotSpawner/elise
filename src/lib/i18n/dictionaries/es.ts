@@ -4114,6 +4114,9 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
         scan: "Buscar dispositivos",
         scanAgain: "Buscar de nuevo",
         scanning: "Buscando en tu red…",
+        scanHint: "Puede tardar unos segundos. Los dispositivos tienen que estar encendidos.",
+        stillLooking: "seguimos buscando",
+        noneShort: "Sin dispositivos nuevos por ahora",
         none: "Todavía no encontramos dispositivos. Revisá que estén encendidos y en la misma red Wi-Fi que esta computadora, y buscá de nuevo.",
         found: (n: number) =>
           n === 1 ? "Encontramos 1 dispositivo" : `Encontramos ${n} dispositivos`,
@@ -4258,6 +4261,7 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
       "Muchas teles se desconectan del Wi-Fi al apagarse. Para prenderla desde ELISE, activá en la TV el encendido por red (suele estar en Ajustes › Sistema › Energía). Si la prendiste a mano, en un minuto vuelve a responder.",
     noDevices: "Todavía no hay dispositivos. Cuando ELISE Desktop los encuentre, aparecen acá.",
     noMatches: "Ningún dispositivo coincide.",
+    refresh: "Actualizar",
     empty: {
       title: "Sumá tu primer dispositivo",
       body: "ELISE busca luces, enchufes, TVs y otros dispositivos en tu red Wi-Fi. Después los podés controlar desde acá, desde el chat o con la voz.",
@@ -4291,7 +4295,11 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
       aliasesHint: "Separados por comas. ELISE los entiende cuando hablás.",
       room: "Habitación",
       favorite: "Favorito",
-      hide: "Ocultar de ELISE",
+      remove: "Quitar dispositivo",
+      removeTitle: (name: string) => `¿Quitar ${name}?`,
+      removeBody:
+        "Sale de Hogar y de tu Home Hub, y deja de estar en modos. Si lo querés de nuevo, buscalo con Agregar › Buscar dispositivos.",
+      removed: (name: string) => `${name} se quitó de Hogar.`,
       save: "Guardar",
       stale: (when: string) => `Último estado registrado ${when}`,
     },

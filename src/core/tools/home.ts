@@ -199,6 +199,40 @@ function summarize(outcomes: HomeCommandOutcome[]) {
 const CONFIRM_RULES =
   'Confirm in very few words ("Listo.", "Listo, luz al 20%."). If something didn\'t respond, name it briefly. "unconfirmed" = sent but the hub hasn\'t confirmed yet: say it was sent. Never mention providers, hubs\' internals or ids.';
 
+/** What a device can do, in plain words: what ELISE offers instead when something can't be done. */
+export function canDo(d: HomeDevice): string[] {
+  return d.capabilities.flatMap((c): string[] => {
+    switch (c.type) {
+      case "power":
+        return ["turn on/off"];
+      case "brightness":
+        return ["brightness"];
+      case "color":
+        return ["color"];
+      case "color_temp":
+        return ["white tone (warm/cool)"];
+      case "temperature":
+        return [`temperature ${c.min}–${c.max} °C`];
+      case "hvac_mode":
+        return [`mode: ${c.modes.join(", ")}`];
+      case "fan_mode":
+        return [`fan: ${c.modes.join(", ")}`];
+      case "fan_speed":
+        return ["fan speed"];
+      case "humidity":
+        return ["humidity"];
+      case "volume":
+        return ["volume"];
+      case "media":
+        return ["play/pause/next/previous"];
+      case "source":
+        return [`input or app: ${c.sources.slice(0, 8).join(", ")}`];
+      case "app":
+        return ["open apps (YouTube, Netflix, Prime Video, Disney+, Max)"];
+    }
+  });
+}
+
 /** Turns validated (device, actions) into hub commands; skipped ones explain why. */
 function plan(
   targets: HomeDevice[],
@@ -206,17 +240,17 @@ function plan(
   strict: boolean,
 ): {
   commands: { deviceId: string; actions: HomeAction[] }[];
-  rejected: { name: string; reason: string }[];
+  rejected: { name: string; reason: string; canDo: string[] }[];
 } {
   const commands: { deviceId: string; actions: HomeAction[] }[] = [];
-  const rejected: { name: string; reason: string }[] = [];
+  const rejected: { name: string; reason: string; canDo: string[] }[] = [];
   for (const d of targets) {
     const actions: HomeAction[] = [];
     for (const input of inputs) {
       const v = validateAction(d, input);
       if (v.ok) actions.push(v.action);
       else if (strict) {
-        rejected.push({ name: d.name, reason: v.message });
+        rejected.push({ name: d.name, reason: v.message, canDo: canDo(d) });
         break;
       }
     }
@@ -231,7 +265,7 @@ export const homeControlTool: ToolDefinition = {
   capability: "home",
   operation: "control",
   description:
-    '"Prendé la luz del escritorio", "poné el aire a 24", "bajá la luz del living al 30%", "la luz en verde y tenue", "apagá todo el living", "subí el volumen de la tele", "abrí YouTube en la tele del dormitorio" (action app): change the user\'s own devices — one device, a room, a group or the whole home (broad commands touch lights, plugs, fans, media and humidifiers only; climate only if named). ELISE checks every value against the device.',
+    '"Prendé la luz del escritorio", "poné el aire a 24", "bajá la luz del living al 30%", "la luz en verde y tenue", "apagá todo el living", "subí el volumen de la tele", "abrí YouTube en la tele del dormitorio" (action app), "pausá la tele" (action media pause — pausing is never power off): change the user\'s own devices — one device, a room, a group or the whole home (broad commands touch lights, plugs, fans, media and humidifiers only; climate only if named). ELISE checks every value against the device.',
   input: controlInput,
   async describe(raw) {
     const q = controlInput.parse(raw);
@@ -316,7 +350,7 @@ export const homeControlTool: ToolDefinition = {
           done: false,
           rejected,
           instructions:
-            "The device can't do that (or the value is out of its range). Say what it can do, briefly. Nothing was sent.",
+            'Nothing was sent. In one short line say why — it\'s what this device (its maker) allows, or the value is out of range — then offer one or two things it CAN do from canDo, as a question ("La TV del living no deja abrir apps desde acá. ¿Querés que la prenda o le suba el volumen?"). Never just say it failed.',
         },
       };
     const outcomes = await port(env).execute(commands);

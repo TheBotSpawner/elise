@@ -682,7 +682,8 @@ export async function executeHomeCommands(
       throw new AppError("NOT_FOUND", "That device isn't in your home", { recovery: "review" });
     if (!hub || hub.status === "offline")
       outcomes.push({ deviceId: device.id, name: device.name, status: "offline" });
-    else if (!device.available)
+    // Removing works on a device that doesn't answer (a TV that's off): the engine does it.
+    else if (!device.available && !c.actions.every((a) => a.type === "remove"))
       outcomes.push({ deviceId: device.id, name: device.name, status: "unavailable" });
     else toSend.push({ device, actions: c.actions.map((a) => homeActionSchema.parse(a)) });
   }
@@ -770,6 +771,26 @@ export async function updateHomeDevice(auth: AuthContext, deviceId: string, raw:
     .eq("id", z.uuid().parse(deviceId))
     .eq("workspace_id", auth.workspaceId);
   check(error, "update the device");
+}
+
+/**
+ * "Quitar": the hub takes the device out of the home engine, so it can be found and added again
+ * later. When the hub can't do it now (offline, an older ELISE Desktop), the device still leaves
+ * the person's list.
+ */
+export async function removeHomeDevice(auth: AuthContext, deviceId: string) {
+  const id = z.uuid().parse(deviceId);
+  const [outcome] = await executeHomeCommands(auth, [
+    { deviceId: id, actions: [{ type: "remove" }] },
+  ]).catch(() => []);
+  const removed = outcome?.status === "succeeded";
+  const { error } = await auth.db
+    .from("home_devices")
+    .update(removed ? { removed_at: new Date().toISOString() } : { hidden: true })
+    .eq("id", id)
+    .eq("workspace_id", auth.workspaceId);
+  check(error, "remove the device");
+  return { removed };
 }
 
 export async function createHomeRoom(auth: AuthContext, name: string) {

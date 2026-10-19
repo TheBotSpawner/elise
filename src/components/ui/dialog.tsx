@@ -101,7 +101,7 @@ export function Dialog({
         form
           ? "mt-0 h-dvh max-h-none border-0 max-sm:rounded-none"
           : "mt-auto max-h-[92dvh] rounded-t-3xl border",
-        "sm:m-auto sm:h-auto sm:max-h-[92dvh] sm:max-w-lg sm:rounded-3xl sm:border",
+        "sm:m-auto sm:h-fit sm:max-h-[92dvh] sm:max-w-lg sm:rounded-3xl sm:border",
         "backdrop:bg-black/40 backdrop:backdrop-blur-[2px]",
         "opacity-100 transition-[opacity,translate] duration-200 starting:translate-y-2 starting:opacity-0",
         className,

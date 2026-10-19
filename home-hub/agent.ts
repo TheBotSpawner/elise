@@ -50,6 +50,7 @@ export class HubAgent {
   private latest = new Map<string, HaState>();
   private stopped = false;
   private connected = false;
+  private registryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly config: HubConfig & { hubToken: string },
@@ -93,6 +94,12 @@ export class HubAgent {
     this.connected = true;
     await this.sync();
     await this.ha.subscribeStates((s) => this.onState(s));
+    // Added, removed or renamed in the engine: ELISE shows it within seconds, not at the next
+    // periodic resync.
+    await this.ha.subscribeRegistry(() => {
+      clearTimeout(this.registryTimer);
+      this.registryTimer = setTimeout(() => void this.sync().catch(() => undefined), 3000);
+    });
     await this.beat("ready");
     log("home_provider_connected", { version: this.ha.version, devices: this.devices.size });
   }
@@ -302,6 +309,12 @@ export class HubAgent {
     const started = Date.now();
     await this.report(c.id, { status: "executing" });
     try {
+      if (c.actions.some((a) => a.type === "remove")) {
+        await this.ha.removeDevice(device.providerDeviceId, device.entityIds);
+        log("home_device_removed");
+        await this.report(c.id, { status: "succeeded", latencyMs: Date.now() - started });
+        return void this.sync().catch(() => undefined);
+      }
       for (const call of toServiceCalls(device.entityIds[0]!, c.actions))
         await this.ha.callService(call);
       const fresh = (await this.ha.states()).find((s) => s.entity_id === device.entityIds[0]);

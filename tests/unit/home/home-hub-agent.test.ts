@@ -113,3 +113,23 @@ describe("the hub agent's own checks", () => {
     expect(isLocalProvider("file:///etc/passwd")).toBe(false);
   });
 });
+
+/** "Quitar" (the person's own): the engine lets go of the device, so it can be added again. */
+describe("removing a device", () => {
+  vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+  it("runs as a removal, never as a provider action, and resyncs", async () => {
+    const { a, calls, results } = agent();
+    const internals = a as unknown as {
+      ha: { removeDevice: (id: string | null, e: readonly string[]) => Promise<void> };
+      sync: () => Promise<void>;
+    };
+    const removed: unknown[] = [];
+    internals.ha.removeDevice = async (id, e) => void removed.push([id, e[0]]);
+    internals.sync = async () => undefined;
+    await a.execute(command({ actions: [{ type: "remove" }] }));
+    expect(removed).toEqual([["dev_lamp", "light.escritorio"]]);
+    expect(calls).toEqual([]);
+    expect(results.map((r) => r.status)).toEqual(["executing", "succeeded"]);
+  });
+});

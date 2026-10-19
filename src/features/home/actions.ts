@@ -12,6 +12,7 @@ import {
   homeSnapshot,
   revokeHomeHub,
   saveHomeScene,
+  removeHomeDevice,
   updateHomeDevice,
 } from "@/application/home-service";
 import { AppError, toPublicError, type PublicError } from "@/core/errors";
@@ -74,6 +75,10 @@ export async function runSceneAction(sceneId: string) {
 
 export async function updateDeviceAction(deviceId: string, patch: unknown) {
   return run(async () => updateHomeDevice(await requireAuthContext(), deviceId, patch));
+}
+
+export async function removeDeviceAction(deviceId: string) {
+  return run(async () => removeHomeDevice(await requireAuthContext(), deviceId));
 }
 
 export async function createRoomAction(name: string) {
