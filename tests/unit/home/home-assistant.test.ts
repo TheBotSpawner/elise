@@ -152,8 +152,15 @@ describe("opening apps on a TV", () => {
   const names = { devices: [{ id: "d1", name: "TV del dormitorio", area: null }], areas: [] };
 
   it("an Android TV can open apps; another player with the same features can't", () => {
-    const [android] = normalizeRegistry([tv], [entry], names).devices;
+    const remote = {
+      entity_id: "remote.tv_dormitorio",
+      device_id: "d1",
+      platform: "androidtv_remote",
+    };
+    const [android] = normalizeRegistry([tv], [entry, remote], names).devices;
     expect(android!.capabilities).toContainEqual({ type: "app" });
+    // Its remote rides along, for the sleep key.
+    expect(android!.entityIds).toEqual([tv.entity_id, remote.entity_id]);
     const [cast] = normalizeRegistry([tv], [{ ...entry, platform: "cast" }], names).devices;
     expect(cast!.capabilities).not.toContainEqual({ type: "app" });
   });

@@ -134,31 +134,28 @@ describe("removing a device", () => {
   });
 });
 
-/** "Apagá la tele" with YouTube open: the first power press can just close the app. */
-describe("turning a TV off", () => {
+/** "Apagá la tele" with YouTube open: the power key can just close the app. */
+describe("turning an Android TV off", () => {
   vi.spyOn(console, "log").mockImplementation(() => undefined);
-  const tvOff = command({
-    target: { providerKey: "dev_tv", entityIds: ["media_player.tv"] },
-    actions: [{ type: "power", on: false }],
-  });
 
-  it("presses power again when the TV still reports on", async () => {
+  it("sends the sleep key after the power call; other devices only the power call", async () => {
     const { a, calls } = agent();
-    (a as unknown as { offRecheckMs: number }).offRecheckMs = 0;
-    await a.execute(tvOff);
-    expect(calls.map((c) => (c as { service: string }).service)).toEqual(["turn_off", "turn_off"]);
-  });
-
-  it("presses once when it did turn off", async () => {
-    const { a, calls } = agent();
-    const internals = a as unknown as {
-      offRecheckMs: number;
-      ha: { states: () => Promise<unknown[]> };
-    };
-    internals.offRecheckMs = 0;
-    internals.ha.states = async () =>
-      HA_STATES.map((s) => (s.entity_id === "media_player.tv" ? { ...s, state: "off" } : s));
-    await a.execute(tvOff);
-    expect(calls).toHaveLength(1);
+    const internals = a as unknown as { devices: Map<string, { entityIds: string[] }> };
+    internals.devices.get("dev_tv")!.entityIds.push("remote.tv");
+    await a.execute(
+      command({
+        target: { providerKey: "dev_tv", entityIds: ["media_player.tv"] },
+        actions: [{ type: "power", on: false }],
+      }),
+    );
+    expect(calls).toEqual([
+      { domain: "media_player", service: "turn_off", target: { entity_id: "media_player.tv" } },
+      {
+        domain: "remote",
+        service: "send_command",
+        service_data: { command: "SLEEP" },
+        target: { entity_id: "remote.tv" },
+      },
+    ]);
   });
 });

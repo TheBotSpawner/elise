@@ -286,6 +286,16 @@ export function normalizeRegistry(
       entry?.original_name ??
       humanize(primary.entity_id);
     const sensors = members.filter(usefulSensor);
+    // An Android TV's remote entity: its sleep key is the reliable "off" (see sleepCall).
+    const remote =
+      entry?.platform === "androidtv_remote" && providerDeviceId
+        ? entries.find(
+            (e) =>
+              e.device_id === providerDeviceId &&
+              domainOf(e.entity_id) === "remote" &&
+              !e.disabled_by,
+          )?.entity_id
+        : undefined;
     const state =
       kind.type === "sensor"
         ? {
@@ -306,6 +316,7 @@ export function normalizeRegistry(
       entityIds: [
         primary.entity_id,
         ...members.filter((m) => m !== primary).map((m) => m.entity_id),
+        ...(remote ? [remote] : []),
       ].slice(0, 30),
       name: String(name).slice(0, 120),
       areaId: entry?.area_id ?? info?.area ?? null,
@@ -339,6 +350,25 @@ const APP_LINKS: Record<HomeApp, string> = {
   disney_plus: "https://www.disneyplus.com",
   max: "https://play.max.com",
 };
+
+/**
+ * Turning an Android TV off: the power key toggles, and with an app in front it can just close
+ * the app while the TV already reports "off". The sleep key only ever puts it to sleep, so it
+ * goes after the power call, whatever the TV reports.
+ */
+export function sleepCall(
+  entityIds: readonly string[],
+  actions: readonly HomeAction[],
+): HaServiceCall | null {
+  const remote = entityIds.find((e) => domainOf(e) === "remote");
+  if (!remote || !actions.some((a) => a.type === "power" && !a.on)) return null;
+  return {
+    domain: "remote",
+    service: "send_command",
+    service_data: { command: "SLEEP" },
+    target: { entity_id: remote },
+  };
+}
 
 export interface HaServiceCall {
   domain: string;

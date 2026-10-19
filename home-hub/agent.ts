@@ -21,6 +21,7 @@ import {
 import {
   normalizeRegistry,
   stateOf,
+  sleepCall,
   toServiceCalls,
   type HaState,
   type SyncedDevice,
@@ -51,8 +52,6 @@ export class HubAgent {
   private stopped = false;
   private connected = false;
   private registryTimer: ReturnType<typeof setTimeout> | undefined;
-  /** How long a TV gets to report "off" before its power key is pressed again. */
-  private offRecheckMs = 3000;
 
   constructor(
     private readonly config: HubConfig & { hubToken: string },
@@ -283,7 +282,7 @@ export class HubAgent {
     try {
       for (const call of toServiceCalls(device.entityIds[0]!, actions))
         await this.ha.callService(call);
-      await this.confirmOff(device.entityIds[0]!, actions);
+      await this.sleepIfOff(device.entityIds, actions);
       const fresh = (await this.ha.states()).find((x) => x.entity_id === device.entityIds[0]);
       if (fresh) this.latest.set(fresh.entity_id, fresh);
       log("home_local_command", { status: "succeeded", latency_ms: Date.now() - started });
@@ -320,7 +319,7 @@ export class HubAgent {
       }
       for (const call of toServiceCalls(device.entityIds[0]!, c.actions))
         await this.ha.callService(call);
-      await this.confirmOff(device.entityIds[0]!, c.actions);
+      await this.sleepIfOff(device.entityIds, c.actions);
       const fresh = (await this.ha.states()).find((s) => s.entity_id === device.entityIds[0]);
       await this.report(c.id, {
         status: "succeeded",
@@ -336,24 +335,15 @@ export class HubAgent {
     }
   }
 
-  /**
-   * A TV's "off" is its remote's power key: with an app in front (YouTube) the first press can
-   * just close the app. Still on a moment later → press it once more. The engine only sends it
-   * while the TV reports on, so a TV that did turn off is never turned back on.
-   */
-  private async confirmOff(entityId: string, actions: readonly HomeAction[]) {
-    if (!entityId.startsWith("media_player.")) return;
-    if (!actions.some((a) => a.type === "power" && !a.on)) return;
-    await new Promise((r) => setTimeout(r, this.offRecheckMs));
-    const now = (await this.ha.states()).find((x) => x.entity_id === entityId);
-    if (now && !["off", "standby", "unavailable"].includes(now.state)) {
-      log("home_power_off_retry");
-      await this.ha.callService({
-        domain: "media_player",
-        service: "turn_off",
-        target: { entity_id: entityId },
-      });
-    }
+  private async sleepIfOff(entityIds: readonly string[], actions: readonly HomeAction[]) {
+    const call = sleepCall(entityIds, actions);
+    if (!call) return;
+    // The power call already went: a TV that doesn't know this key still did what it could.
+    await this.ha
+      .callService(call)
+      .catch((e) =>
+        log("home_sleep_key_failed", { message: String((e as Error).message).slice(0, 60) }),
+      );
   }
 
   private async report(
