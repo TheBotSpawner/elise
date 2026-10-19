@@ -1,7 +1,10 @@
-import { redirect } from "next/navigation";
+import { requireAuthContext } from "@/application/auth-context";
 
-/** A list opens as its column on the Lists workspace (ADR-051); old links keep working. */
+import { load } from "./load";
+import { View } from "./view";
+
 export default async function ListPage({ params }: PageProps<"/my-elise/lists/[id]">) {
-  const { id } = await params;
-  redirect(`/my-elise/lists?focus=${encodeURIComponent(id)}`);
+  const auth = await requireAuthContext();
+  await load(auth, { params: await params, search: {} });
+  return <View />;
 }

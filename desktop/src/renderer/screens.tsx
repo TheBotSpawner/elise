@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from "date-fns";
 import { enUS, es } from "date-fns/locale";
-import { CloudOff, ExternalLink, RotateCw } from "lucide-react";
+import { CloudOff, RotateCw } from "lucide-react";
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -209,23 +209,38 @@ export function Notice({
   );
 }
 
-export function OpenInBrowser({ path }: { path: string }) {
+/** A path ELISE doesn't have (or this person can't see): said in the app, with a way home. */
+export function NotFoundScreen() {
   const { t } = useI18n();
+  const { navigate } = useDesktopRouter();
   return (
-    <Button
-      variant="secondary"
-      onClick={() => void bridge().openExternal(`${__ELISE_BUILD__.cloudUrl}${path}`)}
-    >
-      <ExternalLink />
-      {t.desktop.openInBrowser}
-    </Button>
+    <Notice
+      title={t.errors.notFoundTitle}
+      body={t.errors.notFoundBody}
+      action={
+        <Button variant="secondary" onClick={() => navigate("/")}>
+          {t.errors.goHome}
+        </Button>
+      }
+    />
   );
 }
 
-/** Sections not in the Desktop renderer yet open on the web — said plainly, never a blank page. */
-export function NotYet({ path }: { path: string }) {
+/** A screen's data failed to load (not a connection problem): the reason, and Retry. */
+export function LoadFailed({ onRetry }: { onRetry: () => void }) {
   const { t } = useI18n();
-  return <Notice title={t.desktop.notYet} action={<OpenInBrowser path={path} />} />;
+  return (
+    <Notice
+      title={t.errors.title}
+      body={t.errors.body}
+      action={
+        <Button variant="secondary" onClick={onRetry}>
+          <RotateCw />
+          {t.errors.retry}
+        </Button>
+      }
+    />
+  );
 }
 
 export function NeedsConnection({ onRetry }: { onRetry: () => void }) {
@@ -314,7 +329,7 @@ export function DesktopSettings() {
   const row =
     "flex items-center justify-between gap-4 border-b border-border py-3.5 last:border-b-0";
   return (
-    <PageContainer>
+    <div className="flex flex-col">
       <PageHeader title={s.title} subtitle={s.description} />
       <section className="rounded-2xl border border-border bg-surface px-4">
         {prefs && (
@@ -420,7 +435,6 @@ export function DesktopSettings() {
         </div>
       </section>
       <div className="mt-6 flex flex-wrap items-center gap-3">
-        <OpenInBrowser path="/settings" />
         <Button
           variant="ghost"
           onClick={async () => {
@@ -438,6 +452,6 @@ export function DesktopSettings() {
           {s.signOut}
         </Button>
       </div>
-    </PageContainer>
+    </div>
   );
 }

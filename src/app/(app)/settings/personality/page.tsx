@@ -1,12 +1,9 @@
 import { requireAuthContext } from "@/application/auth-context";
-import { PersonalitySettings } from "@/features/settings/personality-settings";
-import { SettingsPage } from "@/features/settings/shell";
+
+import { load } from "./load";
+import { View } from "./view";
 
 export default async function PersonalitySettingsPage() {
   const auth = await requireAuthContext();
-  return (
-    <SettingsPage section="personality">
-      <PersonalitySettings initial={auth.profile.personality} />
-    </SettingsPage>
-  );
+  return <View {...await load(auth)} />;
 }

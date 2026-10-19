@@ -1,5 +1,7 @@
 import { AppError } from "@/core/errors";
 
+import { go } from "./router";
+
 /**
  * Server Actions from Desktop (ADR-081): the build replaces each "use server" export with a call
  * here, which ELISE Cloud runs as that same action (its own auth and validation). FormData of
@@ -44,11 +46,7 @@ export async function callAction(module: string, fn: string, args: unknown[]): P
     throw new CloudUnavailableError();
   if (!res.ok || !body) throw new Error(body?.error?.message ?? "Request failed");
   if (body.redirect) {
-    const url = new URL(body.redirect, window.location.href);
-    if (url.origin === window.location.origin) {
-      window.history.pushState(null, "", url.pathname + url.search);
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    } else void window.eliseDesktop?.openExternal(url.href);
+    go(body.redirect);
     return undefined;
   }
   return body.value;

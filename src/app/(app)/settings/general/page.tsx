@@ -1,5 +1,9 @@
-import { GeneralSection } from "@/features/settings/sections";
+import { requireAuthContext } from "@/application/auth-context";
 
-export default function GeneralSettingsPage() {
-  return <GeneralSection />;
+import { load } from "./load";
+import { View } from "./view";
+
+export default async function GeneralSettingsPage() {
+  const auth = await requireAuthContext();
+  return <View {...await load(auth)} />;
 }

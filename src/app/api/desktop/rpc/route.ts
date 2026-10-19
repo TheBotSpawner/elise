@@ -1,4 +1,3 @@
-import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -26,7 +25,7 @@ import * as tasks from "@/features/tasks/actions";
 import * as time from "@/features/time/actions";
 import * as workspace from "@/features/workspace/actions";
 
-import { desktopError, requireDesktopClient } from "../respond";
+import { desktopError, redirectTarget, requireDesktopClient } from "../respond";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -91,10 +90,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ value: value ?? null });
     } catch (error) {
       // redirect() inside an action: the app navigates (or opens the browser for OAuth).
-      if (isRedirectError(error)) {
-        const destination = error.digest.split(";").slice(2, -2).join(";");
-        return NextResponse.json({ redirect: destination });
-      }
+      const redirect = redirectTarget(error);
+      if (redirect) return NextResponse.json({ redirect });
       throw error;
     }
   } catch (error) {

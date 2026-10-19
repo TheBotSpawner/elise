@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 
 import { AppShell } from "@/components/elise/app-shell";
@@ -6,26 +6,27 @@ import type { NavUser } from "@/components/elise/navigation/top-nav";
 import { ConfirmProvider } from "@/components/ui/confirm";
 import type { DateOrder } from "@/core/dates";
 import type { NativeModuleKey } from "@/core/modules/registry";
+import { matchAppRoute, isSettingsRoute } from "@/core/platform/app-routes";
 import {
   DESKTOP_BRIDGE_PROTOCOL_VERSION,
   type HomeHubLocalState,
   type PlatformInfo,
 } from "@/core/platform/platform";
 import { HomeRuntimeProvider, type HomeRuntimeControls } from "@/features/home/runtime-context";
+import { ResultNotifier } from "@/features/schedules/browser-notifications";
+import { SettingsShell } from "@/features/settings/shell";
+import { TimeController } from "@/features/time/time-view";
 import { I18nProvider } from "@/lib/i18n/client";
 import { PlatformProvider } from "@/lib/platform/platform";
 import { applyAppearance } from "@/lib/theme";
 
 import { DesktopStateProvider, usePageData, useSession } from "./data";
-import { HogarRoute, HomeRoute } from "./pages";
+import { HogarRoute, HomeRoute, RoutePage } from "./pages";
 import { RouterProvider, useDesktopRouter } from "./router";
 import {
   CloudBanner,
-  DesktopSettings,
   NeedsConnection,
-  Notice,
-  NotYet,
-  OpenInBrowser,
+  NotFoundScreen,
   RecoveryBoundary,
   SignInScreen,
   UpdateRequiredBanner,
@@ -62,13 +63,21 @@ const PLATFORM: PlatformInfo = {
 
 const systemLocale = () => (navigator.language.toLowerCase().startsWith("es") ? "es" : "en");
 
+/**
+ * Every ELISE screen inside the window (ADR-092): the same paths and views as the web. Inicio
+ * and Hogar keep their own routes (they show last-known data with ELISE Cloud unreachable);
+ * Settings screens, this computer's own section among them, sit in the web's Settings shell.
+ */
 function Routes() {
   const { pathname, search } = useDesktopRouter();
   const screen = (() => {
     if (pathname === "/") return <HomeRoute />;
     if (pathname === "/my-elise/home") return <HogarRoute />;
-    if (pathname === "/settings" || pathname === "/settings/desktop") return <DesktopSettings />;
-    return <NotYet path={pathname + search} />;
+    const match = matchAppRoute(pathname);
+    if (!match) return <NotFoundScreen />;
+    // A new path is a new screen (its state starts fresh); a new query keeps it, as on the web.
+    const page = <RoutePage key={pathname} match={match} path={pathname + search} />;
+    return isSettingsRoute(match.route) ? <SettingsShell>{page}</SettingsShell> : page;
   })();
   return <RecoveryBoundary resetKey={pathname}>{screen}</RecoveryBoundary>;
 }
@@ -77,16 +86,28 @@ function Routes() {
 function Frame() {
   const boot = usePageData<Bootstrap>("/__bootstrap");
   const data = boot.status === "ready" ? boot.data : null;
+  // Leaving first run (it ends by going to "/"): read the frame again, now onboarded.
+  const { pathname, search } = useDesktopRouter();
+  const wasOnboarding = useRef(pathname === "/onboarding");
+  const { reload } = boot;
+  useEffect(() => {
+    if (wasOnboarding.current && pathname !== "/onboarding") reload();
+    wasOnboarding.current = pathname === "/onboarding";
+  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps -- reload is recreated per render
   useEffect(() => {
     if (data) applyAppearance({ theme: data.profile.theme, accent: data.profile.accent });
   }, [data]);
 
   const locale = data?.profile.locale ?? systemLocale();
-  const content = useMemo(() => {
+  const content = (() => {
     if (boot.status === "loading") return null;
     if (!data) return <NeedsConnection onRetry={boot.reload} />;
-    if (data.onboardingStatus === "pending")
-      return <Notice title="ELISE" action={<OpenInBrowser path="/onboarding" />} />;
+    // First run happens here too (ADR-092); its Google/Notion steps hand off to the browser for
+    // consent and pick up again when the window regains focus.
+    if (data.onboardingStatus === "pending" || pathname === "/onboarding")
+      return (
+        <RoutePage match={{ route: "/onboarding", params: {} }} path={`/onboarding${search}`} />
+      );
     return (
       <LocalHomeRuntime>
         <AppShell
@@ -95,13 +116,16 @@ function Frame() {
           modules={data.modules}
           user={data.user}
         >
+          {/* What the web's (app) layout mounts on every page. */}
+          <ResultNotifier userId={data.userId} />
+          <TimeController workspaceId={data.workspaceId} userId={data.userId} />
           <UpdateRequiredBanner />
           <CloudBanner />
           <Routes />
         </AppShell>
       </LocalHomeRuntime>
     );
-  }, [boot, data]);
+  })();
 
   return (
     <I18nProvider locale={locale} dateOrder={data?.profile.dateOrder}>

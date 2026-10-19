@@ -7,6 +7,7 @@ import { defineConfig, type Plugin } from "vite";
 
 import { actionKey, actionNames } from "./actions-stub";
 import { desktopBuildConfig, REPO_ROOT, SRC } from "./build-config";
+import { overrideKey } from "./override-key";
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 const RENDERER = here("./src/renderer");
@@ -39,6 +40,8 @@ function eliseDesktop(): Plugin {
     "next/navigation": `${RENDERER}/shims/next-navigation.ts`,
     "@/infrastructure/supabase/client": `${RENDERER}/overrides/supabase-client.ts`,
     "@/features/home/actions": `${RENDERER}/overrides/home-actions.ts`,
+    // Sign-out ends Desktop's own session; sign-in is the browser's (ADR-084).
+    "@/features/auth/actions": `${RENDERER}/overrides/auth-actions.ts`,
   };
   return {
     name: "elise-desktop",
@@ -52,7 +55,8 @@ function eliseDesktop(): Plugin {
       // The override itself imports the real stub.
       if (source.startsWith("rpc-stub:"))
         return `\0rpc-stub:${posix(`${SRC}/${source.slice(9)}.ts`)}`;
-      const target = overrides[source];
+      const key = overrideKey(source, importer, SRC);
+      const target = overrides[key];
       if (target && !posix(importer ?? "").startsWith(posix(`${RENDERER}/overrides`)))
         return target;
       return null;

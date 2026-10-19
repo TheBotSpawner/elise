@@ -1,34 +1,13 @@
-import { Suspense } from "react";
-
 import { requireAuthContext } from "@/application/auth-context";
-import { configuredProviders, listConnections } from "@/application/connections-service";
-import { moduleVisibility } from "@/application/modules-service";
-import { SECTION_ICONS } from "@/components/elise/navigation/nav-items";
-import { PageContainer, PageHeader } from "@/components/shared/page";
-import { ConnectionsHub } from "@/features/connections/hub";
-import { getT } from "@/lib/i18n/server";
+
+import { load } from "./load";
+import { View } from "./view";
 
 /**
  * The Connections Hub (ADR-043): providers, searchable, from persisted connection metadata only
  * (no provider is called to draw it). Accounts and capabilities live in each provider's page.
  */
 export default async function ConnectionsPage() {
-  const [auth, { t }] = await Promise.all([requireAuthContext(), getT()]);
-  const [list, modules] = await Promise.all([listConnections(auth), moduleVisibility(auth)]);
-  return (
-    <PageContainer>
-      <PageHeader
-        title={t.connections.title}
-        icon={SECTION_ICONS.connections}
-        info={[t.connections.subtitle]}
-      />
-      <Suspense>
-        <ConnectionsHub
-          accounts={list.connections}
-          configured={configuredProviders(list)}
-          modules={modules}
-        />
-      </Suspense>
-    </PageContainer>
-  );
+  const auth = await requireAuthContext();
+  return <View {...await load(auth)} />;
 }

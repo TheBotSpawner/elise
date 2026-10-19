@@ -4346,8 +4346,6 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
       aiUnavailable: "ELISE Cloud no está disponible en este momento.",
     },
     needsConnection: "Esta sección necesita conexión.",
-    notYet: "Esta sección todavía se abre en el navegador.",
-    openInBrowser: "Abrir en el navegador",
     updateRequired: "Esta función requiere actualizar ELISE Desktop.",
     update: "Actualizar",
     updateReady: (v: string) => `Hay una nueva versión de ELISE Desktop${v ? ` (${v})` : ""}.`,

@@ -1,26 +1,11 @@
-import { notFound } from "next/navigation";
-import { z } from "zod";
-
 import { requireAuthContext } from "@/application/auth-context";
-import { getStructuredSource } from "@/application/structured-service";
-import { BackLink } from "@/components/shared/back-link";
-import { PageContainer, PageHeader } from "@/components/shared/page";
-import { SourceDetail } from "@/features/structured/source-detail";
-import { getT } from "@/lib/i18n/server";
+
+import { load } from "./load";
+import { View } from "./view";
 
 export default async function StructuredSourcePage({
   params,
 }: PageProps<"/connections/sources/[id]">) {
-  const { id } = await params;
-  if (!z.uuid().safeParse(id).success) notFound();
-  const [auth, { t }] = await Promise.all([requireAuthContext(), getT()]);
-  const source = await getStructuredSource(auth, id).catch(() => null);
-  if (!source) notFound();
-  return (
-    <PageContainer>
-      <BackLink href="/connections" label={t.common.backTo(t.structured.back)} />
-      <PageHeader title={source.name} subtitle={source.context ?? undefined} />
-      <SourceDetail source={source} workspaceId={auth.workspaceId} />
-    </PageContainer>
-  );
+  const auth = await requireAuthContext();
+  return <View {...await load(auth, { params: await params, search: {} })} />;
 }

@@ -1,3 +1,5 @@
+import { getURLFromRedirectError } from "next/dist/client/components/redirect";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
@@ -12,6 +14,10 @@ const STATUS: Record<string, number> = {
   RATE_LIMITED: 429,
   CAPABILITY_UNAVAILABLE: 503,
 };
+
+/** Where a redirect() thrown by an action or a loader points, or null for any other error. */
+export const redirectTarget = (error: unknown) =>
+  isRedirectError(error) ? getURLFromRedirectError(error) : null;
 
 /** One error shape for every ELISE Desktop endpoint: public message, never internals. */
 export function desktopError(error: unknown, event: string) {

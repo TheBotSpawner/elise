@@ -1,26 +1,22 @@
-import { requireAuthContext } from "@/application/auth-context";
-import { getT } from "@/lib/i18n/server";
+"use client";
 
-import { DateOrderRow, LinkRow, LocationRow, ProfileSettings } from "./general";
-import { SettingsCard, SettingsPage } from "./shell";
+import { DateOrderRow, LinkRow, LocationRow, ProfileSettings } from "@/features/settings/general";
+import { SettingsCard, SettingsPage } from "@/features/settings/shell";
+import { useI18n } from "@/lib/i18n/client";
+
+import type { GeneralProps } from "./load";
 
 /**
  * General (ADR-068): what applies to all of ELISE — profile, interface language, time zone,
  * location, and the way to Mi ELISE's modules (the existing configurator in Connections).
  * Rendered by /settings/general and, on wide screens, by /settings itself.
  */
-export async function GeneralSection() {
-  const [auth, { t }] = await Promise.all([requireAuthContext(), getT()]);
+export function View({ profile }: GeneralProps) {
+  const { t } = useI18n();
   const g = t.settingsHub.general;
   return (
     <SettingsPage section="general">
-      <ProfileSettings
-        profile={{
-          displayName: auth.profile.displayName ?? "",
-          language: auth.profile.locale,
-          timezone: auth.profile.timezone,
-        }}
-      />
+      <ProfileSettings profile={profile} />
       <SettingsCard>
         <DateOrderRow />
         <LocationRow />

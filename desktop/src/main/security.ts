@@ -1,5 +1,6 @@
 import { app, session, shell, type WebContents } from "electron";
 
+import { cloudAppPath } from "@/core/platform/app-routes";
 import { isSafeExternalUrl } from "@/core/platform/links";
 
 import { log } from "./log";
@@ -27,6 +28,16 @@ export const isAppUrl = (raw: string) => {
   }
 };
 
+/** In-app URL for a link to one of ELISE Cloud's screens (ADR-092), or null. */
+export function inAppUrlFor(raw: string): string | null {
+  try {
+    const path = cloudAppPath(new URL(raw), __ELISE_BUILD__.cloudUrl);
+    return path && `${APP_ORIGIN}${path}`;
+  } catch {
+    return null;
+  }
+}
+
 export function openExternalSafely(url: string) {
   if (!isSafeExternalUrl(url)) {
     log("desktop_external_blocked", { url: url.slice(0, 80) });
@@ -50,7 +61,9 @@ export function hardenSessions() {
     contents.on("will-navigate", (event, url) => {
       if (isAppUrl(url)) return;
       event.preventDefault();
-      openExternalSafely(url);
+      const inApp = inAppUrlFor(url);
+      if (inApp) contents.loadURL(inApp).catch(() => undefined);
+      else openExternalSafely(url);
     });
     contents.on("will-redirect", (event, url) => {
       if (!isAppUrl(url)) event.preventDefault();
@@ -58,7 +71,8 @@ export function hardenSessions() {
     contents.on("will-attach-webview", (event) => event.preventDefault());
     contents.setWindowOpenHandler(({ url }) => {
       // Never a privileged second window: in-app links stay here, the rest goes to the browser.
-      if (isAppUrl(url)) contents.loadURL(url).catch(() => undefined);
+      const inApp = isAppUrl(url) ? url : inAppUrlFor(url);
+      if (inApp) contents.loadURL(inApp).catch(() => undefined);
       else openExternalSafely(url);
       return { action: "deny" };
     });

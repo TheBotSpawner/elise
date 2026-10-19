@@ -4308,8 +4308,6 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       aiUnavailable: "ELISE Cloud isn't available right now.",
     },
     needsConnection: "This section needs a connection.",
-    notYet: "This section still opens in your browser.",
-    openInBrowser: "Open in browser",
     updateRequired: "This feature needs an ELISE Desktop update.",
     update: "Update",
     updateReady: (v: string) => `A new version of ELISE Desktop is ready${v ? ` (${v})` : ""}.`,

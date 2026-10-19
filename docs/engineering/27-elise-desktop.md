@@ -10,7 +10,7 @@ page covers how to work with Desktop day to day.
 | `desktop/src/main` | Electron main process: window, tray, deep links, session, IPC, updates, runtime supervision |
 | `desktop/src/preload` | The frozen `window.eliseDesktop` bridge (no channel names leak) |
 | `desktop/src/runtime` | ELISE Local Runtime (`utilityProcess`), today hosting `local.home` (`home-hub/agent.ts`) |
-| `desktop/src/renderer` | Local renderer: router, Next shims, RPC, the few Desktop-only screens |
+| `desktop/src/renderer` | Local renderer: router, Next shims, RPC, the route-view registry (ADR-092), Desktop-only screens |
 | `desktop/vite.renderer.config.ts` | Compiles the shared `src/` for Desktop (action stubs, shims, server-only guard) |
 | `src/core/platform` | Shared contract: capabilities, protocol versions, connectivity, deep links, bridge |
 | `src/app/api/desktop/*` | Cloud endpoints: `session`, `heartbeat`, `rpc`, `page` |
@@ -164,6 +164,24 @@ published. A real publish needs the tag pushed (the release must match committed
   action.
 - **Updates** stop the runtime cleanly before installing. Pairing, configuration and cache
   survive, so there's nothing to re-pair.
+
+## Screens and routes (ADR-092)
+
+Every app route renders in Desktop from the same code as the web:
+
+- `src/app/**/load.ts` is the server loader and `view.tsx` the client view. `page.tsx` only joins
+  them.
+- New route:
+  1. add it to `APP_ROUTES` (`src/core/platform/app-routes.ts`);
+  2. add its loader to `src/app/(app)/route-loaders.ts`;
+  3. add its view to `desktop/src/renderer/route-views.ts`.
+
+  `tests/unit/desktop/route-inventory.test.ts` fails until all three match.
+- Views must not import server-only code: the renderer build and the inventory test both fail if
+  one does.
+- Desktop fetches props from `/api/desktop/page?path=`. Loader redirects and not-found work as on
+  the web.
+- Links to ELISE Cloud's own routes stay in the window. Everything else opens in the browser.
 
 ## Installed vs local builds (ADR-091)
 

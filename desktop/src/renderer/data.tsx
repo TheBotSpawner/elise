@@ -52,7 +52,11 @@ export type PageData<T> =
  * when the cloud is unreachable — always labelled with its age, never shown as current. Keeps
  * what's on screen while refreshing, so router.refresh() doesn't flash.
  */
-export function usePageData<T>(path: string): PageData<T> & { reload: () => void } {
+export function usePageData<T>(
+  path: string,
+  /** false: a view with no data of its own — nothing is fetched (it works offline too). */
+  enabled = true,
+): PageData<T> & { reload: () => void } {
   const { version } = useDesktopRouter();
   const { cloud } = useConnectivity();
   const [state, setState] = useState<PageData<T>>({ status: "loading" });
@@ -63,6 +67,7 @@ export function usePageData<T>(path: string): PageData<T> & { reload: () => void
   const cacheKey = path.includes("?") ? "" : base === "/__bootstrap" ? "bootstrap" : `page:${base}`;
 
   useEffect(() => {
+    if (!enabled) return;
     const mine = ++seq.current;
     const apply = (s: PageData<T>) => mine === seq.current && setState(s);
     void (async () => {
@@ -92,7 +97,7 @@ export function usePageData<T>(path: string): PageData<T> & { reload: () => void
       );
     })();
     // Back online → fresh data.
-  }, [path, cacheKey, version, nonce, cloud === "online"]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [path, cacheKey, version, nonce, enabled, cloud === "online"]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { ...state, reload: () => setNonce((n) => n + 1) };
 }

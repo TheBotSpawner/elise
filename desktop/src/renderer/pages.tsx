@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ComponentProps } from "react";
 import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import type { HomeSnapshot, HomeState } from "@/core/home/model";
+import { VIEW_ONLY_ROUTES, type RouteMatch } from "@/core/platform/app-routes";
 import type { LocalHomeDevice } from "@/core/platform/platform";
 import { ChatSurface } from "@/features/chat/chat-surface";
 import { HomeView } from "@/features/home/home-view";
@@ -10,8 +11,9 @@ import { useI18n } from "@/lib/i18n/client";
 
 import { useConnectivity, usePageData } from "./data";
 import { localHome } from "./local-home";
+import { ROUTE_VIEWS } from "./route-views";
 import { useDesktopRouter } from "./router";
-import { NeedsConnection, NotYet, StaleNote } from "./screens";
+import { LoadFailed, NeedsConnection, NotFoundScreen, StaleNote } from "./screens";
 
 /** Inicio: exactly the web's Home (same loader, same ChatSurface). */
 export function HomeRoute() {
@@ -21,7 +23,8 @@ export function HomeRoute() {
   );
   if (page.status === "loading") return null;
   if (page.status === "offline") return <NeedsConnection onRetry={page.reload} />;
-  if (page.status !== "ready") return <NotYet path={`/${search}`} />;
+  if (page.status === "not_available") return <NotFoundScreen />;
+  if (page.status !== "ready") return <LoadFailed onRetry={page.reload} />;
   return (
     <>
       <StaleNote cachedAt={page.cachedAt} />
@@ -91,7 +94,8 @@ export function HogarRoute() {
 
   if (page.status === "loading") return null;
   if (page.status === "offline") return <NeedsConnection onRetry={page.reload} />;
-  if (!data || !snapshot) return <NotYet path="/my-elise/home" />;
+  if (page.status === "not_available") return <NotFoundScreen />;
+  if (!data || !snapshot) return <LoadFailed onRetry={page.reload} />;
   return (
     <PageContainer wide>
       <PageHeader
@@ -102,5 +106,33 @@ export function HogarRoute() {
       {cloudDown && <StaleNote cachedAt={page.status === "ready" ? page.cachedAt : null} />}
       <HomeView {...data.props} snapshot={snapshot} />
     </PageContainer>
+  );
+}
+
+/**
+ * Every other ELISE screen (ADR-092): the web's own view for that path, with props from the
+ * same loader the web page runs (ELISE Cloud runs it for Desktop). Loader redirects are followed
+ * here; an unknown path is "not found" in the app, never a hand-off to the browser.
+ */
+export function RoutePage({ match, path }: { match: RouteMatch; path: string }) {
+  const View = ROUTE_VIEWS[match.route];
+  const data = !VIEW_ONLY_ROUTES.has(match.route);
+  const page = usePageData<{ props?: Record<string, unknown>; redirect?: string }>(path, data);
+  const { navigate } = useDesktopRouter();
+  const redirect = page.status === "ready" ? page.data.redirect : undefined;
+  useEffect(() => {
+    if (redirect) navigate(redirect, { replace: true });
+  }, [redirect, navigate]);
+  if (!View) return <NotFoundScreen />;
+  if (!data) return <View />;
+  if (page.status === "loading" || redirect) return null;
+  if (page.status === "offline") return <NeedsConnection onRetry={page.reload} />;
+  if (page.status === "not_available") return <NotFoundScreen />;
+  if (page.status === "error") return <LoadFailed onRetry={page.reload} />;
+  return (
+    <>
+      <StaleNote cachedAt={page.cachedAt} />
+      <View {...page.data.props} />
+    </>
   );
 }

@@ -1,12 +1,6 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+
+import { cloudAppPath } from "@/core/platform/app-routes";
 
 /**
  * Desktop's local router (ADR-081): history-based, same paths as the web, no server needed to
@@ -26,13 +20,34 @@ const RouterContext = createContext<DesktopRouter | null>(null);
 
 const current = () => ({ pathname: window.location.pathname, search: window.location.search });
 
-export const isInternalHref = (href: string) => {
+/**
+ * The in-app path for a link, or null when it leaves ELISE. A link to ELISE Cloud's own address
+ * for one of ELISE's screens ("https://…/my-elise/finance") opens here too (ADR-092); anything
+ * else is external (the system browser, through the main process's checks).
+ */
+export function localPath(href: string): string | null {
+  let url: URL;
   try {
-    return new URL(href, window.location.href).origin === window.location.origin;
+    url = new URL(href, window.location.href);
   } catch {
-    return false;
+    return null;
   }
-};
+  if (url.origin === window.location.origin) return url.pathname + url.search + url.hash;
+  return cloudAppPath(url, __ELISE_BUILD__.cloudUrl);
+}
+
+export const isInternalHref = (href: string) => localPath(href) !== null;
+
+/** Opens a link in the app, or hands it to the system browser. Also used outside React (RPC). */
+export function go(href: string, opts?: { replace?: boolean }) {
+  const next = localPath(href);
+  if (next === null)
+    return void window.eliseDesktop?.openExternal(new URL(href, window.location.href).href);
+  if (opts?.replace) window.history.replaceState(null, "", next);
+  else window.history.pushState(null, "", next);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  if (!opts?.replace && !next.includes("#")) window.scrollTo(0, 0);
+}
 
 export function RouterProvider({ children }: { children: ReactNode }) {
   const [loc, setLoc] = useState(current);
@@ -44,26 +59,32 @@ export function RouterProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const navigate = useCallback((href: string, opts?: { replace?: boolean }) => {
-    const url = new URL(href, window.location.href);
-    if (url.origin !== window.location.origin)
-      return void window.eliseDesktop?.openExternal(url.href);
-    const next = url.pathname + url.search + url.hash;
-    if (opts?.replace) window.history.replaceState(null, "", next);
-    else window.history.pushState(null, "", next);
-    setLoc(current());
-    if (!opts?.replace && !url.hash) window.scrollTo(0, 0);
+  // Back from the system browser (an OAuth consent, a page opened outside): the screen reads its
+  // data again, so what happened there shows here without a manual reload.
+  useEffect(() => {
+    let blurredAt = 0;
+    const onBlur = () => (blurredAt = Date.now());
+    const onFocus = () => {
+      if (blurredAt && Date.now() - blurredAt > 5000) setVersion((v) => v + 1);
+      blurredAt = 0;
+    };
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   const value = useMemo<DesktopRouter>(
     () => ({
       ...loc,
       version,
-      navigate,
+      navigate: go,
       back: () => window.history.back(),
       refresh: () => setVersion((v) => v + 1),
     }),
-    [loc, version, navigate],
+    [loc, version],
   );
   return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }

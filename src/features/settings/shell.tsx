@@ -1,12 +1,20 @@
 "use client";
 
-import { ArrowLeft, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Monitor,
+  Search,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useId, useState, type ReactNode } from "react";
 
 import { InfoTip } from "@/components/shared/info-tip";
 import { useI18n } from "@/lib/i18n/client";
+import { useFeature } from "@/lib/platform/platform";
 import { cn } from "@/lib/utils";
 
 import {
@@ -26,8 +34,8 @@ import {
 export function SettingsShell({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const pathname = usePathname();
-  // /settings on a wide screen shows General.
-  const active = sectionOf(pathname) ?? "general";
+  // /settings on a wide screen shows General; ELISE Desktop's own section is "desktop".
+  const active = pathname === DESKTOP_SECTION ? "desktop" : (sectionOf(pathname) ?? "general");
   return (
     <div className="mx-auto w-full max-w-[1180px] px-[var(--page-gutter)] pt-4 pb-10 md:grid md:grid-cols-[232px_minmax(0,1fr)] md:gap-10 md:pt-8 md:pb-16 lg:gap-14">
       <aside className="max-md:hidden">
@@ -50,36 +58,67 @@ export function SettingsShell({ children }: { children: ReactNode }) {
   );
 }
 
-function SectionNav({ active }: { active: SettingsSectionId }) {
+/** This computer's ELISE Desktop settings (start at login, updates, ELISE Home): Desktop only. */
+const DESKTOP_SECTION = "/settings/desktop";
+
+function SectionNav({ active }: { active: SettingsSectionId | "desktop" }) {
   const { t } = useI18n();
+  const onDesktop = useFeature({ capability: "auto_update" }) === "supported";
   return (
     <nav aria-label={t.settingsHub.backToSettings} className="flex flex-col gap-4">
       {SETTINGS_GROUPS.map((group) => (
         <div key={group} className="flex flex-col gap-0.5">
           <p className="px-3 pb-1 type-label text-faint">{t.settingsHub.groups[group]}</p>
           {SETTINGS_SECTIONS.filter((s) => s.group === group).map((s) => (
-            <Link
+            <NavLink
               key={s.id}
               href={sectionHref(s.id)}
-              aria-current={active === s.id ? "page" : undefined}
-              className={cn(
-                "flex h-9 items-center gap-2.5 rounded-xl px-3 text-[14px] transition-colors",
-                active === s.id
-                  ? "bg-active font-medium text-fg"
-                  : "text-muted hover:bg-active/60 hover:text-fg",
-              )}
-            >
-              <s.icon
-                className={cn("size-4 shrink-0", active === s.id && "text-accent-text")}
-                strokeWidth={1.7}
-                aria-hidden
-              />
-              {t.settingsHub.sections[s.id].title}
-            </Link>
+              icon={s.icon}
+              title={t.settingsHub.sections[s.id].title}
+              active={active === s.id}
+            />
           ))}
         </div>
       ))}
+      {onDesktop && (
+        <NavLink
+          href={DESKTOP_SECTION}
+          icon={Monitor}
+          title={t.desktop.settings.title}
+          active={active === "desktop"}
+        />
+      )}
     </nav>
+  );
+}
+
+function NavLink({
+  href,
+  icon: Icon,
+  title,
+  active,
+}: {
+  href: string;
+  icon: LucideIcon;
+  title: string;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex h-9 items-center gap-2.5 rounded-xl px-3 text-[14px] transition-colors",
+        active ? "bg-active font-medium text-fg" : "text-muted hover:bg-active/60 hover:text-fg",
+      )}
+    >
+      <Icon
+        className={cn("size-4 shrink-0", active && "text-accent-text")}
+        strokeWidth={1.7}
+        aria-hidden
+      />
+      {title}
+    </Link>
   );
 }
 
@@ -151,6 +190,7 @@ export function SettingsSearch({ className }: { className?: string }) {
 /** Phones: /settings is the list of categories (from `md` the sidebar replaces it). */
 export function SettingsIndex() {
   const { t } = useI18n();
+  const onDesktop = useFeature({ capability: "auto_update" }) === "supported";
   return (
     <div className="flex flex-col gap-5 md:hidden">
       <h1 className="text-[26px] leading-[1.15] font-light tracking-[-0.025em]">
@@ -185,6 +225,16 @@ export function SettingsIndex() {
           </ul>
         </section>
       ))}
+      {onDesktop && (
+        <Link
+          href={DESKTOP_SECTION}
+          className="flex min-h-14 items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-2.5 active:bg-active"
+        >
+          <Monitor className="size-[18px] shrink-0 text-muted" strokeWidth={1.7} aria-hidden />
+          <span className="min-w-0 flex-1 text-[16px]">{t.desktop.settings.title}</span>
+          <ChevronRight className="size-4 shrink-0 text-faint" aria-hidden />
+        </Link>
+      )}
     </div>
   );
 }
