@@ -54,6 +54,10 @@ export function homeOnboarding(
   const preparing = online.find((d) => d.homeEnabled) ?? null;
   const host = preparing ?? (online.length === 1 ? online[0]! : null);
   const base = { online, host, choose: !host && online.length > 1 };
+  // The hub went quiet but this person's ELISE Desktop is open: it's reconnecting ELISE Home,
+  // not "sin conexión" (which would send them to reopen an app that's already running).
+  if (hubSetup === "desktop_offline" && online.length)
+    return { ...base, state: "hub_initializing" };
   if (hubSetup) return { ...base, state: hubSetup };
   if (online.length) return { ...base, state: "desktop_online" };
   if (desktops.some((d) => desktopStatus(d, now) === "update_required"))

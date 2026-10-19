@@ -50,7 +50,19 @@ export function runtimeConfig() {
   };
 }
 
-async function registerHub(host: RuntimeHost) {
+let registering: Promise<void> | null = null;
+
+/**
+ * Links this computer as the home's hub — once at a time. It used to run for every runtime
+ * event: two overlapping registrations created two hubs and the second revoked the first, and
+ * when the runtime kept the revoked credential, Hogar showed the hub offline for good.
+ */
+function registerHub(host: RuntimeHost): Promise<void> {
+  registering ??= doRegisterHub(host).finally(() => (registering = null));
+  return registering;
+}
+
+async function doRegisterHub(host: RuntimeHost) {
   const s = session();
   if (hubToken() || !s.signedIn || cloudState().cloud !== "online") return;
   if (host.home?.runtime.phase !== "ready") return;
@@ -91,6 +103,19 @@ export function watchHome(host: RuntimeHost) {
     },
   );
   host.on("home", () => void registerHub(host));
+  // ELISE Cloud refused this hub's credential (revoked elsewhere, or lost): forget it and link
+  // again, at most once a minute so a cloud problem never turns into a registration loop.
+  let lastRelink = 0;
+  host.on("hubRejected", () => {
+    if (!hubToken() || Date.now() - lastRelink < 60_000) return;
+    lastRelink = Date.now();
+    log("desktop_home_credential_rejected");
+    setHubToken(null, null);
+    void host
+      .configure(runtimeConfig())
+      .catch(() => undefined)
+      .then(() => registerHub(host));
+  });
 }
 
 /** "Quitar ELISE Home de esta computadora": engine and its data go; the account stays. */

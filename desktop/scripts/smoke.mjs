@@ -3,7 +3,9 @@
 //   1. it boots from local assets — no remote request is needed to render;
 //   2. the page gets the typed bridge and nothing of Node;
 //   3. a second launch hands over to the first instance and exits (one local runtime);
-//   4. a crashed renderer comes back by itself and the local runtime keeps running.
+//   4. a crashed renderer comes back by itself and the local runtime keeps running;
+//   5. a cold start from a link (elise://home/setup, the web's "Abrir ELISE Desktop") opens
+//      that page — it once hung with no window when started this way.
 // Usage: node desktop/scripts/smoke.mjs <path-to-packaged-executable>
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -96,5 +98,33 @@ try {
 } finally {
   await browser?.close().catch(() => undefined);
   app.kill();
+}
+
+// Cold start from a link: no instance running, the link is the only argument (+ a debug port).
+await wait(3000);
+const linked = spawn(exe, ["--remote-debugging-port=9339", "elise://home/setup"], {
+  env,
+  stdio: "ignore",
+});
+let linkedBrowser;
+try {
+  let url = "";
+  for (let i = 0; i < 60 && !url.endsWith("/my-elise/home"); i++) {
+    await wait(500);
+    linkedBrowser ??= await chromium.connectOverCDP("http://127.0.0.1:9339").catch(() => null);
+    url =
+      linkedBrowser
+        ?.contexts()[0]
+        ?.pages()
+        .find((p) => p.url().startsWith("elise-app://"))
+        ?.url() ?? "";
+  }
+  check(url.endsWith("/my-elise/home"), "cold start from elise://home/setup opens Hogar");
+} catch (error) {
+  failures.push(error.message);
+  console.log(`✗ ${error.message}`);
+} finally {
+  await linkedBrowser?.close().catch(() => undefined);
+  linked.kill();
 }
 process.exit(failures.length ? 1 : 0);

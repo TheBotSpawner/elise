@@ -165,6 +165,18 @@ published. A real publish needs the tag pushed (the release must match committed
 - **Updates** stop the runtime cleanly before installing. Pairing, configuration and cache
   survive, so there's nothing to re-pair.
 
+## Installed vs local builds (ADR-091)
+
+- Only the **installed** ELISE (Squirrel on Windows, the app bundle on macOS) registers
+  `elise://`, starts at login and uses the real profile (`%APPDATA%\ELISE`).
+- A **local build** (`desktop/out`, `npm run dev:desktop`) uses `%APPDATA%\ELISE (local build)`,
+  with its own single-instance lock. It never registers at login, and registers `elise://` only
+  with `ELISE_DESKTOP_REGISTER_PROTOCOL=1` (for QA).
+- The installed app removes the stale `electron.app.ELISE` login entry that older local builds
+  left behind.
+- To QA deep links on a local build, set `ELISE_DESKTOP_REGISTER_PROTOCOL=1`, then run the
+  installed app once afterwards: it reclaims `elise://`.
+
 ## Window resilience
 
 - A renderer that crashes, is killed (memory pressure, sleep, a GPU reset) or hangs for 8 s

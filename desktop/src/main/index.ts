@@ -13,7 +13,7 @@ import { log } from "./log";
 import { APP_ORIGIN, handleAppProtocol, registerSchemes } from "./protocol";
 import { RuntimeHost } from "./runtime-host";
 import { hardenSessions } from "./security";
-import { handleSquirrelEvent, stableExe } from "./squirrel";
+import { handleSquirrelEvent, isInstalledBuild, stableExe } from "./squirrel";
 import { loadState, updateState } from "./store";
 import {
   checkForUpdates,
@@ -42,15 +42,10 @@ if (!installerEvent) registerSchemes();
 // Automated validation runs an unpackaged build against a throwaway profile directory.
 if (!app.isPackaged && process.env.ELISE_DESKTOP_USER_DATA)
   app.setPath("userData", process.env.ELISE_DESKTOP_USER_DATA);
-
-if (installerEvent) {
-  // handled in squirrel.ts; the app quits when Update.exe is done
-} else if (!app.requestSingleInstanceLock()) {
-  // A second launch hands its arguments (deep link) to the first and exits: one runtime only.
-  app.quit();
-} else {
-  void main();
-}
+// A local build (desktop/out, `electron .`) gets its own profile: its own single-instance lock
+// and data, so it can never stand in for — or break — the installed ELISE.
+else if (!installerEvent && !isInstalledBuild())
+  app.setPath("userData", join(app.getPath("appData"), "ELISE (local build)"));
 
 let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -58,16 +53,29 @@ let quitting = false;
 const host = new RuntimeHost();
 const pendingLinks: string[] = [];
 
+/** Whether this build may own elise:// (installed; local builds only when QA asks for it). */
+const ownsProtocol = () =>
+  isInstalledBuild() || process.env.ELISE_DESKTOP_REGISTER_PROTOCOL === "1";
+
 function registerProtocolClient() {
+  if (!ownsProtocol()) return;
   if (process.defaultApp && process.argv[1])
     app.setAsDefaultProtocolClient("elise", process.execPath, [resolve(process.argv[1])]);
   else app.setAsDefaultProtocolClient("elise", stableExe());
 }
 
+/**
+ * Local builds once registered themselves at login as "electron.app.ELISE" (pointing into
+ * desktop/out). The installed ELISE removes that stale entry so only it starts with Windows.
+ */
+const LOCAL_BUILD_LOGIN_ITEM = "electron.app.ELISE";
+
 function applyLoginItem() {
-  if (!app.isPackaged) return; // never register a development build at login
+  if (!isInstalledBuild()) return; // never register a local or development build at login
   const { startAtLogin } = loadState().preferences;
   app.setLoginItemSettings({ openAtLogin: startAtLogin, path: stableExe(), args: [HIDDEN_ARG] });
+  if (process.platform === "win32")
+    app.setLoginItemSettings({ openAtLogin: false, name: LOCAL_BUILD_LOGIN_ITEM });
 }
 
 const openedHidden = () =>
@@ -85,9 +93,24 @@ function iconPath() {
  */
 function loadApp(win: BrowserWindow, path = "/", attempt = 0) {
   if (win.isDestroyed()) return;
-  win.loadURL(`${APP_ORIGIN}${path}`).catch((error: Error) => {
+  win.loadURL(`${APP_ORIGIN}${path}`).catch(async (error: Error) => {
     log("desktop_load_failed", { attempt, message: error.message.slice(0, 120) });
-    if (attempt < 5) setTimeout(() => loadApp(win, path, attempt + 1), 1000 * (attempt + 1));
+    if (attempt < 5)
+      return void setTimeout(() => loadApp(win, path, attempt + 1), 1000 * (attempt + 1));
+    // Still nothing: say so and let the person choose, instead of a silent dark window.
+    if (win.isDestroyed()) return;
+    const w = words();
+    const { response } = await dialog.showMessageBox(win, {
+      type: "error",
+      message: "ELISE",
+      detail: w.crashed,
+      buttons: [w.retry, w.restart, w.quit],
+    });
+    if (response === 0) loadApp(win, path);
+    else if (response === 1) {
+      app.relaunch();
+      quit();
+    } else quit();
   });
 }
 
@@ -189,9 +212,9 @@ function showWindow(path?: string) {
   // Its page died while hidden: bring it back (at the asked page) instead of showing it empty.
   if (contents.isCrashed()) return loadApp(window, path);
   if (!path) return;
-  // Still loading: the page can't hear yet; tell it once it can.
-  if (contents.isLoading())
-    contents.once("did-finish-load", () => contents.send(EVENTS.navigate, path));
+  // Still loading: the page can't hear yet (its listener mounts after load), so load the asked
+  // page itself instead of sending a message nobody receives.
+  if (contents.isLoading()) loadApp(window, path);
   else contents.send(EVENTS.navigate, path);
 }
 
@@ -246,6 +269,8 @@ async function handleDeepLink(raw: string) {
   const link = parseDeepLink(raw);
   if (!link) return log("desktop_deep_link_rejected");
   log("desktop_deep_link", { kind: link.kind });
+  // "Abrir ELISE Desktop" on the web waits for presence: announce it now, not in a minute.
+  void heartbeat(true);
   if (link.kind === "auth_callback") {
     showWindow();
     await cloud.completeSignIn(link.code, link.state);
@@ -359,8 +384,11 @@ async function main() {
   void configureHome(host);
   setInterval(() => void heartbeat(), 10_000);
 
-  if (!openedHidden() || pendingLinks.length) showWindow();
+  // Started by a link: the link opens the window, already on its page (nothing to lose in
+  // transit). Otherwise the usual window, unless started hidden at login.
   for (const link of pendingLinks.splice(0)) void handleDeepLink(link);
+  // No link, or only rejected ones (a link opens its window synchronously): the usual window.
+  if ((!window || window.isDestroyed()) && !openedHidden()) showWindow();
 
   app.on("activate", () => showWindow());
   // Background by design: no windows ≠ quit (the tray stays). Quit is explicit.
@@ -377,5 +405,23 @@ async function main() {
       log("desktop_quit");
       app.quit();
     });
+  });
+}
+
+// ── Start ────────────────────────────────────────────────────────────────────
+// Last, after every module-level binding above exists. It used to run first: a cold start from
+// a link (elise://…, what the web's "Abrir ELISE Desktop" sends) queued it into `pendingLinks`
+// before that was initialized, main() threw, and ELISE hung with no window.
+if (installerEvent) {
+  // handled in squirrel.ts; the app quits when Update.exe is done
+} else if (!app.requestSingleInstanceLock()) {
+  // A second launch hands its arguments (deep link) to the first and exits: one runtime only.
+  app.quit();
+} else {
+  main().catch((error: Error) => {
+    // Never a silent hang: say so, keep the reason in the log, and let the person reopen it.
+    log("desktop_start_failed", { message: error.message.slice(0, 200) });
+    dialog.showErrorBox("ELISE", words().crashed);
+    app.exit(1); // no automatic relaunch: a failure that repeats must not loop
   });
 }

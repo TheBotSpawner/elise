@@ -11,11 +11,20 @@ import { basename, dirname, join, resolve } from "node:path";
  * elise:// protocol and start-at-login point at the stub and survive updates.
  */
 // Installed by Squirrel, not merely packaged: a build run straight from out\ELISE-win32-x64 has
-// no Update.exe above it, and must register elise:// to itself, not to a stub that isn't there.
+// no Update.exe above it (and must never point anything at a stub that isn't there).
 export const isSquirrelWindows = () =>
   process.platform === "win32" &&
   app.isPackaged &&
   existsSync(resolve(dirname(process.execPath), "..", "Update.exe"));
+
+/**
+ * The ELISE people installed (Squirrel on Windows; the app bundle on macOS), as opposed to a
+ * local build (desktop/out, `electron .`). Only the installed one may own elise://, start at
+ * login and use the real profile: a local build that did so would capture deep links and the
+ * single-instance lock, and break the moment it's rebuilt (the black window of 2026-10-19).
+ */
+export const isInstalledBuild = () =>
+  process.platform === "win32" ? isSquirrelWindows() : app.isPackaged;
 
 /** The stable launcher path (never a versioned folder). */
 export function stableExe() {

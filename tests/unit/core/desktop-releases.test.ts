@@ -129,6 +129,15 @@ describe("Hogar setup from presence", () => {
     );
   });
 
+  it("the hub went quiet but ELISE Desktop is open → reconnecting, never “sin conexión”", () => {
+    expect(homeOnboarding("desktop_offline", [desktop()], now).state).toBe("hub_initializing");
+    // Nothing open at all: then it really is offline.
+    expect(
+      homeOnboarding("desktop_offline", [desktop({ lastSeenAt: "2026-10-18T11:50:00Z" })], now)
+        .state,
+    ).toBe("desktop_offline");
+  });
+
   it("an old, incompatible Desktop → update required", () => {
     expect(homeOnboarding(null, [desktop({ bridgeProtocolVersion: 0 })], now).state).toBe(
       "desktop_update_required",

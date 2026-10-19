@@ -54,6 +54,8 @@ export class HubAgent {
   constructor(
     private readonly config: HubConfig & { hubToken: string },
     haToken: string,
+    /** ELISE Cloud refused this hub's credential (revoked or missing): the host re-links it. */
+    private readonly hooks: { onRejected?: () => void } = {},
   ) {
     this.ha = new HomeAssistantClient(config.haUrl, haToken);
     this.cloud = new EliseCloud(config.eliseUrl, config.hubToken);
@@ -181,13 +183,19 @@ export class HubAgent {
   }
 
   private async beat(runtimeState: "initializing" | "ready" | "error") {
-    await this.cloud.heartbeat({
-      providerConnected: this.connected,
-      runtimeState,
-      providerVersion: this.ha.version,
-      agentVersion: AGENT_VERSION,
-      protocolVersion: HOME_PROTOCOL_VERSION,
-    });
+    try {
+      await this.cloud.heartbeat({
+        providerConnected: this.connected,
+        runtimeState,
+        providerVersion: this.ha.version,
+        agentVersion: AGENT_VERSION,
+        protocolVersion: HOME_PROTOCOL_VERSION,
+      });
+    } catch (e) {
+      // A dead credential never heals by retrying: the host has to link this hub again.
+      if ((e as { status?: number }).status === 401) this.hooks.onRejected?.();
+      throw e;
+    }
   }
 
   private async heartbeats() {

@@ -54,6 +54,10 @@ export class RuntimeHost extends EventEmitter {
           this.emit("home", m.state);
           return;
         }
+        if (m.event === "hub_rejected") {
+          this.emit("hubRejected");
+          return;
+        }
         if (m.event === "credentials" && m.creds) {
           this.emit("credentials", m.creds);
           return;

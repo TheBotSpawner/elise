@@ -104,6 +104,8 @@ function syncAgent() {
   agent = new HubAgent(
     { eliseUrl: config.cloudUrl, haUrl: creds.haUrl, hubToken: config.hubToken ?? "" },
     creds.haToken,
+    // Only a credential this runtime was given can be "rejected" (none yet = still linking).
+    { onRejected: () => config?.hubToken && send({ event: "hub_rejected" }) },
   );
   void agent.start().catch((e) => log("home_agent_failed", { message: (e as Error).message }));
 }
