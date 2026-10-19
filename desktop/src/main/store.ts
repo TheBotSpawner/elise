@@ -26,7 +26,14 @@ export interface DesktopState {
 const DEFAULTS = (): DesktopState => ({
   version: STATE_VERSION,
   installationId: randomUUID(),
-  preferences: { startAtLogin: true, keepInBackground: true, notifications: true },
+  // The wake word is off until the person turns it on (ADR-095): an update never starts it.
+  preferences: {
+    startAtLogin: true,
+    keepInBackground: true,
+    notifications: true,
+    wakeWord: false,
+    wakeChime: true,
+  },
   window: null,
 });
 

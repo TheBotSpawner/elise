@@ -52,6 +52,11 @@ const bridge: EliseDesktopBridge = {
     invoke(INVOKE.cacheSet, key, value, sourceUpdatedAt ?? null),
   onNavigate: (l) => subscribe(EVENTS.navigate, l),
   collectDiagnostics: () => invoke(INVOKE.diagnostics),
+  getWakeControl: () => invoke(INVOKE.wakeControl),
+  onWakeControl: (l) => subscribe(EVENTS.wake, l),
+  setWakePaused: (paused) => invoke(INVOKE.wakePause, paused),
+  reportWake: (status) => invoke(INVOKE.wakeReport, status),
+  showApp: (path) => invoke(INVOKE.showApp, path ?? null),
 };
 
 contextBridge.exposeInMainWorld("eliseDesktop", Object.freeze(bridge));

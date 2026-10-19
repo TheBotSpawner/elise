@@ -183,6 +183,28 @@ Every app route renders in Desktop from the same code as the web:
   the web.
 - Links to ELISE Cloud's own routes stay in the window. Everything else opens in the browser.
 
+## "ELISE" in the background (ADR-095)
+
+- **Setting.** Settings › ELISE Desktop › "Activar ELISE con la voz" is off by default; turning it
+  on asks for consent. The tray shows the status and "Pausar escucha".
+- **Model.** `desktop/assets/wake/vosk-model-small-es-0.42.tar.gz` (Apache-2.0) comes from
+  `node desktop/scripts/fetch-wake-model.mjs`, which Forge's `prePackage` runs (pinned SHA-256).
+  It's gitignored.
+- **Code.**
+  - The renderer listens (`desktop/src/renderer/wake/`).
+  - The recognizer worker is `/vosk-worker.js`, the only response allowed to eval.
+  - The main process holds the control (`desktop/src/main/wake.ts`).
+- **Debug.**
+  - In the renderer console, `[wake]` lines carry sizes and flags only, never words.
+  - In the main log: `desktop_wake_status`, `desktop_window_shown`, `desktop_window_focused`.
+- **QA without speaking.** Start a dev build with:
+
+  ```
+  -- --background --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --use-file-for-fake-audio-capture=<16 kHz wav>
+  ```
+
+  Chromium restarts the file on every new microphone stream.
+
 ## Installed vs local builds (ADR-091)
 
 - Only the **installed** ELISE (Squirrel on Windows, the app bundle on macOS) registers

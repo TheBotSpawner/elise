@@ -31,6 +31,7 @@ import {
   SignInScreen,
   UpdateRequiredBanner,
 } from "./screens";
+import { DesktopWake } from "./wake/desktop-wake";
 
 interface Bootstrap {
   userId: string;
@@ -57,6 +58,7 @@ const PLATFORM: PlatformInfo = {
     "start_at_login",
     "auto_update",
     "snapshot_cache",
+    "wake_word",
   ],
   bridgeProtocolVersion: DESKTOP_BRIDGE_PROTOCOL_VERSION,
 };
@@ -109,21 +111,23 @@ function Frame() {
         <RoutePage match={{ route: "/onboarding", params: {} }} path={`/onboarding${search}`} />
       );
     return (
-      <LocalHomeRuntime>
-        <AppShell
-          workspaceId={data.workspaceId}
-          pendingApprovals={data.pendingApprovals}
-          modules={data.modules}
-          user={data.user}
-        >
-          {/* What the web's (app) layout mounts on every page. */}
-          <ResultNotifier userId={data.userId} />
-          <TimeController workspaceId={data.workspaceId} userId={data.userId} />
-          <UpdateRequiredBanner />
-          <CloudBanner />
-          <Routes />
-        </AppShell>
-      </LocalHomeRuntime>
+      <DesktopWake>
+        <LocalHomeRuntime>
+          <AppShell
+            workspaceId={data.workspaceId}
+            pendingApprovals={data.pendingApprovals}
+            modules={data.modules}
+            user={data.user}
+          >
+            {/* What the web's (app) layout mounts on every page. */}
+            <ResultNotifier userId={data.userId} />
+            <TimeController workspaceId={data.workspaceId} userId={data.userId} />
+            <UpdateRequiredBanner />
+            <CloudBanner />
+            <Routes />
+          </AppShell>
+        </LocalHomeRuntime>
+      </DesktopWake>
     );
   })();
 

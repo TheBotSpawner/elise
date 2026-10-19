@@ -8,6 +8,7 @@ import { initialVoice, type VoiceState } from "@/core/voice/session";
 import type { SendOptions, StreamListener } from "@/features/chat/use-elise-chat";
 import { useI18n } from "@/lib/i18n/client";
 
+import { onDeviceWake, publishVoicePhase, useDeviceWake } from "./device-wake";
 import { Microphone, MicError } from "./microphone";
 import { SpeechPlayer } from "./speech-player";
 import {
@@ -45,8 +46,11 @@ export function useVoice({
     language,
     adaptiveDelivery: adaptiveDeliveryEnabled(),
   });
+  // ELISE Desktop listens for "ELISE" itself, in the background (ADR-095): the browser's
+  // wake phrase engine isn't used there, and the session keeps going with the window hidden.
+  const deviceWake = useDeviceWake();
   const [wake] = useState(() =>
-    typeof window !== "undefined" && WebSpeechWakeEngine.supported()
+    typeof window !== "undefined" && !deviceWake && WebSpeechWakeEngine.supported()
       ? new WebSpeechWakeEngine()
       : null,
   );
@@ -98,7 +102,7 @@ export function useVoice({
   }, [controller]);
 
   // What this browser can do for the wake phrase — checked, never assumed.
-  const wakeWanted = prefs.wakeEnabled;
+  const wakeWanted = prefs.wakeEnabled && !deviceWake;
   useEffect(() => {
     if (!wakeWanted) return;
     if (!wake) return controller.setWakeStatus("unsupported");
@@ -114,9 +118,20 @@ export function useVoice({
     };
   }, [controller, wake, wakeWanted, language]);
 
-  // Never listen in the background; follow the network honestly.
+  // The device's wake word hands over here, and learns when the session is busy (one mic).
   useEffect(() => {
-    const vis = () => controller.visibility(document.visibilityState === "hidden");
+    if (!deviceWake) return;
+    return onDeviceWake((remainder) => void controller.deviceWake(remainder));
+  }, [controller, deviceWake]);
+  useEffect(() => {
+    if (deviceWake) publishVoicePhase(state.phase);
+  }, [deviceWake, state.phase]);
+  useEffect(() => () => publishVoicePhase("idle"), []);
+
+  // Never listen in the background on the web (Desktop's background voice is the person's
+  // choice, ADR-095); follow the network honestly.
+  useEffect(() => {
+    const vis = () => !deviceWake && controller.visibility(document.visibilityState === "hidden");
     const on = () => controller.network(true);
     const off = () => controller.network(false);
     document.addEventListener("visibilitychange", vis);
@@ -127,7 +142,7 @@ export function useVoice({
       window.removeEventListener("online", on);
       window.removeEventListener("offline", off);
     };
-  }, [controller]);
+  }, [controller, deviceWake]);
 
   // The Orb follows the real audio, read every frame without re-rendering.
   useEffect(() => {

@@ -90,6 +90,8 @@ export type VoiceEvent =
   | { type: "unmute" }
   | { type: "sleep"; reason: SleepReason }
   | { type: "wake" }
+  /** A device heard its wake word with no session yet (ADR-095): rest, ready to wake. */
+  | { type: "rest"; speak: boolean; bargeIn: boolean; continuous: boolean }
   | { type: "offline" }
   | { type: "online" }
   | { type: "delivery"; mode: VoiceDelivery }
@@ -222,6 +224,18 @@ export function voiceReducer(state: VoiceState, event: VoiceEvent): VoiceState {
       return state.phase === "muted" ? to("listening", { problem: null }) : state;
     case "sleep":
       return ACTIVE.has(state.phase) ? to("sleeping", { sleep: event.reason, partial: "" }) : state;
+    case "rest":
+      return state.phase === "idle" || state.phase === "error"
+        ? {
+            ...initialVoice,
+            phase: "sleeping",
+            sleep: "inactivity",
+            speak: event.speak,
+            bargeIn: event.bargeIn,
+            continuous: event.continuous,
+            wake: state.wake,
+          }
+        : state;
     case "wake":
       return state.phase === "sleeping"
         ? to("arming", { sleep: null, problem: null, misses: 0 })

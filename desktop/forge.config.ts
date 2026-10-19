@@ -60,6 +60,13 @@ const config: ForgeConfig = {
     new MakerZIP({}, ["darwin"]),
     new MakerDMG({ name: "ELISE" }),
   ],
+  // ADR-095: the wake word's model ships inside the app; fetched and verified before packaging.
+  hooks: {
+    prePackage: async () => {
+      const { ensureWakeModel } = await import("./scripts/fetch-wake-model.mjs");
+      await ensureWakeModel();
+    },
+  },
   // Publication is desktop/scripts/publish-release.mjs (ADR-084), not Forge publishers.
   plugins: [
     new VitePlugin({

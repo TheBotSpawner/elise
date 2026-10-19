@@ -416,6 +416,22 @@ export class VoiceController {
     this.act({ type: "mic_ready" });
     this.lastActivity = this.now;
     this.listen();
+    // What was said with the wake phrase waited for the room to be measured: it goes now.
+    const text = this.pendingRemainder;
+    this.pendingRemainder = null;
+    if (text) this.sayRemainder(text);
+  }
+
+  /** "Elise, ¿qué tengo mañana?": the words after the phrase are the turn — never lost. */
+  private pendingRemainder: string | null = null;
+  private sayRemainder(text: string) {
+    if (!isHearing(this.state)) return;
+    this.stopTicker();
+    this.mic?.discard();
+    this.act({ type: "speech_start" });
+    this.act({ type: "speech_end" });
+    this.act({ type: "transcript", text });
+    this.beginTurn(text, this.prefs.language, 0);
   }
 
   /** A fresh utterance: recorder on, turn detection from zero (the room is calibrated). */
@@ -1133,6 +1149,7 @@ export class VoiceController {
   }
 
   private afterSleep() {
+    this.pendingRemainder = null;
     this.stopTicker();
     this.dropSnapshot();
     this.player?.stop();
@@ -1166,25 +1183,46 @@ export class VoiceController {
     this.act({ type: "wake_status", status: "listening" });
   }
 
+  /**
+   * A device's own wake word (ELISE Desktop, ADR-095): it already played its sound and
+   * transcribed what followed. With no session yet, one starts resting and wakes at once — the
+   * same path as the browser's wake phrase, never a second session.
+   */
+  async deviceWake(remainder: string) {
+    const phase = this.state.phase;
+    if (phase === "idle" || phase === "error") {
+      this.ensurePlayer();
+      if (this.prefs.speak && !this.warmed) {
+        this.warmed = true;
+        this.deps.warmAcknowledgements?.(this.prefs.language);
+      }
+      this.act({
+        type: "rest",
+        speak: this.prefs.speak,
+        bargeIn: this.prefs.bargeIn,
+        continuous: this.prefs.continuous,
+      });
+    }
+    // A session already listening hears it directly; one replying isn't interrupted.
+    if (this.state.phase !== "sleeping") return;
+    await this.wakeUp(remainder, false);
+  }
+
   /** The wake phrase was heard: listen — or, if more was said ("Elise, Morning Brief"), go. */
-  async wakeUp(remainder = "") {
+  async wakeUp(remainder = "", chime = true) {
     if (this.state.phase !== "sleeping") return;
     this.deps.wake?.stop();
     this.t0 = this.now;
     this.marks = { wake: 0 };
-    this.player?.chime?.();
+    if (chime) this.player?.chime?.();
     this.act({ type: "wake_status", status: "ready" });
     this.act({ type: "wake" });
     await this.openMic();
     const text = remainder.trim();
-    if (text && isHearing(this.state)) {
-      this.stopTicker();
-      this.mic?.discard();
-      this.act({ type: "speech_start" });
-      this.act({ type: "speech_end" });
-      this.act({ type: "transcript", text });
-      this.beginTurn(text, this.prefs.language, 0);
-    }
+    if (!text) return;
+    // The first session measures the room before listening: the words wait for it.
+    if ((this.state.phase as string) === "arming") this.pendingRemainder = text;
+    else this.sayRemainder(text);
   }
 
   /** The page was hidden or shown: never listen in the background, say so when back. */
@@ -1221,6 +1259,7 @@ export class VoiceController {
 
   /** Ends the session: the microphone is released at once, the wake engine stops. */
   end() {
+    this.pendingRemainder = null;
     this.stopTicker();
     this.dropSnapshot();
     // A new session measures the room again (it may be another room, another device).

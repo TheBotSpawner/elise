@@ -4378,7 +4378,32 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       description: "How ELISE runs on this computer.",
       startAtLogin: "Start ELISE when the computer starts",
       keepInBackground: "Keep ELISE running in the background",
-      keepInBackgroundHint: "Closing the window keeps ELISE Home available.",
+      keepInBackgroundHint:
+        "Closing the window keeps ELISE in the tray: ELISE Home and listening for “ELISE” stay available.",
+      voiceTitle: "Voice in the background",
+      wakeWord: "Wake ELISE with your voice",
+      wakeWordHint:
+        "Say “ELISE” while you work in any app. ELISE answers out loud without opening or focusing its window; the conversation is saved in Home.",
+      wakeConsentTitle: "Wake “ELISE” with your voice?",
+      wakeConsentBody:
+        "ELISE will use this computer's microphone continuously to recognize its name. That happens here: the audio isn't saved or sent. Only what you say after “ELISE” is sent so it can answer. Pause it from the tray or turn it off here anytime.",
+      wakeConsentConfirm: "Turn on",
+      wakeChime: "Sound when activated",
+      wakeWordName: "Wake word: ELISE",
+      pause: "Pause listening",
+      resume: "Resume listening",
+      continuousNote:
+        "To keep talking without saying “ELISE” again, turn on continuous conversation in Settings › Voice.",
+      wakeStates: {
+        off: "Off",
+        starting: "Getting ready…",
+        listening: "Listening for “ELISE”",
+        paused: "Paused",
+        in_conversation: "In a conversation",
+        no_microphone: "Microphone unavailable",
+        mic_denied: "No microphone permission (check Windows Settings › Privacy › Microphone)",
+        model_failed: "The detector couldn't load",
+      },
       notifications: "System notifications",
       home: "ELISE Home",
       updates: "Updates",

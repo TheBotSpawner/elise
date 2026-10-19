@@ -72,7 +72,11 @@ const call = (channel: string, event: unknown, ...args: unknown[]) =>
   electron.handlers.get(channel)!(event, ...args);
 
 beforeAll(() => {
-  registerIpc(host as never, () => undefined);
+  registerIpc(
+    host as never,
+    () => undefined,
+    () => undefined,
+  );
 });
 
 describe("the bridge", () => {
@@ -162,10 +166,57 @@ describe("local state", () => {
       startAtLogin: false,
       keepInBackground: true,
       notifications: true,
+      // An update never turns the microphone on (ADR-095): the wake word starts off.
+      wakeWord: false,
+      wakeChime: true,
     });
     expect(migrateState({ installationId: "aa:bb:cc:dd" }).installationId).toMatch(
       /^[0-9a-f-]{36}$/,
     );
     expect(migrateState("garbage").preferences.keepInBackground).toBe(true);
+  });
+});
+
+/** "ELISE" on this computer (ADR-095): eval exists only inside the recognizer's worker. */
+describe("the wake word's files", () => {
+  it("only the recognizer's worker may eval; the page and other files never; model names are checked", async () => {
+    const { mkdtemp, writeFile, mkdir } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const electronMod = (await import("electron")) as unknown as {
+      protocol: { handle: { mock: { calls: unknown[][] } } };
+    };
+    const dir = await mkdtemp(join(tmpdir(), "elise-renderer-"));
+    const wakeDir = join(dir, "wake");
+    await mkdir(wakeDir);
+    await writeFile(join(dir, "index.html"), "<html></html>");
+    await writeFile(join(dir, "vosk-worker.js"), "/* worker */");
+    await writeFile(join(wakeDir, "model.tar.gz"), "gz");
+    const { handleAppProtocol } = await import("../../../desktop/src/main/protocol");
+    handleAppProtocol(dir, undefined, wakeDir);
+    const handler = electronMod.protocol.handle.mock.calls.at(-1)![1] as (
+      r: Request,
+    ) => Promise<Response>;
+    const csp = async (path: string) =>
+      (await handler(new Request(`elise-app://app${path}`))).headers.get("content-security-policy");
+    expect(await csp("/vosk-worker.js")).toMatch(
+      /default-src 'none'; script-src 'self' 'unsafe-eval'/,
+    );
+    expect(await csp("/")).not.toContain("unsafe-eval");
+    expect((await handler(new Request("elise-app://app/__wake/model.tar.gz"))).status).toBe(200);
+    expect((await handler(new Request("elise-app://app/__wake/..%2Fvosk-worker.js"))).status).toBe(
+      404,
+    );
+    expect((await handler(new Request("elise-app://app/__wake/secrets.bin"))).status).toBe(404);
+  });
+
+  it("the bridge validates the wake word's calls", async () => {
+    await expect(call(INVOKE.wakePause, fromApp, "yes")).rejects.toThrow();
+    await expect(call(INVOKE.wakeReport, fromApp, "recording_audio")).rejects.toThrow();
+    await expect(call(INVOKE.showApp, fromApp, "https://evil.example")).rejects.toThrow();
+    await expect(call(INVOKE.showApp, fromApp, "javascript:alert(1)")).rejects.toThrow();
+    await expect(
+      call(INVOKE.wakePause, { senderFrame: { origin: "https://evil" } }, true),
+    ).rejects.toThrow();
   });
 });

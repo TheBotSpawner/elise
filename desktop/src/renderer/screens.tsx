@@ -17,9 +17,11 @@ import type {
 } from "@/core/platform/platform";
 import { getDictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
+import { cn } from "@/lib/utils";
 
 import { useConnectivity, useSession } from "./data";
 import { useDesktopRouter } from "./router";
+import { useWakeReport } from "./wake/desktop-wake";
 
 const bridge = () => window.eliseDesktop!;
 const fallbackT = () =>
@@ -305,6 +307,94 @@ export class RecoveryBoundary extends Component<
 }
 
 /** Settings › ELISE Desktop: device preferences, home, updates, version (ADR-081). */
+/**
+ * "ELISE" in the background (ADR-095): this computer's own setting, turned on only with the
+ * person's informed consent; its real state (never a hopeful one), a pause, and the sound.
+ */
+function WakeSettings({
+  prefs,
+  onChange,
+}: {
+  prefs: DesktopPreferences;
+  onChange: (p: DesktopPreferences) => void;
+}) {
+  const { t } = useI18n();
+  const s = t.desktop.settings;
+  const confirm = useConfirm();
+  const status = useWakeReport();
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    void bridge()
+      .getWakeControl()
+      .then((c) => setPaused(c.paused));
+    return bridge().onWakeControl((c) => setPaused(c.paused));
+  }, []);
+  const row =
+    "flex items-center justify-between gap-4 border-b border-border py-3.5 last:border-b-0";
+  const setWake = async (on: boolean) => {
+    if (
+      on &&
+      !(await confirm({
+        title: s.wakeConsentTitle,
+        body: s.wakeConsentBody,
+        confirmLabel: s.wakeConsentConfirm,
+      }))
+    )
+      return;
+    onChange(await bridge().setPreferences({ wakeWord: on }));
+  };
+  const problem =
+    status === "no_microphone" || status === "mic_denied" || status === "model_failed";
+  return (
+    <section className="mb-4 flex flex-col gap-2">
+      <h2 className="px-1 type-label text-faint">{s.voiceTitle}</h2>
+      <div className="rounded-2xl border border-border bg-surface px-4">
+        <label className={row}>
+          <span className="flex flex-col">
+            <span className="text-[14px]">{s.wakeWord}</span>
+            <span className="text-[12.5px] text-muted">{s.wakeWordHint}</span>
+          </span>
+          <Switch
+            checked={prefs.wakeWord}
+            onCheckedChange={(v) => void setWake(v)}
+            aria-label={s.wakeWord}
+          />
+        </label>
+        {prefs.wakeWord && (
+          <>
+            <div className={row}>
+              <span className="flex flex-col">
+                <span className="text-[14px]">{s.wakeWordName}</span>
+                <span className={cn("text-[12.5px]", problem ? "text-danger-text" : "text-muted")}>
+                  {s.wakeStates[paused && status !== "in_conversation" ? "paused" : status]}
+                </span>
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={async () => setPaused((await bridge().setWakePaused(!paused)).paused)}
+              >
+                {paused ? s.resume : s.pause}
+              </Button>
+            </div>
+            <label className={row}>
+              <span className="text-[14px]">{s.wakeChime}</span>
+              <Switch
+                checked={prefs.wakeChime}
+                onCheckedChange={async (v) =>
+                  onChange(await bridge().setPreferences({ wakeChime: v }))
+                }
+                aria-label={s.wakeChime}
+              />
+            </label>
+            <p className="py-3 text-[12.5px] text-muted">{s.continuousNote}</p>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function DesktopSettings() {
   const { t } = useI18n();
   const s = t.desktop.settings;
@@ -331,6 +421,7 @@ export function DesktopSettings() {
   return (
     <div className="flex flex-col">
       <PageHeader title={s.title} subtitle={s.description} />
+      {prefs && <WakeSettings prefs={prefs} onChange={setPrefs} />}
       <section className="rounded-2xl border border-border bg-surface px-4">
         {prefs && (
           <>

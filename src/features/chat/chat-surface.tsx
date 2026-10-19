@@ -17,6 +17,7 @@ import { SpaceGlyph } from "@/features/knowledge/appearance";
 import { duckMusic, receiveMusic } from "@/features/music/controller";
 import { useMusic } from "@/features/music/music-view";
 import { receiveTimers } from "@/features/time/time-view";
+import { useDeviceWake } from "@/features/voice/device-wake";
 import { useLiveVoice } from "@/features/voice/use-live-voice";
 import { useVoice } from "@/features/voice/use-voice";
 import type { DockCaption } from "@/features/workspace/canvas/dock";
@@ -179,7 +180,10 @@ export function ChatSurface({
         : new URLSearchParams(window.location.search).get("voice");
     return asked === "legacy" || asked === "live" ? asked : (voice.runtime ?? "legacy");
   });
-  const voiceSession = runtime === "live" ? liveVoice : legacyVoice;
+  // A Desktop that listens for "ELISE" (ADR-095) hands over to the legacy session: the one with
+  // a wake path, and no open realtime connection between conversations.
+  const deviceWake = useDeviceWake();
+  const voiceSession = runtime === "live" && !deviceWake ? liveVoice : legacyVoice;
   // Music (ADR-042): results of music tools reach the page's one player state.
   useEffect(
     () =>

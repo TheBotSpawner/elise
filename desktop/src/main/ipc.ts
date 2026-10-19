@@ -22,6 +22,7 @@ import type { RuntimeHost } from "./runtime-host";
 import { openExternalSafely } from "./security";
 import { cacheGet, cacheSet, loadState, updateState } from "./store";
 import { checkForUpdates, installUpdate, updateState as currentUpdate } from "./updater";
+import { reportWake, setWakePaused, wakeControl, wakePreferenceChanged } from "./wake";
 import { INVOKE } from "../shared/channels";
 
 export const CAPABILITIES: PlatformCapability[] = [
@@ -32,13 +33,27 @@ export const CAPABILITIES: PlatformCapability[] = [
   "start_at_login",
   "auto_update",
   "snapshot_cache",
+  "wake_word",
 ];
+
+const wakeReportSchema = z.enum([
+  "off",
+  "starting",
+  "listening",
+  "paused",
+  "in_conversation",
+  "no_microphone",
+  "mic_denied",
+  "model_failed",
+]);
 
 const prefsSchema = z
   .object({
     startAtLogin: z.boolean(),
     keepInBackground: z.boolean(),
     notifications: z.boolean(),
+    wakeWord: z.boolean(),
+    wakeChime: z.boolean(),
   })
   .partial()
   .strict();
@@ -82,7 +97,11 @@ export function connectivity(host: RuntimeHost): EliseConnectivity {
  * Every bridge call lands here: only ELISE's own page may call (sender origin), every argument
  * is validated, and nothing but these typed operations exists — no generic executor.
  */
-export function registerIpc(host: RuntimeHost, applyLoginItem: () => void) {
+export function registerIpc(
+  host: RuntimeHost,
+  applyLoginItem: () => void,
+  showApp: (path?: string) => void,
+) {
   const handle = <A extends unknown[]>(channel: string, fn: (...args: A) => unknown) =>
     ipcMain.handle(channel, async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
       if (event.senderFrame?.origin !== APP_ORIGIN) {
@@ -115,8 +134,24 @@ export function registerIpc(host: RuntimeHost, applyLoginItem: () => void) {
     const p = prefsSchema.parse(patch);
     updateState((s) => ({ ...s, preferences: { ...s.preferences, ...p } }));
     if (p.startAtLogin !== undefined) applyLoginItem();
+    if (p.wakeWord !== undefined || p.wakeChime !== undefined) wakePreferenceChanged();
+    if (p.wakeWord !== undefined) log("desktop_wake_preference", { on: p.wakeWord });
     return loadState().preferences;
   });
+  // ADR-095: the wake word's control and reports — states only, never audio.
+  handle(INVOKE.wakeControl, () => wakeControl());
+  handle(INVOKE.wakePause, (paused: unknown) => setWakePaused(z.boolean().parse(paused)));
+  handle(INVOKE.wakeReport, (status: unknown) => reportWake(wakeReportSchema.parse(status)));
+  // The person asked to see ELISE ("abrí ELISE"): the only voice path that shows the window.
+  handle(INVOKE.showApp, (path: unknown) =>
+    showApp(
+      z
+        .string()
+        .regex(/^\/[A-Za-z0-9/_?=&.-]{0,200}$/)
+        .nullable()
+        .parse(path ?? null) ?? undefined,
+    ),
+  );
   handle(INVOKE.homeState, () => host.home);
   // Long operations return at once; progress arrives as onHomeHub events.
   handle(INVOKE.homeSetup, () => host.call("setup"));

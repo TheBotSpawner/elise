@@ -74,6 +74,41 @@ function eliseDesktop(): Plugin {
   };
 }
 
+/**
+ * The wake word's recognizer (ADR-095): Vosk's WebAssembly worker, taken from the vosk-browser
+ * package (which embeds it) and shipped as its own file, /vosk-worker.js. Its Emscripten
+ * bindings build functions with `new Function`, so the app protocol gives that one response a
+ * CSP allowing eval inside it only — a worker has no DOM, no cookies and no session; it gets
+ * audio and returns words. The page keeps its strict policy and talks to it with a few messages
+ * (src/renderer/wake/vosk-worker-client.ts); the package's page code is never imported.
+ */
+export const VOSK_WORKER_PATH = "/vosk-worker.js";
+let voskWorkerCode = "";
+function voskWorker() {
+  if (voskWorkerCode) return voskWorkerCode;
+  const code = readFileSync(here("./node_modules/vosk-browser/dist/vosk.js"), "utf8");
+  const marker = "createBase64WorkerFactory('";
+  const start = code.indexOf(marker) + marker.length;
+  if (start < marker.length) throw new Error("vosk-browser changed: its worker isn't embedded");
+  voskWorkerCode = Buffer.from(code.slice(start, code.indexOf("'", start)), "base64").toString();
+  return voskWorkerCode;
+}
+/** Build: ship the worker file; development: serve it from Vite. */
+function voskWorkerFile(): Plugin {
+  return {
+    name: "elise-vosk-worker",
+    configureServer(server) {
+      server.middlewares.use(VOSK_WORKER_PATH, (_req, res) => {
+        res.setHeader("content-type", "text/javascript; charset=utf-8");
+        res.end(voskWorker());
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: VOSK_WORKER_PATH.slice(1), source: voskWorker() });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const build = desktopBuildConfig(mode);
   return {
@@ -88,7 +123,7 @@ export default defineConfig(({ mode }) => {
       // Loaded from disk, not the network: one bundle is fine.
       chunkSizeWarningLimit: 4000,
     },
-    plugins: [eliseDesktop(), react()],
+    plugins: [voskWorkerFile(), eliseDesktop(), react()],
     // Tailwind sees the whole shared source, exactly like the web build.
     css: { postcss: { plugins: [tailwind({ base: REPO_ROOT })] } },
     // The page lives at elise-app://app; HMR talks to the dev server directly.

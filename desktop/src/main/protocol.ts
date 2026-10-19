@@ -35,6 +35,7 @@ const TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
   ".mp3": "audio/mpeg",
   ".wav": "audio/wav",
+  ".gz": "application/gzip",
 };
 
 export function contentSecurityPolicy(dev: boolean) {
@@ -58,6 +59,14 @@ export function contentSecurityPolicy(dev: boolean) {
     "form-action 'none'",
   ].join("; ");
 }
+
+/**
+ * The wake word recognizer's worker (ADR-095): its WebAssembly bindings need eval, so this one
+ * response — a worker: no DOM, no cookies, no session — gets its own policy. Nothing else does.
+ */
+export const VOSK_WORKER_PATH = "/vosk-worker.js";
+const WORKER_CSP =
+  "default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'self' data:";
 
 /** Request headers the renderer may pass on; cookies and origin are the main process's job. */
 const DROP = new Set(["cookie", "host", "origin", "referer", "x-elise-client", "connection"]);
@@ -87,18 +96,40 @@ async function proxy(request: Request, url: URL): Promise<Response> {
   }
 }
 
-export function handleAppProtocol(rendererDir: string, devServerUrl: string | undefined) {
+/**
+ * The wake word's model (ADR-095), shipped inside the app (resources/assets/wake): served at
+ * elise-app://app/__wake/<file>, never from the network. Only known file names.
+ */
+async function wakeAsset(wakeDir: string, name: string): Promise<Response> {
+  if (!/^[a-z0-9._-]{1,80}\.tar\.gz$/.test(name)) return new Response("Not found", { status: 404 });
+  try {
+    return new Response(await readFile(join(wakeDir, name)), {
+      headers: { "content-type": "application/gzip", "cache-control": "no-store" },
+    });
+  } catch {
+    log("desktop_wake_model_missing", { name });
+    return new Response("Not found", { status: 404 });
+  }
+}
+
+export function handleAppProtocol(
+  rendererDir: string,
+  devServerUrl: string | undefined,
+  wakeDir: string,
+) {
   const csp = contentSecurityPolicy(Boolean(devServerUrl));
   protocol.handle(APP_SCHEME, async (request) => {
     const url = new URL(request.url);
     if (url.host !== "app") return new Response("Not found", { status: 404 });
     if (url.pathname.startsWith("/api/")) return proxy(request, url);
+    if (url.pathname.startsWith("/__wake/")) return wakeAsset(wakeDir, url.pathname.slice(8));
     // Development: the Vite dev server (HMR). Production: files inside the app only.
     if (devServerUrl) {
       const res = await fetch(new URL(url.pathname + url.search, devServerUrl));
       const headers = new Headers(res.headers);
       if (headers.get("content-type")?.includes("text/html"))
         headers.set("content-security-policy", csp);
+      if (url.pathname === VOSK_WORKER_PATH) headers.set("content-security-policy", WORKER_CSP);
       return new Response(res.body, { status: res.status, headers });
     }
     const wanted = decodeURIComponent(url.pathname);
@@ -113,6 +144,7 @@ export function handleAppProtocol(rendererDir: string, devServerUrl: string | un
         headers: {
           "content-type": type,
           ...(type.startsWith("text/html") ? { "content-security-policy": csp } : {}),
+          ...(wanted === VOSK_WORKER_PATH ? { "content-security-policy": WORKER_CSP } : {}),
         },
       });
     } catch {

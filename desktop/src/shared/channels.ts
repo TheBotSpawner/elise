@@ -30,6 +30,10 @@ export const INVOKE = {
   cacheGet: "elise:cache-get",
   cacheSet: "elise:cache-set",
   diagnostics: "elise:diagnostics",
+  wakeControl: "elise:wake-control",
+  wakePause: "elise:wake-pause",
+  wakeReport: "elise:wake-report",
+  showApp: "elise:show-app",
 } as const;
 
 export const EVENTS = {
@@ -38,4 +42,5 @@ export const EVENTS = {
   navigate: "elise:on-navigate",
   update: "elise:on-update",
   home: "elise:on-home",
+  wake: "elise:on-wake",
 } as const;

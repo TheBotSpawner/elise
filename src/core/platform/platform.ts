@@ -21,6 +21,8 @@ export const PLATFORM_CAPABILITIES = [
   "start_at_login",
   "auto_update",
   "snapshot_cache",
+  /** "ELISE" heard on this computer, locally, with the window hidden (ADR-095). */
+  "wake_word",
 ] as const;
 export type PlatformCapability = (typeof PLATFORM_CAPABILITIES)[number];
 
@@ -94,7 +96,37 @@ export interface DesktopPreferences {
   startAtLogin: boolean;
   keepInBackground: boolean;
   notifications: boolean;
+  /**
+   * Listen for "ELISE" on this computer (ADR-095): off until the person turns it on (their
+   * consent); detection is local, nothing is sent before the word.
+   */
+  wakeWord: boolean;
+  /** A short, quiet sound when "ELISE" is heard. */
+  wakeChime: boolean;
 }
+
+/**
+ * Whether this computer should be listening for "ELISE" now (main → renderer): the person's
+ * setting, a pause from the tray, and the system (locked screen, sleep).
+ */
+export interface WakeControl {
+  enabled: boolean;
+  paused: boolean;
+  /** The screen is locked or the computer is going to sleep: never listen then. */
+  suspended: boolean;
+  chime: boolean;
+}
+
+/** What the listener is doing (renderer → main), for the tray and settings — never audio. */
+export type WakeReport =
+  | "off"
+  | "starting"
+  | "listening"
+  | "paused"
+  | "in_conversation"
+  | "no_microphone"
+  | "mic_denied"
+  | "model_failed";
 
 export interface DesktopSession {
   signedIn: boolean;
@@ -183,6 +215,13 @@ export interface EliseDesktopBridge {
   cacheSet(key: string, value: unknown, sourceUpdatedAt?: string | null): Promise<void>;
   onNavigate(listener: (path: string) => void): () => void;
   collectDiagnostics(): Promise<string>;
+  /** ADR-095: the wake word's control (setting, pause, lock) and what the listener reports. */
+  getWakeControl(): Promise<WakeControl>;
+  onWakeControl(listener: (c: WakeControl) => void): () => void;
+  setWakePaused(paused: boolean): Promise<WakeControl>;
+  reportWake(status: WakeReport): Promise<void>;
+  /** Only when the person asked to see ELISE ("abrí ELISE"): never on a wake word alone. */
+  showApp(path?: string): Promise<void>;
 }
 
 export interface CachedSnapshot<T = unknown> {

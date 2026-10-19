@@ -4416,7 +4416,33 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
       description: "Cómo funciona ELISE en esta computadora.",
       startAtLogin: "Iniciar ELISE con la computadora",
       keepInBackground: "Mantener ELISE en segundo plano",
-      keepInBackgroundHint: "Al cerrar la ventana, ELISE Home sigue disponible.",
+      keepInBackgroundHint:
+        "Al cerrar la ventana, ELISE sigue en la bandeja: ELISE Home y la escucha de “ELISE” siguen disponibles.",
+      voiceTitle: "Voz en segundo plano",
+      wakeWord: "Activar ELISE con la voz",
+      wakeWordHint:
+        "Decí “ELISE” mientras trabajás en cualquier programa. Te responde hablando sin abrir ni enfocar su ventana; la conversación queda guardada en Inicio.",
+      wakeConsentTitle: "¿Activar “ELISE” con la voz?",
+      wakeConsentBody:
+        "ELISE va a usar el micrófono de esta computadora de forma continua para reconocer su nombre. Eso ocurre acá: el audio no se guarda ni se envía. Solo lo que digas después de “ELISE” se envía para responderte. Podés pausarla desde la bandeja o apagarla acá cuando quieras.",
+      wakeConsentConfirm: "Activar",
+      wakeChime: "Sonido al activarse",
+      wakeWordName: "Palabra de activación: ELISE",
+      pause: "Pausar escucha",
+      resume: "Reanudar escucha",
+      continuousNote:
+        "Para seguir hablando sin repetir “ELISE”, activá la conversación continua en Configuración › Voz.",
+      wakeStates: {
+        off: "Desactivada",
+        starting: "Preparando…",
+        listening: "Escuchando “ELISE”",
+        paused: "En pausa",
+        in_conversation: "En conversación",
+        no_microphone: "Micrófono no disponible",
+        mic_denied:
+          "Sin permiso de micrófono (revisá Configuración de Windows › Privacidad › Micrófono)",
+        model_failed: "El detector no se pudo cargar",
+      },
       notifications: "Notificaciones del sistema",
       home: "ELISE Home",
       updates: "Actualizaciones",

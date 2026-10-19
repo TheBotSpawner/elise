@@ -57,3 +57,6 @@ supabase/.temp
 /desktop/.vite/
 /desktop/node_modules/
 /desktop/out/
+
+# ADR-095: the wake word model is downloaded and verified before packaging (never committed).
+desktop/assets/wake/*.tar.gz

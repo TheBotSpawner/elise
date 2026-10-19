@@ -22,6 +22,7 @@ import {
   updates,
   updateState as currentUpdate,
 } from "./updater";
+import { applyWakeTo, setWakePaused, wake, wakeControl, wakeStatus, watchSystem } from "./wake";
 import { EVENTS } from "../shared/channels";
 
 /**
@@ -81,6 +82,12 @@ function applyLoginItem() {
 const openedHidden = () =>
   process.argv.includes(HIDDEN_ARG) || app.getLoginItemSettings().wasOpenedAtLogin === true;
 
+/** The wake word's model: inside the installed app, or desktop/assets/wake in development. */
+const wakeModelDir = () =>
+  app.isPackaged
+    ? join(process.resourcesPath, "assets", "wake")
+    : join(__dirname, "../../assets/wake");
+
 function iconPath() {
   return app.isPackaged
     ? join(process.resourcesPath, "assets", "icon.png")
@@ -114,7 +121,10 @@ function loadApp(win: BrowserWindow, path = "/", attempt = 0) {
   });
 }
 
-function createWindow(path = "/") {
+/** Maximized last time but created hidden: maximize() would show it, so it waits for a show. */
+let maximizeOnShow = false;
+
+function createWindow(path = "/", opts: { hidden?: boolean } = {}) {
   const saved = loadState().window;
   const win = new BrowserWindow({
     width: saved?.width ?? 1280,
@@ -136,8 +146,12 @@ function createWindow(path = "/") {
       spellcheck: true,
     },
   });
-  if (saved?.maximized) win.maximize();
-  win.once("ready-to-show", () => win.show());
+  // Hidden (ADR-095: started at login to listen for "ELISE"): never shown, never focused, until
+  // the person opens it. maximize() and "ready-to-show" would both show it.
+  if (saved?.maximized && !opts.hidden) win.maximize();
+  maximizeOnShow = Boolean(saved?.maximized && opts.hidden);
+  if (!opts.hidden) win.once("ready-to-show", () => win.show());
+  applyWakeTo(win);
   // A deep link that opens the window goes straight to its page (nothing to lose in transit).
   loadApp(win, path);
 
@@ -146,6 +160,9 @@ function createWindow(path = "/") {
     const b = win.getNormalBounds();
     updateState((s) => ({ ...s, window: { ...b, maximized: win.isMaximized() } }));
   };
+  // ADR-095: the window only appears when the person opens it — logged, so it can be checked.
+  win.on("show", () => log("desktop_window_shown"));
+  win.on("focus", () => log("desktop_window_focused"));
   win.on("resized", remember);
   win.on("moved", remember);
 
@@ -206,6 +223,10 @@ function showWindow(path?: string) {
     return;
   }
   if (window.isMinimized()) window.restore();
+  if (maximizeOnShow) {
+    maximizeOnShow = false;
+    window.maximize();
+  }
   window.show();
   window.focus();
   const contents = window.webContents;
@@ -235,6 +256,16 @@ function refreshTray() {
           ? w.homeStarting
           : w.homeOffline;
   const ready = currentUpdate().status === "ready";
+  // ADR-095: what the "ELISE" listener is doing, and a pause within reach (meetings).
+  const wc = wakeControl();
+  const listen = wc.enabled
+    ? [
+        { label: w.wake(wakeStatus(), wc), enabled: false },
+        wc.paused
+          ? { label: w.resumeListening, click: () => void setWakePaused(false) }
+          : { label: w.pauseListening, click: () => void setWakePaused(true) },
+      ]
+    : [];
   tray.setToolTip(c.cloud === "online" ? `ELISE · ${w.connected}` : `ELISE · ${w.cloudOffline}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -242,6 +273,7 @@ function refreshTray() {
       { label: c.cloud === "online" ? `● ${w.connected}` : `○ ${w.cloudOffline}`, enabled: false },
       { type: "separator" },
       { label: w.open, click: () => showWindow() },
+      ...listen,
       ...(home ? [{ label: w.home(home), click: () => showWindow("/my-elise/home") }] : []),
       ready
         ? { label: w.restartToUpdate, click: () => void restartToUpdate() }
@@ -342,9 +374,11 @@ async function main() {
   cloud.initCloud();
   await cloud.adoptTestSession();
   hardenSessions();
-  handleAppProtocol(RENDERER_DIR, DEV_URL);
+  handleAppProtocol(RENDERER_DIR, DEV_URL, wakeModelDir());
   host.start();
-  registerIpc(host, applyLoginItem);
+  registerIpc(host, applyLoginItem, (path) => showWindow(path));
+  watchSystem();
+  wake.on("change", () => refreshTray());
   applyLoginItem();
   initUpdater();
 
@@ -389,6 +423,9 @@ async function main() {
   for (const link of pendingLinks.splice(0)) void handleDeepLink(link);
   // No link, or only rejected ones (a link opens its window synchronously): the usual window.
   if ((!window || window.isDestroyed()) && !openedHidden()) showWindow();
+  // Started at login with "ELISE" on: the app runs hidden (its renderer listens), no window shown.
+  else if ((!window || window.isDestroyed()) && wakeControl().enabled)
+    window = createWindow("/", { hidden: true });
 
   app.on("activate", () => showWindow());
   // Background by design: no windows ≠ quit (the tray stays). Quit is explicit.

@@ -1,5 +1,7 @@
 import { app } from "electron";
 
+import type { WakeControl, WakeReport } from "@/core/platform/platform";
+
 /** The few words the main process shows itself (tray, notifications), in the OS language. */
 const ES = {
   open: "Abrir ELISE",
@@ -12,6 +14,22 @@ const ES = {
   checkUpdates: "Buscar actualizaciones",
   restartToUpdate: "Reiniciar para actualizar",
   settings: "Configuración",
+  pauseListening: "Pausar escucha de “ELISE”",
+  resumeListening: "Reanudar escucha de “ELISE”",
+  wake: (s: WakeReport, c: WakeControl): string =>
+    c.suspended
+      ? "○ Escucha detenida (pantalla bloqueada)"
+      : c.paused || s === "paused"
+        ? "○ Escucha en pausa"
+        : s === "listening"
+          ? "● Escuchando “ELISE”"
+          : s === "in_conversation"
+            ? "● En conversación"
+            : s === "no_microphone" || s === "mic_denied"
+              ? "○ Micrófono no disponible"
+              : s === "model_failed"
+                ? "○ Detector no disponible"
+                : "○ Preparando escucha…",
   quit: "Salir de ELISE",
   crashed: "La interfaz de ELISE se detuvo varias veces. Tus datos están a salvo.",
   retry: "Reintentar",
@@ -28,6 +46,22 @@ const EN: typeof ES = {
   checkUpdates: "Check for updates",
   restartToUpdate: "Restart to update",
   settings: "Settings",
+  pauseListening: "Pause listening for “ELISE”",
+  resumeListening: "Resume listening for “ELISE”",
+  wake: (s: WakeReport, c: WakeControl) =>
+    c.suspended
+      ? "○ Listening stopped (screen locked)"
+      : c.paused || s === "paused"
+        ? "○ Listening paused"
+        : s === "listening"
+          ? "● Listening for “ELISE”"
+          : s === "in_conversation"
+            ? "● In a conversation"
+            : s === "no_microphone" || s === "mic_denied"
+              ? "○ Microphone unavailable"
+              : s === "model_failed"
+                ? "○ Detector unavailable"
+                : "○ Getting ready to listen…",
   quit: "Quit ELISE",
   crashed: "ELISE's interface stopped several times. Your data is safe.",
   retry: "Retry",

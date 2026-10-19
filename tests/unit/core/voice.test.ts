@@ -1629,3 +1629,44 @@ describe("adaptive delivery never changes voice halfway through a reply (ADR-049
     expect(controller.state.delivery).toBe("whisper");
   });
 });
+
+/** ELISE Desktop's own wake word (ADR-095): it hands over to this one session, never a second. */
+describe("a device's wake word hands over to the session", () => {
+  it("with no session yet: rests, wakes without a second chime, and what followed is the turn", async () => {
+    const { controller, sent, player, hear } = setup();
+    await controller.deviceWake("¿qué tengo mañana?");
+    // The first session measures the room; the words wait for it instead of being dropped.
+    expect(controller.state.phase).toBe("arming");
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await settle();
+    expect(sent.map((s) => s.text)).toEqual(["¿qué tengo mañana?"]);
+    expect(player.chimes).toBe(0); // the device played its own sound already
+    expect(["thinking", "speaking"]).toContain(controller.state.phase);
+  });
+
+  it("the word alone: the session listens for what comes next", async () => {
+    const { controller, sent, say } = setup({ transcripts: ["Poné música"] });
+    await controller.deviceWake("");
+    await say();
+    expect(sent.map((s) => s.text)).toEqual(["Poné música"]);
+  });
+
+  it("a session already replying is never interrupted, and nothing is sent twice", async () => {
+    const { controller, sent, say } = setup();
+    await controller.start();
+    await say();
+    expect(controller.state.phase).toBe("thinking");
+    await controller.deviceWake("otra cosa");
+    expect(sent).toHaveLength(1);
+    expect(controller.state.phase).toBe("thinking");
+  });
+
+  it("ending the session drops words still waiting for the room", async () => {
+    const { controller, sent, hear } = setup();
+    await controller.deviceWake("¿qué tengo mañana?");
+    controller.end();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await settle();
+    expect(sent).toEqual([]);
+  });
+});
