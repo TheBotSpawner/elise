@@ -893,7 +893,10 @@ export type FinanceBudgetRow = {
   id: string;
   workspace_id: string;
   book_id: string | null;
-  category_id: string;
+  /** Legacy single category; the link table holds every category (migration 052). */
+  category_id: string | null;
+  name?: string | null;
+  icon?: string | null;
   subcategory: string | null;
   period: "monthly";
   currency: string;
@@ -902,6 +905,12 @@ export type FinanceBudgetRow = {
   created_at: Ts;
   updated_at: Ts;
   archived_at: Ts | null;
+};
+
+export type FinanceBudgetCategoryRow = {
+  budget_id: string;
+  category_id: string;
+  workspace_id: string;
 };
 
 export type FinanceFxRateRow = {
@@ -964,6 +973,10 @@ export type FinanceTransactionRow = {
   book_id?: string | null;
   to_account_id?: string | null;
   receipt?: string | null;
+  /** ADR-083 (migration 052): combined movements. */
+  merged_into_transaction_id?: string | null;
+  merged_at?: Ts | null;
+  merged_source_count?: number | null;
 };
 
 export type ImportRow = {
@@ -1815,9 +1828,10 @@ export type Database = {
       >;
       finance_accounts: Table<FinanceAccountRow, "workspace_id" | "name">;
       finance_books: Table<FinanceBookRow, "workspace_id" | "name">;
-      finance_budgets: Table<
-        FinanceBudgetRow,
-        "workspace_id" | "category_id" | "currency" | "amount"
+      finance_budgets: Table<FinanceBudgetRow, "workspace_id" | "currency" | "amount">;
+      finance_budget_categories: Table<
+        FinanceBudgetCategoryRow,
+        "budget_id" | "category_id" | "workspace_id"
       >;
       finance_fx_rates: Table<
         FinanceFxRateRow,
@@ -1860,6 +1874,18 @@ export type Database = {
     };
     Views: Record<never, never>;
     Functions: {
+      finance_delete_category: {
+        Args: { p_category: string };
+        Returns: { uncategorized: number; budgetsArchived: number };
+      };
+      finance_combine_transactions: {
+        Args: { p_ids: string[]; p_description: string | null; p_category: string | null };
+        Returns: string;
+      };
+      finance_uncombine_transaction: {
+        Args: { p_id: string };
+        Returns: number;
+      };
       record_web_usage: {
         Args: { p_workspace_id: string; p_searches: number; p_fetches: number };
         Returns: { searches: number; fetches: number }[];

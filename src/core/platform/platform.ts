@@ -73,6 +73,9 @@ export interface DesktopInfo {
   arch: string;
   capabilities: PlatformCapability[];
   installationId: string;
+  /** The ELISE Cloud this build talks to (baked at build time; public). */
+  cloudOrigin: string;
+  channel: "stable" | "beta";
 }
 
 export type DesktopUpdateState = (

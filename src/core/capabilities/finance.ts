@@ -109,6 +109,8 @@ export interface FinanceTransaction {
   fingerprint: string;
   provenance: FinanceProvenance;
   updatedAt: string;
+  /** ADR-083: this movement combines that many (kept, hidden, recoverable with undo). */
+  mergedCount?: number | null;
 }
 
 export interface FinanceAccount {
@@ -232,6 +234,13 @@ export interface FinanceProvider {
    * Returns how many changed. ELISE Finance only.
    */
   archiveTransactions?(ids: string[], restore?: boolean): Promise<number>;
+  /** ADR-083: one movement from several (same account and currency); sources kept, linked. */
+  combineTransactions?(
+    ids: string[],
+    options: { description: string | null; categoryId: string | null },
+  ): Promise<string>;
+  /** Brings a combination's sources back and archives the combined movement. */
+  uncombineTransaction?(id: string): Promise<number>;
   listAccounts(): Promise<FinanceAccount[]>;
   createAccount(
     a: { name: string; type: AccountType; currency: string | null },
@@ -255,7 +264,7 @@ export interface FinanceProvider {
   /** What deleting a category touches: movements lose it, subcategories go top-level, its budgets go. */
   categoryUsage?(id: string): Promise<{ transactions: number; budgets: number; children: number }>;
   /** Deletes the category in one statement; its movements are kept, uncategorized (FK set null). */
-  deleteCategory?(id: string): Promise<void>;
+  deleteCategory?(id: string): Promise<{ uncategorized: number; budgetsArchived: number }>;
   settings(): Promise<{ defaultCurrency: string | null; reportingCurrency: string | null }>;
   /** Currencies used most recently, most used first (to ask "ARS or USD?"). */
   recentCurrencies(): Promise<string[]>;
@@ -275,7 +284,10 @@ export interface FinanceProvider {
   updateAccountBook?(accountId: string, bookId: string | null): Promise<void>;
   listBudgets?(): Promise<Budget[]>;
   saveBudget?(
-    b: Omit<Budget, "id" | "book" | "category"> & { id?: string; archived?: boolean },
+    b: Omit<Budget, "id" | "book" | "category" | "categories"> & {
+      id?: string;
+      archived?: boolean;
+    },
   ): Promise<Budget>;
   listRates?(): Promise<FxRate[]>;
   saveRate?(r: FxRate & { note?: string | null }): Promise<FxRate>;
@@ -283,10 +295,17 @@ export interface FinanceProvider {
 
 export interface Budget {
   id: string;
+  /** ADR-083: optional name and icon ("Salidas", 🍽️). */
+  name?: string | null;
+  icon?: string | null;
   bookId: string | null;
   book: string | null;
-  categoryId: string;
+  /** Every category it covers (one or more). */
+  categoryIds: string[];
+  categories: string[];
+  /** Display label: the name, or the categories joined. */
   category: string;
+  /** Only with a single category. */
   subcategory: string | null;
   currency: string;
   amount: string;
@@ -1047,9 +1066,11 @@ export const BUDGET_WARNING_TENTHS = 800;
 export function inBudget(t: FinanceTransaction, b: Budget): boolean {
   if (t.type !== "expense") return false;
   if (b.bookId && t.bookId !== b.bookId) return false;
+  // Any of its categories, or a subcategory of one of them.
+  const names = new Set(b.categories.map(norm));
   const inCategory =
-    t.categoryId === b.categoryId ||
-    t.categoryPath.slice(0, -1).some((n) => norm(n) === norm(b.category));
+    (t.categoryId !== null && b.categoryIds.includes(t.categoryId)) ||
+    t.categoryPath.slice(0, -1).some((n) => names.has(norm(n)));
   if (!inCategory) return false;
   return !b.subcategory || norm(t.subcategory ?? "") === norm(b.subcategory);
 }
@@ -1475,8 +1496,19 @@ export const saveBookInput = z
 
 export const setBudgetInput = z
   .object({
-    category: text(80).describe("Expense category it limits."),
-    subcategory: text(80).optional(),
+    id: z.uuid().optional().describe("Edit this budget (from the Finance screen)."),
+    category: text(80).optional().describe("Expense category it limits."),
+    categories: z
+      .array(text(80))
+      .min(1)
+      .max(20)
+      .optional()
+      .describe(
+        'Several expense categories in ONE budget ("entre restaurantes, bares y entretenimiento").',
+      ),
+    name: text(60).optional().describe('Optional name ("Salidas").'),
+    icon: z.string().max(16).optional().describe("Optional single emoji."),
+    subcategory: text(80).optional().describe("Only with a single category."),
     book: text(60).optional().describe("Ámbito; omit for the default Book."),
     amount: amountField.describe('Monthly amount ("200 lucas" → 200000).'),
     currency: currencyField.optional(),

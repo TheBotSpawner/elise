@@ -55,6 +55,8 @@ export function desktopInfo(host: RuntimeHost): DesktopInfo {
     arch: process.arch,
     capabilities: CAPABILITIES,
     installationId: loadState().installationId,
+    cloudOrigin: __ELISE_BUILD__.cloudUrl,
+    channel: __ELISE_BUILD__.channel === "beta" ? "beta" : "stable",
   };
 }
 

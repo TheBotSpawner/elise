@@ -4,7 +4,6 @@ import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { VitePlugin } from "@electron-forge/plugin-vite";
-import { PublisherGitHub } from "@electron-forge/publisher-github";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 
 /**
@@ -55,17 +54,7 @@ const config: ForgeConfig = {
     new MakerZIP({}, ["darwin"]),
     new MakerDMG({ name: "ELISE" }),
   ],
-  publishers: [
-    new PublisherGitHub({
-      repository: {
-        owner: env.ELISE_RELEASE_OWNER ?? "elise",
-        name: env.ELISE_RELEASE_REPO ?? "elise",
-      },
-      // A release is reviewed before anyone is offered it (rollback = never publish it).
-      draft: true,
-      prerelease: (env.ELISE_DESKTOP_CHANNEL ?? "stable") !== "stable",
-    }),
-  ],
+  // Publication is desktop/scripts/publish-release.mjs (ADR-084), not Forge publishers.
   plugins: [
     new VitePlugin({
       build: [

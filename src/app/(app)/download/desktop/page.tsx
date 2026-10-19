@@ -2,6 +2,8 @@ import { Check, Download } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 
+import { requireAuthContext } from "@/application/auth-context";
+import { isAdmin } from "@/application/usage-service";
 import { BackLink } from "@/components/shared/back-link";
 import { PageContainer } from "@/components/shared/page";
 import { buttonVariants } from "@/components/ui/button";
@@ -25,7 +27,13 @@ const size = (bytes: number | undefined) => (bytes ? `${Math.round(bytes / 1024 
 export default async function DesktopDownloadPage({
   searchParams,
 }: PageProps<"/download/desktop">) {
-  const [{ t }, h, params] = await Promise.all([getT(), headers(), searchParams]);
+  const [{ t }, h, params, auth] = await Promise.all([
+    getT(),
+    headers(),
+    searchParams,
+    requireAuthContext(),
+  ]);
+  const tester = { tester: isAdmin(auth) };
   const d = t.download;
   const chosen =
     typeof params.os === "string" && (DESKTOP_PLATFORMS as readonly string[]).includes(params.os)
@@ -33,8 +41,8 @@ export default async function DesktopDownloadPage({
       : null;
   const platform = chosen ?? platformFromUserAgent(h.get("user-agent"));
   const [main, all] = await Promise.all([
-    platform ? desktopReleaseFor(platform) : null,
-    desktopReleases(),
+    platform ? desktopReleaseFor(platform, tester) : null,
+    desktopReleases(tester),
   ]);
   const release = main ?? (platform ? null : (all[0] ?? null));
   const fromHome = params.from === "home";

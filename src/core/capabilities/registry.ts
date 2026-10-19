@@ -217,6 +217,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       updateAccount: WRITE,
       updateCategory: WRITE,
       deleteCategory: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
+      // ADR-083: rewrites the ledger's shape (reversible): always confirmed.
+      combineTransactions: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
       importFile: WRITE,
       createCategory: WRITE,
       archiveTransaction: ARCHIVE,

@@ -21,6 +21,7 @@ import {
 import type { EntrySource } from "@/core/capabilities/habits";
 import { isSingleEmoji } from "@/core/emoji";
 import { AppError } from "@/core/errors";
+import { cleanCategoryName, categoryKey, duplicateCategory } from "@/core/finance/combine";
 import { normalizeAmount } from "@/core/finance/money";
 import type {
   FinanceAccountRow,
@@ -99,7 +100,15 @@ interface Catalog {
   books: FinanceBookRow[];
   /** False until migration 039 is applied (Books, transfers, receipts are unavailable). */
   v2: boolean;
+  /** ADR-083 (migration 052): combined movements, multi-category budgets, atomic deletion. */
+  v3: boolean;
 }
+
+const duplicateName = () =>
+  new AppError("CONFLICT", "A category with that name already exists", {
+    recovery: "review",
+    details: { reason: "duplicate_name" },
+  });
 
 /** ELISE Finance (Native provider): the workspace's own ledger. */
 export class EliseFinanceProvider implements FinanceProvider {
@@ -116,7 +125,7 @@ export class EliseFinanceProvider implements FinanceProvider {
 
   private load() {
     this.catalog ??= (async () => {
-      const [accounts, categories, books] = await Promise.all([
+      const [accounts, categories, books, v3probe] = await Promise.all([
         this.db.from("finance_accounts").select("*").eq("workspace_id", this.workspaceId),
         this.db.from("finance_categories").select("*").eq("workspace_id", this.workspaceId),
         this.db
@@ -125,6 +134,7 @@ export class EliseFinanceProvider implements FinanceProvider {
           .eq("workspace_id", this.workspaceId)
           .is("archived_at", null)
           .order("created_at"),
+        this.db.from("finance_budget_categories").select("budget_id").limit(1),
       ]);
       check(accounts.error, "load accounts");
       check(categories.error, "load categories");
@@ -135,6 +145,7 @@ export class EliseFinanceProvider implements FinanceProvider {
         categories: categories.data ?? [],
         books: books.data ?? [],
         v2,
+        v3: !v3probe.error,
       };
     })();
     return this.catalog;
@@ -145,6 +156,7 @@ export class EliseFinanceProvider implements FinanceProvider {
   }
 
   private columns(c: Catalog) {
+    if (c.v3) return `${TRANSACTION_COLUMNS}, merged_source_count`;
     return c.v2 ? TRANSACTION_COLUMNS : V1_COLUMNS;
   }
 
@@ -194,6 +206,7 @@ export class EliseFinanceProvider implements FinanceProvider {
         row: r.import_row_number,
       },
       updatedAt: r.updated_at,
+      mergedCount: (r as { merged_source_count?: number | null }).merged_source_count ?? null,
     };
   }
 
@@ -399,8 +412,11 @@ export class EliseFinanceProvider implements FinanceProvider {
       .update({ archived_at: restore ? null : new Date().toISOString() })
       .eq("workspace_id", this.workspaceId)
       .in("id", valid);
+    const { v3 } = await this.load();
+    // A combined movement's sources come back only through "Deshacer combinación".
+    const scoped = restore && v3 ? base.is("merged_into_transaction_id", null) : base;
     const { data, error } = await (
-      restore ? base.not("archived_at", "is", null) : base.is("archived_at", null)
+      restore ? scoped.not("archived_at", "is", null) : scoped.is("archived_at", null)
     ).select("id");
     check(error, restore ? "restore the transactions" : "archive the transactions");
     this.invalidate();
@@ -534,8 +550,10 @@ export class EliseFinanceProvider implements FinanceProvider {
     },
     source: EntrySource,
   ) {
+    // Idempotent (imports and Chat re-create freely); the UI asks first (duplicateCategory).
+    const name = cleanCategoryName(c.name);
     const existing = (await this.listCategories()).find(
-      (x) => norm(x.name) === norm(c.name) && x.type === c.type,
+      (x) => categoryKey(x.name) === categoryKey(name) && x.type === c.type,
     );
     if (existing) return existing;
     const { v2 } = await this.load();
@@ -543,7 +561,7 @@ export class EliseFinanceProvider implements FinanceProvider {
       .from("finance_categories")
       .insert({
         workspace_id: this.workspaceId,
-        name: c.name,
+        name,
         category_type: c.type,
         parent_category_id: c.parentId,
         source,
@@ -569,10 +587,16 @@ export class EliseFinanceProvider implements FinanceProvider {
     p: { name?: string; icon?: string | null; parentId?: string | null; archived?: boolean },
   ) {
     if (p.icon !== undefined && !(await this.categoryIcons())) throw needsUpdate();
+    const name = p.name !== undefined ? cleanCategoryName(p.name) : undefined;
+    if (name !== undefined) {
+      const current = (await this.load()).categories.find((c) => c.id === id);
+      const type = current?.category_type === "income" ? "income" : "expense";
+      if (duplicateCategory(await this.listCategories(), name, type, id)) throw duplicateName();
+    }
     const { data, error } = await this.db
       .from("finance_categories")
       .update({
-        ...(p.name !== undefined ? { name: p.name } : {}),
+        ...(name !== undefined ? { name } : {}),
         ...(p.icon !== undefined ? { icon: p.icon } : {}),
         ...(p.parentId !== undefined ? { parent_category_id: p.parentId } : {}),
         ...(p.archived
@@ -583,11 +607,7 @@ export class EliseFinanceProvider implements FinanceProvider {
       .eq("workspace_id", this.workspaceId)
       .select("id")
       .maybeSingle();
-    if (error?.code === "23505")
-      throw new AppError("CONFLICT", "A category with that name already exists", {
-        recovery: "review",
-        details: { reason: "duplicate_name" },
-      });
+    if (error?.code === "23505") throw duplicateName();
     check(error, "update the category");
     if (!data) throw new AppError("NOT_FOUND", "Category not found");
     this.invalidate();
@@ -645,6 +665,15 @@ export class EliseFinanceProvider implements FinanceProvider {
    * subcategories to the top level and drop the category's budgets. Movements are never deleted.
    */
   async deleteCategory(id: string) {
+    const { v3 } = await this.load();
+    if (v3) {
+      // One transaction (migration 052): movements uncategorized, budgets unlinked, category gone.
+      const { data, error } = await this.db.rpc("finance_delete_category", { p_category: id });
+      if (error?.code === "P0002") throw new AppError("NOT_FOUND", "Category not found");
+      check(error, "delete the category");
+      this.invalidate();
+      return data as { uncategorized: number; budgetsArchived: number };
+    }
     const { data, error } = await this.db
       .from("finance_categories")
       .delete()
@@ -658,6 +687,41 @@ export class EliseFinanceProvider implements FinanceProvider {
     // policy yet (migration 048 not applied).
     if (!data?.length) throw needsUpdate();
     this.invalidate();
+    return { uncategorized: 0, budgetsArchived: 0 };
+  }
+
+  // ── Combined movements (ADR-083) ────────────────────────────────────────────
+
+  async combineTransactions(
+    ids: string[],
+    options: { description: string | null; categoryId: string | null },
+  ) {
+    if (!(await this.load()).v3) throw needsUpdate();
+    const valid = [...new Set(ids)].filter((x) => UUID.test(x));
+    if (valid.length !== ids.length) throw new AppError("VALIDATION_ERROR", "Invalid selection");
+    const { data, error } = await this.db.rpc("finance_combine_transactions", {
+      p_ids: valid,
+      p_description: options.description,
+      p_category: options.categoryId,
+    });
+    if (error?.code === "P0002") throw new AppError("NOT_FOUND", "Movements not found");
+    if (error?.code === "22023")
+      throw new AppError("VALIDATION_ERROR", "These movements can't be combined", {
+        recovery: "review",
+      });
+    check(error, "combine the movements");
+    this.invalidate();
+    return data as string;
+  }
+
+  async uncombineTransaction(id: string) {
+    if (!(await this.load()).v3) throw needsUpdate();
+    if (!UUID.test(id)) throw new AppError("NOT_FOUND", "Movement not found");
+    const { data, error } = await this.db.rpc("finance_uncombine_transaction", { p_id: id });
+    if (error?.code === "P0002") throw new AppError("NOT_FOUND", "Combined movement not found");
+    check(error, "undo the combination");
+    this.invalidate();
+    return data as number;
   }
 
   async settings() {
@@ -793,31 +857,62 @@ export class EliseFinanceProvider implements FinanceProvider {
 
   // ── Budgets ─────────────────────────────────────────────────────────────────
 
+  /**
+   * Budgets (ADR-052/083): one or several categories each, with an optional name and icon. Before
+   * migration 052 every budget has exactly its legacy category.
+   */
   async listBudgets(): Promise<Budget[]> {
     const catalog = await this.load();
     if (!catalog.v2) return [];
     const { data, error } = await this.db
       .from("finance_budgets")
-      .select("id, book_id, category_id, subcategory, currency, amount::text")
+      .select(
+        catalog.v3
+          ? "id, book_id, category_id, subcategory, currency, amount::text, name, icon"
+          : "id, book_id, category_id, subcategory, currency, amount::text",
+      )
       .eq("workspace_id", this.workspaceId)
-      .is("archived_at", null);
+      .is("archived_at", null)
+      .order("created_at");
     check(error, "load budgets");
-    return ((data ?? []) as unknown as Budget[] & Record<string, string>[]).map((r) => {
-      const row = r as unknown as {
-        id: string;
-        book_id: string | null;
-        category_id: string;
-        subcategory: string | null;
-        currency: string;
-        amount: string;
-      };
+    const rows = (data ?? []) as unknown as {
+      id: string;
+      book_id: string | null;
+      category_id: string | null;
+      subcategory: string | null;
+      currency: string;
+      amount: string;
+      name?: string | null;
+      icon?: string | null;
+    }[];
+    const links = new Map<string, string[]>();
+    if (catalog.v3 && rows.length) {
+      const { data: l, error: le } = await this.db
+        .from("finance_budget_categories")
+        .select("budget_id, category_id")
+        .eq("workspace_id", this.workspaceId)
+        .in(
+          "budget_id",
+          rows.map((r) => r.id),
+        );
+      check(le, "load budget categories");
+      for (const x of l ?? [])
+        links.set(x.budget_id, [...(links.get(x.budget_id) ?? []), x.category_id]);
+    }
+    const nameOf = (id: string) => catalog.categories.find((c) => c.id === id)?.name ?? "—";
+    return rows.map((row) => {
+      const categoryIds = links.get(row.id) ?? (row.category_id ? [row.category_id] : []);
+      const categories = categoryIds.map(nameOf);
       return {
         id: row.id,
+        name: row.name ?? null,
+        icon: row.icon && isSingleEmoji(row.icon) ? row.icon : null,
         bookId: row.book_id,
         book: catalog.books.find((b) => b.id === row.book_id)?.name ?? null,
-        categoryId: row.category_id,
-        category: catalog.categories.find((c) => c.id === row.category_id)?.name ?? "—",
-        subcategory: row.subcategory,
+        categoryIds,
+        categories,
+        category: row.name ?? categories.join(" · "),
+        subcategory: categoryIds.length === 1 ? row.subcategory : null,
         currency: row.currency,
         amount: normalizeAmount(String(row.amount)),
       };
@@ -825,24 +920,39 @@ export class EliseFinanceProvider implements FinanceProvider {
   }
 
   async saveBudget(
-    b: Omit<Budget, "id" | "book" | "category"> & { id?: string; archived?: boolean },
+    b: Omit<Budget, "id" | "book" | "category" | "categories"> & {
+      id?: string;
+      archived?: boolean;
+    },
   ): Promise<Budget> {
-    const { v2 } = await this.load();
+    const { v2, v3 } = await this.load();
     if (!v2) throw needsUpdate();
-    const existing = (await this.listBudgets()).find(
-      (x) =>
-        x.id === b.id ||
-        (x.bookId === b.bookId &&
-          x.categoryId === b.categoryId &&
-          norm(x.subcategory ?? "") === norm(b.subcategory ?? "") &&
-          x.currency === b.currency),
-    );
+    const ids = [...new Set(b.categoryIds)];
+    if (!ids.length) throw new AppError("VALIDATION_ERROR", "A budget needs a category");
+    if (!v3 && (ids.length > 1 || b.name || b.icon)) throw needsUpdate();
+    const all = await this.listBudgets();
+    // Editing by id; a single-category budget without id updates its legacy twin (Chat).
+    const existing =
+      (b.id ? all.find((x) => x.id === b.id) : undefined) ??
+      (!b.id && ids.length === 1
+        ? all.find(
+            (x) =>
+              x.bookId === b.bookId &&
+              x.categoryIds.length === 1 &&
+              x.categoryIds[0] === ids[0] &&
+              norm(x.subcategory ?? "") === norm(b.subcategory ?? "") &&
+              x.currency === b.currency,
+          )
+        : undefined);
+    if (b.id && !existing) throw new AppError("NOT_FOUND", "Budget not found");
     const fields = {
       book_id: b.bookId,
-      category_id: b.categoryId,
-      subcategory: b.subcategory,
+      // Legacy column: the single category (older readers), null for several.
+      category_id: ids.length === 1 ? ids[0]! : null,
+      subcategory: ids.length === 1 ? b.subcategory : null,
       currency: b.currency,
       amount: normalizeAmount(b.amount),
+      ...(v3 ? { name: b.name?.trim() || null, icon: b.icon || null } : {}),
       ...(b.archived ? { status: "archived" as const, archived_at: new Date().toISOString() } : {}),
     };
     const { data, error } = existing
@@ -859,13 +969,42 @@ export class EliseFinanceProvider implements FinanceProvider {
           .select("id")
           .single();
     check(error, "save the budget");
-    const saved = (await this.listBudgets()).find((x) => x.id === data!.id);
+    const id = data!.id;
+    if (v3 && !b.archived) {
+      // The link set becomes exactly the chosen categories.
+      const current = existing?.categoryIds ?? [];
+      const remove = current.filter((c) => !ids.includes(c));
+      const add = ids.filter((c) => !current.includes(c) || !existing);
+      if (remove.length) {
+        const { error: re } = await this.db
+          .from("finance_budget_categories")
+          .delete()
+          .eq("budget_id", id)
+          .eq("workspace_id", this.workspaceId)
+          .in("category_id", remove);
+        check(re, "save the budget");
+      }
+      if (add.length) {
+        const { error: ae } = await this.db.from("finance_budget_categories").upsert(
+          add.map((category_id) => ({
+            budget_id: id,
+            category_id,
+            workspace_id: this.workspaceId,
+          })),
+          { onConflict: "budget_id,category_id", ignoreDuplicates: true },
+        );
+        check(ae, "save the budget");
+      }
+    }
+    const saved = (await this.listBudgets()).find((x) => x.id === id);
     return (
       saved ?? {
         ...b,
-        id: data!.id,
+        id,
         book: null,
-        category: "—",
+        categoryIds: ids,
+        categories: [],
+        category: b.name ?? "—",
       }
     );
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { useState } from "react";
 
 import { isSingleEmoji } from "@/core/emoji";
@@ -109,8 +110,16 @@ export function EmojiPicker({
             onChange={(ev) => setDraft(ev.target.value)}
             className="h-11 flex-1 text-[16px]"
           />
-          <Button type="submit" variant="secondary" disabled={!isSingleEmoji(typed)}>
-            {typed && isSingleEmoji(typed) ? typed : e.use}
+          {/* A confirmation, never a second emoji: the choice shows in the field itself. */}
+          <Button
+            type="submit"
+            variant="secondary"
+            aria-label={e.use}
+            title={e.use}
+            disabled={!isSingleEmoji(typed)}
+            className="w-11 shrink-0 px-0"
+          >
+            <Check aria-hidden />
           </Button>
         </form>
         {typed && !isSingleEmoji(typed) && (

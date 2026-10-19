@@ -6,7 +6,7 @@ import { parseDeepLink } from "@/core/platform/links";
 import type { HomeHubLocalState } from "@/core/platform/platform";
 
 import * as cloud from "./cloud";
-import { configureHome, watchHome } from "./home";
+import { computerName, configureHome, watchHome } from "./home";
 import { words } from "./i18n";
 import { connectivity, desktopInfo, registerIpc } from "./ipc";
 import { log } from "./log";
@@ -236,6 +236,7 @@ async function heartbeat(force = false) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         installationId: info.installationId,
+        name: computerName(),
         platform: info.platform,
         desktopVersion: info.desktopVersion,
         bridgeProtocolVersion: info.bridgeProtocolVersion,

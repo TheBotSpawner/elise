@@ -3,6 +3,7 @@ import "server-only";
 import type { AuthContext } from "@/application/auth-context";
 import { listDesktops } from "@/application/desktop-service";
 import { homeSnapshot } from "@/application/home-service";
+import { isAdmin } from "@/application/usage-service";
 import { desktopReleaseFor, platformFromUserAgent } from "@/config/desktop-releases";
 import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
@@ -30,7 +31,7 @@ export async function homeHubPageProps(auth: AuthContext, userAgent: string | nu
       throw error;
     }),
     listDesktops(auth).catch(() => []),
-    platform ? desktopReleaseFor(platform).catch(() => null) : null,
+    platform ? desktopReleaseFor(platform, { tester: isAdmin(auth) }).catch(() => null) : null,
   ]);
   return {
     snapshot,

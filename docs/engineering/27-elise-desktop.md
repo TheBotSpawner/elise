@@ -45,16 +45,24 @@ npm run dev:desktop         # Electron + renderer HMR (loads through elise-app:/
 | `node desktop/scripts/installer-smoke.mjs "<Setup.exe>"` | Installs per user (no admin), checks `elise://` and the uninstall entry, launches, runs ELISE Home's requirements check (never the admin step), uninstalls |
 | `tests/unit/desktop/home-runtime.test.ts` | The managed Home runtime with a fake backend: phases, progress, checksum, resume after restart, retry, update and rollback, reset |
 
-## Configuration (build time, public by definition)
+## Configuration: where each variable goes
 
-| Variable | Meaning |
-|---|---|
-| `ELISE_CLOUD_URL` | ELISE Cloud base URL. Required to package; development defaults to `http://localhost:3000` |
-| `NEXT_PUBLIC_SUPABASE_URL` / `_PUBLISHABLE_KEY` | Realtime and uploads as the signed-in person |
-| `ELISE_UPDATE_FEED` | https base of the update feed (`<feed>/<channel>/<platform>/<arch>`). Unset means updates are "unsupported" |
-| `ELISE_DESKTOP_CHANNEL` | `stable` (default) or `beta` |
+Desktop variables are **build-time** values, baked into the installer. Changing them afterwards
+means building again. They're public by definition: server secrets are never read by the Desktop
+build.
 
-Server secrets are never read by the Desktop build. Anything in the binary is public.
+| Variable | Where | Value / meaning |
+|---|---|---|
+| `ELISE_CLOUD_URL` | Desktop build: GitHub Actions **Variable**, or `.env.local` for local builds | `https://elise-lime.vercel.app`. A packaged build **fails** if missing or local. Development defaults to `http://localhost:3000` |
+| `ELISE_DESKTOP_CHANNEL` | Desktop build (CI derives it from the version: pre-release → `beta`) | `beta` / `stable` |
+| `ELISE_UPDATE_FEED` | Desktop build (CI sets it) | `https://github.com/TheBotSpawner/elise/releases/download`. Unset: updates show as "unsupported", and nothing breaks |
+| `NEXT_PUBLIC_SUPABASE_URL` / `_PUBLISHABLE_KEY` | Desktop build: GitHub Actions **Variables** | Same public values as the web (Realtime, uploads) |
+| `ELISE_DESKTOP_MANIFEST_URL` | **Vercel** (web) | `https://github.com/TheBotSpawner/elise/releases/download/desktop-{channel}/desktop-releases.json`. Set once, never per release |
+| `ELISE_DESKTOP_DOWNLOAD_CHANNEL` | Vercel (optional) | Forces `beta`/`stable` for everyone; otherwise production shows beta only to `ELISE_ADMIN_EMAILS` |
+| `ELISE_ADMIN_EMAILS` | Vercel | Beta testers (they see beta downloads) |
+| `ELISE_HA_URL`, `HA_TOKEN` | Your shell, development only | An existing Home Assistant for unpackaged builds. Not needed to install or sign in |
+
+Trigger.dev uses none of these.
 
 ## ELISE Home runtime (ADR-082)
 
@@ -89,40 +97,47 @@ Server secrets are never read by the Desktop build. Anything in the binary is pu
 - **Remove:** Settings › ELISE Desktop › Configuración avanzada › "Quitar ELISE Home de esta
   computadora". This unregisters the distro, deletes its data and restores `.wslconfig`.
 
+## Artifacts
+
+| Path | What |
+|---|---|
+| `desktop/out/ELISE-win32-x64/` | The **unpacked** app, from `npm run package:desktop`. For development and `smoke:desktop`; **never** a download |
+| `desktop/out/make/squirrel.windows/x64/ELISE-<version> Setup.exe` | The **Windows installer**, from `npm run make:desktop -- --targets @electron-forge/maker-squirrel`. This is what people get (published as `ELISE-Setup-<version>.exe`) |
+| `…/RELEASES` + `…/elise_desktop-<nuget-version>-full.nupkg` | The Squirrel update feed: what the updater consumes |
+
 ## Download (web)
 
-`/download/desktop` and Hogar read **one manifest**, `ELISE_DESKTOP_MANIFEST_URL`: in
-production that's the `desktop-manifest` release asset `desktop-releases.json`. It's built from
-the same Forge output the updater serves.
+`/download/desktop` and Hogar read one manifest per channel through `ELISE_DESKTOP_MANIFEST_URL`
+(`{channel}` → `beta` / `stable`). It's the asset `desktop-releases.json` of the fixed release
+`desktop-<channel>`. The URL never changes; the release workflow rewrites the content.
 
-- Drafts are never offered, and neither are withdrawn versions.
-- `beta` builds show only where `ELISE_DESKTOP_DOWNLOAD_CHANNEL=beta`, or outside production.
-- A **stable** download must be **signed**.
-- Writing and editing it: `desktop/scripts/release-manifest.mjs`, which also handles
-  `--withdraw <version>`. In CI, publishing a `desktop-v*` release adds it to the manifest, and
-  "Run workflow" with a version withdraws it.
+- **Beta** (unsigned, internal) is shown in production only to `ELISE_ADMIN_EMAILS`, and to
+  everyone outside production. Everyone else sees signed stable builds only.
+- Drafts and withdrawn versions are never offered.
+- Caching: the web caches each manifest for 5 minutes, so a new release shows up within minutes
+  with no redeploy.
 
-## Release
+## Release (ADR-084)
 
-1. Bump `desktop/package.json` `version`. It's the only Desktop version source; the bridge and
-   runtime protocols are separate constants in `src/core/platform/platform.ts`.
-2. Tag `desktop-vX.Y.Z` and push. The **ELISE Desktop** workflow builds signed installers for
-   Windows (Squirrel) and macOS (DMG + ZIP) and publishes a **draft** GitHub release.
-3. Review the draft, then publish it.
-   - Publishing is what puts the release on the update feed.
-   - **Rollback:** don't publish a bad build, or unpublish it. The feed then keeps offering the
-     previous version. Fix forward with a higher version; never re-use a version.
-4. Signing secrets:
-   - Windows: `WINDOWS_CERTIFICATE_BASE64` and `WINDOWS_CERTIFICATE_PASSWORD`.
-   - macOS: `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and
-     `APPLE_TEAM_ID`.
+1. Bump `desktop/package.json` `version` (the only Desktop version source; SemVer). Examples:
+   `0.1.0-beta.2` (beta), `0.1.0` (stable). The bridge and runtime protocols are separate
+   constants in `src/core/platform/platform.ts`.
+2. Commit, then tag `desktop-v<version>` and push the tag.
+3. The **ELISE Desktop** workflow (Windows):
+   - builds the installer with the production Cloud (`ELISE_CLOUD_URL` Actions Variable);
+   - runs the installer smoke test (install → launch → Cloud check → uninstall);
+   - runs `desktop/scripts/publish-release.mjs`: the versioned release, a verified download
+     (SHA-256), the channel's update feed, then the channel manifest **last**. A failure leaves
+     the active manifest untouched.
+4. **Stable** requires signing: Actions Secrets `WINDOWS_CERTIFICATE_BASE64` and
+   `WINDOWS_CERTIFICATE_PASSWORD`. Unsigned builds can only go to beta.
+5. **Rollback:** Actions → ELISE Desktop → Run workflow → version + channel. That version is
+   marked withdrawn; the web and the updater go back to the previous good release. Fix forward
+   with a higher version, and never re-use one.
 
-   Repository variables: `ELISE_CLOUD_URL`, `ELISE_UPDATE_FEED`, `NEXT_PUBLIC_SUPABASE_*`.
-   Unsigned builds are for development only.
-
-The auto-updater is Electron's own (Squirrel and ShipIt). It needs a feed server, for example a
-static bucket laid out per channel, platform and arch, or update.electronjs.org if the
-repository is public. Choosing and hosting it is part of the first production release.
+Locally (same tooling): `npm run make:desktop -- --targets @electron-forge/maker-squirrel`, then
+`node desktop/scripts/publish-release.mjs --channel beta --dry-run` shows what would be
+published. A real publish needs the tag pushed (the release must match committed code).
 
 ## Lifecycle and data
 
@@ -176,5 +191,5 @@ Still owed by hand:
   - updates, which need a feed;
   - uninstall.
 - **macOS:** everything, since it can't be built or validated from a Windows machine.
-- **The whole sign-in flow and presence against production** need migrations
+- **(Done 2026-10-19)** Sign-in and presence against production work with migrations
   `20261101000050_elise_desktop.sql` and `20261102000051_desktop_home_runtime.sql` applied.

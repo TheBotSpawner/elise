@@ -32,11 +32,14 @@ export const updateState = () => state;
 
 export function initUpdater() {
   const { updateFeed, channel } = __ELISE_BUILD__;
-  if (!app.isPackaged || !updateFeed || process.platform === "linux") {
+  // Windows only for now (Squirrel). macOS needs signed builds and its own feed (ADR-084).
+  if (!app.isPackaged || !updateFeed || process.platform !== "win32") {
     set({ status: "unsupported" });
     return;
   }
-  const url = `${updateFeed.replace(/\/$/, "")}/${channel}/${process.platform}/${process.arch}`;
+  // One fixed release per channel holds that channel's Squirrel feed (RELEASES + .nupkg):
+  // <feed>/desktop-beta/RELEASES — the same publication that updates the download manifest.
+  const url = `${updateFeed.replace(/\/$/, "")}/desktop-${channel}`;
   if (!url.startsWith("https://")) {
     log("desktop_update_feed_insecure");
     set({ status: "unsupported" });

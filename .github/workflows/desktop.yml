@@ -1,10 +1,13 @@
 name: ELISE Desktop
 
-# ADR-081/082. PRs: compile and type-check Desktop (cheap). main: package, build the real
-# Windows installer and smoke-test both (install → launch → Home requirements → uninstall).
-# Tags desktop-vX.Y.Z: installers published as a DRAFT release. Publishing that release (or
-# withdrawing a version by hand) updates the canonical manifest the web download page reads:
-#   https://github.com/<owner>/<repo>/releases/download/desktop-manifest/desktop-releases.json
+# ADR-081/082/084. PRs: compile and type-check Desktop (cheap). main: package, build the real
+# Windows installer and smoke-test both. Tags desktop-v<semver> (e.g. desktop-v0.1.0-beta.1):
+# build the installer with the production Cloud, smoke-test it, then publish it with
+# desktop/scripts/publish-release.mjs — versioned release, verified download, the channel's
+# update feed, and the channel manifest LAST. Pre-release versions go to beta; plain versions
+# to stable (signed only). The manifest URLs never change:
+#   https://github.com/<owner>/<repo>/releases/download/desktop-{channel}/desktop-releases.json
+# "Run workflow" withdraws a version (its channel goes back to the previous good one).
 on:
   pull_request:
     paths: ["desktop/**", "home-hub/**", "src/core/platform/**", "src/app/api/desktop/**"]
@@ -12,13 +15,16 @@ on:
     branches: [main]
     paths: ["desktop/**", "home-hub/**", "src/core/platform/**", "src/app/api/desktop/**"]
     tags: ["desktop-v*"]
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       withdraw:
-        description: "Withdraw this Desktop version from downloads (e.g. 0.2.0)"
+        description: "Withdraw this Desktop version from downloads (e.g. 0.1.0-beta.2)"
         required: true
+      channel:
+        description: "Its channel"
+        type: choice
+        options: [beta, stable]
+        default: beta
 
 concurrency:
   group: desktop-${{ github.ref }}
@@ -78,28 +84,21 @@ jobs:
         run: node desktop/scripts/installer-smoke.mjs "$(ls desktop/out/make/squirrel.windows/x64/*Setup.exe)"
 
   release:
-    name: Desktop · release (${{ matrix.os }})
+    name: Desktop · publish (Windows)
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-v')
     needs: compile
-    strategy:
-      matrix:
-        os: [windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     timeout-minutes: 45
+    permissions:
+      contents: write
     env:
+      # Public build configuration (Actions → Variables): baked into the installer.
       ELISE_CLOUD_URL: ${{ vars.ELISE_CLOUD_URL }}
-      ELISE_UPDATE_FEED: ${{ vars.ELISE_UPDATE_FEED }}
-      ELISE_DESKTOP_CHANNEL: ${{ vars.ELISE_DESKTOP_CHANNEL || 'stable' }}
+      ELISE_UPDATE_FEED: https://github.com/${{ github.repository }}/releases/download
       NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-      ELISE_RELEASE_OWNER: ${{ github.repository_owner }}
-      ELISE_RELEASE_REPO: ${{ github.event.repository.name }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Signing material only from secrets (unsigned builds otherwise — development only).
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Signing (Actions → Secrets), only for stable. Without it: unsigned, beta only.
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
@@ -112,47 +111,41 @@ jobs:
             desktop/package-lock.json
       - run: npm ci
       - run: npm ci --prefix desktop
-      - name: Check the tag matches desktop/package.json
+      - run: npx playwright install chromium
+      - name: Version, tag and channel agree
+        id: meta
         shell: bash
         run: |
           v=$(node -p "require('./desktop/package.json').version")
           test "desktop-v$v" = "${GITHUB_REF_NAME}" || { echo "Tag ${GITHUB_REF_NAME} ≠ desktop-v$v"; exit 1; }
+          channel=$([[ "$v" == *-* ]] && echo beta || echo stable)
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "ELISE_DESKTOP_CHANNEL=$channel" >> "$GITHUB_ENV"
       - name: Windows certificate
-        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE_PASSWORD != ''
+        if: env.WINDOWS_CERTIFICATE_PASSWORD != ''
         shell: bash
         run: |
           echo "${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/cert.pfx"
           echo "WINDOWS_CERTIFICATE_FILE=$RUNNER_TEMP/cert.pfx" >> "$GITHUB_ENV"
-      - run: npm run publish --prefix desktop
+      # Fails here if ELISE_CLOUD_URL is missing or local (desktop/cloud-url.ts).
+      - run: npm run make:desktop -- --targets @electron-forge/maker-squirrel
+      - name: Installer smoke test (install → launch → uninstall)
+        shell: bash
+        run: node desktop/scripts/installer-smoke.mjs "$(ls desktop/out/make/squirrel.windows/x64/*Setup.exe)"
+      - name: Publish (manifest last)
+        shell: bash
+        run: |
+          signed=$([ -n "$WINDOWS_CERTIFICATE_PASSWORD" ] && echo --signed || true)
+          node desktop/scripts/publish-release.mjs --channel "${{ steps.meta.outputs.channel }}" $signed
 
-  # The canonical manifest (ADR-082): one fixed release, "desktop-manifest", holds
-  # desktop-releases.json. A published GitHub release adds its Windows installer (prerelease →
-  # beta, release → stable — stable only if signed); a manual run withdraws a version.
-  manifest:
-    name: Desktop · release manifest
-    if: (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'desktop-v')) || github.event_name == 'workflow_dispatch'
+  withdraw:
+    name: Desktop · withdraw a version
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      TAG: ${{ github.event.release.tag_name }}
-      PRERELEASE: ${{ github.event.release.prerelease }}
-      SIGNED: ${{ vars.ELISE_DESKTOP_SIGNED == 'true' }}
     steps:
       - uses: actions/checkout@v4
-      - name: Current manifest
-        run: |
-          gh release view desktop-manifest >/dev/null 2>&1 || gh release create desktop-manifest --title "ELISE Desktop manifest" --notes "Canonical ELISE Desktop release manifest (ADR-082)." --latest=false
-          gh release download desktop-manifest -p desktop-releases.json -D manifest 2>/dev/null || mkdir -p manifest
-      - name: Add the published release
-        if: github.event_name == 'release'
-        run: |
-          gh release download "$TAG" -p "*Setup.exe" -D installer
-          channel=$([ "$PRERELEASE" = "true" ] && echo beta || echo stable)
-          signed=$([ "$SIGNED" = "true" ] && echo --signed || true)
-          node desktop/scripts/release-manifest.mjs --installer "$(ls installer/*Setup.exe)"             --base-url "https://github.com/${{ github.repository }}/releases/download/$TAG"             --channel "$channel" --state published $signed --out manifest/desktop-releases.json
-      - name: Withdraw
-        if: github.event_name == 'workflow_dispatch'
-        run: node desktop/scripts/release-manifest.mjs --withdraw "${{ inputs.withdraw }}" --out manifest/desktop-releases.json
-      - run: gh release upload desktop-manifest manifest/desktop-releases.json --clobber
+      - run: node desktop/scripts/publish-release.mjs --channel "${{ inputs.channel }}" --withdraw "${{ inputs.withdraw }}"

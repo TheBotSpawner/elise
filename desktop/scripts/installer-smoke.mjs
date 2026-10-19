@@ -91,7 +91,14 @@ try {
     const info = await page.evaluate(() => window.eliseDesktop.getDesktopInfo());
     check(
       Boolean(info.desktopVersion),
-      `Desktop ${info.desktopVersion} (bridge ${info.bridgeProtocolVersion})`,
+      `Desktop ${info.desktopVersion} (bridge ${info.bridgeProtocolVersion}, ${info.channel})`,
+    );
+    // The Cloud baked into the installer (never localhost; the expected one when given).
+    const expected = process.env.EXPECT_CLOUD_URL;
+    check(
+      !/localhost|127\.0\.0\.1/.test(info.cloudOrigin) &&
+        (!expected || info.cloudOrigin === expected),
+      `talks to ${info.cloudOrigin}${expected ? ` (expected ${expected})` : ""}`,
     );
     // ELISE Home: check this computer (the elevated "enable" step is never triggered here).
     await page.evaluate(() => window.eliseDesktop.setupHome());

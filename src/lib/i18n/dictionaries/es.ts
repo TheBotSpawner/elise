@@ -2240,6 +2240,31 @@ export const es: Dictionary = {
         scope: "Ámbito",
         save: "Guardar presupuesto",
         saved: "Presupuesto guardado",
+        newTitle: "Nuevo presupuesto",
+        editTitle: "Editar presupuesto",
+        name: "Nombre (opcional)",
+        namePlaceholder: "Salidas, Auto, Casa…",
+        icon: "Ícono del presupuesto",
+        categories: "Categorías",
+        searchCategories: "Buscar categorías…",
+        selectedCount: (n: number) =>
+          n === 0 ? "Elegí al menos una" : n === 1 ? "1 seleccionada" : `${n} seleccionadas`,
+        noMatches: "Ninguna categoría coincide.",
+        removeCategory: (name: string) => `Quitar ${name}`,
+        subcategoryHint: "Solo para presupuestos de una categoría.",
+        amountLabel: "Monto por mes",
+        create: "Crear presupuesto",
+        saveChanges: "Guardar cambios",
+        delete: "Eliminar presupuesto",
+        deleteTitle: (name: string) => `Eliminar “${name}”`,
+        deleteBody: "Los movimientos y las categorías no cambian.",
+        deleted: "Presupuesto eliminado.",
+        emptyTitle: "Todavía no creaste presupuestos.",
+        emptyBody:
+          "Definí cuánto querés gastar en una o varias categorías y ELISE va a seguirlo con vos.",
+        emptyCta: "Crear presupuesto",
+        edit: (name: string) => `Editar ${name}`,
+        invalidAmount: "Ingresá un monto mayor a cero.",
       },
       tx: {
         newTitle: "Registrar movimiento",
@@ -2277,9 +2302,11 @@ export const es: Dictionary = {
         deleteTitle: (name: string) => `Eliminar “${name}”`,
         deleteUnused: "¿Querés eliminar esta categoría?",
         deleteUsed: (n: number) =>
-          `Hay ${n === 1 ? "1 movimiento" : `${n} movimientos`} usando esta categoría. Los movimientos no se van a borrar: quedarán sin categoría.`,
+          `Esta categoría está usada en ${n === 1 ? "1 movimiento" : `${n} movimientos`}. Los movimientos van a conservarse y quedarán sin categoría.`,
         deleteBudgets: (n: number) =>
-          n === 1 ? "También se quita su presupuesto." : `También se quitan sus ${n} presupuestos.`,
+          n === 1
+            ? "Sale del presupuesto que la incluye (si era su única categoría, el presupuesto se archiva)."
+            : `Sale de los ${n} presupuestos que la incluyen (los que solo la tenían a ella se archivan).`,
         deleteChildren: (n: number) =>
           n === 1
             ? "Su subcategoría pasa a ser principal."
@@ -2291,6 +2318,11 @@ export const es: Dictionary = {
             : `${n} movimientos quedaron sin categoría.`,
         deleteFailed: "No pudimos eliminar la categoría. Probá de nuevo.",
         duplicate: "Ya existe una categoría con ese nombre.",
+        duplicateIn: (name: string, type: string) =>
+          `Ya existe una categoría “${name}” en ${type}.`,
+        saving: "Guardando…",
+        saveFailed: "No pudimos guardar el cambio. Volvimos al nombre anterior.",
+        needsUpdate: "Esto necesita una actualización de ELISE que todavía no se instaló.",
       },
       accounts: { title: "Cuentas" },
     },
@@ -2540,6 +2572,45 @@ export const es: Dictionary = {
       confirmBody: "Dejan de contar en tus totales. Podés deshacerlo enseguida.",
       deleted: (n: number) => (n === 1 ? "Movimiento eliminado." : `${n} movimientos eliminados.`),
       undo: "Deshacer",
+      combine: "Combinar",
+      more: "Más acciones",
+      combineReasons: {
+        too_few: "Elegí al menos dos movimientos para combinarlos.",
+        not_combinable:
+          "Solo se pueden combinar ingresos y gastos (no transferencias ni filas de planillas conectadas).",
+        no_account: "Para combinar, los movimientos tienen que tener una cuenta.",
+        accounts: "Para combinar movimientos tienen que pertenecer a la misma cuenta.",
+        currencies: "No se pueden combinar movimientos en monedas distintas.",
+        scopes: "Para combinar, los movimientos tienen que estar en el mismo ámbito.",
+        statuses: "Para combinar, los movimientos tienen que tener el mismo estado.",
+        zero: "La suma da cero: no queda nada para combinar.",
+      },
+      menuLabel: "Acciones del movimiento",
+      menuSelect: "Seleccionar",
+      menuDeselect: "Quitar de la selección",
+      menuEdit: "Editar",
+      menuDelete: "Eliminar",
+      deleteOne: "Eliminar este movimiento",
+    },
+    combine: {
+      title: (n: number) => `Combinar ${n} movimientos`,
+      body: (n: number) =>
+        `Los ${n} movimientos se reemplazan por uno solo en tu lista. Los originales se conservan y podés deshacer la combinación desde el detalle.`,
+      account: "Cuenta",
+      result: "Resultado",
+      date: "Fecha",
+      description: "Descripción",
+      defaultDescription: "Movimiento combinado",
+      category: "Categoría",
+      none: "Sin categoría",
+      confirm: "Combinar movimientos",
+      done: (n: number) => `Combinamos ${n} movimientos en uno.`,
+      detail: (n: number) => `Este movimiento combina ${n} movimientos.`,
+      undo: "Deshacer combinación",
+      undone: (n: number) =>
+        n === 1 ? "Volvió 1 movimiento." : `Volvieron los ${n} movimientos originales.`,
+      undoConfirm: "Los movimientos originales vuelven y este se archiva.",
+      failed: "No pudimos combinar los movimientos. No cambió nada.",
     },
     chatImport: {
       found: (n: number) => (n === 1 ? "1 movimiento" : `${n} movimientos`),

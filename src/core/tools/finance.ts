@@ -46,7 +46,9 @@ import {
   type TransactionPatch,
   type TransactionType,
 } from "../capabilities/finance";
+import { isSingleEmoji } from "../emoji";
 import { AppError } from "../errors";
+import { cleanCategoryName, duplicateCategory, planCombine } from "../finance/combine";
 import { addAmounts, formatMoney } from "../finance/money";
 import { buildFinanceReport } from "../finance/report";
 import { resolvePeriod } from "../periods";
@@ -873,6 +875,18 @@ export const createCategoryTool: ToolDefinition = {
   async run(raw, env) {
     const c = createCategoryInput.parse(raw);
     const p = writable(env);
+    if (
+      (c.type === "expense" || c.type === "income") &&
+      duplicateCategory(await p.listCategories(), c.name, c.type)
+    )
+      throw new AppError(
+        "CONFLICT",
+        `A ${c.type} category “${cleanCategoryName(c.name)}” already exists`,
+        {
+          recovery: "review",
+          details: { reason: "duplicate_name" },
+        },
+      );
     let parentId: string | null = null;
     if (c.parent) {
       const matches = findByName(await p.listCategories(), c.parent, (x) => x.name);
@@ -1024,12 +1038,13 @@ export const deleteCategoryTool: ToolDefinition = {
     const usage = await nativeFeature(p.categoryUsage?.bind(p))(category.id);
     if (preview)
       return { output: { category: { id: category.id, name: category.name }, ...usage } };
-    await nativeFeature(p.deleteCategory?.bind(p))(category.id);
+    const done = await nativeFeature(p.deleteCategory?.bind(p))(category.id);
     return {
       output: {
         deleted: true,
         category: category.name,
-        uncategorizedMovements: usage.transactions,
+        uncategorizedMovements: Math.max(done.uncategorized, usage.transactions),
+        budgetsArchived: done.budgetsArchived,
         instructions: "Say the movements were kept, now without category.",
       },
       target: { type: "finance_category", id: category.id },
@@ -1164,31 +1179,48 @@ export const setBudgetTool: ToolDefinition = {
   capability: "finance",
   operation: "setBudget",
   description:
-    '"Poneme un presupuesto de 200 lucas por mes en restaurantes", "subí herramientas a 180 mil": a monthly spending guide per Book and category (creates or updates it). archived removes it.',
+    '"Poneme un presupuesto de 200 lucas por mes en restaurantes", "presupuesto de 200 mil entre restaurantes, bares y entretenimiento" (ONE budget over several categories: use `categories`), "subí herramientas a 180 mil": a monthly spending guide per Book (creates or updates it). archived removes it.',
   input: setBudgetInput,
   route: nativeOnly,
   async describe(raw) {
     const b = setBudgetInput.parse(raw);
-    return { summary: `Budget ${b.category}: ${b.amount}${b.currency ? ` ${b.currency}` : ""}` };
+    const what = b.name ?? (b.categories ?? [b.category ?? "—"]).join(", ");
+    return { summary: `Budget ${what}: ${b.amount}${b.currency ? ` ${b.currency}` : ""}` };
   },
   async run(raw, env) {
     const b = setBudgetInput.parse(raw);
     const p = writable(env);
+    const refs = [...new Set([...(b.categories ?? []), ...(b.category ? [b.category] : [])])];
+    if (!refs.length && !b.id)
+      throw new AppError("VALIDATION_ERROR", "Which categories should the budget cover?", {
+        recovery: "review",
+      });
+    if (b.subcategory && refs.length > 1)
+      throw new AppError("VALIDATION_ERROR", "A subcategory only fits a single-category budget", {
+        recovery: "review",
+      });
+    if (b.icon && !isSingleEmoji(b.icon))
+      throw new AppError("VALIDATION_ERROR", "The icon must be a single emoji", {
+        recovery: "review",
+      });
     const categories = await p.listCategories();
-    const category = pickOne(
-      resolveCategory(categories, b.category, "expense"),
-      b.category,
-      "category",
-      (c) => c.name,
+    // Spending budgets: expense categories only (deterministic resolution, never a guess).
+    const picked = refs.map((ref) =>
+      pickOne(resolveCategory(categories, ref, "expense"), ref, "category", (c) => c.name),
     );
+    const existing = b.id ? (await p.listBudgets?.())?.find((x) => x.id === b.id) : undefined;
+    if (b.id && !existing) throw new AppError("NOT_FOUND", "Budget not found");
     const books = (await p.listBooks?.()) ?? [];
     const bookId = b.book
       ? (await resolveBook(p, b.book)).id
-      : (books.find((x) => x.isDefault)?.id ?? null);
+      : (existing?.bookId ?? books.find((x) => x.isDefault)?.id ?? null);
     const currency = await currencyFor(p, b.currency, null);
     const saved = await nativeFeature(p.saveBudget?.bind(p))({
+      ...(b.id ? { id: b.id } : {}),
+      name: b.name ?? existing?.name ?? null,
+      icon: b.icon ?? existing?.icon ?? null,
       bookId,
-      categoryId: category.id,
+      categoryIds: picked.length ? picked.map((c) => c.id) : (existing?.categoryIds ?? []),
       subcategory: b.subcategory ?? null,
       currency,
       amount: b.amount,
@@ -1204,6 +1236,7 @@ export const setBudgetTool: ToolDefinition = {
       output: {
         [b.archived ? "removed" : "saved"]: {
           category: saved.category,
+          categories: saved.categories,
           book: saved.book,
           currency,
           amount: saved.amount,
@@ -1214,6 +1247,81 @@ export const setBudgetTool: ToolDefinition = {
       display: { kind: "finance_budgets", month, budgets: b.archived ? [] : [usage] },
       target: { type: "finance_budget", id: saved.id },
     };
+  },
+};
+
+const combineInput = z
+  .object({
+    transactions: z.array(z.uuid()).min(2).max(500),
+    description: z.string().trim().max(300).nullable().optional(),
+    /** null = "Sin categoría". Omitted = same category kept when they all share it. */
+    category: z.uuid().nullable().optional(),
+  })
+  .strict();
+
+/**
+ * ADR-083: several movements of one account and one currency become one, by signed sum. The
+ * sources stay (hidden, linked, recoverable): never a silent deletion. Always confirmed.
+ */
+export const combineTransactionsTool: ToolDefinition = {
+  name: "finance.combineTransactions",
+  capability: "finance",
+  operation: "combineTransactions",
+  description:
+    "Combine 2+ movements of the SAME account and currency into one (signed sum). Only when the user asks explicitly. Always needs approval.",
+  input: combineInput,
+  route: nativeOnly,
+  async describe(raw) {
+    const c = combineInput.parse(raw);
+    return { summary: `Combine ${c.transactions.length} movements into one` };
+  },
+  async run(raw, env) {
+    const c = combineInput.parse(raw);
+    const p = writable(env);
+    const rows = await Promise.all(c.transactions.map((id) => p.getTransaction(id)));
+    if (rows.some((r) => !r)) throw new AppError("NOT_FOUND", "Movements not found");
+    const plan = planCombine(rows as FinanceTransaction[]);
+    if (!plan.ok)
+      throw new AppError("VALIDATION_ERROR", `These movements can't be combined (${plan.reason})`, {
+        recovery: "review",
+        details: { reason: plan.reason },
+      });
+    const id = await nativeFeature(p.combineTransactions?.bind(p))(c.transactions, {
+      description: c.description?.trim() || plan.description,
+      categoryId: c.category === undefined ? plan.categoryId : c.category,
+    });
+    return {
+      output: {
+        combined: c.transactions.length,
+        transaction: {
+          id,
+          type: plan.type,
+          amount: plan.amount,
+          currency: plan.currency,
+          date: plan.date,
+        },
+      },
+      target: { type: "finance_transaction", id },
+    };
+  },
+};
+
+export const uncombineTransactionTool: ToolDefinition = {
+  name: "finance.uncombineTransaction",
+  capability: "finance",
+  operation: "combineTransactions",
+  description: "Undo a combination: its original movements come back exactly as they were.",
+  input: z.object({ transaction: z.uuid() }).strict(),
+  route: nativeOnly,
+  async describe() {
+    return { summary: "Undo a combined movement" };
+  },
+  async run(raw, env) {
+    const { transaction } = z.object({ transaction: z.uuid() }).strict().parse(raw);
+    const restored = await nativeFeature(writable(env).uncombineTransaction?.bind(writable(env)))(
+      transaction,
+    );
+    return { output: { restored }, target: { type: "finance_transaction", id: transaction } };
   },
 };
 
@@ -1347,6 +1455,8 @@ export { UNCLASSIFIED };
 export const FINANCE_TOOLS = [
   updateCategoryTool,
   deleteCategoryTool,
+  combineTransactionsTool,
+  uncombineTransactionTool,
   importFileTool,
   getSummaryTool,
   queryTool,

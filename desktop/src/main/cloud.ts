@@ -1,6 +1,7 @@
 import { app, net, shell } from "electron";
 import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { writeFileSync } from "node:fs";
 
 import { createServerClient } from "@supabase/ssr";
 
@@ -194,8 +195,11 @@ export async function signIn(): Promise<void> {
   url.searchParams.set("installation", loadState().installationId);
   pending?.resolve(false);
   const done = new Promise<boolean>((resolve) => (pending = { state, verifier, resolve }));
-  await shell.openExternal(url.toString());
-  log("desktop_sign_in_started");
+  log("desktop_sign_in_started", { origin: url.origin });
+  // Automated validation of an unpackaged build: hand the URL to the test instead of a browser.
+  const handoff = !app.isPackaged ? process.env.ELISE_DESKTOP_SIGNIN_URL_FILE : undefined;
+  if (handoff) writeFileSync(handoff, url.toString());
+  else await shell.openExternal(url.toString());
   const timer = setTimeout(() => pending?.resolve(false), 10 * 60_000);
   void done.finally(() => clearTimeout(timer));
 }

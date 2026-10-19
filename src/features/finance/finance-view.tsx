@@ -7,6 +7,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Combine,
   FileText,
   ListChecks,
   Plus,
@@ -24,11 +25,9 @@ import type { FinanceGranularity, FinanceOverview } from "@/application/finance-
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { Dialog } from "@/components/ui/dialog";
-import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { Input, Label, Select } from "@/components/ui/input";
 import { FilterButton, FilterSheet, OverflowMenu } from "@/components/ui/sheet-menu";
 import {
-  suggestCategoryIcon,
   UNCLASSIFIED,
   type AccountType,
   type BudgetUsage,
@@ -38,7 +37,7 @@ import {
   type FinanceTransaction,
   type GroupTotal,
 } from "@/core/capabilities/finance";
-import type { PublicError } from "@/core/errors";
+import { planCombine } from "@/core/finance/combine";
 import { addAmounts, compareAmounts } from "@/core/finance/money";
 import { shiftPeriod, type Period } from "@/core/periods";
 import { financeTrendVisual, type VisualizationSpec } from "@/core/workspace/visualization";
@@ -50,8 +49,12 @@ import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-import { categoryUsageAction, financeToolAction, setDefaultCurrencyAction } from "./actions";
+import { financeToolAction, setDefaultCurrencyAction } from "./actions";
+import { budgetLook, Budgets } from "./budgets";
+import { CategoryManager } from "./category-manager";
+import { CombineDialog } from "./combine-dialog";
 import { COMMON_CURRENCIES, share, useMoney, usePeriodLabel } from "./format";
+import { MovementMenu, useLongPress, type MovementMenuState } from "./movement-menu";
 import { categoryIcon, TransactionDialog } from "./transaction-dialog";
 
 /**
@@ -579,15 +582,22 @@ function TransactionRow({
   icon,
   onOpen,
   selection,
+  onLongPress,
+  onMenu,
 }: {
   tx: FinanceTransaction;
   icon: string;
   onOpen: (tx: FinanceTransaction) => void;
   /** While selecting: a tap toggles the row instead of opening it. */
   selection?: { selected: boolean; onToggle: (tx: FinanceTransaction) => void } | null;
+  /** Touch: hold to start selecting with this movement (ADR-083). */
+  onLongPress?: (tx: FinanceTransaction) => void;
+  /** Mouse: right-click opens ELISE's menu for this movement. */
+  onMenu?: (tx: FinanceTransaction, x: number, y: number) => void;
 }) {
   const { t } = useI18n();
   const money = useMoney();
+  const press = useLongPress(() => !tx.readOnly && onLongPress?.(tx));
   const label = tx.description || tx.counterparty || tx.category || "—";
   const meta = [
     tx.type === "transfer"
@@ -608,9 +618,25 @@ function TransactionRow({
         role={selection ? "checkbox" : undefined}
         aria-checked={selection ? selection.selected : undefined}
         disabled={Boolean(selection) && !selectable}
-        onClick={() => (selection ? selection.onToggle(tx) : onOpen(tx))}
+        onPointerDown={press.onPointerDown}
+        onPointerMove={press.onPointerMove}
+        onPointerUp={press.onPointerUp}
+        onPointerCancel={press.onPointerCancel}
+        onPointerLeave={press.onPointerLeave}
+        onContextMenu={(e) => {
+          // Touch long-press is handled above; a mouse right-click gets ELISE's own menu.
+          if (press.isTouch()) return void e.preventDefault();
+          if (!onMenu) return;
+          e.preventDefault();
+          onMenu(tx, e.clientX, e.clientY);
+        }}
+        onClick={() => {
+          if (press.consumeClick()) return;
+          if (selection) selection.onToggle(tx);
+          else onOpen(tx);
+        }}
         className={cn(
-          "flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-active focus-visible:bg-active focus-visible:outline-none disabled:opacity-50",
+          "flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors select-none [-webkit-touch-callout:none] hover:bg-active focus-visible:bg-active focus-visible:outline-none disabled:opacity-50",
           selection?.selected && "bg-accent-soft hover:bg-accent-soft",
         )}
       >
@@ -636,6 +662,11 @@ function TransactionRow({
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5 text-[14px]">
             <span className="truncate">{label}</span>
+            {tx.mergedCount ? (
+              <span className="shrink-0 rounded-full border border-border px-1.5 text-[11px] text-faint">
+                ×{tx.mergedCount}
+              </span>
+            ) : null}
             {tx.status !== "completed" && (
               <span className="bg-approval-soft shrink-0 rounded-full px-2 py-0.5 text-[11px] text-approval-text">
                 {t.finance.statuses[tx.status]}
@@ -670,6 +701,8 @@ function TransactionList({
   onOpen,
   selected = null,
   onToggle,
+  onLongPress,
+  onMenu,
 }: {
   rows: FinanceTransaction[];
   today: string;
@@ -680,6 +713,8 @@ function TransactionList({
   /** Selection mode (bulk delete): the chosen ids, or null when not selecting. */
   selected?: ReadonlySet<string> | null;
   onToggle?: (tx: FinanceTransaction) => void;
+  onLongPress?: (tx: FinanceTransaction) => void;
+  onMenu?: (tx: FinanceTransaction, x: number, y: number) => void;
 }) {
   const { t, locale } = useI18n();
   const money = useMoney();
@@ -740,6 +775,8 @@ function TransactionList({
                   selection={
                     selected && onToggle ? { selected: selected.has(tx.id), onToggle } : null
                   }
+                  onLongPress={onLongPress}
+                  onMenu={onMenu}
                 />
               ))}
             </ul>
@@ -758,16 +795,19 @@ function BulkBar({
   rows,
   selected,
   onChange,
+  categories,
 }: {
   rows: FinanceTransaction[];
   selected: Set<string> | null;
   onChange: (s: Set<string> | null) => void;
+  categories: FinanceCategory[];
 }) {
   const { t } = useI18n();
   const b = t.finance.bulk;
   const confirm = useConfirm();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [combining, setCombining] = useState(false);
   const selectable = rows.filter((r) => !r.readOnly);
   if (!selectable.length) return null;
   const run = (ids: string[], restore: boolean) =>
@@ -782,6 +822,9 @@ function BulkBar({
       </div>
     );
   const all = selected.size === selectable.length;
+  const chosen = rows.filter((r) => selected.has(r.id));
+  const plan = planCombine(chosen);
+  const why = plan.ok || chosen.length < 2 ? null : b.combineReasons[plan.reason];
   return (
     <div className="sticky top-2 z-10 -mb-2 flex flex-wrap items-center gap-2 rounded-2xl border border-border-strong bg-[var(--overlay-bg)] px-3 py-2 backdrop-blur-xl">
       <span className="text-[13.5px]" aria-live="polite">
@@ -794,9 +837,20 @@ function BulkBar({
       >
         {all ? b.selectNone : b.selectAll}
       </Button>
-      <div className="ml-auto flex gap-2">
+      <div className="ml-auto flex flex-wrap gap-2">
         <Button size="sm" variant="ghost" disabled={pending} onClick={() => onChange(null)}>
           {t.common.cancel}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={pending || !plan.ok}
+          aria-describedby={why ? "combine-why" : undefined}
+          title={why ?? undefined}
+          onClick={() => setCombining(true)}
+        >
+          <Combine />
+          {b.combine}
         </Button>
         <Button
           size="sm"
@@ -832,6 +886,23 @@ function BulkBar({
           {b.delete(selected.size)}
         </Button>
       </div>
+      {why && (
+        <p id="combine-why" className="w-full text-[12px] text-faint">
+          {why}
+        </p>
+      )}
+      {combining && (
+        <CombineDialog
+          rows={chosen}
+          plan={plan.ok ? plan : null}
+          categories={categories}
+          onClose={() => setCombining(false)}
+          onDone={() => {
+            setCombining(false);
+            onChange(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1066,8 +1137,7 @@ function BudgetLine({
     <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-3 text-[13.5px]">
         <span className="truncate">
-          {categoryIcon({ name: u.category, icon: null })}{" "}
-          {[u.category, u.subcategory].filter(Boolean).join(" › ")}
+          {budgetLook(u).icon} {[budgetLook(u).label, u.subcategory].filter(Boolean).join(" › ")}
         </span>
         <span className="shrink-0 font-mono text-[12.5px] text-muted">
           {money(u.spent, u.currency)} / {money(u.amount, u.currency)}
@@ -1329,6 +1399,31 @@ function DetailDrawer({
             </>
           )}
         </dl>
+        {tx.mergedCount ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border px-4 py-3 text-[13.5px]">
+            <span className="text-muted">{t.finance.combine.detail(tx.mergedCount)}</span>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={pending}
+              onClick={async () => {
+                const k = t.finance.combine;
+                if (!(await confirm({ title: k.undo, body: k.undoConfirm }))) return;
+                startTransition(async () => {
+                  const r = await financeToolAction("finance.uncombineTransaction", {
+                    transaction: tx.id,
+                  });
+                  if (!r.ok) return void toast.error(errorText(t, r.error));
+                  toast.success(k.undone(tx.mergedCount ?? 0));
+                  onClose();
+                  router.refresh();
+                });
+              }}
+            >
+              {t.finance.combine.undo}
+            </Button>
+          </div>
+        ) : null}
         {tx.readOnly ? (
           <p className="text-[13px] text-muted">{t.finance.readOnly}</p>
         ) : (
@@ -1380,205 +1475,6 @@ function DetailDrawer({
 }
 
 // ── Managers ─────────────────────────────────────────────────────────────────
-
-function CategoryManager({
-  open,
-  onClose,
-  categories,
-}: {
-  open: boolean;
-  onClose: () => void;
-  categories: FinanceCategory[];
-}) {
-  const { t } = useI18n();
-  const c = t.finance.v21.categories;
-  const router = useRouter();
-  const confirm = useConfirm();
-  const [pending, startTransition] = useTransition();
-  const [drafts, setDrafts] = useState<Record<string, { name: string; icon: string }>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [newName, setNewName] = useState("");
-  const [newIcon, setNewIcon] = useState("");
-  const [newType, setNewType] = useState<"expense" | "income">("expense");
-  const [newError, setNewError] = useState<string | null>(null);
-  const failure = (e: PublicError) => (e.code === "CONFLICT" ? c.duplicate : errorText(t, e));
-  // Categories are always addressed by id: "Préstamos" can be both an expense and an income.
-  const save = (cat: FinanceCategory, d: { name: string; icon: string }) =>
-    startTransition(async () => {
-      const r = await financeToolAction("finance.updateCategory", {
-        category: cat.id,
-        ...(d.name.trim() !== cat.name ? { name: d.name.trim() } : {}),
-        ...(d.icon !== (cat.icon ?? "") ? { icon: d.icon || null } : {}),
-      });
-      if (!r.ok) return setErrors({ ...errors, [cat.id]: failure(r.error) });
-      router.refresh();
-    });
-  const remove = async (cat: FinanceCategory) => {
-    const usage = await categoryUsageAction(cat.id);
-    if (!usage.ok) return void toast.error(c.deleteFailed);
-    const { transactions, budgets, children } = usage.value;
-    const ok = await confirm({
-      title: c.deleteTitle(cat.name),
-      body: (
-        <div className="flex flex-col gap-1.5">
-          <p>{transactions ? c.deleteUsed(transactions) : c.deleteUnused}</p>
-          {budgets > 0 && <p>{c.deleteBudgets(budgets)}</p>}
-          {children > 0 && <p>{c.deleteChildren(children)}</p>}
-        </div>
-      ),
-      confirmLabel: c.delete,
-      destructive: true,
-    });
-    if (!ok) return;
-    startTransition(async () => {
-      const r = await financeToolAction("finance.deleteCategory", { category: cat.id });
-      if (!r.ok)
-        return void toast.error(
-          r.error.code === "INTERNAL_ERROR" ? c.deleteFailed : errorText(t, r.error),
-        );
-      toast.success(
-        c.deleted,
-        transactions ? { description: c.deletedDetached(transactions) } : undefined,
-      );
-      router.refresh();
-    });
-  };
-  return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      busy={pending}
-      title={c.title}
-      className="border-border-strong bg-[var(--overlay-bg)] sm:max-w-2xl"
-    >
-      <form
-        className="flex flex-col gap-2 rounded-2xl border border-border bg-bg p-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!newName.trim()) return;
-          startTransition(async () => {
-            const r = await financeToolAction("finance.createCategory", {
-              name: newName.trim(),
-              type: newType,
-              ...(newIcon ? { icon: newIcon } : {}),
-            });
-            if (!r.ok) return setNewError(failure(r.error));
-            setNewName("");
-            setNewIcon("");
-            router.refresh();
-          });
-        }}
-      >
-        <Label htmlFor="newcat">{t.finance.addCategory}</Label>
-        <div className="flex flex-wrap items-center gap-2">
-          <EmojiPicker
-            value={newIcon}
-            onChange={setNewIcon}
-            label={c.icon}
-            placeholder={suggestCategoryIcon(newName) ?? "•"}
-          />
-          <Input
-            id="newcat"
-            value={newName}
-            maxLength={80}
-            placeholder={t.finance.categoryPlaceholder}
-            aria-invalid={Boolean(newError)}
-            onChange={(e) => {
-              setNewName(e.target.value);
-              setNewError(null);
-            }}
-            className="h-10 min-w-40 flex-1"
-          />
-          <Select
-            aria-label={t.finance.accountType}
-            value={newType}
-            onChange={(e) => setNewType(e.target.value as "expense" | "income")}
-            className="h-10 w-auto"
-          >
-            <option value="expense">{c.expense}</option>
-            <option value="income">{c.income}</option>
-          </Select>
-          <Button type="submit" disabled={pending || !newName.trim()}>
-            <Plus />
-            {t.finance.v21.tx.create}
-          </Button>
-        </div>
-        {newError && <p className="text-[12.5px] text-danger-text">{newError}</p>}
-      </form>
-      {(["expense", "income"] as const).map((type) => {
-        const list = categories.filter((x) => x.type === type || x.type === "both");
-        if (!list.length) return null;
-        return (
-          <section key={type} className="flex flex-col gap-1.5">
-            <h3 className="type-label text-faint">{type === "expense" ? c.expense : c.income}</h3>
-            <ul className="flex flex-col divide-y divide-border">
-              {list.map((cat) => {
-                const d = drafts[cat.id] ?? { name: cat.name, icon: cat.icon ?? "" };
-                const dirty = d.name.trim() !== cat.name || d.icon !== (cat.icon ?? "");
-                const edit = (next: { name: string; icon: string }) => {
-                  setDrafts({ ...drafts, [cat.id]: next });
-                  if (errors[cat.id]) setErrors({ ...errors, [cat.id]: "" });
-                };
-                return (
-                  <li key={cat.id} className="flex flex-col gap-1 py-2">
-                    <div className="flex items-center gap-2">
-                      <EmojiPicker
-                        value={d.icon}
-                        onChange={(icon) => edit({ ...d, icon })}
-                        label={`${c.icon}: ${cat.name}`}
-                        placeholder={suggestCategoryIcon(cat.name) ?? "•"}
-                      />
-                      <Input
-                        aria-label={`${c.rename}: ${cat.name}`}
-                        value={d.name}
-                        maxLength={80}
-                        aria-invalid={Boolean(errors[cat.id])}
-                        onChange={(e) => edit({ ...d, name: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && dirty && d.name.trim()) {
-                            e.preventDefault();
-                            save(cat, d);
-                          }
-                        }}
-                        className="h-10 min-w-0 flex-1"
-                      />
-                      {cat.parent && (
-                        <span className="hidden text-[12px] text-faint sm:inline">
-                          {cat.parent}
-                        </span>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={pending || !dirty || !d.name.trim()}
-                        onClick={() => save(cat, d)}
-                      >
-                        {c.save}
-                      </Button>
-                      <button
-                        type="button"
-                        aria-label={`${c.delete}: ${cat.name}`}
-                        title={c.delete}
-                        disabled={pending}
-                        onClick={() => void remove(cat)}
-                        className="grid size-10 shrink-0 place-items-center rounded-xl text-faint hover:bg-danger/10 hover:text-danger-text disabled:opacity-50"
-                      >
-                        <Trash2 className="size-4" aria-hidden />
-                      </button>
-                    </div>
-                    {errors[cat.id] && (
-                      <p className="pl-12 text-[12.5px] text-danger-text">{errors[cat.id]}</p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        );
-      })}
-    </Dialog>
-  );
-}
 
 function AccountManager({
   open,
@@ -1961,187 +1857,6 @@ function Statistics({
 
 // ── Budgets ──────────────────────────────────────────────────────────────────
 
-function BudgetForm({ overview, onDone }: { overview: FinanceOverview; onDone: () => void }) {
-  const { t, locale } = useI18n();
-  const b = t.finance.v21.budget;
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const expense = overview.categories.filter((c) => c.type === "expense" || c.type === "both");
-  const current = overview.books.find((x) => x.id === overview.filters.book);
-  const [category, setCategory] = useState(expense[0]?.name ?? "");
-  const [subcategory, setSubcategory] = useState("");
-  const [book, setBook] = useState(
-    current?.name ?? overview.books.find((x) => x.isDefault)?.name ?? "",
-  );
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState(
-    overview.settings.defaultCurrency ?? overview.summary.current.totals[0]?.currency ?? "ARS",
-  );
-  return (
-    <form
-      className={cn(CARD, "grid gap-3 border-border-strong p-4 sm:grid-cols-2 lg:grid-cols-6")}
-      onSubmit={(e) => {
-        e.preventDefault();
-        const value = amount.replace(locale === "es" ? /\./g : /,/g, "").replace(",", ".");
-        startTransition(async () => {
-          const r = await financeToolAction("finance.setBudget", {
-            category,
-            amount: value,
-            currency,
-            ...(book ? { book } : {}),
-            ...(subcategory.trim() ? { subcategory: subcategory.trim() } : {}),
-          });
-          if (!r.ok) return void toast.error(errorText(t, r.error));
-          toast.success(b.saved);
-          router.refresh();
-          onDone();
-        });
-      }}
-    >
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="bud-period">{b.period}</Label>
-        <Select id="bud-period" disabled value="monthly" className="h-10">
-          <option value="monthly">{b.monthly}</option>
-        </Select>
-      </div>
-      {overview.books.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="bud-book">{b.scope}</Label>
-          <Select
-            id="bud-book"
-            value={book}
-            onChange={(e) => setBook(e.target.value)}
-            className="h-10"
-          >
-            {overview.books.map((x) => (
-              <option key={x.id} value={x.name}>
-                {x.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-      )}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="bud-cat">{b.category}</Label>
-        <Select
-          id="bud-cat"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="h-10"
-        >
-          {expense.map((c) => (
-            <option key={c.id} value={c.name}>
-              {categoryIcon(c)} {c.name}
-            </option>
-          ))}
-        </Select>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="bud-sub">{b.subcategory}</Label>
-        <Input
-          id="bud-sub"
-          value={subcategory}
-          maxLength={80}
-          onChange={(e) => setSubcategory(e.target.value)}
-          className="h-10"
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="bud-amount">{b.amount}</Label>
-        <Input
-          id="bud-amount"
-          inputMode="decimal"
-          required
-          value={amount}
-          placeholder="200.000"
-          onChange={(e) => setAmount(e.target.value)}
-          className="h-10 font-mono"
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="bud-cur">{b.currency}</Label>
-        <Select
-          id="bud-cur"
-          value={currency}
-          onChange={(e) => setCurrency(e.target.value)}
-          className="h-10"
-        >
-          {COMMON_CURRENCIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </Select>
-      </div>
-      <div className="flex justify-end gap-2 sm:col-span-2 lg:col-span-6">
-        <Button variant="ghost" onClick={onDone}>
-          {t.finance.cancel}
-        </Button>
-        <Button type="submit" disabled={pending || !category || !amount.trim()}>
-          {b.save}
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function Budgets({ overview }: { overview: FinanceOverview }) {
-  const { t, locale } = useI18n();
-  const money = useMoney();
-  const [adding, setAdding] = useState(false);
-  const b = overview.budgets;
-  const month = b
-    ? new Intl.DateTimeFormat(locale === "es" ? "es-AR" : "en-US", {
-        month: "long",
-        year: "numeric",
-        timeZone: "UTC",
-      }).format(new Date(`${b.month}-01T00:00:00Z`))
-    : "";
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="type-label text-faint first-letter:uppercase">
-          {b ? t.finance.ws.budgetMonth(month) : t.finance.v21.tabs.budgets}
-        </h2>
-        <Button onClick={() => setAdding(true)}>
-          <Plus />
-          {t.finance.v21.budget.new}
-        </Button>
-      </div>
-      {adding && <BudgetForm overview={overview} onDone={() => setAdding(false)} />}
-      {!b?.usages.length ? (
-        <p className={cn(CARD, "border-dashed px-5 py-4 text-[14px] text-muted")}>
-          {/* Neutral Spanish: an amount in the user's default currency, never local slang. */}
-          {t.finance.ws.noBudgets(
-            overview.settings.defaultCurrency
-              ? money("200000", overview.settings.defaultCurrency)
-              : new Intl.NumberFormat(locale === "es" ? "es-AR" : "en-US").format(200000),
-          )}
-        </p>
-      ) : (
-        <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {b.usages.map((u) => (
-            <li key={u.id} className={cn(CARD, "flex flex-col gap-2 px-4 py-3.5")}>
-              <BudgetLine u={u} money={money} t={t} />
-              {(u.pending > 0 || u.otherCurrencies > 0 || (u.book && !overview.filters.book)) && (
-                <p className="text-[12px] text-faint">
-                  {[
-                    u.book && !overview.filters.book ? u.book : "",
-                    u.pending ? t.finance.ws.budgetPending(u.pending) : "",
-                    u.otherCurrencies ? t.finance.ws.budgetOther(u.otherCurrencies) : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 // ── Workspace ────────────────────────────────────────────────────────────────
 
 export function FinanceView({
@@ -2161,8 +1876,34 @@ export function FinanceView({
   const [duplicating, setDuplicating] = useState<FinanceTransaction | null>(null);
   const [viewing, setViewing] = useState<FinanceTransaction | null>(null);
   const [managing, setManaging] = useState<"categories" | "accounts" | null>(null);
-  // Bulk delete: null = not selecting.
+  // Selection (bulk delete, combine): null = not selecting. One model for every entry point.
   const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [menu, setMenu] = useState<(MovementMenuState & { tx: FinanceTransaction }) | null>(null);
+  const confirmDelete = useConfirm();
+  const router = useRouter();
+  const toggle = (tx: FinanceTransaction) =>
+    setSelected((s) => {
+      const next = new Set(s ?? []);
+      if (next.has(tx.id)) next.delete(tx.id);
+      else next.add(tx.id);
+      return next;
+    });
+  const deleteOne = async (tx: FinanceTransaction) => {
+    if (!(await confirmDelete({ title: t.finance.bulk.deleteOne, destructive: true }))) return;
+    const r = await financeToolAction("finance.archiveTransaction", { transaction: tx.id });
+    if (!r.ok) return void toast.error(errorText(t, r.error));
+    router.refresh();
+    toast.success(t.finance.archived, {
+      duration: 10_000,
+      action: {
+        label: t.finance.ws.undo,
+        onClick: () =>
+          void financeToolAction("finance.restoreTransaction", { transaction: tx.id }).then((u) =>
+            u.ok ? router.refresh() : toast.error(errorText(t, u.error)),
+          ),
+      },
+    });
+  };
   const [q, setQ] = useState(overview.filters.q ?? "");
   const [chartCurrency, setChartCurrency] = useState<string | null>(null);
   useRealtimeRefresh(workspaceId, [
@@ -2355,7 +2096,12 @@ export function FinanceView({
               </div>
             ) : (
               <>
-                <BulkBar rows={overview.transactions} selected={selected} onChange={setSelected} />
+                <BulkBar
+                  rows={overview.transactions}
+                  selected={selected}
+                  onChange={setSelected}
+                  categories={overview.categories}
+                />
                 <TransactionList
                   rows={overview.transactions}
                   today={overview.today}
@@ -2363,15 +2109,24 @@ export function FinanceView({
                   complete={overview.matching <= overview.transactions.length}
                   onOpen={setViewing}
                   selected={selected}
-                  onToggle={(tx) =>
-                    setSelected((s) => {
-                      if (!s) return s;
-                      const next = new Set(s);
-                      if (next.has(tx.id)) next.delete(tx.id);
-                      else next.add(tx.id);
-                      return next;
+                  onToggle={toggle}
+                  onLongPress={(tx) => setSelected((s) => new Set([...(s ?? []), tx.id]))}
+                  onMenu={(tx, x, y) =>
+                    setMenu({
+                      tx,
+                      x,
+                      y,
+                      selected: Boolean(selected?.has(tx.id)),
+                      editable: !tx.readOnly,
                     })
                   }
+                />
+                <MovementMenu
+                  state={menu}
+                  onClose={() => setMenu(null)}
+                  onToggleSelect={() => menu && toggle(menu.tx)}
+                  onEdit={() => menu && setEditing(menu.tx)}
+                  onDelete={() => menu && void deleteOne(menu.tx)}
                 />
                 {overview.matching > overview.transactions.length && (
                   <p className="px-1 text-[12.5px] text-faint">

@@ -2,6 +2,8 @@ import { fileURLToPath } from "node:url";
 
 import { loadEnv } from "vite";
 
+import { resolveCloudUrl } from "./cloud-url";
+
 /**
  * Build-time configuration of ELISE Desktop (ADR-081). Everything here ends up inside a binary
  * people download, so it is public by definition: URLs, the Supabase publishable key, the update
@@ -13,10 +15,10 @@ export const SRC = fileURLToPath(new URL("../src", import.meta.url));
 export function desktopBuildConfig(mode: string) {
   const env = { ...loadEnv(mode, REPO_ROOT, ["NEXT_PUBLIC_", "ELISE_"]), ...process.env };
   const production = mode === "production";
-  const cloudUrl = env.ELISE_CLOUD_URL || (production ? "" : "http://localhost:3000");
-  if (production && !cloudUrl) throw new Error("ELISE_CLOUD_URL is required to package Desktop");
+  // Fails a packaged build that would talk to localhost (or to nothing).
+  const cloudUrl = resolveCloudUrl(env.ELISE_CLOUD_URL, production);
   return {
-    cloudUrl: cloudUrl.replace(/\/$/, ""),
+    cloudUrl,
     supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL ?? "",
     supabasePublishableKey: env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
     updateFeed: env.ELISE_UPDATE_FEED ?? "",

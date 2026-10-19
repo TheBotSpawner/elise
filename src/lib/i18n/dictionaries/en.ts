@@ -2208,6 +2208,31 @@ export const en = {
         scope: "Book",
         save: "Save budget",
         saved: "Budget saved",
+        newTitle: "New budget",
+        editTitle: "Edit budget",
+        name: "Name (optional)",
+        namePlaceholder: "Going out, Car, Home…",
+        icon: "Budget icon",
+        categories: "Categories",
+        searchCategories: "Search categories…",
+        selectedCount: (n: number) =>
+          n === 0 ? "Pick at least one" : n === 1 ? "1 selected" : `${n} selected`,
+        noMatches: "No category matches.",
+        removeCategory: (name: string) => `Remove ${name}`,
+        subcategoryHint: "Only for single-category budgets.",
+        amountLabel: "Amount per month",
+        create: "Create budget",
+        saveChanges: "Save changes",
+        delete: "Delete budget",
+        deleteTitle: (name: string) => `Delete “${name}”`,
+        deleteBody: "Movements and categories don't change.",
+        deleted: "Budget deleted.",
+        emptyTitle: "You haven't created budgets yet.",
+        emptyBody:
+          "Set how much you want to spend on one or several categories and ELISE tracks it with you.",
+        emptyCta: "Create budget",
+        edit: (name: string) => `Edit ${name}`,
+        invalidAmount: "Enter an amount above zero.",
       },
       tx: {
         newTitle: "Record transaction",
@@ -2245,9 +2270,11 @@ export const en = {
         deleteTitle: (name: string) => `Delete “${name}”`,
         deleteUnused: "Delete this category?",
         deleteUsed: (n: number) =>
-          `${n === 1 ? "1 transaction uses" : `${n} transactions use`} this category. They won't be deleted: they'll be left uncategorized.`,
+          `This category is used by ${n === 1 ? "1 movement" : `${n} movements`}. The movements are kept and become uncategorized.`,
         deleteBudgets: (n: number) =>
-          n === 1 ? "Its budget is removed too." : `Its ${n} budgets are removed too.`,
+          n === 1
+            ? "It leaves the budget that includes it (if it was its only category, the budget is archived)."
+            : `It leaves the ${n} budgets that include it (those with only this category are archived).`,
         deleteChildren: (n: number) =>
           n === 1
             ? "Its subcategory becomes top-level."
@@ -2259,6 +2286,11 @@ export const en = {
             : `${n} transactions are now uncategorized.`,
         deleteFailed: "We couldn't delete the category. Try again.",
         duplicate: "A category with that name already exists.",
+        duplicateIn: (name: string, type: string) =>
+          `There's already a “${name}” category in ${type}.`,
+        saving: "Saving…",
+        saveFailed: "We couldn't save that change. The previous name is back.",
+        needsUpdate: "This needs an ELISE update that isn't installed yet.",
       },
       accounts: { title: "Accounts" },
     },
@@ -2505,6 +2537,45 @@ export const en = {
       confirmBody: "They stop counting in your totals. You can undo it right away.",
       deleted: (n: number) => (n === 1 ? "Transaction deleted." : `${n} transactions deleted.`),
       undo: "Undo",
+      combine: "Combine",
+      more: "More actions",
+      combineReasons: {
+        too_few: "Pick at least two movements to combine them.",
+        not_combinable:
+          "Only income and expenses can be combined (not transfers or connected-sheet rows).",
+        no_account: "To combine, the movements need an account.",
+        accounts: "To combine movements they must belong to the same account.",
+        currencies: "Movements in different currencies can't be combined.",
+        scopes: "To combine, the movements must be in the same scope.",
+        statuses: "To combine, the movements must have the same status.",
+        zero: "They add up to zero: there's nothing left to combine.",
+      },
+      menuLabel: "Movement actions",
+      menuSelect: "Select",
+      menuDeselect: "Remove from selection",
+      menuEdit: "Edit",
+      menuDelete: "Delete",
+      deleteOne: "Delete this movement",
+    },
+    combine: {
+      title: (n: number) => `Combine ${n} movements`,
+      body: (n: number) =>
+        `The ${n} movements are replaced by a single one in your list. The originals are kept and you can undo the combination from its detail.`,
+      account: "Account",
+      result: "Result",
+      date: "Date",
+      description: "Description",
+      defaultDescription: "Combined movement",
+      category: "Category",
+      none: "No category",
+      confirm: "Combine movements",
+      done: (n: number) => `Combined ${n} movements into one.`,
+      detail: (n: number) => `This movement combines ${n} movements.`,
+      undo: "Undo combination",
+      undone: (n: number) =>
+        n === 1 ? "1 movement is back." : `The ${n} original movements are back.`,
+      undoConfirm: "The original movements come back and this one is archived.",
+      failed: "We couldn't combine the movements. Nothing changed.",
     },
     chatImport: {
       found: (n: number) => (n === 1 ? "1 transaction" : `${n} transactions`),

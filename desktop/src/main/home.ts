@@ -33,10 +33,9 @@ function externalEngine() {
 }
 
 /** A friendly default name, without exposing the full host name. */
-const deviceName = () => {
-  const short = hostname().split(".")[0]!.slice(0, 24);
-  return short ? `ELISE Desktop (${short})` : "ELISE Desktop";
-};
+/** This computer's short name ("PC-CASA"): shown only to its owner (RLS), never the FQDN. */
+export const computerName = () => hostname().split(".")[0]!.trim().slice(0, 40) || "ELISE Desktop";
+const deviceName = () => `ELISE Desktop (${computerName().slice(0, 24)})`;
 
 export function runtimeConfig() {
   const engine = engineCredentials();

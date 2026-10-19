@@ -230,9 +230,10 @@ class MemoryFinance implements FinanceProvider {
   }
   /** Like the database's FK: movements lose the category, never their row. */
   async deleteCategory(id: string) {
-    for (const r of this.rows.filter((x) => x.categoryId === id))
-      Object.assign(r, { categoryId: null, category: null, categoryPath: [] });
+    const used = this.rows.filter((x) => x.categoryId === id);
+    for (const r of used) Object.assign(r, { categoryId: null, category: null, categoryPath: [] });
     this.categories = this.categories.filter((c) => c.id !== id);
+    return { uncategorized: used.length, budgetsArchived: 0 };
   }
   async settings() {
     return { defaultCurrency: this.defaultCurrency, reportingCurrency: null };
