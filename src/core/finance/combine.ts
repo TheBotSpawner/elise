@@ -1,4 +1,8 @@
-import type { FinanceCategory, FinanceTransaction } from "@/core/capabilities/finance";
+import {
+  bookIdsOf,
+  type FinanceCategory,
+  type FinanceTransaction,
+} from "@/core/capabilities/finance";
 
 import { fromUnits, toUnits } from "./money";
 
@@ -51,7 +55,7 @@ export type CombinePlan =
       /** Positive amount of the result (exact decimal string). */
       amount: string;
       currency: string;
-      accountId: string;
+      accountId: string | null;
       account: string | null;
       date: string;
       /** Same category on all → kept; otherwise none (never a guess). */
@@ -69,10 +73,11 @@ export function planCombine(rows: readonly FinanceTransaction[]): CombinePlan {
     rows.some((r) => r.readOnly || (r.type !== "income" && r.type !== "expense") || r.toAccountId)
   )
     return { ok: false, reason: "not_combinable" };
-  if (rows.some((r) => !r.accountId)) return { ok: false, reason: "no_account" };
-  if (distinct(rows.map((r) => r.accountId)) > 1) return { ok: false, reason: "accounts" };
+  // One account, or none on every movement.
+  if (distinct(rows.map((r) => r.accountId ?? null)) > 1) return { ok: false, reason: "accounts" };
   if (distinct(rows.map((r) => r.currency)) > 1) return { ok: false, reason: "currencies" };
-  if (distinct(rows.map((r) => r.bookId ?? null)) > 1) return { ok: false, reason: "scopes" };
+  if (distinct(rows.map((r) => [...bookIdsOf(r)].sort().join(","))) > 1)
+    return { ok: false, reason: "scopes" };
   if (distinct(rows.map((r) => r.status)) > 1) return { ok: false, reason: "statuses" };
   const sum = rows.reduce(
     (acc, r) => acc + (r.type === "income" ? toUnits(r.amount) : -toUnits(r.amount)),
@@ -86,7 +91,7 @@ export function planCombine(rows: readonly FinanceTransaction[]): CombinePlan {
     type: sum > 0n ? "income" : "expense",
     amount: fromUnits(sum > 0n ? sum : -sum),
     currency: rows[0]!.currency,
-    accountId: rows[0]!.accountId!,
+    accountId: rows[0]!.accountId ?? null,
     account: rows[0]!.account,
     date: rows
       .map((r) => r.date)

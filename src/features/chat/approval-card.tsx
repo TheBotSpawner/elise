@@ -53,6 +53,8 @@ export function ApprovalCard({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [resolved, setResolved] = useState<"approved" | "rejected" | null>(initialResolution);
+  /** Approved, but the action failed: nothing left to approve, only why it failed. */
+  const [failed, setFailed] = useState(false);
   const approveRef = useRef<HTMLButtonElement>(null);
   const reasonText = t.approvals.reasons[reason as ApprovalReason] ?? null;
 
@@ -61,13 +63,18 @@ export function ApprovalCard({
   }, [autoFocus]);
 
   function decide(decision: "approved" | "rejected") {
-    if (pending || resolved) return;
+    if (pending || resolved || failed) return;
     setError(null);
     if (decision === "approved") onPhase?.("start");
     startTransition(async () => {
       const result = await decideApproval(approvalId, decision);
       if (!result.ok) {
         onPhase?.("error");
+        if (result.approved) {
+          setFailed(true);
+          setError(t.approvals.approvedButFailed(t.errors.codes[result.error.code]));
+          return;
+        }
         setError(
           result.error.code === "CONFLICT"
             ? t.approvals.expired
@@ -136,7 +143,7 @@ export function ApprovalCard({
               {reasonText}
             </p>
           )}
-          <div className="grid grid-cols-2 items-center gap-2 md:flex">
+          <div className={cn("grid grid-cols-2 items-center gap-2 md:flex", failed && "hidden")}>
             <button
               ref={approveRef}
               type="button"

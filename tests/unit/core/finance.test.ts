@@ -197,6 +197,9 @@ class MemoryFinance implements FinanceProvider {
     if (p.archived) this.accounts = this.accounts.filter((a) => a.id !== id);
     return account;
   }
+  async setDefaultAccount(id: string | null) {
+    for (const a of this.accounts) a.isDefault = a.id === id;
+  }
   async listCategories() {
     return this.categories;
   }
@@ -399,6 +402,47 @@ describe("totals never mix currencies", () => {
 // ── Tools through the executor ───────────────────────────────────────────────
 
 describe("finance tools", () => {
+  it("chat: description capitalized, category inferred from it, default account when none said", async () => {
+    const { ports, native } = setup();
+    native.defaultCurrency = "ARS";
+    native.categories.push({
+      id: "c-gift",
+      name: "Regalos",
+      type: "expense",
+      parentId: null,
+      parent: null,
+    });
+    const mp = await native.createAccount({
+      name: "Mercado Pago",
+      type: "digital_wallet",
+      currency: "ARS",
+    });
+    const set = await executeToolCall(ports, ctx, {
+      name: "finance.updateAccount",
+      args: { account: "mercado pago", default: true },
+    });
+    expect(set.status).toBe("succeeded");
+    const out = await executeToolCall(ports, ctx, {
+      name: "finance.createTransaction",
+      args: { type: "expense", amount: "20900", description: "regalo Cande" },
+    });
+    expect(out.status).toBe("succeeded");
+    expect(native.rows.at(-1)).toMatchObject({
+      description: "Regalo Cande",
+      category: "Regalos",
+      accountId: mp.id,
+    });
+    const notes = (out as { output: { notes?: string[] } }).output.notes ?? [];
+    expect(notes.join(" ")).toMatch(/Regalos/);
+    expect(notes.join(" ")).toMatch(/Mercado Pago/);
+    // "iPhone" keeps its casing; a transfer never gets the default account.
+    await executeToolCall(ports, ctx, {
+      name: "finance.createTransaction",
+      args: { type: "expense", amount: "1", description: "iPhone case" },
+    });
+    expect(native.rows.at(-1)?.description).toBe("iPhone case");
+  });
+
   it("records a chat expense with an explicit currency and inferred category", async () => {
     const { ports, native } = setup();
     const out = await executeToolCall(ports, ctx, {

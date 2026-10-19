@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 
-import { LOCATION_SIGNAL } from "@/core/agents/tool-selection";
+import { LOCATION_SIGNAL, WEATHER_HERE_SIGNAL } from "@/core/agents/tool-selection";
 import {
   coarse,
   DEVICE_LOCATION_LIMITS,
@@ -99,7 +99,11 @@ export async function locationForTurn(message: string): Promise<LatLng | null> {
   const enabled = deviceLocationEnabled();
   if (
     enabled &&
-    deviceLocationPlan(sample, Date.now(), LOCATION_SIGNAL.test(message)) === "refresh"
+    deviceLocationPlan(
+      sample,
+      Date.now(),
+      LOCATION_SIGNAL.test(message) || WEATHER_HERE_SIGNAL.test(message),
+    ) === "refresh"
   )
     await capture(DEVICE_LOCATION_LIMITS.captureTimeoutMs);
   return sharedLocation();

@@ -61,6 +61,7 @@ type TxRow = Pick<
   | "updated_at"
   | "source"
   | "book_id"
+  | "book_ids"
   | "to_account_id"
   | "receipt"
 >;
@@ -102,6 +103,9 @@ interface Catalog {
   v2: boolean;
   /** ADR-083 (migration 052): combined movements, multi-category budgets, atomic deletion. */
   v3: boolean;
+  /** ADR-087 (migration 053): several Ámbitos per movement. */
+  v4: boolean;
+  defaultAccountId: string | null;
 }
 
 const duplicateName = () =>
@@ -125,7 +129,7 @@ export class EliseFinanceProvider implements FinanceProvider {
 
   private load() {
     this.catalog ??= (async () => {
-      const [accounts, categories, books, v3probe] = await Promise.all([
+      const [accounts, categories, books, v3probe, v4probe, defaults] = await Promise.all([
         this.db.from("finance_accounts").select("*").eq("workspace_id", this.workspaceId),
         this.db.from("finance_categories").select("*").eq("workspace_id", this.workspaceId),
         this.db
@@ -135,6 +139,12 @@ export class EliseFinanceProvider implements FinanceProvider {
           .is("archived_at", null)
           .order("created_at"),
         this.db.from("finance_budget_categories").select("budget_id").limit(1),
+        this.db.from("finance_transactions").select("book_ids").limit(1),
+        this.db
+          .from("finance_settings")
+          .select("default_account_id")
+          .eq("workspace_id", this.workspaceId)
+          .maybeSingle(),
       ]);
       check(accounts.error, "load accounts");
       check(categories.error, "load categories");
@@ -146,6 +156,9 @@ export class EliseFinanceProvider implements FinanceProvider {
         books: books.data ?? [],
         v2,
         v3: !v3probe.error,
+        v4: !v4probe.error,
+        // Before migration 053 the column doesn't exist: no default account.
+        defaultAccountId: defaults.error ? null : (defaults.data?.default_account_id ?? null),
       };
     })();
     return this.catalog;
@@ -156,8 +169,9 @@ export class EliseFinanceProvider implements FinanceProvider {
   }
 
   private columns(c: Catalog) {
-    if (c.v3) return `${TRANSACTION_COLUMNS}, merged_source_count`;
-    return c.v2 ? TRANSACTION_COLUMNS : V1_COLUMNS;
+    const books = c.v4 ? ", book_ids" : "";
+    if (c.v3) return `${TRANSACTION_COLUMNS}, merged_source_count${books}`;
+    return c.v2 ? `${TRANSACTION_COLUMNS}${books}` : V1_COLUMNS;
   }
 
   private shape(r: TxRow, catalog: Catalog): FinanceTransaction {
@@ -170,7 +184,8 @@ export class EliseFinanceProvider implements FinanceProvider {
     }
     const account = catalog.accounts.find((a) => a.id === r.account_id);
     const to = r.to_account_id ? catalog.accounts.find((a) => a.id === r.to_account_id) : null;
-    const book = r.book_id ? catalog.books.find((b) => b.id === r.book_id) : null;
+    const bookIds = r.book_ids?.length ? r.book_ids : r.book_id ? [r.book_id] : [];
+    const books = bookIds.map((id) => catalog.books.find((b) => b.id === id)?.name ?? null);
     return {
       id: r.id,
       type: r.transaction_type,
@@ -190,8 +205,10 @@ export class EliseFinanceProvider implements FinanceProvider {
       status: r.status,
       notes: r.notes,
       importId: r.import_id,
-      bookId: r.book_id ?? null,
-      book: book?.name ?? null,
+      bookId: bookIds[0] ?? null,
+      book: books[0] ?? null,
+      bookIds,
+      books: books.filter((b): b is string => b !== null),
       toAccountId: r.to_account_id ?? null,
       toAccount: to?.name ?? null,
       receipt: r.receipt ?? null,
@@ -248,8 +265,8 @@ export class EliseFinanceProvider implements FinanceProvider {
       if (filter.to) q = q.lte("transaction_date", filter.to);
       if (filter.type) q = q.eq("transaction_type", filter.type);
       if (filter.currencies?.length) q = q.in("currency", filter.currencies);
-      if (book === null) q = q.is("book_id", null);
-      else if (book) q = q.eq("book_id", book);
+      if (book === null) q = catalog.v4 ? q.filter("book_ids", "eq", "{}") : q.is("book_id", null);
+      else if (book) q = catalog.v4 ? q.contains("book_ids", [book]) : q.eq("book_id", book);
       const { data, error } = await q
         .order("transaction_date", { ascending: false })
         .order("created_at", { ascending: false })
@@ -302,6 +319,8 @@ export class EliseFinanceProvider implements FinanceProvider {
       this.canonical("project", t.project),
     ]);
     if (!catalog.v2 && (t.type === "transfer" || t.toAccountId)) throw needsUpdate();
+    const bookIds = t.bookIds ?? (t.bookId ? [t.bookId] : []);
+    if (bookIds.length > 1 && !catalog.v4) throw needsUpdate();
     const row = {
       workspace_id: this.workspaceId,
       transaction_type: t.type,
@@ -325,7 +344,8 @@ export class EliseFinanceProvider implements FinanceProvider {
       created_by_user_id: this.userId,
       ...(catalog.v2
         ? {
-            book_id: t.bookId ?? null,
+            book_id: bookIds[0] ?? null,
+            ...(catalog.v4 ? { book_ids: bookIds } : {}),
             to_account_id: t.toAccountId ?? null,
             receipt: t.receipt ?? null,
           }
@@ -359,10 +379,21 @@ export class EliseFinanceProvider implements FinanceProvider {
       description: p.description !== undefined ? p.description : current.description,
     };
     const v2Fields =
-      p.bookId !== undefined || p.toAccountId !== undefined || p.receipt !== undefined;
+      p.bookId !== undefined ||
+      p.bookIds !== undefined ||
+      p.toAccountId !== undefined ||
+      p.receipt !== undefined;
     if ((v2Fields || p.type === "transfer") && !catalog.v2) throw needsUpdate();
+    // Several Ámbitos (ADR-087): the set wins; the database keeps book_id as its first.
+    if ((p.bookIds?.length ?? 0) > 1 && !catalog.v4) throw needsUpdate();
     const set = <K extends string, V>(key: K, value: V | undefined) =>
       value !== undefined ? { [key]: value } : {};
+    const books =
+      p.bookIds !== undefined
+        ? catalog.v4
+          ? { book_ids: p.bookIds }
+          : { book_id: p.bookIds[0] ?? null }
+        : set("book_id", p.bookId);
     const { data, error } = await this.db
       .from("finance_transactions")
       .update({
@@ -379,7 +410,7 @@ export class EliseFinanceProvider implements FinanceProvider {
         ...set("project", project),
         ...set("status", p.status),
         ...set("notes", p.notes),
-        ...set("book_id", p.bookId),
+        ...books,
         ...set("to_account_id", p.toAccountId),
         ...set("receipt", p.receipt),
         fingerprint: fingerprint(next),
@@ -438,10 +469,10 @@ export class EliseFinanceProvider implements FinanceProvider {
   }
 
   async listAccounts() {
-    const { accounts } = await this.load();
+    const { accounts, defaultAccountId } = await this.load();
     return accounts
       .filter((a) => !a.archived_at)
-      .map(toAccount)
+      .map((a) => ({ ...toAccount(a), isDefault: a.id === defaultAccountId }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -492,6 +523,19 @@ export class EliseFinanceProvider implements FinanceProvider {
     if (!data) throw new AppError("NOT_FOUND", "Account not found");
     this.invalidate();
     return toAccount(data);
+  }
+
+  async setDefaultAccount(accountId: string | null) {
+    const { v4 } = await this.load();
+    if (!v4) throw needsUpdate();
+    const { error } = await this.db
+      .from("finance_settings")
+      .upsert(
+        { workspace_id: this.workspaceId, default_account_id: accountId },
+        { onConflict: "workspace_id" },
+      );
+    check(error, "set the default account");
+    this.invalidate();
   }
 
   async updateAccountBook(accountId: string, bookId: string | null) {

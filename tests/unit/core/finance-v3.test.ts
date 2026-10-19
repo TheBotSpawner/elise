@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { budgetUsage, type Budget, type FinanceTransaction } from "@/core/capabilities/finance";
+import {
+  bookIdsOf,
+  budgetUsage,
+  inBudget,
+  matchesFilter,
+  UNCLASSIFIED,
+  type Budget,
+  type FinanceTransaction,
+} from "@/core/capabilities/finance";
 import { isSingleEmoji } from "@/core/emoji";
 import { cleanCategoryName, duplicateCategory, planCombine } from "@/core/finance/combine";
 
@@ -109,7 +117,9 @@ describe("combining movements", () => {
     expect(reason([tx({}), tx({ type: "transfer", toAccountId: "x" })])).toBe("not_combinable");
     expect(reason([tx({}), tx({ readOnly: true })])).toBe("not_combinable");
     expect(reason([tx({ type: "income" }), tx({})])).toBe("zero");
-    expect(reason([tx({ accountId: null }), tx({ accountId: null })])).toBe("no_account");
+    // None has an account (recorded by chat without one): they combine; a mix doesn't.
+    expect(reason([tx({ accountId: null }), tx({ accountId: null })])).toBe("ok");
+    expect(reason([tx({ accountId: null }), tx({})])).toBe("accounts");
     expect(reason([tx({}), tx({ bookId: "firbot" })])).toBe("scopes");
   });
 });
@@ -140,5 +150,42 @@ describe("budgets over several categories", () => {
     expect(u.spent).toBe("128000");
     expect(u.percentTenths).toBe(640);
     expect(u.otherCurrencies).toBe(1);
+  });
+});
+
+describe("several Ámbitos per movement (ADR-087)", () => {
+  const both = tx({
+    bookId: "personal",
+    bookIds: ["personal", "firbot"],
+    books: ["Personal", "Firbot"],
+  });
+  it("a movement shows up under each of its Ámbitos, and not as unclassified", () => {
+    expect(matchesFilter(both, { book: "firbot" })).toBe(true);
+    expect(matchesFilter(both, { book: "personal" })).toBe(true);
+    expect(matchesFilter(both, { book: "Firbot" })).toBe(true); // by name
+    expect(matchesFilter(both, { book: "otro" })).toBe(false);
+    expect(matchesFilter(both, { book: UNCLASSIFIED })).toBe(false);
+    expect(matchesFilter(tx({}), { book: UNCLASSIFIED })).toBe(true);
+  });
+  it("a budget of one Ámbito counts movements that also belong to another", () => {
+    const b = {
+      bookId: "firbot",
+      categoryIds: ["c"],
+      categories: ["Software"],
+      subcategory: null,
+    } as Budget;
+    expect(inBudget({ ...both, categoryId: "c", categoryPath: ["Software"] }, b)).toBe(true);
+  });
+  it("rows from before several were possible still count by their single Ámbito", () => {
+    expect(bookIdsOf(tx({ bookId: "personal" }))).toEqual(["personal"]);
+  });
+  it("combining needs the same set of Ámbitos (order doesn't matter)", () => {
+    const a = tx({ bookIds: ["personal", "firbot"] });
+    const b2 = tx({ bookIds: ["firbot", "personal"] });
+    expect(planCombine([a, b2]).ok).toBe(true);
+    expect(planCombine([a, tx({ bookIds: ["personal"] })])).toMatchObject({
+      ok: false,
+      reason: "scopes",
+    });
   });
 });

@@ -2,6 +2,7 @@ import "server-only";
 
 import type { ToolDisplay } from "@/core/agents/tools";
 import {
+  matchesFilter,
   PERIODS,
   reportInput,
   resolvePeriod,
@@ -22,6 +23,7 @@ import {
 import { AppError } from "@/core/errors";
 import { normalizeCurrency } from "@/core/finance/money";
 import { todayIn } from "@/core/time";
+import { EliseFinanceProvider } from "@/infrastructure/providers/elise-native/finance";
 
 import type { AuthContext } from "./auth-context";
 import { runUserTool } from "./elise";
@@ -295,6 +297,36 @@ export function parseReportParams(params: Record<string, string | string[] | und
 export async function financeReport(auth: AuthContext, input: ReportInput) {
   const d = await read(auth, "finance.createReport", input, "finance_report");
   return d.report;
+}
+
+/**
+ * "Seleccionar todo" (ADR-087): every editable movement the screen's filters match in the
+ * period, not only the 100 on screen. ELISE Finance only (connected sheets are read-only).
+ */
+export async function financeMatchingIds(auth: AuthContext, filters: FinanceFilters) {
+  const period = periodOfFilters(filters, todayIn(auth.profile.timezone));
+  const filter = {
+    from: period.from,
+    to: period.to,
+    statuses: filters.status ? ["pending" as const] : ["completed" as const, "pending" as const],
+    ...(filters.book ? { book: filters.book } : {}),
+    ...(filters.type ? { type: filters.type } : {}),
+    ...(filters.category ? { category: filters.category } : {}),
+    ...(filters.account ? { account: filters.account } : {}),
+    ...(filters.currency ? { currencies: [filters.currency] } : {}),
+    ...(filters.source ? { source: filters.source } : {}),
+    ...(filters.q ? { text: filters.q } : {}),
+  };
+  const provider = new EliseFinanceProvider(
+    auth.db,
+    auth.workspaceId,
+    auth.userId,
+    "",
+    auth.profile.locale,
+  );
+  // ponytail: 2000 per selection; page it if a month ever holds more.
+  const { rows } = await provider.transactions(filter, 2000);
+  return rows.filter((r) => !r.readOnly && matchesFilter(r, filter)).map((r) => r.id);
 }
 
 export async function financeSourcesOverview(auth: AuthContext) {

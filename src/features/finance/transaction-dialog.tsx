@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -293,14 +293,16 @@ export function TransactionDialog({
     description: source?.description ?? "",
     date: transaction?.date ?? today,
     categoryId: source?.categoryId ?? "",
-    account: source?.account ?? "",
+    // ADR-087: a new movement starts on the default account.
+    account: source ? (source.account ?? "") : (accounts.find((a) => a.isDefault)?.name ?? ""),
     counterparty: source?.counterparty ?? "",
     project: source?.project ?? "",
     notes: source?.notes ?? "",
     status: transaction?.status ?? "completed",
-    book: source
-      ? (source.book ?? "")
-      : (defaultBook ?? books.find((b) => b.isDefault)?.name ?? ""),
+    // ADR-087: every Ámbito it belongs to (none = "Sin clasificar").
+    books: source
+      ? (source.books ?? (source.book ? [source.book] : []))
+      : [defaultBook ?? books.find((b) => b.isDefault)?.name].filter((b): b is string => !!b),
     toAccount: source?.toAccount ?? "",
     subcategory: source?.subcategory ?? "",
     receipt: transaction?.receipt ?? "",
@@ -378,7 +380,6 @@ export function TransactionDialog({
       subcategory: v.subcategory.trim() || undefined,
       receipt: v.receipt.trim() || undefined,
       toAccount: (transfer && v.toAccount) || undefined,
-      book: v.book || undefined,
     };
     startTransition(async () => {
       const r = editing
@@ -394,12 +395,16 @@ export function TransactionDialog({
             subcategory: fields.subcategory ?? null,
             receipt: fields.receipt ?? null,
             toAccount: fields.toAccount ?? null,
-            ...(books.length ? { book: fields.book ?? null } : {}),
+            ...(books.length ? { books: v.books } : {}),
             status: v.status,
           })
         : await financeToolAction(
             "finance.createTransaction",
-            { ...fields, status: v.status === "pending" ? "pending" : "completed" },
+            {
+              ...fields,
+              ...(v.books.length ? { books: v.books } : {}),
+              status: v.status === "pending" ? "pending" : "completed",
+            },
             key,
           );
       if (!r.ok) {
@@ -528,20 +533,42 @@ export function TransactionDialog({
         <div className="grid gap-3 sm:grid-cols-2">
           {books.length > 0 && (
             <Field id="tx-book" label={t.finance.ws.book}>
-              <Select
+              {/* Several Ámbitos at once (ADR-087); none selected = "Sin clasificar". */}
+              <div
                 id="tx-book"
-                value={v.book}
-                onChange={(e) => set("book", e.target.value)}
-                className={FIELD}
+                role="group"
+                className="flex min-h-10 flex-wrap items-center gap-1.5"
               >
-                <option value="">{t.finance.ws.unclassified}</option>
-                {books.map((b) => (
-                  <option key={b.id} value={b.name}>
-                    {b.icon ? `${b.icon} ` : ""}
-                    {b.name}
-                  </option>
-                ))}
-              </Select>
+                {books.map((b) => {
+                  const on = v.books.includes(b.name);
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() =>
+                        set(
+                          "books",
+                          on ? v.books.filter((n) => n !== b.name) : [...v.books, b.name],
+                        )
+                      }
+                      className={cn(
+                        "inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[13px] transition-colors",
+                        on
+                          ? "border-accent bg-accent-soft text-fg"
+                          : "border-border text-muted hover:border-border-strong hover:text-fg",
+                      )}
+                    >
+                      {on && <Check className="size-3.5" aria-hidden />}
+                      {b.icon ? `${b.icon} ` : ""}
+                      {b.name}
+                    </button>
+                  );
+                })}
+                {v.books.length === 0 && (
+                  <span className="text-[12.5px] text-faint">{t.finance.ws.unclassified}</span>
+                )}
+              </div>
             </Field>
           )}
           {(transfer

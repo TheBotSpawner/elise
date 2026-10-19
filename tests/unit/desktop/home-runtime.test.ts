@@ -25,6 +25,7 @@ import {
 import {
   provisionScript,
   withMirroredNetworking,
+  WslContainerBackend,
 } from "../../../desktop/src/runtime/home-runtime/wsl-backend";
 
 /**
@@ -381,6 +382,40 @@ describe("artifacts and provisioning", () => {
       "[wsl2]\nnetworkingMode=mirrored\n",
     );
     expect(withMirroredNetworking("[wsl2]\nnetworkingMode=mirrored\n")).toBeNull();
+  });
+
+  it("WSL installed but no hypervisor (Virtual Machine Platform off or pending restart) isn't ready", async () => {
+    const commands: string[] = [];
+    let hypervisor = "False";
+    const run = async (file: string, args: string[]) => {
+      const cmd = `${file.split(/[\\/]/).pop()} ${args.join(" ")}`;
+      commands.push(cmd);
+      if (cmd.includes("EncodedCommand")) return { code: 0, out: "" };
+      if (cmd.includes("HypervisorPresent")) return { code: 0, out: `${hypervisor}|True` };
+      if (cmd.includes("--version")) return { code: 0, out: "WSL version: 3.0.3.0" };
+      if (cmd.includes("--list")) return { code: 0, out: "" };
+      if (cmd.includes("--import"))
+        return {
+          code: 1,
+          out: "Error code: Wsl/Service/RegisterDistro/CreateVm/HCS/HCS_E_SERVICE_NOT_AVAILABLE",
+        };
+      return { code: 0, out: "" }; // --status answers without a hypervisor
+    };
+    const dir = mkdtempSync(join(tmpdir(), "elise-wsl-"));
+    const backend = new WslContainerBackend(dir, "UTC", run);
+    const wsl = (await backend.checkRequirements()).find((r) => r.key === "wsl")!;
+    expect(wsl).toMatchObject({ ok: false, fix: "enable" });
+    expect(wsl.detail).toMatch(/Virtual Machine Platform/);
+    // Enabling turns the platform on explicitly; no running hypervisor yet → one restart.
+    expect((await backend.enableRequirements()).restartRequired).toBe(true);
+    const elevated = commands.find((c) => c.includes("EncodedCommand"))!;
+    const encoded = /EncodedCommand','([^']+)'/.exec(elevated)![1]!;
+    expect(Buffer.from(encoded, "base64").toString("utf16le")).toContain(
+      "/featurename:VirtualMachinePlatform",
+    );
+    // After the restart the hypervisor runs: ready.
+    hypervisor = "True";
+    expect((await backend.checkRequirements()).find((r) => r.key === "wsl")?.ok).toBe(true);
   });
 });
 

@@ -654,6 +654,24 @@ export type NoteKnowledgeSpaceRow = {
   created_at: Ts;
 };
 
+/** ADR-088 (migration 054): a workspace's labels for notes. */
+export type NoteTagRow = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  color: "gray" | "red" | "orange" | "amber" | "green" | "teal" | "blue" | "violet" | "pink";
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type NoteTagLinkRow = {
+  note_id: string;
+  tag_id: string;
+  workspace_id: string;
+  created_at: Ts;
+};
+
 /** ADR-056 (migration 043): other Spaces that may retrieve one knowledge item. */
 export type KnowledgeItemSpaceRow = {
   id: string;
@@ -852,6 +870,8 @@ export type FinanceSettingsRow = {
   workspace_id: string;
   default_currency: string | null;
   reporting_currency: string | null;
+  /** ADR-087 (migration 053). */
+  default_account_id?: string | null;
   created_at: Ts;
   updated_at: Ts;
 };
@@ -977,6 +997,8 @@ export type FinanceTransactionRow = {
   merged_into_transaction_id?: string | null;
   merged_at?: Ts | null;
   merged_source_count?: number | null;
+  /** ADR-087 (migration 053): every Ámbito; book_id is its first. */
+  book_ids?: string[];
 };
 
 export type ImportRow = {
@@ -1773,6 +1795,8 @@ export type Database = {
       goal_links: Table<GoalLinkRow, "workspace_id" | "goal_id" | "resource_type" | "resource_id">;
       visions: Table<VisionRow, "workspace_id" | "title">;
       note_knowledge_spaces: Table<NoteKnowledgeSpaceRow, "workspace_id" | "note_id" | "space_id">;
+      note_tags: Table<NoteTagRow, "workspace_id" | "name">;
+      note_tag_links: Table<NoteTagLinkRow, "note_id" | "tag_id" | "workspace_id">;
       knowledge_item_spaces: Table<
         KnowledgeItemSpaceRow,
         "workspace_id" | "knowledge_item_id" | "space_id"

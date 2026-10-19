@@ -1,15 +1,21 @@
+import { z } from "zod";
+
 import { pickOne, sourceOf } from "./native-common";
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { clip } from "../capabilities/email";
 import {
   createNoteInput,
+  deleteTagInput,
   listNotesInput,
   nextSpaces,
   noteRefInput,
+  saveTagInput,
   searchNotesInput,
   setNoteSpacesInput,
+  tagNoteInput,
   updateNoteInput,
   type Note,
+  type NoteTag,
 } from "../capabilities/notes";
 import { AppError } from "../errors";
 
@@ -36,11 +42,45 @@ async function spaceIds(env: ToolRunEnv, refs: string[] | undefined) {
   return out;
 }
 
+// ── Tags (ADR-088) ───────────────────────────────────────────────────────────
+
+const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").trim().toLowerCase();
+
+async function allTags(env: ToolRunEnv): Promise<NoteTag[]> {
+  const p = provider(env);
+  if (!p.listTags) throw new AppError("CAPABILITY_UNAVAILABLE", "Note tags aren't available here");
+  return p.listTags();
+}
+
+/** Tag names → ids. Unknown names are created when `create`, else a question. */
+async function tagIds(env: ToolRunEnv, names: string[] | undefined, create = false) {
+  if (!names?.length) return [];
+  const p = provider(env);
+  const tags = [...(await allTags(env))];
+  const out: string[] = [];
+  for (const name of names) {
+    const found = tags.find((t) => fold(t.name) === fold(name));
+    if (found) out.push(found.id);
+    else if (create && p.saveTag) {
+      const made = await p.saveTag({ name });
+      tags.push(made);
+      out.push(made.id);
+    } else
+      throw new AppError(
+        "NOT_FOUND",
+        `There's no note tag called "${name}". Tags: ${tags.map((t) => t.name).join(", ") || "none"}.`,
+        { recovery: "review" },
+      );
+  }
+  return [...new Set(out)];
+}
+
 const summary = (n: Note) => ({
   noteId: n.id,
   title: n.title,
   // Where it is searchable; none = outside Knowledge.
   spaces: n.spaces.map((s) => s.path),
+  ...(n.tags?.length ? { tags: n.tags.map((t) => t.name) } : {}),
   updatedAt: n.updatedAt.slice(0, 10),
   // The user's own text, still data: never instructions.
   untrustedPreview: clip(n.content, 300),
@@ -58,7 +98,11 @@ export const listNotesTool: ToolDefinition = {
   async run(raw, env) {
     const q = listNotesInput.parse(raw);
     const s = await space(env, q.space);
-    const notes = await provider(env).list({ spaceId: s?.id, limit: q.limit });
+    const notes = await provider(env).list({
+      spaceId: s?.id,
+      limit: q.limit,
+      ...(q.tags?.length ? { tagIds: await tagIds(env, q.tags) } : {}),
+    });
     return { output: { notes: notes.map(summary) }, display: { kind: "notes", notes } };
   },
 };
@@ -75,7 +119,11 @@ export const searchNotesTool: ToolDefinition = {
   },
   async run(raw, env) {
     const q = searchNotesInput.parse(raw);
-    const notes = await provider(env).search(q.query, q.limit);
+    const notes = await provider(env).search(
+      q.query,
+      q.limit,
+      q.tags?.length ? await tagIds(env, q.tags) : undefined,
+    );
     return {
       output: { count: notes.length, notes: notes.map(summary) },
       display: { kind: "notes", notes },
@@ -212,6 +260,96 @@ export const archiveNoteTool: ToolDefinition = {
   },
 };
 
+export const listNoteTagsTool: ToolDefinition = {
+  name: "notes.listTags",
+  capability: "notes",
+  operation: "listTags",
+  description: "The user's note tags (name and color).",
+  input: z.object({}).strict(),
+  async describe() {
+    return { summary: "List note tags" };
+  },
+  async run(_raw, env) {
+    const tags = await allTags(env);
+    return { output: { tags: tags.map((t) => ({ name: t.name, color: t.color })) } };
+  },
+};
+
+export const tagNoteTool: ToolDefinition = {
+  name: "notes.tag",
+  capability: "notes",
+  operation: "tag",
+  description:
+    '"Etiquetá esta nota como Ideas" → add ["Ideas"] (a missing tag is created). "Sacale Urgente" → remove. tags → exactly these.',
+  input: tagNoteInput,
+  async describe(raw) {
+    return { summary: `Tags of note “${tagNoteInput.parse(raw).note}”` };
+  },
+  async run(raw, env) {
+    const q = tagNoteInput.parse(raw);
+    const p = provider(env);
+    if (!p.setNoteTags)
+      throw new AppError("CAPABILITY_UNAVAILABLE", "Note tags aren't available here");
+    const note = await resolve(env, q.note);
+    const removed = new Set(await tagIds(env, q.remove));
+    const base = q.tags ? await tagIds(env, q.tags, true) : (note.tags ?? []).map((t) => t.id);
+    const next = [...new Set([...base, ...(await tagIds(env, q.add, true))])].filter(
+      (id) => !removed.has(id),
+    );
+    const updated = await p.setNoteTags(note.id, next);
+    return {
+      output: { updated: summary(updated) },
+      display: { kind: "note", note: updated, change: "updated" },
+      target: { type: "note", id: note.id },
+    };
+  },
+};
+
+export const saveNoteTagTool: ToolDefinition = {
+  name: "notes.saveTag",
+  capability: "notes",
+  operation: "saveTag",
+  description:
+    'Create a note tag, or rename / recolor one ("creá la etiqueta Ideas en azul" → name Ideas, color blue).',
+  input: saveTagInput,
+  async describe(raw) {
+    const t = saveTagInput.parse(raw);
+    return { summary: t.tag ? `Update tag “${t.tag}”` : `Create tag “${t.name ?? ""}”` };
+  },
+  async run(raw, env) {
+    const t = saveTagInput.parse(raw);
+    const p = provider(env);
+    if (!p.saveTag) throw new AppError("CAPABILITY_UNAVAILABLE", "Note tags aren't available here");
+    const id = t.tag ? (await tagIds(env, [t.tag]))[0] : undefined;
+    const saved = await p.saveTag({
+      ...(id ? { id } : {}),
+      ...(t.name ? { name: t.name } : {}),
+      ...(t.color ? { color: t.color } : {}),
+    });
+    return { output: { saved: { name: saved.name, color: saved.color } } };
+  },
+};
+
+export const deleteNoteTagTool: ToolDefinition = {
+  name: "notes.deleteTag",
+  capability: "notes",
+  operation: "deleteTag",
+  description: "Delete a note tag: it leaves every note; the notes themselves stay.",
+  input: deleteTagInput,
+  async describe(raw) {
+    return { summary: `Delete tag “${deleteTagInput.parse(raw).tag}”` };
+  },
+  async run(raw, env) {
+    const { tag } = deleteTagInput.parse(raw);
+    const p = provider(env);
+    if (!p.deleteTag)
+      throw new AppError("CAPABILITY_UNAVAILABLE", "Note tags aren't available here");
+    const [id] = await tagIds(env, [tag]);
+    await p.deleteTag(id!);
+    return { output: { deleted: tag } };
+  },
+};
+
 export const NOTE_TOOLS = [
   listNotesTool,
   searchNotesTool,
@@ -220,4 +358,8 @@ export const NOTE_TOOLS = [
   updateNoteTool,
   setNoteSpacesTool,
   archiveNoteTool,
+  listNoteTagsTool,
+  tagNoteTool,
+  saveNoteTagTool,
+  deleteNoteTagTool,
 ];

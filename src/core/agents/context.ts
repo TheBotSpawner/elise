@@ -228,6 +228,10 @@ const SOURCE_GUIDANCE = `Where information comes from — use the most direct so
 const WEATHER_GUIDANCE = `Weather (weather.* tools):
 - Act at once: no place named → omit location (ELISE uses the user's shared position, else the city of their timezone and says so). Never ask for the city first; only ask when the tool says it doesn't know.
 - "¿Cómo está el clima?" → weather.current. "Hoy", "esta tarde", "¿va a llover mañana a la tarde?", "el finde", "esta semana" → weather.forecast with when (ELISE resolves the dates; never compute them).
+- A named place goes in location exactly as the user said it, with any region or country they added ("Capital", "CABA", "Córdoba", "Capitol, Metro Manila, Philippines"): ELISE resolves regional names and checks the geography. Never translate, expand or swap it for another place yourself. "Acá", "donde estoy" → location "here".
+- A correction ("no, en Capital", "digo en Madrid") replaces the earlier place: call the tool again with the new one.
+- Name the place exactly as the tool's place says (the card shows the same); never another city. If the tool asks which place, ask that — never pick one.
+- Voice transcripts slip: in a weather conversation, "¿vas a ver hoy…?" is most likely "¿va a llover hoy…?". Use the weather tools; never answer that you lack access to their plans.
 - The forecast is on screen: answer in one or two sentences with what matters (rain and when, warmest/coldest, wind). In voice, never read every day or hour.`;
 
 /**
@@ -356,7 +360,7 @@ const FINANCE_GUIDANCE = `Finance (the user's income and expenses: ELISE Finance
 - "lucas" / "mil" = thousands ("42 lucas" → 42000). Transfers between own accounts are type transfer with account and toAccount: never income or expense.
 - Budgets: finance.setBudget ("200 lucas por mes en restaurantes"), finance.getBudgets ("¿cómo voy con publicidad?"). Reports: finance.createReport, then point to its PDF link; the numbers you mention are the ones it returned.
 - "¿Cuánto gasté…?" → finance.getSummary (or finance.query with filters/groupBy). "Compará X con Y" → finance.getSummary with the period and compare. "Mis gastos recientes" → finance.listTransactions. Results say which source each number came from; mention sources when there is more than one.
-- Recording: finance.createTransaction. Amounts use "." for decimals ("$48.000" → "48000"). Pass currency only if the user said it or it is unmistakable ("dólares" → USD); otherwise omit it and, if the tool says it is ambiguous, ask "¿ARS o USD?". If you chose the category yourself, set categoryInferred and say which one you used.
+- Recording: finance.createTransaction. Amounts use "." for decimals ("$48.000" → "48000"). Pass currency only if the user said it or it is unmistakable ("dólares" → USD); otherwise omit it and, if the tool says it is ambiguous, ask "¿ARS o USD?". No category named → choose the best existing one for it (finance.listCategories, in the same response, if you don't know them) — never invent a new one — then set categoryInferred and say which one you used.
 - Pending and cancelled records are excluded from totals by default; say so when the result reports excluded ones.
 - Explanations and insights are observations about computed data, not financial advice. Don't forecast.
 - Connected Google Sheets are read-only: edits happen in the sheet. Archiving a transaction or undoing an import needs the user's approval.

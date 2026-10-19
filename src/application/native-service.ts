@@ -12,7 +12,7 @@ import {
   type HabitProgress,
 } from "@/core/capabilities/habits";
 import { STARTER_LISTS, type NativeList } from "@/core/capabilities/lists";
-import type { Note } from "@/core/capabilities/notes";
+import type { Note, NoteTag } from "@/core/capabilities/notes";
 import { AppError } from "@/core/errors";
 import type { GoalDetail, GoalSnapshot, VisionSummary } from "@/core/goals/analytics";
 import {
@@ -237,15 +237,24 @@ export async function reorderList(auth: AuthContext, listId: string, itemIds: st
 export async function notesOverview(
   auth: AuthContext,
   query: string | null,
-): Promise<{ notes: Note[]; spaces: { id: string; path: string; general: boolean }[] }> {
+  /** ADR-088: only notes with every one of these tags. */
+  tagIds: string[] = [],
+): Promise<{
+  notes: Note[];
+  spaces: { id: string; path: string; general: boolean }[];
+  tags: NoteTag[];
+}> {
   const provider = new EliseNotesProvider(auth.db, auth.workspaceId, auth.userId);
-  const [notes, spaces] = await Promise.all([
-    query ? provider.search(query, 50) : provider.list({ limit: 200 }),
+  const filter = tagIds.length ? tagIds : undefined;
+  const [notes, spaces, tags] = await Promise.all([
+    query ? provider.search(query, 50, filter) : provider.list({ limit: 200, tagIds: filter }),
     listSpaces(auth),
+    provider.listTags(),
   ]);
   return {
     notes,
     spaces: spaces.map((s) => ({ id: s.id, path: s.path, general: Boolean(s.general) })),
+    tags,
   };
 }
 

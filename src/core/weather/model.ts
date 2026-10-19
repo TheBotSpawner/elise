@@ -44,6 +44,12 @@ export interface WeatherPlace {
   detail: string | null;
   lat: number;
   lng: number;
+  /** What the geocoder knows about it (ISO country, region, GeoNames feature, population). */
+  countryCode?: string | null;
+  country?: string | null;
+  admin1?: string | null;
+  featureCode?: string;
+  population?: number;
 }
 
 export interface CurrentWeather {
@@ -91,7 +97,13 @@ export interface WeatherProvider {
   readonly id: string;
   /** Display name for attribution ("Open-Meteo"). */
   readonly attribution: { name: string; url: string };
-  geocode(name: string, language: string, signal?: AbortSignal): Promise<WeatherPlace[]>;
+  /** Candidates for a name, optionally only in one country (ISO code). */
+  geocode(
+    name: string,
+    language: string,
+    country: string | null,
+    signal?: AbortSignal,
+  ): Promise<WeatherPlace[]>;
   forecast(at: { lat: number; lng: number }, days: number, signal?: AbortSignal): Promise<Forecast>;
 }
 
@@ -101,7 +113,7 @@ export type WeatherLocationSource = "explicit" | "device" | "configured" | "time
 /** What tools see: the provider behind a timeout, a cache and telemetry. */
 export interface WeatherCapability {
   readonly attribution: WeatherProvider["attribution"];
-  geocode(name: string, language: string): Promise<WeatherPlace[]>;
+  geocode(name: string, language: string, country?: string | null): Promise<WeatherPlace[]>;
   forecast(
     at: { lat: number; lng: number },
     days: number,

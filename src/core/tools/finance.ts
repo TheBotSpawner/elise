@@ -53,6 +53,7 @@ import { addAmounts, formatMoney } from "../finance/money";
 import { buildFinanceReport } from "../finance/report";
 import { resolvePeriod } from "../periods";
 import { parseExternalRef } from "../providers/refs";
+import { normalizeEntityTitle } from "../text";
 import { todayIn } from "../time";
 
 /**
@@ -106,7 +107,13 @@ const txForModel = (t: FinanceTransaction) => ({
   account: t.account ?? t.paymentMethod,
   project: t.project,
   status: t.status,
-  ...(t.book ? { book: t.book } : t.bookId === null ? { book: "Sin clasificar" } : {}),
+  ...((t.books?.length ?? 0) > 1
+    ? { books: t.books }
+    : t.book
+      ? { book: t.book }
+      : t.bookId === null
+        ? { book: "Sin clasificar" }
+        : {}),
   ...(t.subcategory ? { subcategory: t.subcategory } : {}),
   ...(t.type === "transfer" ? { toAccount: t.toAccount } : {}),
   ...(t.receipt ? { receipt: t.receipt } : {}),
@@ -483,6 +490,31 @@ async function currencyFor(
   );
 }
 
+const stem = (w: string) => norm(w).replace(/(es|s)$/, "");
+
+/** The one category of this type whose name appears in the text (singular or plural). */
+export function categoryNamedIn(
+  categories: readonly FinanceCategory[],
+  text: string,
+  type: "income" | "expense",
+): FinanceCategory | null {
+  const words = new Set(
+    text
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((w) => w.length >= 4)
+      .map(stem),
+  );
+  const hits = categories.filter(
+    (c) =>
+      (c.type === type || c.type === "both") &&
+      c.name
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((w) => w.length >= 4)
+        .some((w) => words.has(stem(w))),
+  );
+  return hits.length === 1 ? hits[0]! : null;
+}
+
 interface Resolved {
   patch: TransactionPatch;
   notes: string[];
@@ -499,7 +531,10 @@ async function resolveNames(
     account?: string | null;
     paymentMethod?: string | null;
     book?: string | null;
+    books?: string[];
     toAccount?: string | null;
+    /** What the movement is about: names an existing category when none was given. */
+    about?: string | null;
   },
   env: ToolRunEnv,
   needCurrency: boolean,
@@ -530,6 +565,15 @@ async function resolveNames(
       notes.push(`"${input.account}" is not an account; saved as payment method.`);
     }
   } else if (input.account === null) patch.accountId = null;
+  else if (creating && input.type !== "transfer" && !input.paymentMethod) {
+    // None said: the default account (ADR-087), which also brings its currency and Ámbito.
+    const fallback = (await p.listAccounts()).find((a) => a.isDefault);
+    if (fallback) {
+      account = fallback;
+      patch.accountId = fallback.id;
+      notes.push(`No account said: used the default account "${fallback.name}".`);
+    }
+  }
   if (input.paymentMethod !== undefined && patch.paymentMethod === undefined)
     patch.paymentMethod = input.paymentMethod;
 
@@ -557,12 +601,25 @@ async function resolveNames(
       notes.push(`Created category "${created.name}".`);
     }
   } else if (input.category === null) patch.categoryId = null;
+  else if (creating && input.about && input.type !== "transfer") {
+    // None given: an existing category the description names ("regalo Cande" → Regalos).
+    const named = categoryNamedIn(await p.listCategories(), input.about, input.type);
+    if (named) {
+      patch.categoryId = named.id;
+      notes.push(`Category "${named.name}" inferred from the description; say it.`);
+    }
+  }
 
   if (needCurrency || input.currency)
     patch.currency = await currencyFor(p, input.currency, account);
 
   // Ámbito: what the user said, else the account's default, else the default Book.
-  if (input.book === null) patch.bookId = null;
+  if (input.books) {
+    const ids: string[] = [];
+    for (const name of input.books) ids.push((await resolveBook(p, name)).id);
+    patch.bookIds = [...new Set(ids)];
+    patch.bookId = patch.bookIds[0] ?? null;
+  } else if (input.book === null) patch.bookId = null;
   else if (input.book) patch.bookId = (await resolveBook(p, input.book)).id;
   else if (creating && p.listBooks) {
     const books = await p.listBooks();
@@ -609,7 +666,13 @@ export const createTransactionTool: ToolDefinition = {
   async run(raw, env) {
     const c = createTransactionInput.parse(raw);
     const p = writable(env);
-    const { patch, notes } = await resolveNames(p, c, env, true, true);
+    const { patch, notes } = await resolveNames(
+      p,
+      { ...c, about: [c.description, c.counterparty].filter(Boolean).join(" ") },
+      env,
+      true,
+      true,
+    );
     if (c.type === "transfer" && (!patch.accountId || !patch.toAccountId))
       throw new AppError(
         "VALIDATION_ERROR",
@@ -622,7 +685,7 @@ export const createTransactionTool: ToolDefinition = {
         amount: c.amount,
         currency: patch.currency!,
         date: c.date ?? today(env),
-        description: c.description ?? null,
+        description: c.description ? normalizeEntityTitle(c.description) : null,
         counterparty: c.counterparty ?? null,
         categoryId: patch.categoryId ?? null,
         subcategory: c.subcategory ?? null,
@@ -632,6 +695,7 @@ export const createTransactionTool: ToolDefinition = {
         status: c.status ?? "completed",
         notes: c.notes ?? null,
         bookId: patch.bookId ?? null,
+        ...(patch.bookIds ? { bookIds: patch.bookIds } : {}),
         toAccountId: patch.toAccountId ?? null,
         receipt: c.receipt ?? null,
       },
@@ -687,6 +751,7 @@ export const updateTransactionTool: ToolDefinition = {
         account: u.account,
         paymentMethod: u.paymentMethod,
         book: u.book,
+        ...(u.books ? { books: u.books } : {}),
         toAccount: u.toAccount,
       },
       env,
@@ -697,7 +762,9 @@ export const updateTransactionTool: ToolDefinition = {
       ...(u.type ? { type: u.type } : {}),
       ...(u.amount ? { amount: u.amount } : {}),
       ...(u.date ? { date: u.date } : {}),
-      ...(u.description !== undefined ? { description: u.description } : {}),
+      ...(u.description !== undefined
+        ? { description: u.description ? normalizeEntityTitle(u.description) : null }
+        : {}),
       ...(u.counterparty !== undefined ? { counterparty: u.counterparty } : {}),
       ...(u.subcategory !== undefined ? { subcategory: u.subcategory } : {}),
       ...(u.project !== undefined ? { project: u.project } : {}),
@@ -824,7 +891,7 @@ export const updateAccountTool: ToolDefinition = {
   capability: "finance",
   operation: "updateAccount",
   description:
-    'Rename an account, change its type or currency, or archive it ("la Visa ahora es en USD"). Past transactions keep it.',
+    'Rename an account, change its type or currency, archive it ("la Visa ahora es en USD"), or make it the default for movements recorded without an account (default). Past transactions keep it.',
   input: updateAccountInput,
   route: nativeOnly,
   async describe(raw) {
@@ -850,11 +917,16 @@ export const updateAccountTool: ToolDefinition = {
       await nativeFeature(p.updateAccountBook?.bind(p))(account.id, bookId);
       updated.defaultBookId = bookId;
     }
+    if (u.default !== undefined) {
+      await nativeFeature(p.setDefaultAccount?.bind(p))(u.default ? account.id : null);
+      updated.isDefault = u.default;
+    }
     return {
       output: {
         updated: true,
         account: { name: updated.name, type: updated.type, currency: updated.currency },
         ...(u.archived ? { archived: true } : {}),
+        ...(u.default !== undefined ? { default: u.default } : {}),
       },
       display: { kind: "finance_accounts", accounts: [updated] },
       target: { type: "finance_account", id: updated.id },
@@ -1261,14 +1333,14 @@ const combineInput = z
 
 /**
  * ADR-083: several movements of one account and one currency become one, by signed sum. The
- * sources stay (hidden, linked, recoverable): never a silent deletion. Always confirmed.
+ * sources stay (hidden, linked, recoverable): never a silent deletion. Runs when asked (undo exists).
  */
 export const combineTransactionsTool: ToolDefinition = {
   name: "finance.combineTransactions",
   capability: "finance",
   operation: "combineTransactions",
   description:
-    "Combine 2+ movements of the SAME account and currency into one (signed sum). Only when the user asks explicitly. Always needs approval.",
+    "Combine 2+ movements of the SAME account (or all without one) and currency into one (signed sum). Only when the user asks for it; then just do it (reversible with finance.uncombineTransaction).",
   input: combineInput,
   route: nativeOnly,
   async describe(raw) {

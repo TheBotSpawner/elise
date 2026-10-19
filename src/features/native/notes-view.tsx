@@ -1,17 +1,18 @@
 "use client";
 
-import { ArrowLeft, Check, ChevronDown, Plus, Search, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Plus, Search, Sparkles, Tags, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { plainText, type Note } from "@/core/capabilities/notes";
+import { plainText, type Note, type NoteTag } from "@/core/capabilities/notes";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 import { NoteEditor } from "./note-editor";
+import { NoteMenu, TagChip, TagManager, tagStyle } from "./note-tags";
 import { useNative } from "./use-native";
 
 /**
@@ -237,12 +238,17 @@ function Editor({
 export function NotesView({
   notes,
   spaces,
+  tags = [],
+  tagFilter = [],
   query,
   openId,
   workspaceId,
 }: {
   notes: Note[];
   spaces: SpaceOption[];
+  /** ADR-088: every tag, and the ones the list is filtered by. */
+  tags?: NoteTag[];
+  tagFilter?: string[];
   query: string;
   openId: string | null;
   workspaceId: string;
@@ -254,7 +260,18 @@ export function NotesView({
   const params = useSearchParams();
   const [search, setSearch] = useState(query);
   const [creating, setCreating] = useState(false);
-  useRealtimeRefresh(workspaceId, ["notes", "note_knowledge_spaces"]);
+  const [managing, setManaging] = useState(false);
+  useRealtimeRefresh(workspaceId, [
+    "notes",
+    "note_knowledge_spaces",
+    "note_tags",
+    "note_tag_links",
+  ]);
+  const g = n.tags;
+  const toggleTag = (id: string) => {
+    const next = tagFilter.includes(id) ? tagFilter.filter((x) => x !== id) : [...tagFilter, id];
+    navigate({ tags: next.join(",") || null, note: null });
+  };
   const open = openId ? (notes.find((x) => x.id === openId) ?? null) : null;
   const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
   // "Hace 2 horas" is relative to when the list was shown (stable across re-renders).
@@ -313,11 +330,56 @@ export function NotesView({
             <Plus />
             <span className="max-sm:sr-only">{n.new}</span>
           </Button>
+          <Button
+            variant="secondary"
+            size="icon"
+            aria-label={g.manage}
+            title={g.manage}
+            onClick={() => setManaging(true)}
+          >
+            <Tags />
+          </Button>
         </div>
+        {tags.length > 0 && (
+          <div role="group" aria-label={g.filter} className="flex flex-wrap items-center gap-1.5">
+            {tags.map((tag) => {
+              const on = tagFilter.includes(tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggleTag(tag.id)}
+                  style={tagStyle(tag.color, on)}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-[12.5px] font-medium transition-opacity focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",
+                    !on && "opacity-70 hover:opacity-100",
+                  )}
+                >
+                  {on && <Check className="size-3" strokeWidth={3} aria-hidden />}
+                  {tag.name}
+                </button>
+              );
+            })}
+            {tagFilter.length > 0 && (
+              <button
+                type="button"
+                onClick={() => navigate({ tags: null })}
+                className="h-7 px-1.5 text-[12.5px] text-muted hover:text-fg"
+              >
+                {g.clear}
+              </button>
+            )}
+          </div>
+        )}
         {notes.length === 0 ? (
           <div className="flex flex-col gap-1 rounded-2xl border border-dashed border-border px-5 py-8 text-center">
-            <p className="font-medium">{query ? t.native.empty : n.noNotes}</p>
-            {!query && <p className="text-[13px] text-muted">{n.noNotesBody}</p>}
+            <p className="font-medium">
+              {tagFilter.length ? g.noMatch : query ? t.native.empty : n.noNotes}
+            </p>
+            {!query && !tagFilter.length && (
+              <p className="text-[13px] text-muted">{n.noNotesBody}</p>
+            )}
           </div>
         ) : (
           <ul className="flex flex-col gap-1.5">
@@ -325,7 +387,7 @@ export function NotesView({
               const selected = x.id === openId;
               const preview = plainText(x.content).slice(0, 140);
               return (
-                <li key={x.id}>
+                <li key={x.id} className="relative">
                   <button
                     type="button"
                     aria-current={selected ? "true" : undefined}
@@ -340,12 +402,19 @@ export function NotesView({
                         : "border-border bg-surface hover:border-border-strong",
                     )}
                   >
-                    <span className="truncate text-[14.5px] font-medium">
+                    <span className="truncate pr-8 text-[14.5px] font-medium">
                       {x.title || n.untitled}
                     </span>
                     {preview && (
                       <span className="line-clamp-2 text-[13px] text-muted">{preview}</span>
                     )}
+                    {x.tags?.length ? (
+                      <span className="flex flex-wrap gap-1">
+                        {x.tags.map((tag) => (
+                          <TagChip key={tag.id} tag={tag} />
+                        ))}
+                      </span>
+                    ) : null}
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-faint">
                       <span className={x.spaces.length ? "text-accent-text" : undefined}>
                         {x.spaces.length ? x.spaces.map((s) => s.path).join(" · ") : n.noSpace}
@@ -353,6 +422,14 @@ export function NotesView({
                       <span>· {when(x.updatedAt)}</span>
                     </span>
                   </button>
+                  <NoteMenu
+                    note={x}
+                    tags={tags}
+                    onEdit={() => {
+                      setCreating(false);
+                      navigate({ note: x.id });
+                    }}
+                  />
                 </li>
               );
             })}
@@ -379,6 +456,7 @@ export function NotesView({
           <p className="py-16 text-center text-[14px] text-muted">{n.pick}</p>
         )}
       </section>
+      <TagManager open={managing} onClose={() => setManaging(false)} tags={tags} />
     </div>
   );
 }

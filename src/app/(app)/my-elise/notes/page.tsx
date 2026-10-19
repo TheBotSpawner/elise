@@ -13,7 +13,11 @@ export default async function NotesPage({ searchParams }: PageProps<"/my-elise/n
   const query = typeof params.q === "string" ? params.q.slice(0, 200) : "";
   const openId =
     typeof params.note === "string" && z.uuid().safeParse(params.note).success ? params.note : null;
-  const { notes, spaces } = await notesOverview(auth, query || null);
+  // ADR-088: ?tags=<id>,<id> narrows to notes with every one of them.
+  const tagIds = (typeof params.tags === "string" ? params.tags.split(",") : [])
+    .filter((id) => z.uuid().safeParse(id).success)
+    .slice(0, 10);
+  const { notes, spaces, tags } = await notesOverview(auth, query || null, tagIds);
   return (
     <PageContainer wide>
       <PageHeader
@@ -25,6 +29,8 @@ export default async function NotesPage({ searchParams }: PageProps<"/my-elise/n
         <NotesView
           notes={notes}
           spaces={spaces}
+          tags={tags}
+          tagFilter={tagIds}
           query={query}
           openId={openId}
           workspaceId={auth.workspaceId}

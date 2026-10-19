@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckSquare, Pencil, Square, Trash2 } from "lucide-react";
+import { CheckSquare, Copy, Pencil, Square, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 
 import { useI18n } from "@/lib/i18n/client";
@@ -64,7 +64,7 @@ export interface MovementMenuState {
 
 /**
  * ELISE's own context menu for a movement (desktop right-click): Seleccionar / Quitar de la
- * selección, Editar, Eliminar. Keyboard: arrows move, Escape closes, focus returns to the row.
+ * selección, Editar, Duplicar, Eliminar. Keyboard: arrows move, Escape closes, focus returns to the row.
  * The same actions stay reachable without it (the movement's detail, the "Seleccionar" button).
  */
 export function MovementMenu({
@@ -72,12 +72,14 @@ export function MovementMenu({
   onClose,
   onToggleSelect,
   onEdit,
+  onDuplicate,
   onDelete,
 }: {
   state: MovementMenuState | null;
   onClose: () => void;
   onToggleSelect: () => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
 }) {
   const { t } = useI18n();
@@ -128,6 +130,7 @@ export function MovementMenu({
       show: state.editable,
     },
     { label: b.menuEdit, Icon: Pencil, run: onEdit, show: state.editable },
+    { label: t.finance.v21.detail.duplicate, Icon: Copy, run: onDuplicate, show: true },
     { label: b.menuDelete, Icon: Trash2, run: onDelete, show: state.editable, danger: true },
   ].filter((i) => i.show);
   if (!items.length) return null;

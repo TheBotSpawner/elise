@@ -197,6 +197,11 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       update: WRITE,
       setKnowledgeSpaces: WRITE,
       archive: ARCHIVE,
+      // ADR-088: tags are the user's own labels; deleting one keeps every note.
+      listTags: READ,
+      tag: WRITE,
+      saveTag: WRITE,
+      deleteTag: WRITE,
     },
   },
   // Everyday bookkeeping is automatic; archiving asks when ELISE proposes it, and undoing a
@@ -217,8 +222,9 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       updateAccount: WRITE,
       updateCategory: WRITE,
       deleteCategory: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
-      // ADR-083: rewrites the ledger's shape (reversible): always confirmed.
-      combineTransactions: { kind: "destructive", risk: "high", defaultApproval: "always_ask" },
+      // ADR-083: reversible (the sources are kept; undo brings them back). Asked for explicitly,
+      // it just runs; the model only combines when the user asks for it.
+      combineTransactions: WRITE,
       importFile: WRITE,
       createCategory: WRITE,
       archiveTransaction: ARCHIVE,

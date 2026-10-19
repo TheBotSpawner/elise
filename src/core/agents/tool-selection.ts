@@ -57,6 +57,10 @@ export const MARKET_SIGNAL = {
 export const LOCATION_SIGNAL =
   /\b(tard[oa]\w*|ruta|c[oó]mo llego|d[oó]nde (queda|est[aá])|cerca|near\w*|mapa|maps?|direcci[oó]n|address|km|kil[oó]metros?|viaje|llegar|desde .+ hasta|caf[eé]s?|restaurant\w*|farmacias?|routes?|how long|drive|walk\w*|en auto|caminando|colectivo|subte|tr[aá]nsito|por ac[aá]|around here|d[oó]nde estoy|where am i)\b/i;
 
+/** Weather "here" questions: the browser refreshes the device position for them too. */
+export const WEATHER_HERE_SIGNAL =
+  /(?<!\p{L})(llov\p{L}*|lluev\p{L}*|lluvia|clima|tiempo hace|temperatura|pron[oó]stico|fr[ií]o|calor|weather|rain\p{L}*|forecast)(?!\p{L})[^.?!]*(?<!\p{L})(ac[aá]|aqu[ií]|donde estoy|here|where i am)(?!\p{L})/iu;
+
 /** Words that point to a group (Spanish and English). Deliberately generous: a false positive
  * costs a few hundred tokens, a false negative an extra round trip. */
 const SIGNALS: readonly [string, { test(message: string): boolean }][] = [

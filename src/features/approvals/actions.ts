@@ -9,7 +9,8 @@ import { toPublicError, type PublicError } from "@/core/errors";
 
 export type ApprovalResult =
   | { ok: true; decision: "approved" | "rejected"; display?: ToolDisplay }
-  | { ok: false; error: PublicError };
+  /** `approved`: the approval went through but the action itself failed (never retry it). */
+  | { ok: false; error: PublicError; approved?: true };
 
 export async function decideApproval(
   approvalId: string,
@@ -19,7 +20,8 @@ export async function decideApproval(
     const id = z.uuid().parse(approvalId);
     const auth = await requireAuthContext();
     const outcome = await resolveApproval(auth, id, decision);
-    if (outcome && outcome.status === "failed") return { ok: false, error: outcome.error };
+    if (outcome && outcome.status === "failed")
+      return { ok: false, error: outcome.error, approved: true };
     return {
       ok: true,
       decision,

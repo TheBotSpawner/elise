@@ -16,6 +16,27 @@ export interface NoteSpace {
   path: string;
 }
 
+/** ADR-088: a fixed palette (theme-aware on screen), never arbitrary colors. */
+export const NOTE_TAG_COLORS = [
+  "gray",
+  "red",
+  "orange",
+  "amber",
+  "green",
+  "teal",
+  "blue",
+  "violet",
+  "pink",
+] as const;
+export type NoteTagColor = (typeof NOTE_TAG_COLORS)[number];
+
+/** ADR-088: the workspace's own labels for notes. */
+export interface NoteTag {
+  id: string;
+  name: string;
+  color: NoteTagColor;
+}
+
 export interface Note {
   id: string;
   title: string;
@@ -29,13 +50,17 @@ export interface Note {
   source: EntrySource;
   createdAt: string;
   updatedAt: string;
+  /** ADR-088: its tags, by name. */
+  tags?: NoteTag[];
 }
 
 export interface NotesProvider {
-  list(opts: { spaceId?: string | null; limit: number }): Promise<Note[]>;
+  /** `tagIds`: only notes carrying every one of these tags (ADR-088). */
+  list(opts: { spaceId?: string | null; limit: number; tagIds?: string[] }): Promise<Note[]>;
   find(ref: string): Promise<Note[]>;
   get(id: string): Promise<Note | null>;
-  search(query: string, limit: number): Promise<Note[]>;
+  /** Words in the title, text or a tag's name; `tagIds` narrows like `list`. */
+  search(query: string, limit: number, tagIds?: string[]): Promise<Note[]>;
   create(
     note: { title: string; content: string; spaceIds: string[] },
     source: EntrySource,
@@ -48,6 +73,14 @@ export interface NotesProvider {
   archive(id: string): Promise<Note>;
   /** Resolves a Knowledge Space by id, name or path ("Work › Acme"). */
   resolveSpace(ref: string): Promise<{ id: string; path: string } | null>;
+  // ADR-088 — tags (absent before migration 054).
+  listTags?(): Promise<NoteTag[]>;
+  /** Creates (no id) or renames / recolors a tag. Names are unique, case-insensitively. */
+  saveTag?(tag: { id?: string; name?: string; color?: NoteTagColor }): Promise<NoteTag>;
+  /** Removes the tag from every note; the notes stay. */
+  deleteTag?(id: string): Promise<void>;
+  /** Exactly these tags on the note. */
+  setNoteTags?(noteId: string, tagIds: string[]): Promise<Note>;
 }
 
 /** Markdown → readable text for previews and lists (search uses the database's own tokens). */
@@ -121,12 +154,52 @@ export const setNoteSpacesInput = z
   });
 
 export const noteRefInput = z.object({ note: noteRef }).strict();
+
+const tagName = z.string().trim().min(1).max(40).describe('A tag name ("Ideas", "Urgente").');
+const tagColor = z.enum(NOTE_TAG_COLORS);
+
+export const tagNoteInput = z
+  .object({
+    note: noteRef,
+    tags: z.array(tagName).max(20).optional().describe("Exactly these tags (replaces)."),
+    add: z
+      .array(tagName)
+      .max(20)
+      .optional()
+      .describe('"Etiquetala como Ideas" → add ["Ideas"]. Missing tags are created.'),
+    remove: z.array(tagName).max(20).optional(),
+  })
+  .strict()
+  .refine((x) => x.tags !== undefined || x.add?.length || x.remove?.length, {
+    message: "Pass tags, add or remove",
+  });
+
+export const saveTagInput = z
+  .object({
+    tag: tagName.optional().describe("An existing tag to change (omit to create one)."),
+    name: tagName.optional(),
+    color: tagColor.optional(),
+  })
+  .strict()
+  .refine((x) => x.tag || x.name, { message: "Pass tag (to change) or name (to create)" });
+
+export const deleteTagInput = z.object({ tag: tagName }).strict();
+const tagFilter = z
+  .array(tagName)
+  .max(10)
+  .optional()
+  .describe("Only notes with every one of these tags.");
 export const listNotesInput = z
-  .object({ space: space.optional(), limit: z.number().int().min(1).max(50).default(20) })
+  .object({
+    space: space.optional(),
+    tags: tagFilter,
+    limit: z.number().int().min(1).max(50).default(20),
+  })
   .strict();
 export const searchNotesInput = z
   .object({
     query: z.string().trim().min(1).max(200),
+    tags: tagFilter,
     limit: z.number().int().min(1).max(20).default(10),
   })
   .strict();

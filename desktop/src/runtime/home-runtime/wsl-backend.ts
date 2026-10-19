@@ -105,21 +105,30 @@ export class WslContainerBackend implements HomeRuntimeBackend {
     return /^[A-Za-z]+(?:\/[A-Za-z0-9_+-]+){0,2}$/.test(this.timezone) ? this.timezone : "UTC";
   }
 
-  async checkRequirements(): Promise<HomeRuntimeRequirement[]> {
-    const build = Number(osRelease().split(".")[2] ?? 0);
-    const disk = await statfs(this.dataDir)
-      .then((s) => s.bavail * s.bsize)
-      .catch(() => 0);
+  /** Whether Windows' hypervisor is running, and virtualization is on in the firmware. */
+  private async virtualization() {
     const virt = await this.run(POWERSHELL, [
       "-NoProfile",
       "-NonInteractive",
       "-Command",
       '$c=Get-CimInstance Win32_ComputerSystem; $p=Get-CimInstance Win32_Processor | Select-Object -First 1; "$($c.HypervisorPresent)|$($p.VirtualizationFirmwareEnabled)"',
     ]);
-    const [hypervisor, firmware] = virt.out.trim().split("|");
+    const [hypervisor = "?", firmware = "?"] = virt.out.trim().split("|");
+    return { hypervisor, firmware, running: /true/i.test(hypervisor) };
+  }
+
+  async checkRequirements(): Promise<HomeRuntimeRequirement[]> {
+    const build = Number(osRelease().split(".")[2] ?? 0);
+    const disk = await statfs(this.dataDir)
+      .then((s) => s.bavail * s.bsize)
+      .catch(() => 0);
+    const { hypervisor, firmware, running } = await this.virtualization();
     const wsl = await this.run(WSL, ["--version"], 30_000);
     const wslVersion = /WSL[^:\n]*:\s*(\d+)\.(\d+)/i.exec(wsl.out);
-    const wslOk = wsl.code === 0 && Number(wslVersion?.[1] ?? 0) >= 2;
+    const wslInstalled = wsl.code === 0 && Number(wslVersion?.[1] ?? 0) >= 2;
+    // `wsl --version` answers without the Virtual Machine Platform; WSL 2 can't create its VM
+    // until Windows' hypervisor runs (else: HCS_E_SERVICE_NOT_AVAILABLE on import).
+    const wslOk = wslInstalled && running;
     return [
       {
         key: "windows_version",
@@ -143,15 +152,19 @@ export class WslContainerBackend implements HomeRuntimeBackend {
       {
         key: "virtualization",
         // Firmware virtualization on is enough: turning WSL on starts the hypervisor.
-        ok: /true/i.test(hypervisor ?? "") || /true/i.test(firmware ?? ""),
+        ok: running || /true/i.test(firmware),
         fix: "person",
-        detail: `hypervisor=${hypervisor ?? "?"} firmware=${firmware ?? "?"}`,
+        detail: `hypervisor=${hypervisor} firmware=${firmware}`,
       },
       {
         key: "wsl",
         ok: wslOk,
         fix: "enable",
-        detail: wslOk ? wslVersion?.[0] : "WSL 2 not installed",
+        detail: wslOk
+          ? wslVersion?.[0]
+          : wslInstalled
+            ? "Virtual Machine Platform not running (enable it, then restart)"
+            : "WSL 2 not installed",
       },
     ];
   }
@@ -161,8 +174,12 @@ export class WslContainerBackend implements HomeRuntimeBackend {
     const rule = (name: string, port: number) =>
       `try { if (-not (Get-NetFirewallHyperVRule -Name '${name}' -ErrorAction SilentlyContinue)) { New-NetFirewallHyperVRule -Name '${name}' -DisplayName 'ELISE Home (${name})' -Direction Inbound -VMCreatorId '${WSL_VM_CREATOR}' -Protocol UDP -LocalPorts ${port} -Action Allow | Out-Null } } catch {}`;
     const script = [
+      // The hypervisor WSL 2 runs on; `wsl --install` alone skips it when WSL is already there.
+      "& dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null",
+      "$vmp = $LASTEXITCODE",
       "& wsl.exe --install --no-distribution --web-download",
       "$code = $LASTEXITCODE",
+      "if ($vmp -eq 3010) { $code = 3010 } elseif ($vmp -ne 0 -and $code -eq 0) { $code = $vmp }",
       rule("ELISE-Home-mDNS", 5353),
       rule("ELISE-Home-SSDP", 1900),
       "exit $code",
@@ -185,9 +202,11 @@ export class WslContainerBackend implements HomeRuntimeBackend {
       );
     if (r.code !== 0 && r.code !== 3010)
       throw new RuntimeError("HOME_RUNTIME_REQUIREMENT_MISSING", `enabling WSL failed (${r.code})`);
-    // Fresh platform features take effect after a restart (3010 = restart needed).
+    // Fresh platform features take effect after a restart (3010 = restart needed). `wsl --status`
+    // answers without a hypervisor, so the hypervisor itself is the proof.
     const now = await this.run(WSL, ["--status"], 30_000);
-    return { restartRequired: r.code === 3010 || now.code !== 0 };
+    const { running } = await this.virtualization();
+    return { restartRequired: r.code === 3010 || now.code !== 0 || !running };
   }
 
   download(release: HomeRuntimeRelease, onProgress: Parameters<HomeRuntimeBackend["download"]>[1]) {
@@ -233,7 +252,14 @@ export class WslContainerBackend implements HomeRuntimeBackend {
         ["--import", DISTRO, target, artifact, "--version", "2"],
         10 * 60_000,
       );
-      if (r.code !== 0) throw new RuntimeError("HOME_RUNTIME_INSTALL_FAILED", r.out.slice(0, 200));
+      if (r.code !== 0)
+        throw new RuntimeError(
+          // No hypervisor yet (feature off, or on and waiting for a restart): a requirement.
+          /HCS_E_(SERVICE_NOT_AVAILABLE|HYPERV_NOT_INSTALLED)|CreateVm/i.test(r.out)
+            ? "HOME_RUNTIME_REQUIREMENT_MISSING"
+            : "HOME_RUNTIME_INSTALL_FAILED",
+          r.out.slice(0, 200),
+        );
     }
     onProgress({ stage: "downloading_engine" });
     const p = await this.run(

@@ -1,5 +1,5 @@
 import type { EntrySource } from "@/core/capabilities/habits";
-import type { Note, NotesProvider } from "@/core/capabilities/notes";
+import type { Note, NotesProvider, NoteTag, NoteTagColor } from "@/core/capabilities/notes";
 import { AppError } from "@/core/errors";
 import { spacePaths } from "@/core/knowledge/model";
 import type { NoteRow } from "@/infrastructure/supabase/database.types";
@@ -51,11 +51,137 @@ export class EliseNotesProvider implements NotesProvider {
     return out;
   }
 
+  // ── Tags (ADR-088; null before migration 054) ──────────────────────────────
+
+  private async tagRows(): Promise<NoteTag[] | null> {
+    const { data, error } = await this.db
+      .from("note_tags")
+      .select("id, name, color")
+      .eq("workspace_id", this.workspaceId)
+      .order("name");
+    if (error && notMigrated(error.code)) return null;
+    check(error, "load the note tags");
+    return (data ?? []).map((t) => ({ id: t.id, name: t.name, color: t.color }));
+  }
+
+  private async tagLinks(noteIds: string[]): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    if (!noteIds.length) return out;
+    const { data, error } = await this.db
+      .from("note_tag_links")
+      .select("note_id, tag_id")
+      .eq("workspace_id", this.workspaceId)
+      .in("note_id", noteIds);
+    if (error && notMigrated(error.code)) return out;
+    check(error, "load the notes' tags");
+    for (const l of data ?? []) out.set(l.note_id, [...(out.get(l.note_id) ?? []), l.tag_id]);
+    return out;
+  }
+
+  /** Notes carrying every one of these tags (null: no restriction). */
+  private async withTags(tagIds: string[] | undefined): Promise<string[] | null> {
+    if (!tagIds?.length) return null;
+    const wanted = new Set(tagIds);
+    const { data, error } = await this.db
+      .from("note_tag_links")
+      .select("note_id, tag_id")
+      .eq("workspace_id", this.workspaceId)
+      .in("tag_id", [...wanted]);
+    if (error && notMigrated(error.code)) return [];
+    check(error, "filter notes by tag");
+    const count = new Map<string, number>();
+    for (const l of data ?? []) count.set(l.note_id, (count.get(l.note_id) ?? 0) + 1);
+    return [...count].filter(([, n]) => n === wanted.size).map(([id]) => id);
+  }
+
+  private needsUpdate() {
+    return new AppError("CAPABILITY_UNAVAILABLE", "This needs the latest ELISE database update", {
+      recovery: "review",
+    });
+  }
+
+  async listTags() {
+    return (await this.tagRows()) ?? [];
+  }
+
+  async saveTag(t: { id?: string; name?: string; color?: NoteTagColor }) {
+    if ((await this.tagRows()) === null) throw this.needsUpdate();
+    const name = t.name?.normalize("NFC").trim().replace(/\s+/g, " ");
+    const fields = { ...(name ? { name } : {}), ...(t.color ? { color: t.color } : {}) };
+    const { data, error } = t.id
+      ? await this.db
+          .from("note_tags")
+          .update(fields)
+          .eq("id", t.id)
+          .eq("workspace_id", this.workspaceId)
+          .select("id, name, color")
+          .maybeSingle()
+      : await this.db
+          .from("note_tags")
+          .insert({
+            workspace_id: this.workspaceId,
+            name: name ?? "",
+            color: t.color ?? "gray",
+            created_by_user_id: this.userId,
+          })
+          .select("id, name, color")
+          .maybeSingle();
+    if (error?.code === "23505")
+      throw new AppError("CONFLICT", "A tag with that name already exists", {
+        recovery: "review",
+        details: { reason: "duplicate_name" },
+      });
+    check(error, "save the tag");
+    if (!data) throw new AppError("NOT_FOUND", "Tag not found");
+    return { id: data.id, name: data.name, color: data.color };
+  }
+
+  async deleteTag(id: string) {
+    if ((await this.tagRows()) === null) throw this.needsUpdate();
+    const { error } = await this.db
+      .from("note_tags")
+      .delete()
+      .eq("id", id)
+      .eq("workspace_id", this.workspaceId);
+    check(error, "delete the tag");
+  }
+
+  async setNoteTags(noteId: string, tagIds: string[]) {
+    if ((await this.tagRows()) === null) throw this.needsUpdate();
+    const wanted = [...new Set(tagIds)];
+    const have = (await this.tagLinks([noteId])).get(noteId) ?? [];
+    const gone = have.filter((id) => !wanted.includes(id));
+    if (gone.length) {
+      const { error } = await this.db
+        .from("note_tag_links")
+        .delete()
+        .eq("workspace_id", this.workspaceId)
+        .eq("note_id", noteId)
+        .in("tag_id", gone);
+      check(error, "untag the note");
+    }
+    const added = wanted.filter((id) => !have.includes(id));
+    if (added.length) {
+      const { error } = await this.db
+        .from("note_tag_links")
+        .insert(
+          added.map((tag_id) => ({ workspace_id: this.workspaceId, note_id: noteId, tag_id })),
+        );
+      check(error, "tag the note");
+    }
+    const note = await this.get(noteId);
+    if (!note) throw new AppError("NOT_FOUND", "Note not found");
+    return note;
+  }
+
   private async shape(rows: NoteRow[]): Promise<Note[]> {
-    const [spaces, members] = await Promise.all([
+    const [spaces, members, tags, links] = await Promise.all([
       this.spaces(),
       this.memberships(rows.map((r) => r.id)),
+      this.tagRows(),
+      this.tagLinks(rows.map((r) => r.id)),
     ]);
+    const tagById = new Map((tags ?? []).map((t) => [t.id, t]));
     const path = new Map(spaces.map((s) => [s.id, s.path]));
     return rows.map((r) => {
       const ids = members ? (members.get(r.id) ?? []) : r.space_id ? [r.space_id] : [];
@@ -71,11 +197,25 @@ export class EliseNotesProvider implements NotesProvider {
         source: r.source,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
+        tags: (links.get(r.id) ?? [])
+          .map((id) => tagById.get(id))
+          .filter((t): t is NoteTag => Boolean(t))
+          .sort((a, b) => a.name.localeCompare(b.name)),
       };
     });
   }
 
-  async list({ spaceId, limit }: { spaceId?: string | null; limit: number }) {
+  async list({
+    spaceId,
+    limit,
+    tagIds,
+  }: {
+    spaceId?: string | null;
+    limit: number;
+    tagIds?: string[];
+  }) {
+    const tagged = await this.withTags(tagIds);
+    if (tagged && !tagged.length) return [];
     let q = this.db
       .from("notes")
       .select("*")
@@ -97,6 +237,7 @@ export class EliseNotesProvider implements NotesProvider {
               (data ?? []).map((m) => m.note_id),
             );
     }
+    if (tagged) q = q.in("id", tagged);
     const { data, error } = await q;
     check(error, "load notes");
     return this.shape(data ?? []);
@@ -120,10 +261,20 @@ export class EliseNotesProvider implements NotesProvider {
    * Deterministic full-text search over title + content (OR of the words). The index tokenizes
    * on letters and digits, so Markdown marks ("**", "#", "-") never get in the way.
    */
-  async search(query: string, limit: number) {
+  async search(query: string, limit: number, tagIds?: string[]) {
     const words = (query.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? []).slice(0, 8);
     if (!words.length) return [];
-    const { data, error } = await this.db
+    const tagged = await this.withTags(tagIds);
+    if (tagged && !tagged.length) return [];
+    // A word that names a tag ("ideas") also finds the notes carrying it (ADR-088).
+    const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+    const named = ((await this.tagRows()) ?? []).filter((t) =>
+      words.some((w) => fold(t.name).includes(fold(w))),
+    );
+    const viaTag = new Set<string>();
+    for (const t of named) for (const id of (await this.withTags([t.id])) ?? []) viaTag.add(id);
+    const ids = [...viaTag].filter((id) => !tagged || tagged.includes(id));
+    let text = this.db
       .from("notes")
       .select("*")
       .eq("workspace_id", this.workspaceId)
@@ -131,8 +282,25 @@ export class EliseNotesProvider implements NotesProvider {
       .textSearch("fts", words.join(" | "), { config: "simple" })
       .order("updated_at", { ascending: false })
       .limit(limit);
-    check(error, "search notes");
-    return this.shape(data ?? []);
+    if (tagged) text = text.in("id", tagged);
+    const found = await text;
+    check(found.error, "search notes");
+    const rows = new Map((found.data ?? []).map((r) => [r.id, r]));
+    if (ids.length) {
+      const more = await this.db
+        .from("notes")
+        .select("*")
+        .eq("workspace_id", this.workspaceId)
+        .eq("status", "active")
+        .in("id", ids)
+        .order("updated_at", { ascending: false })
+        .limit(limit);
+      check(more.error, "search notes");
+      for (const r of more.data ?? []) rows.set(r.id, r);
+    }
+    return this.shape(
+      [...rows.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, limit),
+    );
   }
 
   /**

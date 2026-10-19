@@ -16,7 +16,11 @@ import {
   previewFinanceImport,
   startFinanceImport,
 } from "@/application/finance-import";
-import { setFinanceDefaultCurrency } from "@/application/finance-service";
+import {
+  financeMatchingIds,
+  parseFinanceFilters,
+  setFinanceDefaultCurrency,
+} from "@/application/finance-service";
 import {
   connectSheet,
   inspectTab,
@@ -87,6 +91,14 @@ export async function setDefaultCurrencyAction(currency: string | null) {
       currency ? z.string().trim().max(10).parse(currency) : null,
     ),
   );
+}
+
+/** Every editable movement the current filters match (the page's own query string). */
+export async function matchingIdsAction(search: string) {
+  return run(async () => {
+    const params = Object.fromEntries(new URLSearchParams(z.string().max(2000).parse(search)));
+    return financeMatchingIds(await requireAuthContext(), parseFinanceFilters(params));
+  });
 }
 
 // ── Imports ──────────────────────────────────────────────────────────────────

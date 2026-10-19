@@ -172,6 +172,30 @@
   --media-tone: linear-gradient(135deg, #17323b 0%, #0c161b 55%, #1c2b33 100%);
 }
 
+/* Note tags (ADR-088): one readable color per tag in each theme; chips tint it. */
+:root {
+  --tag-gray: #5f6b75;
+  --tag-red: #c0392f;
+  --tag-orange: #b85a18;
+  --tag-amber: #996a0d;
+  --tag-green: #1b8048;
+  --tag-teal: #0d7f7b;
+  --tag-blue: #2a64c8;
+  --tag-violet: #7146cc;
+  --tag-pink: #b83579;
+}
+.dark {
+  --tag-gray: #a7b1b9;
+  --tag-red: #ff8f85;
+  --tag-orange: #ffad73;
+  --tag-amber: #f2c46e;
+  --tag-green: #74d69e;
+  --tag-teal: #62d5cf;
+  --tag-blue: #93bcff;
+  --tag-violet: #bea8ff;
+  --tag-pink: #ff92c8;
+}
+
 /* Accents (ADR-012): approved palette only, chosen by data-accent. Cyan is the default above.
    Semantic colours (error, warning, success, approval) are never affected. */
 :root[data-accent="blue"] {

@@ -84,12 +84,19 @@ export class OpenMeteoWeather implements WeatherProvider {
     return (await res.json()) as T;
   }
 
-  async geocode(name: string, language: string, signal?: AbortSignal): Promise<WeatherPlace[]> {
+  /** Candidates only: the search is fuzzy ("Capital" → "Capitol"); the Core decides (ADR-086). */
+  async geocode(
+    name: string,
+    language: string,
+    country: string | null,
+    signal?: AbortSignal,
+  ): Promise<WeatherPlace[]> {
     const url = new URL(GEOCODE);
     url.searchParams.set("name", name);
-    url.searchParams.set("count", "5");
+    url.searchParams.set("count", "10");
     url.searchParams.set("language", language);
     url.searchParams.set("format", "json");
+    if (country) url.searchParams.set("countryCode", country);
     const body = await this.get<{
       results?: {
         name: string;
@@ -97,14 +104,24 @@ export class OpenMeteoWeather implements WeatherProvider {
         longitude: number;
         admin1?: string;
         country?: string;
+        country_code?: string;
+        feature_code?: string;
+        population?: number;
       }[];
     }>(url, signal);
-    return (body.results ?? []).map((r) => ({
-      name: r.name,
-      detail: [r.admin1, r.country].filter((x) => x && x !== r.name).join(", ") || null,
-      lat: r.latitude,
-      lng: r.longitude,
-    }));
+    return (body.results ?? [])
+      .filter((r) => Number.isFinite(r.latitude) && Number.isFinite(r.longitude))
+      .map((r) => ({
+        name: r.name,
+        detail: [r.admin1, r.country].filter((x) => x && x !== r.name).join(", ") || null,
+        lat: r.latitude,
+        lng: r.longitude,
+        countryCode: r.country_code?.toUpperCase() ?? null,
+        country: r.country ?? null,
+        admin1: r.admin1 ?? null,
+        featureCode: r.feature_code ?? "",
+        population: r.population ?? 0,
+      }));
   }
 
   async forecast(

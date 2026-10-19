@@ -31,6 +31,8 @@ type RealtimeTable =
   | "list_items"
   | "notes"
   | "note_knowledge_spaces"
+  | "note_tags"
+  | "note_tag_links"
   | "finance_transactions"
   | "finance_accounts"
   | "finance_categories"

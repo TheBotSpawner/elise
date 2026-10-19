@@ -95,9 +95,12 @@ export interface FinanceTransaction {
   status: TransactionStatus;
   notes: string | null;
   importId: string | null;
-  /** ADR-052. Null: "Sin clasificar". */
+  /** ADR-052. Null: "Sin clasificar". With several Ámbitos (ADR-087), the first one. */
   bookId?: string | null;
   book?: string | null;
+  /** ADR-087: every Ámbito it belongs to (the first is `bookId`); empty = "Sin clasificar". */
+  bookIds?: string[];
+  books?: string[];
   /** Transfers: the account the money went to (`account` is where it came from). */
   toAccountId?: string | null;
   toAccount?: string | null;
@@ -120,6 +123,8 @@ export interface FinanceAccount {
   currency: string | null;
   /** New transactions on this account belong to this Book unless told otherwise. */
   defaultBookId?: string | null;
+  /** ADR-087: movements recorded without an account go to this one. */
+  isDefault?: boolean;
 }
 
 export interface FinanceCategory {
@@ -184,6 +189,8 @@ export interface NewTransaction {
   importRow?: number | null;
   externalReference?: string | null;
   bookId?: string | null;
+  /** ADR-087: several Ámbitos (the first becomes `bookId`); [] = "Sin clasificar". */
+  bookIds?: string[];
   toAccountId?: string | null;
   receipt?: string | null;
 }
@@ -282,6 +289,8 @@ export interface FinanceProvider {
     b: Partial<Omit<FinanceBook, "id">> & { id?: string; archived?: boolean },
   ): Promise<FinanceBook>;
   updateAccountBook?(accountId: string, bookId: string | null): Promise<void>;
+  /** ADR-087: the account new movements use when none is said (null: none). */
+  setDefaultAccount?(accountId: string | null): Promise<void>;
   listBudgets?(): Promise<Budget[]>;
   saveBudget?(
     b: Omit<Budget, "id" | "book" | "category" | "categories"> & {
@@ -435,6 +444,10 @@ export { comparisonPeriod, PERIODS, resolvePeriod, type Period, type PeriodPrese
 
 // ── Filtering ────────────────────────────────────────────────────────────────
 
+/** Every Ámbito of a movement (ADR-087), also for rows from before several were possible. */
+export const bookIdsOf = (t: Pick<FinanceTransaction, "bookId" | "bookIds">): string[] =>
+  t.bookIds?.length ? t.bookIds : t.bookId ? [t.bookId] : [];
+
 function contains(value: string | null | undefined, wanted: string) {
   return value ? norm(value).includes(norm(wanted)) : false;
 }
@@ -447,9 +460,14 @@ export function matchesFilter(t: FinanceTransaction, f: TransactionFilter): bool
   if (f.to && t.date > f.to) return false;
   if (f.type && t.type !== f.type) return false;
   if (f.book) {
+    const ids = bookIdsOf(t);
     if (f.book === UNCLASSIFIED) {
-      if (t.bookId) return false;
-    } else if (t.bookId !== f.book && !contains(t.book, f.book)) return false;
+      if (ids.length) return false;
+    } else if (
+      !ids.includes(f.book) &&
+      !(t.books ?? (t.book ? [t.book] : [])).some((b) => contains(b, f.book!))
+    )
+      return false;
   }
   if (f.subcategory && !contains(t.subcategory, f.subcategory)) return false;
   if (f.currencies?.length && !f.currencies.includes(t.currency)) return false;
@@ -1065,7 +1083,7 @@ export const BUDGET_WARNING_TENTHS = 800;
 /** Does this transaction count against the budget (Book + category or its children + sub)? */
 export function inBudget(t: FinanceTransaction, b: Budget): boolean {
   if (t.type !== "expense") return false;
-  if (b.bookId && t.bookId !== b.bookId) return false;
+  if (b.bookId && !bookIdsOf(t).includes(b.bookId)) return false;
   // Any of its categories, or a subcategory of one of them.
   const names = new Set(b.categories.map(norm));
   const inCategory =
@@ -1335,6 +1353,14 @@ export const createTransactionInput = z
       .describe(
         'Ámbito ("Personal", "Empresa"). Omit when unclear: the account default Book or the default Book applies.',
       ),
+    books: z
+      .array(text(60))
+      .min(1)
+      .max(5)
+      .optional()
+      .describe(
+        'Several Ámbitos at once ("es de Personal y de la empresa"), instead of book. The first is the main one.',
+      ),
     toAccount: text(80).optional().describe("Transfers: the account the money went to."),
     receipt: text(500).optional().describe("Comprobante: a link or an id (invoice number)."),
     amount: amountField,
@@ -1367,6 +1393,11 @@ export const updateTransactionInput = z
     transaction: transactionRef,
     type: z.enum(["income", "expense", "transfer"]).optional(),
     book: z.string().trim().max(60).nullable().optional().describe("null: Sin clasificar."),
+    books: z
+      .array(text(60))
+      .max(5)
+      .optional()
+      .describe("Every Ámbito it belongs to, replacing the current ones ([]: Sin clasificar)."),
     toAccount: z.string().trim().max(80).nullable().optional(),
     receipt: z.string().trim().max(500).nullable().optional(),
     amount: amountField.optional(),
@@ -1412,6 +1443,12 @@ export const updateAccountInput = z
         'Default Ámbito for its records ("la tarjeta de la empresa es de Empresa"); null clears it.',
       ),
     archived: z.boolean().optional().describe("true hides it from new records; history stays."),
+    default: z
+      .boolean()
+      .optional()
+      .describe(
+        'true: movements without an account go here ("usá Mercado Pago por defecto"); false: none.',
+      ),
   })
   .strict();
 

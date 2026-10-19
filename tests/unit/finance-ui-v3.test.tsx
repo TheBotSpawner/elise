@@ -163,14 +163,21 @@ describe("selection gestures", () => {
     vi.useRealTimers();
   });
 
-  it("right-click menu: Seleccionar / Quitar de la selección, Editar, Eliminar; Escape closes", () => {
-    const fns = { onClose: vi.fn(), onToggleSelect: vi.fn(), onEdit: vi.fn(), onDelete: vi.fn() };
+  it("right-click menu: Seleccionar / Quitar de la selección, Editar, Duplicar, Eliminar; Escape closes", () => {
+    const fns = {
+      onClose: vi.fn(),
+      onToggleSelect: vi.fn(),
+      onEdit: vi.fn(),
+      onDuplicate: vi.fn(),
+      onDelete: vi.fn(),
+    };
     const { rerender } = wrap(
       <MovementMenu state={{ x: 10, y: 10, selected: false, editable: true }} {...fns} />,
     );
     expect(screen.getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
       "Seleccionar",
       "Editar",
+      "Duplicar",
       "Eliminar",
     ]);
     fireEvent.click(screen.getByRole("menuitem", { name: "Seleccionar" }));
@@ -183,5 +190,64 @@ describe("selection gestures", () => {
     expect(screen.getByRole("menuitem", { name: "Quitar de la selección" })).toBeTruthy();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(fns.onClose).toHaveBeenCalled();
+  });
+});
+
+describe("several Ámbitos per movement (ADR-087)", () => {
+  it("Editar movimiento: toggle Ámbitos and save them all", async () => {
+    const { TransactionDialog } = await import("@/features/finance/transaction-dialog");
+    calls.tool.mockReset().mockResolvedValue({ ok: true, value: null });
+    const book = (id: string, name: string) =>
+      ({ id, name, type: "personal", icon: null, isDefault: id === "p" }) as never;
+    const tx = {
+      id: "t1",
+      type: "income",
+      amount: "844968.88",
+      currency: "ARS",
+      date: "2026-10-06",
+      description: "Pago RSFA P2",
+      counterparty: null,
+      category: null,
+      categoryId: null,
+      categoryPath: [],
+      subcategory: null,
+      account: null,
+      accountId: null,
+      paymentMethod: null,
+      project: null,
+      status: "completed",
+      notes: null,
+      importId: null,
+      bookId: "p",
+      book: "Personal",
+      bookIds: ["p"],
+      books: ["Personal"],
+      readOnly: false,
+    } as never;
+    wrap(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={tx}
+        accounts={[]}
+        categories={cats}
+        books={[book("p", "Personal"), book("f", "Firbot")]}
+        defaultCurrency="ARS"
+        today="2026-10-18"
+      />,
+    );
+    const personal = screen.getByRole("button", { name: /Personal/ });
+    const firbot = screen.getByRole("button", { name: /Firbot/ });
+    expect(personal.getAttribute("aria-pressed")).toBe("true");
+    expect(firbot.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(firbot);
+    expect(firbot.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    });
+    expect(calls.tool).toHaveBeenCalledWith(
+      "finance.updateTransaction",
+      expect.objectContaining({ transaction: "t1", books: ["Personal", "Firbot"] }),
+    );
   });
 });

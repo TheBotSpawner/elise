@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import type { FinanceGranularity, FinanceOverview } from "@/application/finance-service";
@@ -49,7 +49,7 @@ import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-import { financeToolAction, setDefaultCurrencyAction } from "./actions";
+import { financeToolAction, matchingIdsAction, setDefaultCurrencyAction } from "./actions";
 import { budgetLook, Budgets } from "./budgets";
 import { CategoryManager } from "./category-manager";
 import { CombineDialog } from "./combine-dialog";
@@ -188,6 +188,10 @@ export function FinanceNav({
     </nav>
   );
 }
+
+/** Every Ámbito of a movement (ADR-087): "Personal + Empresa". */
+const bookLabel = (tx: FinanceTransaction) =>
+  tx.books?.length ? tx.books.join(" + ") : (tx.book ?? null);
 
 function ScopeChips({ books, value }: { books: FinanceBook[]; value: string | undefined }) {
   const { t } = useI18n();
@@ -589,7 +593,10 @@ function TransactionRow({
   icon: string;
   onOpen: (tx: FinanceTransaction) => void;
   /** While selecting: a tap toggles the row instead of opening it. */
-  selection?: { selected: boolean; onToggle: (tx: FinanceTransaction) => void } | null;
+  selection?: {
+    selected: boolean;
+    onToggle: (tx: FinanceTransaction, range?: boolean) => void;
+  } | null;
   /** Touch: hold to start selecting with this movement (ADR-083). */
   onLongPress?: (tx: FinanceTransaction) => void;
   /** Mouse: right-click opens ELISE's menu for this movement. */
@@ -603,7 +610,7 @@ function TransactionRow({
     tx.type === "transfer"
       ? `${tx.account ?? "—"} → ${tx.toAccount ?? "—"}`
       : [tx.category ?? t.finance.v21.noCategory, tx.subcategory].filter(Boolean).join(" › "),
-    tx.book ?? (tx.readOnly ? null : t.finance.ws.unclassified),
+    bookLabel(tx) ?? (tx.readOnly ? null : t.finance.ws.unclassified),
     tx.type !== "transfer" ? (tx.account ?? tx.paymentMethod) : null,
     tx.provenance.source !== "ELISE Finance" ? tx.provenance.source : null,
   ]
@@ -630,9 +637,10 @@ function TransactionRow({
           e.preventDefault();
           onMenu(tx, e.clientX, e.clientY);
         }}
-        onClick={() => {
+        onClick={(e) => {
           if (press.consumeClick()) return;
-          if (selection) selection.onToggle(tx);
+          // Shift+click selects the range from the last one marked.
+          if (selection) selection.onToggle(tx, e.shiftKey);
           else onOpen(tx);
         }}
         className={cn(
@@ -712,7 +720,7 @@ function TransactionList({
   onOpen: (tx: FinanceTransaction) => void;
   /** Selection mode (bulk delete): the chosen ids, or null when not selecting. */
   selected?: ReadonlySet<string> | null;
-  onToggle?: (tx: FinanceTransaction) => void;
+  onToggle?: (tx: FinanceTransaction, range?: boolean) => void;
   onLongPress?: (tx: FinanceTransaction) => void;
   onMenu?: (tx: FinanceTransaction, x: number, y: number) => void;
 }) {
@@ -792,11 +800,14 @@ function TransactionList({
  * ELISE confirmation and an undo. Read-only rows (connected sheets) can't be selected.
  */
 function BulkBar({
+  matching,
   rows,
   selected,
   onChange,
   categories,
 }: {
+  /** Movements the filters match in the period (more than the rows on screen, maybe). */
+  matching: number;
   rows: FinanceTransaction[];
   selected: Set<string> | null;
   onChange: (s: Set<string> | null) => void;
@@ -821,7 +832,17 @@ function BulkBar({
         </Button>
       </div>
     );
-  const all = selected.size === selectable.length;
+  const complete = matching <= rows.length;
+  const all = selected.size >= (complete ? selectable.length : matching);
+  // Everything in the period (the month…), not only what's on screen.
+  const selectAll = () =>
+    complete
+      ? onChange(new Set(selectable.map((r) => r.id)))
+      : startTransition(async () => {
+          const r = await matchingIdsAction(window.location.search);
+          if (!r.ok) return void toast.error(errorText(t, r.error));
+          onChange(new Set(r.value));
+        });
   const chosen = rows.filter((r) => selected.has(r.id));
   const plan = planCombine(chosen);
   const why = plan.ok || chosen.length < 2 ? null : b.combineReasons[plan.reason];
@@ -833,7 +854,8 @@ function BulkBar({
       <Button
         size="sm"
         variant="ghost"
-        onClick={() => onChange(all ? new Set() : new Set(selectable.map((r) => r.id)))}
+        disabled={pending}
+        onClick={() => (all ? onChange(new Set()) : selectAll())}
       >
         {all ? b.selectNone : b.selectAll}
       </Button>
@@ -1317,7 +1339,7 @@ function DetailDrawer({
         ? null
         : [tx.category, tx.subcategory].filter(Boolean).join(" › ") || t.finance.v21.noCategory,
     ],
-    [ws.book, tx.book ?? (tx.readOnly ? null : ws.unclassified)],
+    [ws.book, bookLabel(tx) ?? (tx.readOnly ? null : ws.unclassified)],
     [
       t.finance.account,
       tx.type === "transfer"
@@ -1635,6 +1657,7 @@ function AccountManager({
                     <span className="text-[14px]">{a.name}</span>
                     <span className="text-[12.5px] text-faint">
                       {[
+                        a.isDefault ? t.finance.defaultAccountTag : null,
                         t.finance.accountTypes[a.type],
                         a.currency,
                         books.find((b) => b.id === a.defaultBookId)?.name,
@@ -1670,6 +1693,32 @@ function AccountManager({
                 ))}
               </Select>
             </div>
+            {accounts.length > 0 && (
+              <div className="flex items-center gap-2">
+                {/* ADR-087: movements recorded without an account go here. */}
+                <Label htmlFor="default-account">{t.finance.defaultAccount}</Label>
+                <Select
+                  id="default-account"
+                  value={accounts.find((a) => a.isDefault)?.name ?? ""}
+                  className="h-9 w-auto"
+                  disabled={pending}
+                  onChange={(e) => {
+                    const current = accounts.find((a) => a.isDefault);
+                    if (e.target.value)
+                      run("finance.updateAccount", { account: e.target.value, default: true });
+                    else if (current)
+                      run("finance.updateAccount", { account: current.name, default: false });
+                  }}
+                >
+                  <option value="">{t.finance.notSet}</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.name}>
+                      {a.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
             <Button onClick={() => edit("new")}>
               <Plus />
               {t.finance.addAccount}
@@ -1881,11 +1930,18 @@ export function FinanceView({
   const [menu, setMenu] = useState<(MovementMenuState & { tx: FinanceTransaction }) | null>(null);
   const confirmDelete = useConfirm();
   const router = useRouter();
-  const toggle = (tx: FinanceTransaction) =>
+  const anchor = useRef<string | null>(null);
+  const toggle = (tx: FinanceTransaction, range = false) =>
     setSelected((s) => {
       const next = new Set(s ?? []);
-      if (next.has(tx.id)) next.delete(tx.id);
+      const rows = overview.transactions.filter((r) => !r.readOnly);
+      const from = range && anchor.current ? rows.findIndex((r) => r.id === anchor.current) : -1;
+      const to = rows.findIndex((r) => r.id === tx.id);
+      if (from >= 0 && to >= 0) {
+        for (const r of rows.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(r.id);
+      } else if (next.has(tx.id)) next.delete(tx.id);
       else next.add(tx.id);
+      anchor.current = tx.id;
       return next;
     });
   const deleteOne = async (tx: FinanceTransaction) => {
@@ -1998,16 +2054,18 @@ export function FinanceView({
           />
         </div>
       </div>
-      {/* Phones (ADR-066): adding a movement is the main action, within thumb reach (the
-          empty state has its own). */}
+      {/* Adding a movement is the main action, always within reach (ADR-066): a labeled pill
+          for thumbs on phones, a round + on desktop, so nobody scrolls back to the top. The
+          empty state has its own. */}
       {overview.hasAny && (
         <button
           type="button"
           onClick={startAdd}
-          className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music))] z-30 flex h-13 items-center gap-2 rounded-full bg-fg px-5 text-[15px] font-medium text-bg shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)] md:hidden"
+          title={v.tx.newTitle}
+          className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music))] z-30 flex h-13 items-center gap-2 rounded-full bg-fg px-5 text-[15px] font-medium text-bg shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)] transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none md:right-8 md:bottom-8 md:size-14 md:justify-center md:px-0"
         >
-          <Plus className="size-5" aria-hidden />
-          {v.tx.add}
+          <Plus className="size-5 md:size-6" aria-hidden />
+          <span className="md:sr-only">{v.tx.add}</span>
         </button>
       )}
       {overview.books.length === 0 && (
@@ -2097,6 +2155,7 @@ export function FinanceView({
             ) : (
               <>
                 <BulkBar
+                  matching={overview.matching}
                   rows={overview.transactions}
                   selected={selected}
                   onChange={setSelected}
@@ -2107,7 +2166,9 @@ export function FinanceView({
                   today={overview.today}
                   iconOf={iconOf}
                   complete={overview.matching <= overview.transactions.length}
-                  onOpen={setViewing}
+                  // Editable movements open straight in Editar movimiento; a connected sheet's
+                  // rows (read-only) keep the detail, which says where to edit them.
+                  onOpen={(tx) => (tx.readOnly ? setViewing(tx) : setEditing(tx))}
                   selected={selected}
                   onToggle={toggle}
                   onLongPress={(tx) => setSelected((s) => new Set([...(s ?? []), tx.id]))}
@@ -2126,6 +2187,11 @@ export function FinanceView({
                   onClose={() => setMenu(null)}
                   onToggleSelect={() => menu && toggle(menu.tx)}
                   onEdit={() => menu && setEditing(menu.tx)}
+                  onDuplicate={() => {
+                    if (!menu) return;
+                    setDuplicating(menu.tx);
+                    setAdding(true);
+                  }}
                   onDelete={() => menu && void deleteOne(menu.tx)}
                 />
                 {overview.matching > overview.transactions.length && (

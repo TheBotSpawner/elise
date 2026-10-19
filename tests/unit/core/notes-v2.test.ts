@@ -6,7 +6,13 @@ import { describe, expect, it } from "vitest";
 
 import { executeToolCall } from "@/core/agents/executor";
 import type { ProviderFactory } from "@/core/agents/tools";
-import { nextSpaces, plainText, type Note, type NotesProvider } from "@/core/capabilities/notes";
+import {
+  nextSpaces,
+  plainText,
+  type Note,
+  type NoteTag,
+  type NotesProvider,
+} from "@/core/capabilities/notes";
 
 import { binding, makeCtx, makePorts, NATIVE_BINDING } from "../../fixtures/core-fakes";
 
@@ -152,6 +158,34 @@ class MemoryNotes implements NotesProvider {
     const found = SPACES.filter((s) => s.path.toLowerCase().includes(r));
     return found.length === 1 ? found[0]! : null;
   }
+  // ADR-088
+  tags: NoteTag[] = [];
+  async listTags() {
+    return this.tags;
+  }
+  async saveTag(t: { id?: string; name?: string; color?: NoteTag["color"] }) {
+    if (t.id) {
+      const cur = this.tags.find((x) => x.id === t.id)!;
+      Object.assign(cur, {
+        ...(t.name ? { name: t.name } : {}),
+        ...(t.color ? { color: t.color } : {}),
+      });
+      for (const n of this.notes) n.tags = n.tags?.map((x) => (x.id === cur.id ? { ...cur } : x));
+      return cur;
+    }
+    const made = { id: `t${this.tags.length + 1}`, name: t.name!, color: t.color ?? "gray" };
+    this.tags.push(made);
+    return made;
+  }
+  async deleteTag(id: string) {
+    this.tags = this.tags.filter((x) => x.id !== id);
+    for (const n of this.notes) n.tags = n.tags?.filter((x) => x.id !== id);
+  }
+  async setNoteTags(noteId: string, tagIds: string[]) {
+    const n = this.notes.find((x) => x.id === noteId)!;
+    n.tags = tagIds.map((id) => this.tags.find((x) => x.id === id)!);
+    return n;
+  }
 }
 
 function notePorts() {
@@ -169,6 +203,47 @@ function notePorts() {
   ports.providers = { get: (() => notes) as ProviderFactory["get"] };
   return { ports, notes };
 }
+
+describe("note tags (ADR-088)", () => {
+  const ctx = makeCtx();
+  const run = async (ports: ReturnType<typeof notePorts>["ports"], name: string, args: unknown) => {
+    const out = await executeToolCall(ports, ctx, { name, args });
+    if (out.status !== "succeeded") throw new Error(JSON.stringify(out));
+    return out;
+  };
+
+  it("“Etiquetala como Ideas y Urgente” tags the note, creating the missing tags once", async () => {
+    const { ports, notes } = notePorts();
+    await run(ports, "notes.create", { title: "Plan Q4", content: "" });
+    await run(ports, "notes.saveTag", { name: "Ideas", color: "blue" });
+    await run(ports, "notes.tag", { note: "Plan Q4", add: ["ideas", "Urgente"] });
+    expect(notes.tags.map((t) => t.name)).toEqual(["Ideas", "Urgente"]);
+    expect(notes.notes[0]!.tags?.map((t) => t.name)).toEqual(["Ideas", "Urgente"]);
+    await run(ports, "notes.tag", { note: "Plan Q4", remove: ["Urgente"] });
+    expect(notes.notes[0]!.tags?.map((t) => t.name)).toEqual(["Ideas"]);
+  });
+
+  it("rename and recolor a tag; deleting it keeps the note", async () => {
+    const { ports, notes } = notePorts();
+    await run(ports, "notes.create", { title: "Receta", content: "" });
+    await run(ports, "notes.tag", { note: "Receta", tags: ["Cocina"] });
+    await run(ports, "notes.saveTag", { tag: "cocina", name: "Cocina casera", color: "green" });
+    expect(notes.tags[0]).toMatchObject({ name: "Cocina casera", color: "green" });
+    await run(ports, "notes.deleteTag", { tag: "Cocina casera" });
+    expect(notes.tags).toEqual([]);
+    expect(notes.notes).toHaveLength(1);
+    expect(notes.notes[0]!.tags).toEqual([]);
+  });
+
+  it("filtering by an unknown tag asks instead of guessing", async () => {
+    const { ports } = notePorts();
+    const out = await executeToolCall(ports, ctx, {
+      name: "notes.list",
+      args: { tags: ["Nada"] },
+    });
+    expect(out.status).toBe("failed");
+  });
+});
 
 describe("notes tools (chat)", () => {
   const ctx = makeCtx();

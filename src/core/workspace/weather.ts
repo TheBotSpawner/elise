@@ -29,6 +29,11 @@ export const weatherPayload = z
         name: text(120),
         detail: text(160).nullable(),
         source: z.enum(WEATHER_LOCATION_SOURCES),
+        /** ISO country of a geocoded place: the next request's region hint (ADR-086). */
+        countryCode: z
+          .string()
+          .regex(/^[A-Z]{2}$/)
+          .optional(),
       })
       .strict()
       .nullable(),

@@ -53,8 +53,11 @@ export function weatherCapability(
 
   return {
     attribution: provider.attribution,
-    geocode: (name, lang) =>
-      step("geocode", `${name.toLowerCase()}:${lang}`, (s) => provider.geocode(name, lang, s)),
+    // Keyed by the qualified search (name + country + language): never a bare phrase alone.
+    geocode: (name, lang, country = null) =>
+      step("geocode", `${name.toLowerCase()}:${country ?? "*"}:${lang}`, (s) =>
+        provider.geocode(name, lang, country, s),
+      ),
     forecast: (at, days, source) =>
       step(
         "forecast",

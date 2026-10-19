@@ -1,9 +1,11 @@
 import { z } from "zod";
 
+import { timezoneCountry } from "@/lib/timezones";
+
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { coarse } from "../location/model";
 import { clipText as clip } from "../text";
-import { toLocalDateTime } from "../time";
+import { canonicalTimezone, toLocalDateTime } from "../time";
 import {
   cityFromTimezone,
   daysNeeded,
@@ -14,7 +16,9 @@ import {
   type Forecast,
   type WeatherCapability,
   type WeatherPeriod,
+  type WeatherPlace,
 } from "../weather/model";
+import { chooseWeatherPlace, parsePlaceQuery, placeLabel } from "../weather/place";
 import type { WeatherPayload } from "../workspace/weather";
 
 /**
@@ -44,12 +48,25 @@ type Resolved =
       at: { lat: number; lng: number };
       location: NonNullable<WeatherPayload["location"]>;
     }
-  | { missing: true; query: string | null };
+  | { missing: true; query: string | null }
+  | { ambiguous: WeatherPlace[]; query: string };
 
+/** The country of the weather place already on screen (this conversation's context). */
+function countryOnScreen(env: ToolRunEnv): string | null {
+  const s = env.ctx.workspace?.state().surfaces.find((x) => x.type === "weather");
+  return (s?.payload as WeatherPayload | undefined)?.location?.countryCode ?? null;
+}
+
+/**
+ * The place, in order (ADR-086): what the user named (with regional names and qualifiers,
+ * validated — never the geocoder's first fuzzy guess), the position they shared for "here",
+ * and the city of their timezone (said as an assumption). Unclear → a question.
+ */
 async function resolvePlace(env: ToolRunEnv, named: string | undefined): Promise<Resolved> {
   const lang = env.ctx.locale;
   const wantsHere = !named || named.toLowerCase() === HERE;
   if (wantsHere && env.ctx.here) {
+    env.ctx.log?.("info", "weather.location_resolved", { source: "device" });
     return {
       at: coarse(env.ctx.here),
       location: {
@@ -60,18 +77,62 @@ async function resolvePlace(env: ToolRunEnv, named: string | undefined): Promise
     };
   }
   const query = wantsHere ? null : named!;
-  // Named place first; with none, the city of the user's timezone (coarse, said as assumed).
   // An explicit "here" without a shared position asks instead of assuming.
   const text = query ?? (named ? null : cityFromTimezone(env.ctx.timezone));
-  if (!text) return { missing: true, query };
-  const [first] = await weather(env).geocode(text, lang);
-  if (!first) return { missing: true, query };
+  if (!text) {
+    env.ctx.log?.("info", "weather.location_missing", {
+      here_requested: Boolean(named),
+      position_shared: Boolean(env.ctx.here),
+    });
+    return { missing: true, query };
+  }
+  // Weak hints only: they rank candidates, they never say where the user is.
+  const hints = {
+    country: countryOnScreen(env) ?? timezoneCountry(canonicalTimezone(env.ctx.timezone)),
+    near: env.ctx.here ? coarse(env.ctx.here) : null,
+  };
+  const q = parsePlaceQuery(text, hints.country);
+  const candidates = await weather(env).geocode(q.name, lang, q.country);
+  const choice = chooseWeatherPlace(q, candidates, hints);
+  env.ctx.log?.("info", "weather.location_resolved", {
+    source: query ? "explicit" : "timezone",
+    outcome: choice.kind,
+    alias: q.alias,
+    qualified: q.qualifiers.length > 0,
+    restricted_country: q.country,
+    hint_country: hints.country,
+    candidates: candidates.length,
+    ...(choice.kind === "resolved"
+      ? { country: choice.place.countryCode ?? null, confidence: choice.confidence }
+      : choice.kind === "ambiguous"
+        ? { options: choice.options.map((o) => o.countryCode ?? null) }
+        : { rejected: choice.rejected }),
+  });
+  if (choice.kind === "not_found") return { missing: true, query };
+  if (choice.kind === "ambiguous") return { ambiguous: choice.options, query: text };
+  const p = choice.place;
   return {
-    at: { lat: first.lat, lng: first.lng },
+    at: { lat: p.lat, lng: p.lng },
     location: {
-      name: clip(first.name, 120),
-      detail: first.detail ? clip(first.detail, 160) : null,
+      name: clip(p.name, 120),
+      detail: p.detail ? clip(p.detail, 160) : null,
       source: query ? "explicit" : "timezone",
+      ...(p.countryCode ? { countryCode: p.countryCode } : {}),
+    },
+  };
+}
+
+/** Several real places (or one far, small one) fit: the user picks; ELISE never guesses. */
+function askWhich(query: string, options: WeatherPlace[]) {
+  return {
+    output: {
+      found: false,
+      asked: clip(query, 80),
+      options: options.map((o) => placeLabel(o)),
+      instructions:
+        options.length > 1
+          ? "Several places match. Ask which one in one short line, naming them (city, region, country). Never pick one yourself and never show weather for a guess."
+          : "The only match is a small place far from the user's region; it may not be what they meant. Ask in one short line whether they mean it (name it with its country) or which city they meant. Don't show its weather yet.",
     },
   };
 }
@@ -192,6 +253,7 @@ export const currentWeatherTool: ToolDefinition = {
   async run(raw, env) {
     const q = currentInput.parse(raw);
     const place = await resolvePlace(env, q.location);
+    if ("ambiguous" in place) return askWhich(place.query, place.ambiguous);
     if ("missing" in place) return needsLocation(env, place.query);
     const f = await weather(env).forecast(place.at, 2, place.location.source);
     const nowLocal = toLocalDateTime(env.ctx.now, f.timezone).slice(0, 13);
@@ -205,7 +267,7 @@ export const currentWeatherTool: ToolDefinition = {
     return {
       output: {
         found: true,
-        place: [p.location?.name, p.location?.detail].filter(Boolean).join(", "),
+        place: p.location ? placeLabel(p.location) : null,
         now: p.current && {
           temperature: round(p.current.temperature),
           feelsLike: round(p.current.apparentTemperature),
@@ -276,6 +338,7 @@ export const forecastWeatherTool: ToolDefinition = {
           location: { name: clip(q.place.name, 120), detail: null, source: "explicit" },
         }
       : await resolvePlace(env, q.location);
+    if ("ambiguous" in place) return askWhich(place.query, place.ambiguous);
     if ("missing" in place) return needsLocation(env, place.query);
     // Days to fetch, from the user's clock (+1 for a place a day ahead); the range itself is
     // resolved again in the place's own timezone once the forecast says which one it is.
@@ -308,7 +371,7 @@ export const forecastWeatherTool: ToolDefinition = {
     return {
       output: {
         found: true,
-        place: [p.location?.name, p.location?.detail].filter(Boolean).join(", "),
+        place: p.location ? placeLabel(p.location) : null,
         from: range.from,
         to: range.to,
         days: p.days.map((d) => ({
