@@ -212,10 +212,15 @@ export function ChatSurface({
   // Music starting or stopping changes the room: voice re-measures it (never heard as speech).
   const musicPlaying = Boolean(useMusic().payload?.playing);
   const ambientRef = useRef(voiceSession.ambientChanged);
+  const musicStartedRef = useRef(voiceSession.musicStarted);
   useEffect(() => {
     ambientRef.current = voiceSession.ambientChanged;
+    musicStartedRef.current = voiceSession.musicStarted;
   });
-  useEffect(() => ambientRef.current(), [musicPlaying]);
+  useEffect(() => {
+    ambientRef.current();
+    if (musicPlaying) musicStartedRef.current();
+  }, [musicPlaying]);
   const voiceOn = voice.enabled && voiceSession.supported;
   const phase = voiceSession.state.phase;
   const last = messages.at(-1);

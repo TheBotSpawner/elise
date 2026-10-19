@@ -1672,3 +1672,19 @@ describe("a device's wake word hands over to the session", () => {
     expect(sent).toEqual([]);
   });
 });
+
+describe("music a turn asked for", () => {
+  it("once the song plays, she stops talking over it and the turn ends as usual", async () => {
+    const { controller, player, say } = setup({ transcripts: ["Poné Counting Stars"] });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "conversation" });
+    controller.onStream({ type: "text", delta: "Lo encontré: Counting Stars. " });
+    expect(player.spoken).toEqual(["Lo encontré: Counting Stars."]);
+    controller.musicStarted();
+    controller.onStream({ type: "text", delta: "Arrancando. " });
+    controller.onStream({ type: "finished", failed: false });
+    expect(player.spoken).toEqual(["Lo encontré: Counting Stars."]); // nothing more is said
+    expect(controller.state.phase).toBe("listening");
+  });
+});

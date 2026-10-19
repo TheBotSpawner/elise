@@ -24,6 +24,13 @@ publish a source list, and Android TVs usually don't.
     "not connected".
 - **Opening an app, not choosing a video.** Playing a specific video on a TV is out of scope for
   now.
+- **Turning an Android TV off.** The power key toggles, and with an app in front it only closes
+  the app.
+  - The hub sends the remote's `SLEEP` key instead, which can only put the TV to sleep.
+  - 2.5 s later, if the TV still reports on, it sends the power call (a TV that doesn't know
+    the key).
+  - It never sends the power call to a TV that is already off, because that would turn it back
+    on.
 
 ## Consequences
 

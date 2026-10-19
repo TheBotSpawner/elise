@@ -138,24 +138,56 @@ describe("removing a device", () => {
 describe("turning an Android TV off", () => {
   vi.spyOn(console, "log").mockImplementation(() => undefined);
 
-  it("sends the sleep key after the power call; other devices only the power call", async () => {
+  const tvOff = async (stateAfterSleep: string) => {
     const { a, calls } = agent();
-    const internals = a as unknown as { devices: Map<string, { entityIds: string[] }> };
+    const internals = a as unknown as {
+      devices: Map<string, { entityIds: string[] }>;
+      sleepSettleMs: number;
+      ha: { states: () => Promise<unknown[]> };
+    };
     internals.devices.get("dev_tv")!.entityIds.push("remote.tv");
+    internals.sleepSettleMs = 0;
+    internals.ha.states = async () =>
+      HA_STATES.map((st) =>
+        st.entity_id === "media_player.tv" ? { ...st, state: stateAfterSleep } : st,
+      );
     await a.execute(
       command({
         target: { providerKey: "dev_tv", entityIds: ["media_player.tv"] },
         actions: [{ type: "power", on: false }],
       }),
     );
-    expect(calls).toEqual([
-      { domain: "media_player", service: "turn_off", target: { entity_id: "media_player.tv" } },
-      {
-        domain: "remote",
-        service: "send_command",
-        service_data: { command: "SLEEP" },
-        target: { entity_id: "remote.tv" },
-      },
-    ]);
+    return calls;
+  };
+  const SLEEP = {
+    domain: "remote",
+    service: "send_command",
+    service_data: { command: "SLEEP" },
+    target: { entity_id: "remote.tv" },
+  };
+  const POWER_OFF = {
+    domain: "media_player",
+    service: "turn_off",
+    target: { entity_id: "media_player.tv" },
+  };
+
+  it("the sleep key goes first: a TV asleep after it never gets the power toggle", async () => {
+    // With an app in front, the power key only closes the app (what people saw).
+    expect(await tvOff("off")).toEqual([SLEEP]);
+  });
+
+  it("a TV still on after the sleep key gets the power call", async () => {
+    expect(await tvOff("playing")).toEqual([SLEEP, POWER_OFF]);
+  });
+
+  it("other devices: only their own power call", async () => {
+    const { a, calls } = agent();
+    await a.execute(
+      command({
+        target: { providerKey: "dev_tv", entityIds: ["media_player.tv"] },
+        actions: [{ type: "power", on: false }],
+      }),
+    );
+    expect(calls).toEqual([POWER_OFF]);
   });
 });

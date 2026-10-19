@@ -1045,6 +1045,20 @@ export class VoiceController {
    * the room's noise floor with it, so music in the room is never taken for the user speaking.
    * ELISE's own voice is handled by barge-in, which compares against what she is saying.
    */
+  /**
+   * Music this turn asked for started playing: ELISE doesn't talk over it. Whatever is left of
+   * the turn's spoken reply ("Lo encontré…") is dropped; the reply stays on screen, and the song
+   * itself is the answer.
+   */
+  musicStarted() {
+    const turn = this.turn;
+    if (!turn || turn.capped) return;
+    this.trace("hushed_for_music");
+    turn.capped = true;
+    this.player?.stop();
+    if (turn.textDone) this.complete();
+  }
+
   ambientChanged() {
     if (this.state.phase !== "listening" || !this.mic || this.finishing) return;
     this.trace("ambient_changed");

@@ -7,6 +7,7 @@ import type { VoicePreferences } from "@/application/auth-context";
 import { Orb } from "@/components/elise/orb/orb";
 import { resolveOrbState, voicePhaseOrb } from "@/components/elise/orb/orb-states";
 import { useEliseChat } from "@/features/chat/use-elise-chat";
+import { useMusic } from "@/features/music/music-view";
 import { useI18n } from "@/lib/i18n/client";
 
 import { useVoice } from "./use-voice";
@@ -52,6 +53,15 @@ function QuickVoiceSession({
   // The browser's wake phrase belongs to Inicio; here a tap (or Desktop's "ELISE") starts it.
   const voice = useVoice({ prefs: { ...prefs, wakeEnabled: false }, send, stop, subscribe, level });
   const phase = voice.state.phase;
+  // The song this conversation asked for started: she doesn't talk over it.
+  const musicPlaying = Boolean(useMusic().payload?.playing);
+  const musicStarted = useRef(voice.musicStarted);
+  useEffect(() => {
+    musicStarted.current = voice.musicStarted;
+  });
+  useEffect(() => {
+    if (musicPlaying) musicStarted.current();
+  }, [musicPlaying]);
   const active = !["idle", "sleeping", "error", "offline"].includes(phase);
 
   useEffect(() => {

@@ -185,6 +185,7 @@ function publish(p: YTPlayer | null, next: PlayerState, notice: string | null = 
       ? {
           ...item,
           title: item.kind === "playlist" && data?.title ? data.title : item.title,
+          subtitle: item.kind === "playlist" && data?.author ? data.author : item.subtitle,
           durationMs: duration || item.durationMs,
         }
       : null,
@@ -341,12 +342,28 @@ export async function applyYouTube(command: MusicCommand, video = false) {
       p.playVideo();
       armWatchdog();
       break;
-    case "next":
-      if (queue[index]?.kind === "playlist") p.nextVideo();
+    case "next": {
+      const current = queue[index];
+      if (current?.kind === "playlist") p.nextVideo();
       else if (index < queue.length - 1) await playIndex(index + 1);
-      else
+      else if (current) {
+        // Nothing else queued: YouTube's own mix of this song ("up next"), from its second
+        // item. From then on next / previous move through the mix.
+        const mix = `RD${idOf(current.ref)}`;
+        queue[index] = {
+          ...current,
+          kind: "playlist",
+          ref: `youtube:${mix}`,
+          title: `Mix: ${current.title}`,
+        };
+        trace("mix");
+        p.loadPlaylist({ list: mix, listType: "playlist", index: 1 });
+        publish(p, "play_requested");
+        armWatchdog();
+      } else
         publish(p, state, locale === "es" ? "No hay más en la cola." : "Nothing else is queued.");
       return;
+    }
     case "previous":
       if (queue[index]?.kind === "playlist") p.previousVideo();
       else if (p.getCurrentTime() > 5 || index === 0) p.seekTo(0, true);

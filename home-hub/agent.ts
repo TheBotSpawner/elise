@@ -23,6 +23,7 @@ import {
   stateOf,
   sleepCall,
   toServiceCalls,
+  type HaServiceCall,
   type HaState,
   type SyncedDevice,
 } from "../src/infrastructure/home/home-assistant";
@@ -280,9 +281,7 @@ export class HubAgent {
     }
     const started = Date.now();
     try {
-      for (const call of toServiceCalls(device.entityIds[0]!, actions))
-        await this.ha.callService(call);
-      await this.sleepIfOff(device.entityIds, actions);
+      await this.run(device.entityIds, actions);
       const fresh = (await this.ha.states()).find((x) => x.entity_id === device.entityIds[0]);
       if (fresh) this.latest.set(fresh.entity_id, fresh);
       log("home_local_command", { status: "succeeded", latency_ms: Date.now() - started });
@@ -317,9 +316,7 @@ export class HubAgent {
         await this.report(c.id, { status: "succeeded", latencyMs: Date.now() - started });
         return void this.sync().catch(() => undefined);
       }
-      for (const call of toServiceCalls(device.entityIds[0]!, c.actions))
-        await this.ha.callService(call);
-      await this.sleepIfOff(device.entityIds, c.actions);
+      await this.run(device.entityIds, c.actions);
       const fresh = (await this.ha.states()).find((s) => s.entity_id === device.entityIds[0]);
       await this.report(c.id, {
         status: "succeeded",
@@ -335,15 +332,37 @@ export class HubAgent {
     }
   }
 
-  private async sleepIfOff(entityIds: readonly string[], actions: readonly HomeAction[]) {
-    const call = sleepCall(entityIds, actions);
-    if (!call) return;
-    // The power call already went: a TV that doesn't know this key still did what it could.
+  /** The provider's own calls for validated actions (from ELISE Cloud or local control alike). */
+  private async run(entityIds: readonly string[], actions: readonly HomeAction[]) {
+    const sleep = sleepCall(entityIds, actions);
+    // An Android TV goes off by its sleep key first (see sleepThenVerify); the rest as usual.
+    const rest = sleep ? actions.filter((a) => !(a.type === "power" && !a.on)) : actions;
+    for (const call of toServiceCalls(entityIds[0]!, rest)) await this.ha.callService(call);
+    if (sleep) await this.sleepThenVerify(entityIds[0]!, sleep);
+  }
+
+  /** How long a TV gets to fall asleep before ELISE checks it (tests set it to 0). */
+  private sleepSettleMs = 2500;
+
+  /**
+   * Turning an Android TV off. Its power key toggles, and with an app in front it only closes
+   * the app — so the sleep key goes first: it can only ever put the TV to sleep. A TV still on
+   * a moment later (it doesn't know that key) gets the power call; one already off never does,
+   * since toggling would turn it back on.
+   */
+  private async sleepThenVerify(entityId: string, sleep: HaServiceCall) {
     await this.ha
-      .callService(call)
+      .callService(sleep)
       .catch((e) =>
         log("home_sleep_key_failed", { message: String((e as Error).message).slice(0, 60) }),
       );
+    await new Promise((r) => setTimeout(r, this.sleepSettleMs));
+    const now = (await this.ha.states()).find((st) => st.entity_id === entityId);
+    if (!now || now.state === "off" || now.state === "standby" || now.state === "unavailable")
+      return;
+    log("home_sleep_key_ignored");
+    for (const call of toServiceCalls(entityId, [{ type: "power", on: false }]))
+      await this.ha.callService(call);
   }
 
   private async report(

@@ -352,9 +352,9 @@ const APP_LINKS: Record<HomeApp, string> = {
 };
 
 /**
- * Turning an Android TV off: the power key toggles, and with an app in front it can just close
- * the app while the TV already reports "off". The sleep key only ever puts it to sleep, so it
- * goes after the power call, whatever the TV reports.
+ * Turning an Android TV off: the power key toggles, and with an app in front it only closes the
+ * app. The sleep key only ever puts it to sleep, so it goes instead of the power call; the hub
+ * sends the power call only if the TV is still on a moment later (`sleepThenVerify`, agent).
  */
 export function sleepCall(
   entityIds: readonly string[],

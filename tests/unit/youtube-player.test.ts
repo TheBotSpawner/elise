@@ -135,6 +135,15 @@ describe("YouTube player state", () => {
     expect(fake.loaded).toEqual(["a", "b"]);
   });
 
+  it("next with one song: YouTube's mix of it, then next moves through the mix", async () => {
+    await applyYouTube({ action: "load", items: [video("a")], index: 0, video: false });
+    await applyYouTube({ action: "next" });
+    expect(fake.loadPlaylist).toHaveBeenCalledWith({ list: "RDa", listType: "playlist", index: 1 });
+    expect(musicStore.get().payload?.notice ?? null).toBeNull();
+    await applyYouTube({ action: "next" });
+    expect(fake.nextVideo).toHaveBeenCalled();
+  });
+
   it("frames from youtube-nocookie (the only player host the CSP allows)", async () => {
     let host = "";
     const Player = window.YT!.Player;
