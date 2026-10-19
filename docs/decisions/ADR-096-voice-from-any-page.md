@@ -30,7 +30,7 @@ looking at.
    a new one.
 5. **Desktop's wake word hands over to whichever session is mounted**: Inicio's, or the Orb's on
    other pages. The page stays where it is.
-6. **Other floating actions** (Finance's "+") stand above the Orb through
+6. **Other floating actions** (Finance's "+") stand to the Orb's left through
    `--quick-voice-space`.
 
 ## Consequences

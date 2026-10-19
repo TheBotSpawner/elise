@@ -122,6 +122,10 @@ export default defineConfig(({ mode }) => {
       target: "chrome140",
       // Loaded from disk, not the network: one bundle is fine.
       chunkSizeWarningLimit: 4000,
+      // The app, and the background-listening orb's own tiny page (ADR-095).
+      rolldownOptions: {
+        input: { main: here("./src/renderer/index.html"), orb: here("./src/renderer/orb.html") },
+      },
     },
     plugins: [voskWorkerFile(), eliseDesktop(), react()],
     // Tailwind sees the whole shared source, exactly like the web build.

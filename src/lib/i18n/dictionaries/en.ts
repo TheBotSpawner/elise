@@ -4391,7 +4391,7 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       wakeChime: "Sound when activated",
       wakeOrb: "On-screen indicator",
       wakeOrbHint:
-        "A small orb in the bottom-right corner while ELISE listens in the background. It never takes focus or clicks.",
+        "ELISE's Orb in the bottom-right corner while she listens to you or answers. It never takes focus or clicks.",
       wakeWordName: "Wake word: ELISE",
       pause: "Pause listening",
       resume: "Resume listening",

@@ -57,10 +57,10 @@ function QuickVoiceSession({
   useEffect(() => {
     if (startNow) voice.start();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once: the tap that mounted it
-  // Other floating actions (Finance's "+") stand above it.
+  // Other floating actions (Finance's "+") stand to its left.
   useEffect(() => {
     const root = document.documentElement.style;
-    root.setProperty("--quick-voice-space", "60px");
+    root.setProperty("--quick-voice-space", "76px");
     return () => root.setProperty("--quick-voice-space", "0px");
   }, []);
 
@@ -81,9 +81,10 @@ function QuickVoiceSession({
       aria-label={active ? t.voice.end : t.voice.start}
       title={active ? t.voice.end : t.voice.start}
       aria-pressed={active}
-      className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music))] z-30 grid size-12 place-items-center rounded-full opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none aria-pressed:opacity-100 md:right-8 md:bottom-8"
+      // Centered on Finance's "+" (52 px, 56 px from md); the Orb draws past its 64 px target.
+      className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music)-6px)] z-30 grid size-16 place-items-center rounded-full opacity-90 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none aria-pressed:opacity-100 md:right-8 md:bottom-7"
     >
-      <Orb state={state} size={44} levelSource={level} />
+      <Orb state={state} size={88} className="pointer-events-none -m-3" levelSource={level} />
     </button>
   );
 }

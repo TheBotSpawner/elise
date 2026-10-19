@@ -4429,7 +4429,7 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
       wakeChime: "Sonido al activarse",
       wakeOrb: "Indicador en pantalla",
       wakeOrbHint:
-        "Una pequeña esfera abajo a la derecha mientras ELISE escucha en segundo plano. No toma el foco ni los clics.",
+        "La esfera de ELISE abajo a la derecha mientras te escucha o te responde. No toma el foco ni los clics.",
       wakeWordName: "Palabra de activación: ELISE",
       pause: "Pausar escucha",
       resume: "Reanudar escucha",

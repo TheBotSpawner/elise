@@ -382,8 +382,10 @@ export class OrbRenderer {
       ctx.arc(cx, cy, size * 0.06, 0, TAU);
       ctx.fill();
     }
-    // Below 90 px: mini orb (4 latitudes, 8 meridians, no inner core, no rings).
+    // Below 90 px: mini orb (4 latitudes, 8 meridians, no inner core, no rings) — except the
+    // voice rings: a small Orb still shows it hears you (the floating voice Orb, the nav).
     const small = size < 90;
+    const voiceRings = !small || s === "listening" || s === "userSpeaking" || s === "speaking";
     const dph = this.dph;
     const scanY = Math.sin(this.sph);
     ctx.globalCompositeOperation = light ? "source-over" : "lighter";
@@ -526,7 +528,7 @@ export class OrbRenderer {
         ctx.stroke();
       }
     }
-    if (P.rings > 0.02 && !small) {
+    if (P.rings > 0.02 && voiceRings) {
       ctx.lineWidth = 1;
       for (let i = 0; i < 3; i++) {
         ctx.strokeStyle = c(0.32 * Math.max(P.level, 0.25) * P.rings * (1 - i * 0.28));

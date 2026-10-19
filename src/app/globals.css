@@ -358,7 +358,7 @@
    * the timer stacks above it instead of overlapping.
    */
   --activity-music: 0px;
-  /* The floating voice Orb (bottom right) while it shows: other floating actions stand above it. */
+  /* The floating voice Orb (bottom right) while it shows: other floating actions stand to its left. */
   --quick-voice-space: 0px;
   --activity-bottom: calc(var(--bottom-nav-h) + var(--dock-space) + 16px);
 }

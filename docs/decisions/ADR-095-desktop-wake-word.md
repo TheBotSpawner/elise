@@ -109,10 +109,12 @@ The set is synthetic: it is a proxy, and real voices must still be tested by han
      toggle.
    - The tray shows the listening status and "Pausar / Reanudar escucha".
    - A locked screen or sleep releases the microphone; it comes back on unlock or resume.
-   - While it listens in the background, a small orb sits in the bottom-right corner of the
-     screen. It is dim while listening and brighter while ELISE answers.
-     - It is its own tiny window: it never takes focus or clicks, and has no scripts or
-       bridge.
+   - During a background voice conversation (ELISE listening to the person or answering), her
+     Orb shows in the bottom-right corner of the screen. It never shows while she only waits
+     for "ELISE".
+     - It is its own tiny window: it never takes focus or clicks.
+     - Its page (`renderer/orb.html`) draws the real Orb renderer, and nothing else: no
+       preload, no bridge.
      - It hides while ELISE's own window is in use.
      - A setting turns it off (`wakeOrb`, on by default).
    - A missing or denied microphone, or a failed model, shows the real state and retries every
