@@ -19,6 +19,7 @@ import type { KnowledgeManager } from "@/core/knowledge/admin";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { CONTEXT_TOOLS } from "@/core/tools/contexts";
+import { ECONOMY_TOOLS } from "@/core/tools/economy";
 import { EMAIL_TOOLS } from "@/core/tools/email";
 import { FINANCE_TOOLS } from "@/core/tools/finance";
 import { GOAL_TOOLS } from "@/core/tools/goals";
@@ -101,6 +102,7 @@ import { SupabaseRecallReader } from "@/infrastructure/supabase/repositories/rec
 
 import type { AuthContext } from "./auth-context";
 import { contextStore } from "./contexts-service";
+import { economyCapability } from "./economy-service";
 import { homeStore } from "./home-service";
 import { knowledgeManager } from "./knowledge-admin";
 import { liveKnowledge } from "./knowledge-live";
@@ -139,6 +141,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...LOCATION_TOOLS,
   ...WEATHER_TOOLS,
   ...MARKET_TOOLS,
+  ...ECONOMY_TOOLS,
   ...HOME_TOOLS,
   ...CONTEXT_TOOLS,
   ...STUDY_TOOLS,
@@ -493,6 +496,10 @@ function providerFactory(
     },
     weather() {
       return weatherCapability(auth);
+    },
+    // Public economic data: server-provided, shared across workspaces (ADR-094).
+    economy() {
+      return economyCapability();
     },
     // Context Profiles (ADR-016): this workspace's organizational layer, through RLS. Task
     // lists come from every connected provider, read through the executor like any read.

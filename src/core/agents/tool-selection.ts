@@ -49,6 +49,15 @@ const FOLLOWING =
 const HOME_WORDS =
   /(?<!\p{L})(luz|luces|l[aá]mpara\p{L}*|foco\p{L}*|aire( acondicionado)?|split|ventilador\p{L}*|humidificador\p{L}*|enchufe\p{L}*|tele|tv|televisor|calefacci[oó]n|termostato|persiana\p{L}*|living|dormitorio|habitaci[oó]n|cocina|ba[ñn]o|modo (estudio|cine|dormir|trabajo|lectura|fiesta)|modos?|escenas?|hogar|dispositivos?|prend[eéií]\p{L}*|apag[aáuo]\p{L}*|encend[eé]\p{L}*|light|lights|lamp|thermostat|turn (on|off)|scene)(?!\p{L})/iu;
 export const HOME_SIGNAL = { test: (m: string) => HOME_WORDS.test(m) };
+/** Holidays: the tool is in the always-on calendar group; this only brings its guidance. */
+export const HOLIDAY_WORDS =
+  /(?<!\p{L})(feriad\p{L}*|no laborable|fin de semana largo|finde largo|holidays?)(?!\p{L})/iu;
+/**
+ * Argentina's economy (ADR-094): the dollar by market, inflation, deposit rates, indicators.
+ * "¿Cuánto gasté en dólares?" also matches (Finance stays loaded through its own signal).
+ */
+export const ECONOMY_SIGNAL =
+  /(?<!\p{L})(d[oó]lar\p{L}*|blue|mep|ccl|contado con liqui\p{L}*|mayorista|cotizaci[oó]n\p{L}*|tipo de cambio|inflaci[oó]n|ipc|(sub|aument)\p{L}* (de )?(los )?precios|precios (sub|aument)\p{L}*|acumulad\p{L}*|interanual|plazos? fijos?|tasas?|tna|tea|riesgo pa[ií]s|uva|cer|le gan[eé] a la inflaci[oó]n|exchange rate|inflation)(?!\p{L})/iu;
 export const MARKET_SIGNAL = {
   test: (m: string) => MARKET_WORDS.test(m) || TICKER.test(m) || FOLLOWING.test(m),
 };
@@ -101,6 +110,8 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   ["location", LOCATION_SIGNAL],
   // Public markets (ADR-074): tickers, listed companies in a market context, prices, indices.
   ["markets", MARKET_SIGNAL],
+  // Argentina's economy (ADR-094): dollar, inflation, deposit rates — public data, never Finance.
+  ["economy", ECONOMY_SIGNAL],
   // ELISE Home (ADR-079): devices, rooms, modes, on/off — never a Finance or Knowledge question.
   ["home", HOME_SIGNAL],
   [
@@ -153,6 +164,7 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   place: "location",
   weather: "weather",
   market: "markets",
+  economy: "economy",
   home: "home",
   music: "music",
   timer: "time",

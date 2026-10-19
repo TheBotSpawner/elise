@@ -22,6 +22,7 @@ import {
   ShoppingBag,
   Telescope,
   TrendingUp,
+  Landmark,
   FileSpreadsheet,
   House,
   Compass,
@@ -71,6 +72,7 @@ import type { VisualSize } from "./canvas/composition";
 import { MapBody, PlaceBody } from "./canvas/map";
 import { MediaBody } from "./canvas/media";
 import { WeatherView } from "./canvas/weather";
+import { EconomyBody } from "./economy-view";
 import { MarketBody } from "./market-view";
 import { FinanceImportCard } from "../finance/chat-import-card";
 import { HomeResultBody } from "../home/home-result";
@@ -131,6 +133,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   result: Sparkles,
   answer: Sparkles,
   market: TrendingUp,
+  economy: Landmark,
   finance_import: FileSpreadsheet,
   personality: Sparkles,
   home: House,
@@ -1059,6 +1062,8 @@ export function SurfaceBody({
       return <AnswerBody p={p} large={large} />;
     case "market":
       return <MarketBody p={p} timezone={timezone} />;
+    case "economy":
+      return <EconomyBody p={p} timezone={timezone} />;
     case "finance_import":
       return <FinanceImportCard p={p} />;
     case "personality":

@@ -324,6 +324,21 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       unwatch: WRITE,
     },
   },
+  // Public economic data (ADR-094): server-provided (DolarApi, ArgentinaDatos), no user
+  // connection, read-only. Nothing here touches the user's money.
+  economy: {
+    key: "economy",
+    status: "available",
+    internal: true,
+    operations: {
+      exchangeRates: READ,
+      exchangeHistory: READ,
+      inflation: READ,
+      depositRates: READ,
+      indicators: READ,
+      holidays: READ,
+    },
+  },
   // Context Profiles (ADR-016): an organizational layer over the user's data. Proposing,
   // activating and briefing only read (each source under its own permissions); creating or
   // changing a profile is an audited write; archiving asks when ELISE proposes it.

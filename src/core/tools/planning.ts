@@ -9,6 +9,7 @@ import type { HabitProgress } from "../capabilities/habits";
 import { isOpenTask, type Task } from "../capabilities/tasks";
 import { contextSignals, eventMatches, taskMatches, type ContextStore } from "../contexts/model";
 import { addDays, toLocalDateTime, todayIn } from "../time";
+import { argentineContext } from "./economy";
 import { surfacesFromOutcome, taskListSurface } from "../workspace/from-results";
 
 /**
@@ -119,6 +120,19 @@ export const planTodayTool: ToolDefinition = {
     ]);
 
     // Contexts with something today (never every profile).
+    // Argentina's holidays this week (ADR-094): context for the plan, never an event.
+    const holidays = argentineContext(env.ctx)
+      ? await Promise.resolve()
+          .then(() => invoke(env, "calendar.holidays", { from: today, to: addDays(today, 7) }))
+          .then((o) =>
+            o.status === "succeeded"
+              ? ((o.output as { holidays?: { date: string; name: string; kind: string }[] })
+                  .holidays ?? [])
+              : [],
+          )
+          .catch(() => [])
+      : [];
+
     let focus: { name: string; meetings: number; tasks: number }[] = [];
     try {
       const store: ContextStore = env.providers.get("contexts", env.binding);
@@ -168,9 +182,10 @@ export const planTodayTool: ToolDefinition = {
           targetDate: g.goal.targetDate,
         })),
         contextsToday: focus,
+        ...(holidays.length ? { holidaysThisWeek: holidays } : {}),
         unavailable,
         instructions:
-          "This is a plan for today, not a report. In two or three sentences: the shape of the day (meetings and free stretches), what matters most, and a suggested order for the priorities around the meetings. Offer to block time or reorder — never move or create events without the user's agreement. Use only these items. Name unavailable sources.",
+          "This is a plan for today, not a report. In two or three sentences: the shape of the day (meetings and free stretches), what matters most, and a suggested order for the priorities around the meetings. Offer to block time or reorder — never move or create events without the user's agreement. Use only these items. Name unavailable sources. A holiday this week (holidaysThisWeek) is context: mention it if it changes the plan (a bank holiday for errands at a bank), never as a commitment.",
       },
     };
   },

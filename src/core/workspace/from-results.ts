@@ -941,6 +941,15 @@ export function surfacesFromOutcome(
         }),
       );
     }
+    case "economy":
+      // One Surface per question kind (rates, the blue's history…): asking again updates it.
+      return one(
+        draft("economy", d.key, d.economy, opts, {
+          title: d.title,
+          source: { capability: "economy", label: d.economy.sources[0]?.name ?? null },
+          ref: null,
+        }),
+      );
     case "home":
       return one(
         draft("home", `home:${d.home.title}`, d.home, opts, {

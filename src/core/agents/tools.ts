@@ -46,6 +46,7 @@ import type {
 } from "../capabilities/team-messaging";
 import type { CapabilityKey, OperationDefinition } from "../capabilities/types";
 import type { ContextKind, ContextStore } from "../contexts/model";
+import type { EconomyCapability } from "../economy/model";
 import type { FinanceReport } from "../finance/report";
 import type {
   GoalDetail,
@@ -159,6 +160,8 @@ export interface CapabilityProviders {
   weather: WeatherCapability;
   /** Public market data and the person's followed assets (ADR-074). */
   markets: MarketsPort;
+  /** Public economic data: dollar, inflation, holidays, deposit rates (ADR-094). */
+  economy: EconomyCapability;
   /** ELISE Home: devices, rooms and modes through the person's hub (ADR-079). */
   home: HomePort;
   /** Context Profiles and people: the organizational layer (ADR-016). */
@@ -513,6 +516,8 @@ export type ToolDisplay =
   | { kind: "weather"; weather: SurfacePayloads["weather"] }
   /** Public market data (ADR-074). */
   | { kind: "market"; market: SurfacePayloads["market"] }
+  /** Public economic data (ADR-094). */
+  | { kind: "economy"; economy: SurfacePayloads["economy"]; title: string; key: string }
   /** A spreadsheet from chat, analyzed by the Finance import pipeline (ADR-075). */
   | { kind: "finance_import"; financeImport: SurfacePayloads["finance_import"] }
   /** Home devices and what a command did to them (ADR-079). */

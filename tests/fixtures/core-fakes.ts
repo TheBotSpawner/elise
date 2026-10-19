@@ -15,6 +15,7 @@ import { makeExternalRef } from "@/core/providers/refs";
 import type { CapabilityBinding } from "@/core/providers/types";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { CONTEXT_TOOLS } from "@/core/tools/contexts";
+import { ECONOMY_TOOLS } from "@/core/tools/economy";
 import { EMAIL_TOOLS } from "@/core/tools/email";
 import { FINANCE_TOOLS } from "@/core/tools/finance";
 import { GOAL_TOOLS } from "@/core/tools/goals";
@@ -257,6 +258,7 @@ export function makePorts(
       ...LOCATION_TOOLS,
       ...WEATHER_TOOLS,
       ...MARKET_TOOLS,
+      ...ECONOMY_TOOLS,
       ...HOME_TOOLS,
       ...CONTEXT_TOOLS,
       ...STUDY_TOOLS,

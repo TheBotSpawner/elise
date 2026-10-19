@@ -93,6 +93,8 @@ export interface ContextInput {
   markets?: boolean;
   /** The message is about the home (ADR-079): devices, rooms, modes. */
   home?: boolean;
+  /** The message is about Argentina's economy or holidays (ADR-094). */
+  economy?: boolean;
   /**
    * Maps (ADR-023): configured (`here`: the user shared their position this session), null when
    * no Maps key is configured, undefined when unknown.
@@ -300,6 +302,17 @@ const MUSIC_GUIDANCE = `Music (the user's own player — music.* tools; controls
 - A YouTube CHANNEL ("el canal X", "un video de X" when X is a creator/channel, "el último video de X", "otro de ese canal") → music.channel (action find / latest / random / search). It resolves the channel itself (name, @handle, link, spelling): never web.search to find or "confirm" a channel, and never play a video from another channel. If the user spelled it ("L-U-M-E-N"), pass the spelling. "Otro de ese canal" → music.channel action random without channel (the one on screen). Any other YouTube video ("poné un video de gatos", a song) stays music.play with provider youtube.
 - If YouTube itself can't be reached, say "No puedo consultar YouTube ahora mismo" — that is not "channel not found".
 - Finding a video is not playing it: say "Lo encontré: <título>. Arrancando…" — never "está sonando" until the Music Surface says it is playing. If the browser blocked audio, tell them to tap Reproducir.`;
+
+/**
+ * Argentina's economy (ADR-094): public figures from structured sources, dated and cited.
+ */
+const ECONOMY_GUIDANCE = `Argentina's economy (economy.* tools, calendar.holidays) — public data, never the user's money:
+- The dollar has markets: "el dólar" with no market → economy.exchangeRates for all (oficial and blue first). Keep compra and venta apart; name the market. A past day or period → economy.exchangeHistory (never the current quote for a past date, never a past one as "hoy").
+- Inflation is published monthly for the month before: "la inflación de septiembre fue 1,9%", never "la inflación de hoy". Accumulated periods, year-to-date and "¿le gané a la inflación?" → economy.inflation (ELISE compounds; never add months up yourself).
+- Plazo fijo rates → economy.depositRates; riesgo país / UVA → economy.indicators. General information: never recommend a bank or an investment, never promise a return.
+- Holidays → calendar.holidays (national, non-working "puente", bank). They are context for planning: never write them into the user's calendar unless asked. Another country's holidays aren't available: say so.
+- Use these instead of web search for these figures; do your own arithmetic only through the tools. Cite the source in a few words ("según ArgentinaDatos"); in voice, one sentence — the card shows the rest.
+- These are not Finance: finance.setRate saves a rate only when the user gives one to use in their reports.`;
 
 /**
  * ELISE Home (ADR-079): the person's devices by capability — never a provider, entity or
@@ -542,6 +555,7 @@ ${input.knowledgeMap
   sections.push(SOURCE_GUIDANCE, WEATHER_GUIDANCE);
   if (input.markets) sections.push(MARKETS_GUIDANCE);
   if (input.home) sections.push(HOME_GUIDANCE);
+  if (input.economy) sections.push(ECONOMY_GUIDANCE);
   if (input.web) sections.push(WEB_GUIDANCE);
   if (input.location === null)
     sections.push(

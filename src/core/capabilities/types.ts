@@ -21,6 +21,8 @@ export type CapabilityKey =
   | "weather"
   /** Public market data (ADR-074): quotes, history, followed assets. Not the user's money. */
   | "markets"
+  /** Public economic data (ADR-094): dollar rates, inflation, holidays, deposit rates. */
+  | "economy"
   | "contexts"
   | "study"
   | "shortcuts"

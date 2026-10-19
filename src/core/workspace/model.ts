@@ -63,6 +63,8 @@ export const SURFACE_TYPES = [
   "answer",
   /** Public market data (ADR-074): a quote card, a price history, or followed assets. */
   "market",
+  /** Public economic data (ADR-094): dollar rates, inflation, holidays, deposit rates. */
+  "economy",
   /** A spreadsheet from chat, analyzed by the Finance import pipeline (ADR-075). */
   "finance_import",
   /** "Cambiá tu personalidad" with no target (ADR-076): the five choices. */

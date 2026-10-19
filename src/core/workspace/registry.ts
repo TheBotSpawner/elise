@@ -281,6 +281,58 @@ export const marketPayload = z.object({
   provider: text(40),
 });
 
+/**
+ * Public economic data as Surfaces show it (ADR-094): every number from the provider or code,
+ * every figure dated, and its source to cite. Rows are typed by mode, never free HTML.
+ */
+const economyRow = z.object({
+  /** A market, a bank, a holiday's name, a month, an indicator. */
+  label: text(160),
+  /** The figure's own date (a quote's ISO time, a day, a month "2026-09"). */
+  date: text(40).nullable(),
+  buy: nullableNumber,
+  sell: nullableNumber,
+  value: nullableNumber,
+  /** Holiday kind, or "clients"/"non_clients" for a rate. */
+  kind: text(20).nullable(),
+});
+export const economyPayload = z.object({
+  mode: z.enum(["rates", "history", "inflation", "deposits", "indicators", "holidays"]),
+  /** The one computed figure that answers (an accumulated rate, a change, a simulation). */
+  headline: z
+    .object({
+      label: text(160),
+      value: z.number().finite(),
+      unit: z.enum(["ars", "usd", "percent", "points", "index"]),
+      /** What it covers ("2026-04 → 2026-09"), or a date. */
+      period: text(60).nullable(),
+      /** True when a gap or an old copy means it isn't the whole picture. */
+      partial: z.boolean(),
+    })
+    .nullable(),
+  rows: z.array(economyRow).max(40),
+  /** A series to draw (daily or monthly), oldest first. */
+  series: z
+    .array(z.object({ date: text(10), value: z.number().finite() }))
+    .max(820)
+    .nullable(),
+  unit: z.enum(["ars", "usd", "percent", "points", "index"]),
+  /** Short facts the reader needs (a missing month, "venta", a simulation's assumptions). */
+  notes: z.array(text(240)).max(4),
+  sources: z
+    .array(
+      z.object({
+        name: text(60),
+        original: text(60).nullable(),
+        url: href,
+        fetchedAt: text(40),
+        stale: z.boolean(),
+      }),
+    )
+    .min(1)
+    .max(3),
+});
+
 const knowledgeSource = z.object({
   itemId: text(100),
   title: text(300),
@@ -937,6 +989,7 @@ export const PAYLOADS = {
   result: z.object({ display: z.object({ kind: text(60) }).passthrough() }),
   answer: answerPayload,
   market: marketPayload,
+  economy: economyPayload,
   finance_import: financeImportPayload,
   personality: z.object({ current: z.enum(PERSONALITIES) }),
   home: homePayload,
@@ -1558,6 +1611,35 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
         p.history?.change
           ? `${p.history.symbol} ${p.history.period}: ${p.history.change.changePercent}% (${p.history.change.from}→${p.history.change.to})`
           : "",
+      ]
+        .filter(Boolean)
+        .join("; "),
+  },
+  // Public economic data (ADR-094): the figure is the answer to "¿a cuánto está el dólar?".
+  economy: {
+    sizes: ["small", "medium", "large", "expanded"],
+    size: "medium",
+    priority: 88,
+    actions: () => [expand],
+    describe: (p) =>
+      [
+        p.headline
+          ? `${p.headline.label}: ${p.headline.value}${p.headline.period ? ` (${p.headline.period})` : ""}`
+          : "",
+        ...p.rows
+          .slice(0, 8)
+          .map((r) =>
+            [
+              r.label,
+              r.buy !== null ? `compra ${r.buy}` : "",
+              r.sell !== null ? `venta ${r.sell}` : "",
+              r.value !== null ? String(r.value) : "",
+              r.date ?? "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+          ),
+        `source ${p.sources.map((s) => s.name).join(", ")}`,
       ]
         .filter(Boolean)
         .join("; "),

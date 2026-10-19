@@ -13,7 +13,13 @@ import {
   resolveRepairTarget,
 } from "@/core/agents/repair";
 import { methodNote, recentMethodId, runElise, toolNotes } from "@/core/agents/runtime";
-import { HOME_SIGNAL, selectTools, toolsInNotes } from "@/core/agents/tool-selection";
+import {
+  ECONOMY_SIGNAL,
+  HOLIDAY_WORDS,
+  HOME_SIGNAL,
+  selectTools,
+  toolsInNotes,
+} from "@/core/agents/tool-selection";
 import type { ToolContext } from "@/core/agents/tools";
 import { isImage, resolveImageContext } from "@/core/attachments/vision";
 import type { ClientPlayback } from "@/core/capabilities/music";
@@ -546,6 +552,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     web,
     markets,
     home: HOME_SIGNAL.test(input.message),
+    economy: ECONOMY_SIGNAL.test(input.message) || HOLIDAY_WORDS.test(input.message),
     location: location ? { here: Boolean(here) } : null,
     activeContext: activeProfile ? describeActiveContext(activeProfile) : null,
     contexts: contexts.profiles
