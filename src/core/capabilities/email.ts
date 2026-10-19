@@ -185,7 +185,18 @@ export const listRecentInput = z
   .strict();
 
 export const messageIdInput = z.object({ messageId: ref }).strict();
-export const threadIdInput = z.object({ threadId: ref }).strict();
+export const threadIdInput = z
+  .object({
+    threadId: ref,
+    reader: z
+      .literal(true)
+      .optional()
+      .describe("Only for ELISE's email reader; never set it yourself."),
+  })
+  .strict();
+
+/** The longest body ELISE's reader shows (the provider's plain text; never markup). */
+export const READER_BODY_MAX = 100_000;
 
 export const followUpsInput = z
   .object({

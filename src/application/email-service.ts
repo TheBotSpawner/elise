@@ -29,3 +29,12 @@ export async function discardDraftFromCard(
 ): Promise<ToolDisplay | undefined> {
   return (await runUserTool(auth, "email.discardDraft", { draftId })).display;
 }
+
+/**
+ * ELISE's email reader (ADR-098): one conversation with its full plain-text bodies, read on
+ * demand as the signed-in user, through the same tool, routing and account checks as a turn.
+ */
+export async function readThread(auth: AuthContext, threadId: string) {
+  const outcome = await runUserTool(auth, "email.getThread", { threadId, reader: true });
+  return outcome.display?.kind === "email_thread" ? outcome.display.thread : null;
+}

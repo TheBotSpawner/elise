@@ -941,6 +941,15 @@ export function surfacesFromOutcome(
         }),
       );
     }
+    case "day_plan":
+      // One plan per day: every change to that day's proposal updates it, never a second one.
+      return one(
+        draft("day_plan", `day_plan:${d.plan.date}`, d.plan, opts, {
+          title: d.plan.title ?? "",
+          source: { capability: "workspace", label: null },
+          ref: null,
+        }),
+      );
     case "economy":
       // One Surface per question kind (rates, the blue's history…): asking again updates it.
       return one(

@@ -6,7 +6,8 @@
  *   consolidate  a search repeated in the same turn replaces its earlier result (retrieval
  *                rounds are one object, the last one);
  *   supersede    a database analysis replaces document searches of the same turn — the
- *                explicit source answered;
+ *                explicit source answered; so does email on an explicit email request
+ *                (ADR-098), where document matches stay off the Canvas;
  *   budget       at most `maxPerTurn` new Surfaces per turn (approvals always show).
  */
 export const PRESENTATION = { maxPerTurn: 4 } as const;
@@ -40,9 +41,16 @@ export interface TurnPresentation {
 export function beforePresenting(
   tool: string,
   earlier: readonly TurnPresentation[],
+  /** The user asked about their email and named no document (tool-selection explicitEmail). */
+  request: { email?: boolean } = {},
 ): { present: boolean; dismiss: string[] } {
   if (PLUMBING.has(tool)) return { present: false, dismiss: [] };
-  const replaced = new Set([...(CONSOLIDATE.has(tool) ? [tool] : []), ...(SUPERSEDES[tool] ?? [])]);
+  if (request.email && tool === "knowledge.search") return { present: false, dismiss: [] };
+  const replaced = new Set([
+    ...(CONSOLIDATE.has(tool) ? [tool] : []),
+    ...(SUPERSEDES[tool] ?? []),
+    ...(request.email && tool.startsWith("email.") ? ["knowledge.search"] : []),
+  ]);
   return {
     present: true,
     dismiss: earlier.filter((e) => replaced.has(e.tool)).flatMap((e) => e.ids),

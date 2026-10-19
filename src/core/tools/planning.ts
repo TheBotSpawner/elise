@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { clip, displayOf, invoke, present, runStep } from "./orchestration";
+import { clip, displayOf, fromRead, invoke, present, runStep } from "./orchestration";
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { briefCanvas, focusSurface, type BriefRead } from "../briefs/canvas";
 import type { MorningBrief } from "../briefs/morning-brief";
@@ -8,6 +8,8 @@ import type { CalendarEvent } from "../capabilities/calendar";
 import type { HabitProgress } from "../capabilities/habits";
 import { isOpenTask, type Task } from "../capabilities/tasks";
 import { contextSignals, eventMatches, taskMatches, type ContextStore } from "../contexts/model";
+import { AppError } from "../errors";
+import { BLOCK_CATEGORIES, planDay } from "../planning/day-plan";
 import { addDays, toLocalDateTime, todayIn } from "../time";
 import { argentineContext } from "./economy";
 import { surfacesFromOutcome, taskListSurface } from "../workspace/from-results";
@@ -71,12 +73,17 @@ export const planTodayTool: ToolDefinition = {
 
     const [calendar, tasks, habits, goals] = await Promise.all([
       runStep(env, "calendar", "calendar.listEvents", async () => {
-        const outcome = await invoke(env, "calendar.listEvents", {
-          from: today,
-          to: addDays(today, 1),
-          limit: 50,
-        });
-        present(env, surfacesFromOutcome("calendar.listEvents", outcome, opts("calendar", 80)));
+        const args = { from: today, to: addDays(today, 1), limit: 50 };
+        const outcome = await invoke(env, "calendar.listEvents", args);
+        // Its read stays with it: a block saved later shows up here (ADR-029).
+        present(
+          env,
+          fromRead(
+            surfacesFromOutcome("calendar.listEvents", outcome, opts("calendar", 80)),
+            "calendar.listEvents",
+            args,
+          ),
+        );
         return {
           value: displayOf(outcome, "event_list")?.events ?? ([] as CalendarEvent[]),
           outcome,
@@ -191,6 +198,109 @@ export const planTodayTool: ToolDefinition = {
   },
 };
 
+const proposeDayInput = z
+  .object({
+    day: z
+      .enum(["today", "tomorrow", "day_after_tomorrow"])
+      .optional()
+      .describe("hoy → today, mañana → tomorrow, pasado mañana → day_after_tomorrow."),
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("A specific day (YYYY-MM-DD) instead of `day`, e.g. a weekday the user named."),
+    title: z.string().trim().max(120).optional(),
+    blocks: z
+      .array(
+        z
+          .object({
+            start: z.string().describe('Local "HH:mm".'),
+            end: z.string().describe('Local "HH:mm" ("24:00" for midnight).'),
+            label: z.string().trim().min(1).max(120),
+            category: z.enum(BLOCK_CATEGORIES).optional(),
+            notes: z.string().trim().max(300).optional(),
+            given: z
+              .boolean()
+              .describe("true only when the user said this time; false for your estimate."),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(30),
+  })
+  .strict()
+  .refine((q) => q.day || q.date, { message: "Give day or date." });
+
+/**
+ * A day's plan, proposed (ADR-098): the user's times and ELISE's suggestions as time blocks,
+ * checked deterministically against each other and the calendar, shown as one timeline per
+ * day. It never writes: blocks are "saved" only when the calendar holds them.
+ */
+export const proposeDayTool: ToolDefinition = {
+  name: "planning.proposeDay",
+  capability: "workspace",
+  operation: "proposeDay",
+  description:
+    '"Organicemos mañana: me levanto a las 8, trabajo a la mañana, clase 14:15 a 18, gimnasio a la noche", "armame el día", or any change to a plan on screen ("mové el gimnasio a las 21", "alargá el trabajo"): the day as time blocks on screen, checked against the calendar. Give the WHOLE day each time (same day updates the same plan). Saves nothing.',
+  input: proposeDayInput,
+  async describe() {
+    return { summary: "Plan the day" };
+  },
+  async run(raw, env) {
+    const q = proposeDayInput.parse(raw);
+    const tz = env.ctx.timezone;
+    const today = todayIn(tz, env.ctx.now);
+    const date =
+      q.date ?? addDays(today, q.day === "tomorrow" ? 1 : q.day === "day_after_tomorrow" ? 2 : 0);
+    const read = await invoke(env, "calendar.listEvents", {
+      from: date,
+      to: addDays(date, 1),
+      limit: 50,
+    }).catch(() => null);
+    const events = read ? (displayOf(read, "event_list")?.events ?? null) : null;
+    // The same day's proposal on screen: a change is its next version, never a second plan.
+    const shown = env.ctx.workspace
+      ?.state()
+      .surfaces.find(
+        (s) => s.type === "day_plan" && (s.payload as { date?: string }).date === date,
+      );
+    const previous = (shown?.payload as { version?: number } | undefined)?.version ?? 0;
+    const result = planDay({
+      date,
+      timezone: tz,
+      title: q.title,
+      blocks: q.blocks,
+      events,
+      version: previous + 1,
+    });
+    if (!result.ok) throw new AppError("VALIDATION_ERROR", result.reason, { recovery: "review" });
+    const { plan } = result;
+    const byId = new Map(plan.blocks.map((b) => [b.id, b.label]));
+    return {
+      output: {
+        date,
+        weekday: new Intl.DateTimeFormat("en", { weekday: "long", timeZone: "UTC" }).format(
+          new Date(`${date}T12:00:00Z`),
+        ),
+        blocks: plan.blocks.map((b) => ({
+          time: `${b.start}–${b.end}`,
+          label: b.label,
+          state: b.state,
+          ...(b.origin === "calendar" ? { alreadyInCalendar: true } : {}),
+          ...(b.conflicts.length
+            ? { overlapsWith: b.conflicts.map((id) => byId.get(id) ?? id) }
+            : {}),
+        })),
+        freeStretches: plan.gaps.map((g) => `${g.start}–${g.end}`),
+        ...(events === null ? { calendarUnavailable: true } : {}),
+        instructions:
+          "The plan is on screen as a timeline: don't read it out. Say its shape in one or two sentences (when the day starts, the fixed commitments, any overlap to resolve) and offer to save it. It is a proposal: nothing is in the calendar until the user asks to save it. Then create each block with state 'proposed' via calendar.createEvent with exactly these times (blocks already saved or alreadyInCalendar are never created again). To change it, call planning.proposeDay again with the whole updated day.",
+      },
+      display: { kind: "day_plan", plan },
+    };
+  },
+};
+
 export const briefTodayTool: ToolDefinition = {
   name: "briefs.today",
   capability: "workspace",
@@ -242,4 +352,4 @@ export const briefTodayTool: ToolDefinition = {
   },
 };
 
-export const PLANNING_TOOLS = [planTodayTool, briefTodayTool];
+export const PLANNING_TOOLS = [planTodayTool, proposeDayTool, briefTodayTool];

@@ -197,6 +197,9 @@ function AssistantMessage({
 
         {message.tools.map((tool) => {
           const o = tool.outcome;
+          // An email search that found nothing says nothing when the same turn found the mail
+          // another way (a thread, another search): never "0 correos" next to the match.
+          if (emptyEmailSearch(o) && message.tools.some((x) => foundEmail(x.outcome))) return null;
           // Shown in the Live Workspace (a chip above), or a step inside an orchestration.
           if (!o || tool.parentId || (tool.surfaceIds?.length && handlers.onShowSurface))
             return null;
@@ -354,3 +357,11 @@ function SurfaceChips({ message, handlers }: { message: ChatMessage; handlers: T
     </ul>
   );
 }
+
+type Outcome = ChatMessage["tools"][number]["outcome"];
+const emptyEmailSearch = (o: Outcome) =>
+  o?.status === "succeeded" && o.display?.kind === "email_list" && !o.display.messages.length;
+const foundEmail = (o: Outcome) =>
+  o?.status === "succeeded" &&
+  (o.display?.kind === "email_thread" ||
+    (o.display?.kind === "email_list" && o.display.messages.length > 0));

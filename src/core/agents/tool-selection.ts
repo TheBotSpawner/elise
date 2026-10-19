@@ -223,6 +223,17 @@ export function selectTools(
   return { tools: [...core, ...extra], rest, groups: [...groups] };
 }
 
+const EMAIL_WORDS = SIGNALS.find(([g]) => g === "email")![1];
+const KNOWLEDGE_WORDS =
+  /(?<!\p{L})(conocimiento|knowledge|drive|notion|archivos?|files?|material|sub[ií]|uploaded)(?!\p{L})/iu;
+
+/** The user asks about their email and names no document or Knowledge source. */
+export function explicitEmail(message: string): boolean {
+  return (
+    EMAIL_WORDS.test(message) && !DOCUMENT_WORDS.test(message) && !KNOWLEDGE_WORDS.test(message)
+  );
+}
+
 /** Tool names a turn's notes mention ("email.search ✓ 3 messages" → "email.search"). */
 export function toolsInNotes(notes: readonly string[]): string[] {
   return notes

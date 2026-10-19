@@ -545,8 +545,9 @@ export const en = {
   },
   email: {
     label: "Email",
-    results: (n: number) => `${n} ${n === 1 ? "email" : "emails"}`,
-    noResults: "No emails found",
+    results: (n: number) =>
+      n === 0 ? "no results for this search" : `${n} ${n === 1 ? "email" : "emails"}`,
+    noResults: "This search found no emails.",
     thread: "Conversation",
     messages: (n: number) => `${n} ${n === 1 ? "message" : "messages"}`,
     you: "You",
@@ -3321,6 +3322,7 @@ export const en = {
       finance_import: "Finance import",
       personality: "Personality",
       home: "Home",
+      day_plan: "Day plan",
     },
     states: {
       loading: "Loading",
@@ -3352,6 +3354,7 @@ export const en = {
       expand: "Expand",
       save_shortcut: "Save shortcut",
       uncheck: "Uncheck",
+      save_plan: "Save to calendar",
     },
     back: "Back to workspace",
     dismiss: "Dismiss",
@@ -3408,6 +3411,36 @@ export const en = {
       research: (name: string) =>
         `Research ${name} on the web: recent news and public developments.`,
       reviewWeak: (name: string) => `Let's review my weak areas in ${name}.`,
+      savePlan: (day: string) => `Save the plan for ${day} to my calendar.`,
+    },
+    dayPlan: {
+      draft: "Proposal · nothing is saved until you confirm",
+      allSaved: "The whole plan is in your calendar",
+      saved: "In your calendar",
+      origin: { user: "Your time", suggested: "Suggested", calendar: "Already booked" },
+      free: (d: string) => `Free · ${d}`,
+      conflict: "Overlaps",
+      duration: (m: number) =>
+        m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`,
+      version: (v: number) => `Version ${v}`,
+      warnings: {
+        calendarUnavailable:
+          "I couldn't read your calendar: this may clash with something you have.",
+        nonexistent: (at: string) => `${at} doesn't exist that day (clock change).`,
+        overlaps: (n: number) => `${n} ${n === 1 ? "overlap" : "overlaps"}`,
+      },
+      categories: {
+        work: "Work",
+        study: "Study",
+        class: "Class",
+        meeting: "Meeting",
+        exercise: "Exercise",
+        meal: "Meal",
+        personal: "Personal",
+        rest: "Rest",
+        travel: "Travel",
+        other: "Other",
+      },
     },
     meeting: {
       startsIn: (min: number) => `in ${min} min`,
@@ -3439,6 +3472,23 @@ export const en = {
       showLess: "Show less",
       messages: (n: number) => `${n} ${n === 1 ? "message" : "messages"}`,
       latest: "Latest",
+      read: "Read email",
+      reader: {
+        title: "Email",
+        loading: "Opening the email…",
+        failed: "I couldn't open this email.",
+        reconnect: "The account needs to be reconnected in Connections.",
+        notFound: "This email is no longer available.",
+        retry: "Retry",
+        close: "Close",
+        to: "To",
+        cc: "CC",
+        noBody: "This message has no text.",
+        attachments: (n: number) => `${n} ${n === 1 ? "attachment" : "attachments"}`,
+        earlier: (n: number) => `Show ${n} earlier ${n === 1 ? "message" : "messages"}`,
+        openIn: (p: string) => `Open in ${p}`,
+        privacy: "Remote images and email formatting aren't loaded, to protect your privacy.",
+      },
     },
     tasks: {
       more: (n: number) => `+${n} more`,

@@ -15,6 +15,7 @@ import {
 import { methodNote, recentMethodId, runElise, toolNotes } from "@/core/agents/runtime";
 import {
   ECONOMY_SIGNAL,
+  explicitEmail,
   HOLIDAY_WORDS,
   HOME_SIGNAL,
   selectTools,
@@ -39,6 +40,7 @@ import { generalContextApplies } from "@/core/knowledge/model";
 import { findCanonicalReferences } from "@/core/lexicon";
 import { coarse, type LatLng } from "@/core/location/model";
 import { TurnPerf } from "@/core/perf";
+import { planFromReply } from "@/core/planning/day-plan";
 import { recallIntent, type RecallResult } from "@/core/recall/model";
 import { matchShortcut } from "@/core/shortcuts/match";
 import { stepsToCalls } from "@/core/shortcuts/model";
@@ -707,6 +709,8 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
         let model: string | null = null;
         // The turn's tool context, kept so a Surface's own read can be replayed (ADR-029).
         let toolCtx: ToolContext | null = null;
+        // "Fijate en el mail…": the mailbox answers; document matches stay off the Canvas.
+        const emailRequest = explicitEmail(input.message);
         const readSurface = readRunner(
           (call) =>
             executeToolCall(
@@ -897,7 +901,9 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                   !event.name.startsWith("ui.") &&
                   !brief &&
                   event.outcome.status !== "approval_required";
-                const plan = policed ? beforePresenting(event.name, presented) : null;
+                const plan = policed
+                  ? beforePresenting(event.name, presented, { email: emailRequest })
+                  : null;
                 const at = new Date().toISOString();
                 if (plan?.dismiss.length) {
                   workspace.apply(plan.dismiss.map((id) => ({ op: "dismiss" as const, id, at })));
@@ -962,10 +968,24 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                 });
                 break;
               }
-              case "done":
+              case "done": {
                 finalText = finishSpoken(event.text);
                 usage = event.usage;
                 model = event.model;
+                // A day planned only in words still gets its timeline (ADR-098): the schedule
+                // is on screen without a "mostrámelo".
+                const planned = event.tools.some(
+                  (t) => t.name === "planning.proposeDay" || t.name === "ui.timeline",
+                );
+                const plan =
+                  toolCtx && !planned
+                    ? planFromReply(event.text, input.message, auth.profile.timezone)
+                    : null;
+                const fromReply = plan ? await readSurface(plan).catch(() => null) : null;
+                if (plan && fromReply?.status === "succeeded") {
+                  workspace.present(plan.tool, "plan-from-reply", fromReply, plan);
+                  logger.info("planning.plan_from_reply", { blocks: plan.args.blocks.length });
+                }
                 await persistAssistant(finalText, {
                   tools: [...traces.values()],
                   toolNotes: [...methodNotes, ...toolNotes(event.tools)],
@@ -985,6 +1005,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                   });
                 }
                 break;
+              }
               case "error":
                 {
                   // A failed turn doesn't leave its retrieval rounds on screen as filler (ADR-048):

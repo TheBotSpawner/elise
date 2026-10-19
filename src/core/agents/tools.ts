@@ -518,6 +518,8 @@ export type ToolDisplay =
   | { kind: "market"; market: SurfacePayloads["market"] }
   /** Public economic data (ADR-094). */
   | { kind: "economy"; economy: SurfacePayloads["economy"]; title: string; key: string }
+  /** A day's plan (ADR-098): validated by core/planning, never by the model. */
+  | { kind: "day_plan"; plan: SurfacePayloads["day_plan"] }
   /** A spreadsheet from chat, analyzed by the Finance import pipeline (ADR-075). */
   | { kind: "finance_import"; financeImport: SurfacePayloads["finance_import"] }
   /** Home devices and what a command did to them (ADR-079). */

@@ -16,6 +16,7 @@ import {
   replySubject,
   searchInput,
   sendDraftInput,
+  READER_BODY_MAX,
   threadIdInput,
   triageInput,
   updateDraftInput,
@@ -308,14 +309,24 @@ export const getThreadTool: ToolDefinition = {
     return { summary: "Read conversation" };
   },
   async run(input, env) {
-    const { threadId } = threadIdInput.parse(input);
+    const { threadId, reader } = threadIdInput.parse(input);
     const thread = await provider(env).getThread(threadId);
     if (!thread) throw new AppError("NOT_FOUND", "Conversation not found", { recovery: "review" });
     return {
       output: threadForModel(thread, env.ctx.timezone),
       display: {
         kind: "email_thread",
-        thread: { ...thread, messages: thread.messages.map(withoutBody) },
+        // ELISE's reader gets the full plain text, fetched on demand; a conversation turn's
+        // display (streamed and kept with the turn) never carries bodies.
+        thread: {
+          ...thread,
+          messages: reader
+            ? thread.messages.map((m) => ({
+                ...m,
+                body: m.body?.slice(0, READER_BODY_MAX) ?? null,
+              }))
+            : thread.messages.map(withoutBody),
+        },
       },
     };
   },

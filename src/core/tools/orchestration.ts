@@ -1,6 +1,7 @@
 import type { ToolCallOutcome } from "../agents/executor";
 import type { ToolDisplay, ToolRunEnv } from "../agents/tools";
 import { clipText } from "../text";
+import { datasetKey } from "../workspace/lifecycle";
 import type { SurfaceDraft, WorkspaceOp } from "../workspace/model";
 
 /**
@@ -67,6 +68,22 @@ export function present(env: ToolRunEnv, drafts: (SurfaceDraft | null)[]) {
     .filter((d): d is SurfaceDraft => d !== null)
     .map((surface) => ({ op: "present", surface, at }));
   if (ops.length) env.ctx.workspace?.apply(ops);
+}
+
+/**
+ * A collection an orchestration shows keeps the read behind it (ADR-029): a later write — a
+ * plan saved to the calendar — re-runs that read, so the Surface shows the saved state.
+ */
+export function fromRead(
+  drafts: (SurfaceDraft | null)[],
+  tool: string,
+  args: Record<string, unknown>,
+): (SurfaceDraft | null)[] {
+  return drafts.map((d) =>
+    d && d.type !== "approval"
+      ? { ...d, query: { tool, args }, dataset: datasetKey(tool, args) }
+      : d,
+  );
 }
 
 export const clip = clipText;

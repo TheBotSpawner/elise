@@ -45,6 +45,7 @@ export function useVoice({
     wakePhrase: p.wakePhrase,
     language,
     adaptiveDelivery: adaptiveDeliveryEnabled(),
+    instantAck: true,
   });
   // ELISE Desktop listens for "ELISE" itself, in the background (ADR-095): the browser's
   // wake phrase engine isn't used there, and the session keeps going with the window hidden.

@@ -71,6 +71,8 @@ export const SURFACE_TYPES = [
   "personality",
   /** Home devices and the result of a command or mode (ADR-079). */
   "home",
+  /** A day's plan (ADR-098): time blocks for one date, proposed until the calendar holds them. */
+  "day_plan",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
 
@@ -120,6 +122,8 @@ export const ACTION_IDS = [
   "save_shortcut",
   "expand",
   "uncheck",
+  /** A day plan's proposed blocks → the calendar (asked in the conversation, approval rules apply). */
+  "save_plan",
 ] as const;
 export type ActionId = (typeof ACTION_IDS)[number];
 

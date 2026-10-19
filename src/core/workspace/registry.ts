@@ -27,6 +27,7 @@ import { weatherPayload, type WeatherPayload } from "./weather";
 import { TASK_STATUSES } from "../capabilities/tasks";
 import { TEAM_ACCESS } from "../capabilities/team-messaging";
 import { CONTEXT_KINDS, LINK_TYPES } from "../contexts/model";
+import { BLOCK_CATEGORIES } from "../planning/day-plan";
 import { toLocalDateTime } from "../time";
 import { clockText, currentPhase, elapsedMs, remainingMs } from "../timers/model";
 
@@ -993,6 +994,39 @@ export const PAYLOADS = {
   finance_import: financeImportPayload,
   personality: z.object({ current: z.enum(PERSONALITIES) }),
   home: homePayload,
+  day_plan: z.object({
+    date: isoDay,
+    timezone: text(60),
+    title: text(120).nullable(),
+    blocks: z
+      .array(
+        z.object({
+          id: text(10),
+          start: z.string().regex(/^\d{2}:\d{2}$/),
+          end: z.string().regex(/^\d{2}:\d{2}$/),
+          minutes: z.number().int(),
+          label: text(120),
+          category: z.enum(BLOCK_CATEGORIES),
+          notes: text(300).nullable(),
+          origin: z.enum(["user", "suggested", "calendar"]),
+          state: z.enum(["proposed", "saved"]),
+          eventId: text(1000).nullable(),
+          conflicts: z.array(text(10)).max(40),
+        }),
+      )
+      .max(40),
+    gaps: z.array(z.object({ start: text(5), end: text(5), minutes: z.number().int() })).max(40),
+    warnings: z
+      .array(
+        z.union([
+          z.object({ kind: z.literal("overlap"), a: text(10), b: text(10) }),
+          z.object({ kind: z.literal("nonexistent_time"), at: text(5) }),
+          z.object({ kind: z.literal("calendar_unavailable") }),
+        ]),
+      )
+      .max(60),
+    version: z.number().int().min(1),
+  }),
 } satisfies Record<SurfaceType, z.ZodType>;
 
 export type SurfacePayloads = { [K in SurfaceType]: z.infer<(typeof PAYLOADS)[K]> };
@@ -1578,6 +1612,21 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     actions: () => [],
     describe: (p) =>
       `${p.title} (hub ${p.hub}): ${p.items.map((i) => `${i.name} ${i.status === "state" ? "" : `${i.status} `}${i.detail}`).join("; ")}`,
+  },
+  // A day's plan (ADR-098): the proposal is the answer; saving it is the conversation's.
+  day_plan: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 90,
+    actions: (p) =>
+      p.blocks.some((b) => b.state === "proposed") ? [{ id: "save_plan", kind: "prompt" }] : [],
+    describe: (p) =>
+      `Plan for ${p.date} (v${p.version}): ${p.blocks
+        .map(
+          (b) =>
+            `${b.start}–${b.end} ${q(b.label)} ${b.state}${b.origin === "calendar" ? " (calendar)" : ""}${b.conflicts.length ? " CONFLICT" : ""}`,
+        )
+        .join("; ")}`,
   },
   // The personality choices (ADR-076): picking one saves it, like Settings.
   personality: {

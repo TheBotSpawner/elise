@@ -64,7 +64,9 @@ export type AckIntent =
   | "create"
   | "update"
   | "risky"
-  | "general";
+  | "general"
+  /** Any request, the moment it ends: heard, before any tool (ADR-098). Neutral for actions. */
+  | "instant";
 
 /** Instant work (the screen, settings, contexts): its answer is the acknowledgement. */
 const INSTANT = new Set(["ui", "workspace", "settings", "appearance", "contexts", "shortcuts"]);
@@ -170,8 +172,13 @@ const ACKS: Bank = {
     en: ["Sure, I'll prepare it.", "Getting it ready for you to confirm.", "Preparing that."],
   },
   general: {
-    es: ["Voy con eso.", "Lo veo.", "Ya lo miro.", "Sí, dame un segundo."],
+    es: ["Voy con eso.", "Lo veo.", "Ya lo miro.", "Sí, dame un momento."],
     en: ["On it.", "Let me see.", "Looking into it.", "One moment."],
+  },
+  // Never a promise of what she'll do (an action may still need approval): only "I heard you".
+  instant: {
+    es: ["Un segundo.", "Okay.", "Dale, ya lo veo.", "Ahí va.", "Ya mismo."],
+    en: ["One second.", "Okay.", "Sure, one moment.", "On it.", "Right away."],
   },
 };
 
@@ -208,6 +215,21 @@ const LOOKUPS: [RegExp, AckIntent][] = [
   [/\b(mis (mails|correos|emails)|mi (correo|bandeja)|my (email|inbox))\b/i, "check_email"],
   [/\b(mis tareas|mis pendientes|qu[eé] tareas|my tasks|my to-?dos)\b/i, "check_tasks"],
 ];
+
+/** Social words a reply answers at once: no "un segundo" before "¡de nada!". */
+const SOCIAL =
+  /^(hola|buenas|buen d[ií]a|buenos d[ií]as|buenas (tardes|noches)|gracias|muchas gracias|de nada|chau|adi[oó]s|nos vemos|ok|okay|dale|listo|perfecto|genial|bien|s[ií]|no|hi|hello|hey|thanks|thank you|bye|yes|nope|cool|great|ok(ay)? gracias)[\s,.!¡?¿]*$/i;
+
+/**
+ * Whether a finished request gets an instant acknowledgement (ADR-098): every request does —
+ * hearing "un segundo" at once is what tells the user ELISE heard — except a social word or
+ * two, which the reply itself answers faster than any filler.
+ */
+export function wantsInstantAck(text: string): boolean {
+  const t = text.trim();
+  if (!t || SOCIAL.test(t)) return false;
+  return t.split(/\s+/).length >= 2;
+}
 
 export function predictIntent(text: string): AckIntent | null {
   const t = text.trim();

@@ -528,6 +528,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       prepareMeeting: READ,
       // Orchestrations that only gather and present (ADR-017 §14-15).
       planToday: READ,
+      // A day's plan, proposed and checked (ADR-098): it never writes; saving is the calendar's.
+      proposeDay: READ,
       briefToday: READ,
     },
   },

@@ -7,6 +7,7 @@ import { ExternalIcon } from "@/components/elise/icons";
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { EmailAddress, EmailMessage, EmailProvenance } from "@/core/capabilities/email";
 import { discardDraftAction, sendDraftAction } from "@/features/email/actions";
+import { EmailReaderDialog } from "@/features/email/email-reader";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -76,20 +77,23 @@ function Row({
   m,
   multiSource,
   when,
+  onOpen,
 }: {
   m: EmailMessage;
   multiSource: boolean;
   when: (iso: string) => string;
+  /** Opens the email in ELISE's reader (ADR-098). */
+  onOpen: () => void;
 }) {
   const { t } = useI18n();
   const noisy = m.bulk || (m.category !== null && m.category !== "primary");
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 py-1.5">
-      <a
-        href={m.url ?? undefined}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="min-w-0 text-[14px] hover:text-accent-text"
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-haspopup="dialog"
+        className="min-w-0 text-left text-[14px] hover:text-accent-text"
       >
         <span className="flex items-baseline gap-2">
           {m.unread && (
@@ -107,10 +111,23 @@ function Row({
           {noisy && <span className="mr-2 text-muted">{t.email.likelyNoise}</span>}
           {m.snippet}
         </span>
-      </a>
+      </button>
       <span className="flex shrink-0 flex-col items-end text-[12.5px] text-faint">
         <span className="font-mono">{when(m.date)}</span>
         {multiSource && <span>{origin(m.provenance)}</span>}
+        {m.url && /^https:\/\//.test(m.url) && (
+          <a
+            href={m.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={
+              m.provenance.providerKey === "microsoft" ? t.email.openInOutlook : t.email.openInGmail
+            }
+            className="mt-0.5 text-faint hover:text-accent-text"
+          >
+            <ExternalIcon />
+          </a>
+        )}
       </span>
     </li>
   );
@@ -128,6 +145,7 @@ export function EmailListCard({
   const { t } = useI18n();
   const when = useWhen(timezone);
   const multiSource = new Set(display.messages.map((m) => m.provenance.connectionId)).size > 1;
+  const [reading, setReading] = useState<EmailMessage | null>(null);
   return (
     <motion.section {...rise} aria-label={t.chat.resultLabel} className={CARD}>
       <Header label={`${t.email.label} · ${t.email.results(display.messages.length)}`} />
@@ -136,10 +154,22 @@ export function EmailListCard({
       ) : (
         <ul className="flex flex-col divide-y divide-border">
           {display.messages.slice(0, 10).map((m) => (
-            <Row key={m.id} m={m} multiSource={multiSource} when={when} />
+            <Row
+              key={m.id}
+              m={m}
+              multiSource={multiSource}
+              when={when}
+              onOpen={() => setReading(m)}
+            />
           ))}
         </ul>
       )}
+      <EmailReaderDialog
+        threadId={reading?.threadId ?? null}
+        subject={reading?.subject ?? ""}
+        timezone={timezone}
+        onClose={() => setReading(null)}
+      />
       {display.unavailable?.length ? (
         <p role="status" className="text-[13px] text-approval-text">
           {t.email.unavailable(display.unavailable.join(", "))}
@@ -161,8 +191,15 @@ export function EmailThreadCard({
   const { t } = useI18n();
   const when = useWhen(timezone);
   const { thread } = display;
+  const [reading, setReading] = useState(false);
   return (
     <motion.section {...rise} aria-label={t.chat.resultLabel} className={CARD}>
+      <EmailReaderDialog
+        threadId={reading ? thread.id : null}
+        subject={thread.subject}
+        timezone={timezone}
+        onClose={() => setReading(false)}
+      />
       <Header
         label={`${t.email.thread} · ${t.email.messages(thread.messages.length)} · ${origin(thread.provenance)}`}
         href={thread.url}
@@ -186,6 +223,14 @@ export function EmailThreadCard({
           </li>
         ))}
       </ol>
+      <button
+        type="button"
+        onClick={() => setReading(true)}
+        aria-haspopup="dialog"
+        className="self-start rounded-full border border-border px-3 py-1 text-[13px] hover:border-accent-line hover:text-accent-text"
+      >
+        {t.workspace.email.read}
+      </button>
     </motion.section>
   );
 }

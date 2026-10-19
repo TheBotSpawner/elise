@@ -551,3 +551,41 @@ describe("prompt injection in email content", () => {
     expect(pkg.instructions).toContain("sending always needs the user's approval");
   });
 });
+
+/** ELISE's reader (ADR-098): the full message on demand; a turn's display never carries it. */
+describe("the email reader", () => {
+  it("reads the full plain-text body only when the reader asks", async () => {
+    const { ports, northwind } = setup();
+    northwind.addMessage({
+      id: "full",
+      threadId: "rt",
+      subject: "Actividades para el Lunes 19/10",
+      body: "Hola a todos. El lunes 19/10 la clase es virtual. Link: https://meet.example/abc",
+      snippet: "Hola a todos…",
+    });
+    const threadId = makeExternalRef(NORTHWIND, "t", "rt");
+    const reader = await executeToolCall(ports, makeCtx({ origin: "user_ui" }), {
+      name: "email.getThread",
+      args: { threadId, reader: true },
+    });
+    const turn = await executeToolCall(ports, makeCtx(), {
+      name: "email.getThread",
+      args: { threadId },
+    });
+    const body = (o: typeof reader) =>
+      o.status === "succeeded" && o.display?.kind === "email_thread"
+        ? o.display.thread.messages[0]!.body
+        : "missing";
+    expect(body(reader)).toMatch(/la clase es virtual/);
+    expect(body(turn)).toBeNull(); // the snippet is never presented as the full body
+  });
+
+  it("a thread of another workspace's account doesn't resolve", async () => {
+    const { ports } = setup();
+    const out = await executeToolCall(ports, makeCtx({ origin: "user_ui" }), {
+      name: "email.getThread",
+      args: { threadId: makeExternalRef(FOREIGN, "t", "x"), reader: true },
+    });
+    expect(out).toMatchObject({ status: "failed", error: { code: "NOT_FOUND" } });
+  });
+});

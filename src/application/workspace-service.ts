@@ -410,6 +410,10 @@ export class WorkspaceSession implements WorkspacePort {
             dataset: `vision:${d.ref.id}`,
           }
         : {}),
+      // A day's plan is that day's (ADR-098): every version of it is one Surface.
+      ...(d.type === "day_plan"
+        ? { dataset: `day_plan:${(d.payload as SurfacePayloads["day_plan"]).date}` }
+        : {}),
       ...(change ? { changedAt: at } : {}),
       ...(priority !== undefined && d.type !== "approval" ? { priority } : {}),
       ...(d.type === "calendar" && query?.tool === "calendar.listEvents"
@@ -497,7 +501,13 @@ export class WorkspaceSession implements WorkspacePort {
                       fresh.payload as CalendarPayload,
                       surface.payload as CalendarPayload,
                     )
-                  : fresh.payload,
+                  : surface.type === "day_plan"
+                    ? // Re-checked against the calendar: same proposal, same version.
+                      {
+                        ...(fresh.payload as SurfacePayloads["day_plan"]),
+                        version: (surface.payload as SurfacePayloads["day_plan"]).version,
+                      }
+                    : fresh.payload,
               title: fresh.title,
               state: "ready",
             },

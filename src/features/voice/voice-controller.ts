@@ -23,6 +23,7 @@ import {
   ackIntent,
   pickAcknowledgement,
   predictIntent,
+  wantsInstantAck,
   progressLine,
   PROGRESS_AFTER_MS,
   stillSayable,
@@ -155,6 +156,8 @@ export interface VoicePrefs {
   language: "es" | "en";
   /** Match the user's speaking volume (ADR-049); off: normal unless asked. Default on. */
   adaptiveDelivery?: boolean;
+  /** Every request is acknowledged the moment it ends ("Un segundo.", ADR-098). The app: on. */
+  instantAck?: boolean;
 }
 
 export interface VoiceDeps {
@@ -704,6 +707,12 @@ export class VoiceController {
         language ?? this.prefs.language,
         prepared?.intent === predicted ? prepared.line : undefined,
       );
+    } else if (this.prefs.speak && this.prefs.instantAck && wantsInstantAck(text)) {
+      // Every other request is still heard at once ("Un segundo."), before any tool: a reply
+      // that's faster drops it (stillSayable), a slow one isn't silence (ADR-098).
+      this.turn.acked = true;
+      this.trace("ack_instant");
+      this.acknowledge(this.turn, "instant", language ?? this.prefs.language);
     }
     this.deps.send(text, {
       modality: "voice",

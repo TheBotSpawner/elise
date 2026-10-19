@@ -1688,3 +1688,41 @@ describe("music a turn asked for", () => {
     expect(controller.state.phase).toBe("listening");
   });
 });
+
+/** Every request is heard at once (ADR-098): "Un segundo." before any tool, voice or wake word. */
+describe("instant acknowledgement", () => {
+  const instant = (lang: "es" | "en") => acknowledgements(lang);
+
+  it("an action that names no lookup is still acknowledged the moment it ends", async () => {
+    const { controller, player, say } = setup({
+      transcripts: ["Apagá la tele del living"],
+      prefs: { instantAck: true },
+    });
+    await controller.start();
+    await say();
+    expect(player.spoken).toHaveLength(1);
+    expect(instant("es")).toContain(player.spoken[0]);
+  });
+
+  it("a lookup keeps its own line; a social word gets none", async () => {
+    const lookup = setup({
+      transcripts: ["¿Qué tengo mañana a la tarde?"],
+      prefs: { instantAck: true },
+    });
+    await lookup.controller.start();
+    await lookup.say();
+    expect(lookup.player.spoken).toHaveLength(1);
+    const thanks = setup({ transcripts: ["Gracias"], prefs: { instantAck: true } });
+    await thanks.controller.start();
+    await thanks.say();
+    expect(thanks.player.spoken).toEqual([]);
+  });
+
+  it("“ELISE, …” from the device's wake word is acknowledged too", async () => {
+    const { controller, player, hear } = setup({ prefs: { instantAck: true } });
+    await controller.deviceWake("poné música tranquila");
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await settle();
+    expect(player.spoken).toHaveLength(1);
+  });
+});

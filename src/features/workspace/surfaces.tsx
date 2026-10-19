@@ -3,6 +3,7 @@
 import {
   Music,
   CalendarDays,
+  CalendarClock,
   Check,
   ChevronRight,
   FileText,
@@ -54,6 +55,7 @@ import { isOpen } from "@/core/workspace/model";
 import type { SurfacePayloads } from "@/core/workspace/registry";
 import { ApprovalCard, type ApprovalPhase } from "@/features/chat/approval-card";
 import { DisplayCard } from "@/features/chat/result-cards";
+import { EmailReaderDialog, EmailThreadReader } from "@/features/email/email-reader";
 import { completionFeedback } from "@/features/feedback/completion";
 import { MusicSurfaceBody } from "@/features/music/music-view";
 import {
@@ -72,6 +74,7 @@ import type { VisualSize } from "./canvas/composition";
 import { MapBody, PlaceBody } from "./canvas/map";
 import { MediaBody } from "./canvas/media";
 import { WeatherView } from "./canvas/weather";
+import { DayPlanBody, useDayLabel } from "./day-plan-view";
 import { EconomyBody } from "./economy-view";
 import { MarketBody } from "./market-view";
 import { FinanceImportCard } from "../finance/chat-import-card";
@@ -137,6 +140,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   finance_import: FileSpreadsheet,
   personality: Sparkles,
   home: House,
+  day_plan: CalendarClock,
 };
 
 export interface SurfaceHandlers {
@@ -261,6 +265,11 @@ export function SurfaceActions({
 }) {
   const { t } = useI18n();
   const title = surface.title;
+  const planDay = useDayLabel(
+    surface.type === "day_plan"
+      ? (surface.payload as SurfacePayloads["day_plan"]).date
+      : "2000-01-01",
+  );
   const items = surface.actions.flatMap((a) => {
     if (a.kind === "link" && a.href)
       return [
@@ -282,11 +291,13 @@ export function SurfaceActions({
                   ? t.workspace.prompts.saveSource(
                       (surface.payload as { url?: string }).url ?? title,
                     )
-                  : a.id === "research"
-                    ? t.workspace.prompts.research(title)
-                    : a.id === "review_weak"
-                      ? t.workspace.prompts.reviewWeak(title)
-                      : t.workspace.prompts.summarize(title),
+                  : a.id === "save_plan"
+                    ? t.workspace.prompts.savePlan(planDay)
+                    : a.id === "research"
+                      ? t.workspace.prompts.research(title)
+                      : a.id === "review_weak"
+                        ? t.workspace.prompts.reviewWeak(title)
+                        : t.workspace.prompts.summarize(title),
             )
           }
         >
@@ -445,10 +456,17 @@ function EmailListBody({
   const { t } = useI18n();
   const f = useFormat(timezone);
   const [all, setAll] = useState(false);
+  const [reading, setReading] = useState<{ threadId: string; subject: string } | null>(null);
   const shown = all ? p.items : p.items.slice(0, EMAIL_VISIBLE);
   const hidden = p.items.length - shown.length;
   return (
     <div className="flex flex-col gap-1.5">
+      <EmailReaderDialog
+        threadId={reading?.threadId ?? null}
+        subject={reading?.subject ?? ""}
+        timezone={timezone}
+        onClose={() => setReading(null)}
+      />
       {p.mailbox && (
         <p className="flex min-w-0 items-baseline gap-1.5 text-[12px] text-faint">
           <span className="shrink-0 text-fg2">
@@ -467,7 +485,12 @@ function EmailListBody({
             <li key={m.threadId}>
               <button
                 type="button"
-                onClick={() => handlers.onExpand(surface, m.threadId)}
+                // In focus (what "¿qué dice?" means now) and open in ELISE's reader.
+                onClick={() => {
+                  handlers.onExpand(surface, m.threadId);
+                  setReading({ threadId: m.threadId, subject: m.subject });
+                }}
+                aria-haspopup="dialog"
                 className="grid w-full grid-cols-[20px_minmax(0,1fr)_auto] items-baseline gap-x-2 rounded-xl px-2 py-2 text-left transition-colors hover:bg-surface-2"
               >
                 {m.priority ? (
@@ -517,30 +540,22 @@ function EmailListBody({
   );
 }
 
+/** A conversation on the Canvas is that conversation, readable in place (ADR-098). */
 function EmailThreadBody({
   p,
   timezone,
+  focus = false,
 }: {
   p: SurfacePayloads["email_thread"];
   timezone: string;
+  focus?: boolean;
 }) {
-  const { t } = useI18n();
-  const f = useFormat(timezone);
   return (
     <div className="flex flex-col gap-2">
       <p className={TITLE}>{p.subject}</p>
-      <p className="text-[12.5px] text-muted">
-        {p.participants.slice(0, 4).join(", ")} · {t.workspace.email.messages(p.messageCount)}
-      </p>
-      {p.latest && (
-        <div className="border-l border-border pl-3">
-          <p className="flex items-baseline justify-between gap-3 text-[12.5px]">
-            <span className="font-medium">{p.latest.from}</span>
-            <span className="font-mono text-[11.5px] text-faint">{f.date(p.latest.date)}</span>
-          </p>
-          <p className={cn(TEXT, "line-clamp-3 text-muted")}>{p.latest.excerpt}</p>
-        </div>
-      )}
+      <div className={cn(!focus && "max-h-[28rem] overflow-y-auto overscroll-contain pr-1")}>
+        <EmailThreadReader threadId={p.threadId} timezone={timezone} heading={false} />
+      </div>
     </div>
   );
 }
@@ -1013,7 +1028,7 @@ export function SurfaceBody({
     case "email_list":
       return <EmailListBody surface={surface} p={p} timezone={timezone} handlers={handlers} />;
     case "email_thread":
-      return <EmailThreadBody p={p} timezone={timezone} />;
+      return <EmailThreadBody p={p} timezone={timezone} focus={size === "focus"} />;
     case "team_messages":
       return <TeamMessagesBody p={p} timezone={timezone} />;
     case "team_thread":
@@ -1070,6 +1085,8 @@ export function SurfaceBody({
       return <PersonalityPicker p={p} />;
     case "home":
       return <HomeResultBody p={p} />;
+    case "day_plan":
+      return <DayPlanBody p={p} focus={size === "focus"} />;
     case "schedule": {
       const sp = surface.payload as SurfacePayloads["schedule"];
       const proposal = sp.proposal as ToolDisplay | undefined;
