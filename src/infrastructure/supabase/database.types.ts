@@ -1414,6 +1414,10 @@ export type DesktopInstallationRow = {
   capabilities: string[];
   last_seen_at: Ts | null;
   revoked_at: Ts | null;
+  /** ELISE Home on that computer (migration 051). */
+  home_enabled: boolean;
+  home_runtime_phase: string | null;
+  home_runtime_progress: number | null;
   created_at: Ts;
   updated_at: Ts;
 };

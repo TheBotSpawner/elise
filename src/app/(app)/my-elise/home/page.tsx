@@ -1,3 +1,5 @@
+import { headers } from "next/headers";
+
 import { requireAuthContext } from "@/application/auth-context";
 import { MY_ELISE_ICONS } from "@/components/elise/navigation/nav-items";
 import { PageContainer, PageHeader } from "@/components/shared/page";
@@ -7,8 +9,8 @@ import { getT } from "@/lib/i18n/server";
 import { homeHubPageProps } from "./props";
 
 export default async function HomePage() {
-  const [auth, { t }] = await Promise.all([requireAuthContext(), getT()]);
-  const props = await homeHubPageProps(auth);
+  const [auth, { t }, h] = await Promise.all([requireAuthContext(), getT(), headers()]);
+  const props = await homeHubPageProps(auth, h.get("user-agent"));
   return (
     <PageContainer wide>
       <PageHeader

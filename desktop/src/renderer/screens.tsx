@@ -72,7 +72,7 @@ export function CloudBanner() {
       </span>
       {c.home === "online" && (
         <span className="text-muted">
-          · {t.smartHome.title}: <span className="text-success-text">● {s.homeLocal}</span>
+          · {t.smartHome.title}: <span className="text-success">● {s.homeLocal}</span>
         </span>
       )}
       <button
@@ -253,6 +253,7 @@ export function DesktopSettings() {
     void bridge().getPreferences().then(setPrefs);
     void bridge().getUpdateState().then(setUpdate);
     void bridge().getHomeHubState().then(setHome);
+    return bridge().onHomeHub(setHome);
   }, [c]);
 
   const toggle = (key: keyof DesktopPreferences) => async (value: boolean) =>
@@ -298,9 +299,35 @@ export function DesktopSettings() {
         <div className={row}>
           <span className="text-[14px]">{s.home}</span>
           <span className="text-[13.5px] text-muted">
-            {home ? s.homeStates[home.runtime] : "—"}
+            {home ? s.homeStates[home.runtime.enabled ? home.runtime.phase : "not_installed"] : "—"}
           </span>
         </div>
+        {home?.runtime.version && (
+          <details className="group py-3.5 text-[13px] text-muted">
+            <summary className="cursor-pointer select-none">{s.advanced}</summary>
+            <div className="mt-3 flex flex-col items-start gap-2">
+              <p className="text-faint">{s.homeVersion(home.runtime.version)}</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={async () => {
+                  const r = t.smartHome.runtime;
+                  if (
+                    await confirm({
+                      title: r.remove,
+                      body: r.removeBody,
+                      confirmLabel: r.remove,
+                      destructive: true,
+                    })
+                  )
+                    await bridge().resetHome();
+                }}
+              >
+                {t.smartHome.runtime.remove}
+              </Button>
+            </div>
+          </details>
+        )}
         <div className={row}>
           <span className="flex flex-col">
             <span className="text-[14px]">{s.updates}</span>

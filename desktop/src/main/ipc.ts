@@ -1,4 +1,6 @@
 import { app, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { execFile } from "node:child_process";
+import { join } from "node:path";
 
 import { z } from "zod";
 
@@ -13,6 +15,7 @@ import {
 } from "@/core/platform/platform";
 
 import * as cloud from "./cloud";
+import { resetHome } from "./home";
 import { log, recentLogs } from "./log";
 import { APP_ORIGIN } from "./protocol";
 import type { RuntimeHost } from "./runtime-host";
@@ -57,19 +60,19 @@ export function desktopInfo(host: RuntimeHost): DesktopInfo {
 
 export function connectivity(host: RuntimeHost): EliseConnectivity {
   const { cloud: c, internet } = cloud.cloudState();
-  const h = host.home;
+  const phase = host.home?.runtime.phase ?? "not_installed";
+  const enabled = host.home?.runtime.enabled ?? false;
   return {
     internet,
     cloud: c,
-    localRuntime: host.running ? (h.runtime === "error" ? "degraded" : "online") : "offline",
-    home:
-      h.runtime === "not_installed"
-        ? "not_configured"
-        : h.runtime === "ready"
-          ? "online"
-          : h.runtime === "error" || h.runtime === "stopped"
-            ? "offline"
-            : "degraded",
+    localRuntime: host.running ? (phase === "error" ? "degraded" : "online") : "offline",
+    home: !enabled
+      ? "not_configured"
+      : phase === "ready" && host.home?.providerConnected
+        ? "online"
+        : phase === "error" || phase === "stopped"
+          ? "offline"
+          : "degraded",
   };
 }
 
@@ -113,6 +116,23 @@ export function registerIpc(host: RuntimeHost, applyLoginItem: () => void) {
     return loadState().preferences;
   });
   handle(INVOKE.homeState, () => host.home);
+  // Long operations return at once; progress arrives as onHomeHub events.
+  handle(INVOKE.homeSetup, () => host.call("setup"));
+  handle(INVOKE.homeEnable, () => host.call("enableRequirements"));
+  handle(INVOKE.homeReset, () => resetHome(host));
+  handle(INVOKE.homeDiagnostics, async () =>
+    JSON.stringify(await host.call("diagnostics").catch(() => null), null, 2),
+  );
+  handle(INVOKE.restartComputer, () => {
+    // Only ever reached from the person's explicit "Reiniciar ahora" (setup resumes after).
+    if (host.home?.runtime.phase !== "restart_required") return;
+    log("desktop_restart_requested");
+    execFile(join(process.env.SystemRoot ?? "C:\Windows", "System32", "shutdown.exe"), [
+      "/r",
+      "/t",
+      "10",
+    ]);
+  });
   handle(INVOKE.homeDevices, async () =>
     cloud.mayControlLocalHome() ? host.call("listDevices") : [],
   );
@@ -148,7 +168,7 @@ export function registerIpc(host: RuntimeHost, applyLoginItem: () => void) {
         ...desktopInfo(host),
         os: `${process.platform} ${process.getSystemVersion()}`,
         connectivity: connectivity(host),
-        home: { ...host.home, message: host.home.message?.slice(0, 120) ?? null },
+        home: host.home,
         update: currentUpdate(),
         recent: recentLogs().slice(-50),
       },

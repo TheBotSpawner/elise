@@ -5,7 +5,9 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
 import { AppError } from "@/core/errors";
+import { HOME_RUNTIME_PHASES } from "@/core/home/runtime";
 import { PLATFORM_CAPABILITIES } from "@/core/platform/platform";
+import { MIN_DESKTOP_BRIDGE_PROTOCOL, type DesktopPresence } from "@/core/platform/presence";
 import { logger } from "@/infrastructure/observability/logger";
 import { notMigrated } from "@/infrastructure/providers/elise-native/common";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
@@ -23,8 +25,6 @@ import type { AuthContext } from "./auth-context";
  */
 
 const CODE_TTL_MS = 5 * 60_000;
-/** The oldest Desktop bridge this backend still serves (raise only for real incompatibilities). */
-export const MIN_DESKTOP_BRIDGE_PROTOCOL = 1;
 
 const sha256hex = (s: string) => createHash("sha256").update(s).digest("hex");
 const b64urlSha256 = (s: string) => createHash("sha256").update(s).digest("base64url");
@@ -109,28 +109,70 @@ export const heartbeatSchema = z.object({
   desktopVersion: z.string().max(40),
   bridgeProtocolVersion: z.number().int().min(0),
   capabilities: z.array(z.enum(PLATFORM_CAPABILITIES)).max(20),
+  homeRuntime: z
+    .object({
+      phase: z.enum(HOME_RUNTIME_PHASES),
+      enabled: z.boolean(),
+      progress: z.number().int().min(0).max(100).nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 /** Presence, as the person (RLS): their own row only. Answers what this backend requires. */
 export async function desktopHeartbeat(auth: AuthContext, raw: unknown) {
   const input = heartbeatSchema.parse(raw);
-  const { error } = await auth.db.from("desktop_installations").upsert(
-    {
-      user_id: auth.userId,
-      workspace_id: auth.workspaceId,
-      installation_id: input.installationId,
-      platform: input.platform,
-      desktop_version: input.desktopVersion,
-      bridge_protocol_version: input.bridgeProtocolVersion,
-      capabilities: input.capabilities,
-      last_seen_at: new Date().toISOString(),
-      ...(input.name ? { name: input.name } : {}),
-    },
-    { onConflict: "user_id,installation_id" },
-  );
+  const base = {
+    user_id: auth.userId,
+    workspace_id: auth.workspaceId,
+    installation_id: input.installationId,
+    platform: input.platform,
+    desktop_version: input.desktopVersion,
+    bridge_protocol_version: input.bridgeProtocolVersion,
+    capabilities: input.capabilities,
+    last_seen_at: new Date().toISOString(),
+    ...(input.name ? { name: input.name } : {}),
+  };
+  const home = input.homeRuntime
+    ? {
+        home_enabled: input.homeRuntime.enabled,
+        home_runtime_phase: input.homeRuntime.phase,
+        home_runtime_progress: input.homeRuntime.progress,
+      }
+    : {};
+  const upsert = (row: typeof base) =>
+    auth.db.from("desktop_installations").upsert(row, { onConflict: "user_id,installation_id" });
+  let { error } = await upsert({ ...base, ...home });
+  // Before migration 051 the Home columns don't exist yet: presence still works without them.
+  if (error?.code === "42703") ({ error } = await upsert(base));
   check(error, "update ELISE Desktop presence");
   return {
     minBridgeProtocolVersion: MIN_DESKTOP_BRIDGE_PROTOCOL,
     updateRequired: input.bridgeProtocolVersion < MIN_DESKTOP_BRIDGE_PROTOCOL,
   };
+}
+
+/** This person's computers in this workspace (RLS: never anyone else's installation). */
+export async function listDesktops(auth: AuthContext): Promise<DesktopPresence[]> {
+  const { data, error } = await auth.db
+    .from("desktop_installations")
+    .select("*")
+    .eq("user_id", auth.userId)
+    .eq("workspace_id", auth.workspaceId)
+    .is("revoked_at", null)
+    .order("last_seen_at", { ascending: false });
+  if (error) {
+    if (notMigrated(error.code)) return []; // before migration 050/051: no Desktop yet
+    throw new AppError("INTERNAL_ERROR", "Could not load ELISE Desktop", { cause: error });
+  }
+  return (data ?? []).map((d) => ({
+    installationId: d.installation_id,
+    name: d.name,
+    platform: d.platform,
+    lastSeenAt: d.last_seen_at,
+    bridgeProtocolVersion: d.bridge_protocol_version,
+    homeEnabled: d.home_enabled ?? false,
+    homeRuntimePhase: (d.home_runtime_phase as DesktopPresence["homeRuntimePhase"]) ?? null,
+    homeRuntimeProgress: d.home_runtime_progress ?? null,
+  }));
 }

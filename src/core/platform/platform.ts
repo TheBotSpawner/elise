@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { HomeRuntimeStatus } from "@/core/home/runtime";
+
 /**
  * One ELISE, several surfaces (ADR-081). Product code asks "does this platform support X?",
  * never "is this Electron?". Web, Desktop and (later) Mobile each answer with a capability set
@@ -61,18 +63,6 @@ export interface EliseConnectivity {
   home: "online" | "degraded" | "offline" | "not_configured";
 }
 
-export const HOME_RUNTIME_STATES = [
-  "not_installed",
-  "installing",
-  "starting",
-  "ready",
-  "degraded",
-  "stopped",
-  "error",
-  "update_required",
-] as const;
-export type HomeRuntimeState = (typeof HOME_RUNTIME_STATES)[number];
-
 export interface DesktopInfo {
   desktopVersion: string;
   rendererVersion: string;
@@ -109,11 +99,12 @@ export interface DesktopSession {
 
 /** The local Home as the runtime sees it: no secrets, no raw provider output. */
 export interface HomeHubLocalState {
-  runtime: HomeRuntimeState;
+  /** The managed Home runtime on this computer (ADR-082). */
+  runtime: HomeRuntimeStatus;
+  /** Linked to the person's home in ELISE Cloud. */
   paired: boolean;
   providerConnected: boolean;
   devices: number;
-  message: string | null;
 }
 
 /** A device as the local runtime knows it (keyed by the provider's stable key). */
@@ -162,7 +153,17 @@ export interface EliseDesktopBridge {
   installUpdate(): Promise<void>;
   getPreferences(): Promise<DesktopPreferences>;
   setPreferences(patch: Partial<DesktopPreferences>): Promise<DesktopPreferences>;
-  getHomeHubState(): Promise<HomeHubLocalState>;
+  getHomeHubState(): Promise<HomeHubLocalState | null>;
+  onHomeHub(listener: (s: HomeHubLocalState) => void): () => void;
+  /** "Configurar ELISE Home" / "Reintentar". Progress arrives through onHomeHub. */
+  setupHome(): Promise<void>;
+  /** Turn on what Windows needs (asks for administrator permission at this step). */
+  enableHomeRequirements(): Promise<void>;
+  /** Only after the person chose "Reiniciar ahora". */
+  restartComputer(): Promise<void>;
+  /** Removes the local engine and its data (after confirmation). */
+  resetHome(): Promise<void>;
+  homeDiagnostics(): Promise<string>;
   listLocalHomeDevices(): Promise<LocalHomeDevice[]>;
   executeLocalHome(command: LocalHomeCommand): Promise<LocalHomeResult>;
   cacheGet(key: string): Promise<CachedSnapshot | null>;

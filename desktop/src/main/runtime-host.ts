@@ -25,13 +25,8 @@ export class RuntimeHost extends EventEmitter {
   private stopping = false;
   private lastConfig: unknown = null;
   version: string | null = null;
-  home: HomeHubLocalState = {
-    runtime: "not_installed",
-    paired: false,
-    providerConnected: false,
-    devices: 0,
-    message: null,
-  };
+  /** Null until the runtime reports (it's configured right after start). */
+  home: HomeHubLocalState | null = null;
 
   start() {
     this.stopping = false;
@@ -52,10 +47,15 @@ export class RuntimeHost extends EventEmitter {
         error?: string;
         event?: string;
         state?: HomeHubLocalState;
+        creds?: unknown;
       }) => {
         if (m.event === "home" && m.state) {
           this.home = m.state;
           this.emit("home", m.state);
+          return;
+        }
+        if (m.event === "credentials" && m.creds) {
+          this.emit("credentials", m.creds);
           return;
         }
         const w = m.id ? this.waiting.get(m.id) : undefined;
@@ -74,8 +74,18 @@ export class RuntimeHost extends EventEmitter {
       const now = Date.now();
       this.restarts = [...this.restarts.filter((t) => now - t < WINDOW_MS), now];
       if (this.restarts.length > MAX_RESTARTS) {
-        this.home = { ...this.home, runtime: "error", message: "The local runtime keeps stopping" };
-        this.emit("home", this.home);
+        if (this.home) {
+          this.home = {
+            ...this.home,
+            runtime: {
+              ...this.home.runtime,
+              phase: "error",
+              progress: null,
+              error: { code: "HOME_RUNTIME_START_FAILED", detail: "local runtime keeps stopping" },
+            },
+          };
+          this.emit("home", this.home);
+        }
         return;
       }
       const delay = 1000 * 2 ** (this.restarts.length - 1);
@@ -114,7 +124,8 @@ export class RuntimeHost extends EventEmitter {
   async stop() {
     this.stopping = true;
     if (!this.child) return;
-    await this.call("shutdown", undefined, 3000).catch(() => undefined);
+    // The engine gets time to stop cleanly (its data stays consistent for the next start).
+    await this.call("shutdown", undefined, 45_000).catch(() => undefined);
     this.child?.kill();
     this.child = null;
   }

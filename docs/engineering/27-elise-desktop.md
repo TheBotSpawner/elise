@@ -41,6 +41,9 @@ npm run dev:desktop         # Electron + renderer HMR (loads through elise-app:/
 | `npm run test:run` | Includes `tests/unit/desktop/*` (bridge, IPC validation, CSP, redaction, state migration, PKCE, RPC allowlist) and `tests/integration/desktop.test.ts` (RLS) |
 | `ELISE_CLOUD_URL=… npm run package:desktop` | Packaged app in `desktop/out/` |
 | `npm run smoke:desktop -- desktop/out/ELISE-win32-x64/elise.exe` | Boots with the cloud unreachable, with no remote request to render; bridge without Node; single instance; renderer crash recovery with the runtime alive |
+| `npm run make:desktop -- --targets @electron-forge/maker-squirrel` | The real Windows installer: `desktop/out/make/squirrel.windows/x64/ELISE-<version> Setup.exe`, plus `RELEASES` and the `.nupkg` the updater uses |
+| `node desktop/scripts/installer-smoke.mjs "<Setup.exe>"` | Installs per user (no admin), checks `elise://` and the uninstall entry, launches, runs ELISE Home's requirements check (never the admin step), uninstalls |
+| `tests/unit/desktop/home-runtime.test.ts` | The managed Home runtime with a fake backend: phases, progress, checksum, resume after restart, retry, update and rollback, reset |
 
 ## Configuration (build time, public by definition)
 
@@ -52,6 +55,52 @@ npm run dev:desktop         # Electron + renderer HMR (loads through elise-app:/
 | `ELISE_DESKTOP_CHANNEL` | `stable` (default) or `beta` |
 
 Server secrets are never read by the Desktop build. Anything in the binary is public.
+
+## ELISE Home runtime (ADR-082)
+
+- **What runs:** Home Assistant Container, pinned by digest, under Podman, in ELISE's own WSL2
+  distro `ELISE-Home`, with mirrored networking. It listens on 127.0.0.1 only.
+- **What ELISE needs:**
+  - Windows 11 22H2+ on x64, 4 GB RAM (8 GB recommended) and 12 GB free disk;
+  - virtualization on in firmware;
+  - WSL 2.
+
+  WSL is turned on by ELISE: one administrator prompt at that step, usually one restart, and
+  setup resumes afterwards. Windows 10 can run Desktop but not ELISE Home (no mirrored
+  networking).
+- **Where things live** (`%APPDATA%\ELISE\home-runtime\`):
+  - `state.json` — phase, release, enabled; no secrets;
+  - `downloads/` — the verified base artifact (resumable `.part` files);
+  - `distro/` — the WSL disk (`ext4.vhdx`), holding the engine and its config at
+    `/var/lib/elise-home/config`;
+  - `backups/` — configuration tarballs taken before each engine update;
+  - `wslconfig.backup` — the person's original `.wslconfig`, restored when Home is removed.
+
+  The engine's credentials (ELISE's own token and owner password) are in `secrets.bin`
+  (OS-encrypted), next to the session and hub credential.
+- **Releases:** an allowlist in `desktop/src/runtime/home-runtime/releases.ts`, with the base
+  pinned by SHA-256 and the engine by digest. To move to a newer Home Assistant:
+  1. add a release with the new digest (look it up for the `stable` tag on ghcr.io);
+  2. ship a Desktop update.
+
+  The manager backs up, swaps and rolls back on failure.
+- **Development:** `ELISE_HA_URL` + `HA_TOKEN` (unpackaged builds only) use an existing engine
+  instead.
+- **Remove:** Settings › ELISE Desktop › Configuración avanzada › "Quitar ELISE Home de esta
+  computadora". This unregisters the distro, deletes its data and restores `.wslconfig`.
+
+## Download (web)
+
+`/download/desktop` and Hogar read **one manifest**, `ELISE_DESKTOP_MANIFEST_URL`: in
+production that's the `desktop-manifest` release asset `desktop-releases.json`. It's built from
+the same Forge output the updater serves.
+
+- Drafts are never offered, and neither are withdrawn versions.
+- `beta` builds show only where `ELISE_DESKTOP_DOWNLOAD_CHANNEL=beta`, or outside production.
+- A **stable** download must be **signed**.
+- Writing and editing it: `desktop/scripts/release-manifest.mjs`, which also handles
+  `--withdraw <version>`. In CI, publishing a `desktop-v*` release adds it to the manifest, and
+  "Run workflow" with a version withdraws it.
 
 ## Release
 
@@ -92,8 +141,12 @@ repository is public. Choosing and hosting it is part of the first production re
 - **Sign out** revokes this session and deletes the session and that account's cache. The home's
   hub credential stays until Hogar unlinks it, so the household isn't orphaned. Local control
   requires someone signed in to that home's workspace.
-- **Uninstall** removes the app. Local data is kept for a reinstall, the same as other desktop
-  apps: delete the app-data folder to remove it.
+- **Install** is per user under `%LocalAppData%\elise_desktop` (Squirrel; no admin). `elise://`
+  and start-at-login point at the stable launcher `elise_desktop\elise.exe`, so they survive
+  updates.
+- **Uninstall** removes the app, `elise://` and start-at-login, and stops ELISE Home's engine.
+  Local data (including Home's data) is kept for a reinstall; removing Home is its own explicit
+  action.
 - **Updates** stop the runtime cleanly before installing. Pairing, configuration and cache
   survive, so there's nothing to re-pair.
 
@@ -109,13 +162,19 @@ Automated today:
 
 Still owed by hand:
 
+- **ELISE Home on a machine where admin and a restart are allowed** (ADR-082):
+  - enable WSL;
+  - provision the engine;
+  - the first-run bootstrap;
+  - **LAN discovery with a real Wi-Fi device**;
+  - restart recovery;
+  - uninstall/reinstall.
 - **Windows:**
-  - the installer;
   - tray behavior;
   - start at login;
   - `elise://` from the browser (sign-in);
   - updates, which need a feed;
   - uninstall.
 - **macOS:** everything, since it can't be built or validated from a Windows machine.
-- **The whole sign-in flow against production** needs migration
-  `20261101000050_elise_desktop.sql` applied.
+- **The whole sign-in flow and presence against production** need migrations
+  `20261101000050_elise_desktop.sql` and `20261102000051_desktop_home_runtime.sql` applied.

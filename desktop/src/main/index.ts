@@ -1,16 +1,19 @@
 import { app, BrowserWindow, dialog, Menu, nativeImage, nativeTheme, Tray } from "electron";
 import { join, resolve } from "node:path";
 
+import { HOME_RUNTIME_BUSY, progressPercent } from "@/core/home/runtime";
 import { parseDeepLink } from "@/core/platform/links";
+import type { HomeHubLocalState } from "@/core/platform/platform";
 
 import * as cloud from "./cloud";
-import { configureHome } from "./home";
+import { configureHome, watchHome } from "./home";
 import { words } from "./i18n";
 import { connectivity, desktopInfo, registerIpc } from "./ipc";
 import { log } from "./log";
 import { APP_ORIGIN, handleAppProtocol, registerSchemes } from "./protocol";
 import { RuntimeHost } from "./runtime-host";
 import { hardenSessions } from "./security";
+import { handleSquirrelEvent, stableExe } from "./squirrel";
 import { loadState, updateState } from "./store";
 import {
   checkForUpdates,
@@ -33,12 +36,16 @@ const DEV_URL =
 const RENDERER_DIR = join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}`);
 const HIDDEN_ARG = "--background";
 
-registerSchemes();
+// Installer chores (Windows) run and exit before anything else starts.
+const installerEvent = handleSquirrelEvent();
+if (!installerEvent) registerSchemes();
 // Automated validation runs an unpackaged build against a throwaway profile directory.
 if (!app.isPackaged && process.env.ELISE_DESKTOP_USER_DATA)
   app.setPath("userData", process.env.ELISE_DESKTOP_USER_DATA);
 
-if (!app.requestSingleInstanceLock()) {
+if (installerEvent) {
+  // handled in squirrel.ts; the app quits when Update.exe is done
+} else if (!app.requestSingleInstanceLock()) {
   // A second launch hands its arguments (deep link) to the first and exits: one runtime only.
   app.quit();
 } else {
@@ -54,13 +61,13 @@ const pendingLinks: string[] = [];
 function registerProtocolClient() {
   if (process.defaultApp && process.argv[1])
     app.setAsDefaultProtocolClient("elise", process.execPath, [resolve(process.argv[1])]);
-  else app.setAsDefaultProtocolClient("elise");
+  else app.setAsDefaultProtocolClient("elise", stableExe());
 }
 
 function applyLoginItem() {
   if (!app.isPackaged) return; // never register a development build at login
   const { startAtLogin } = loadState().preferences;
-  app.setLoginItemSettings({ openAtLogin: startAtLogin, args: [HIDDEN_ARG] });
+  app.setLoginItemSettings({ openAtLogin: startAtLogin, path: stableExe(), args: [HIDDEN_ARG] });
 }
 
 const openedHidden = () =>
@@ -164,7 +171,7 @@ function refreshTray() {
       ? null
       : c.home === "online"
         ? w.homeReady
-        : host.home.runtime === "starting"
+        : host.home && HOME_RUNTIME_BUSY.has(host.home.runtime.phase)
           ? w.homeStarting
           : w.homeOffline;
   const ready = currentUpdate().status === "ready";
@@ -211,9 +218,16 @@ async function handleDeepLink(raw: string) {
 }
 
 let lastHeartbeat = 0;
-async function heartbeat() {
+let lastPhase = "";
+/**
+ * Presence (ADR-081/082): every minute, every 10 s while ELISE Home is being prepared (the web
+ * shows that progress), and at once when the phase changes or someone signs in.
+ */
+async function heartbeat(force = false) {
   if (!cloud.session().signedIn || cloud.cloudState().cloud !== "online") return;
-  if (Date.now() - lastHeartbeat < 60_000) return;
+  const runtime = host.home?.runtime;
+  const busy = runtime ? HOME_RUNTIME_BUSY.has(runtime.phase) : false;
+  if (!force && Date.now() - lastHeartbeat < (busy ? 10_000 : 55_000)) return;
   lastHeartbeat = Date.now();
   const info = desktopInfo(host);
   const res = await cloud
@@ -226,6 +240,13 @@ async function heartbeat() {
         desktopVersion: info.desktopVersion,
         bridgeProtocolVersion: info.bridgeProtocolVersion,
         capabilities: info.capabilities,
+        homeRuntime: runtime
+          ? {
+              phase: runtime.phase,
+              enabled: runtime.enabled,
+              progress: progressPercent(runtime.progress),
+            }
+          : null,
       }),
     })
     .catch(() => undefined);
@@ -279,11 +300,16 @@ async function main() {
   cloud.events.on("session", () => {
     broadcast(EVENTS.session, cloud.session());
     void configureHome(host);
-    void heartbeat();
+    void heartbeat(true);
   });
-  host.on("home", () => {
+  watchHome(host);
+  host.on("home", (state: HomeHubLocalState) => {
+    broadcast(EVENTS.home, state);
     broadcast(EVENTS.connectivity, connectivity(host));
     refreshTray();
+    const phaseChanged = state.runtime.phase !== lastPhase;
+    lastPhase = state.runtime.phase;
+    void heartbeat(phaseChanged);
   });
   updates.on("state", (s) => {
     refreshTray();
@@ -293,7 +319,7 @@ async function main() {
   await cloud.probeNow();
   cloud.watchCloud();
   void configureHome(host);
-  setInterval(() => void heartbeat(), 5 * 60_000);
+  setInterval(() => void heartbeat(), 10_000);
 
   if (!openedHidden() || pendingLinks.length) showWindow();
   for (const link of pendingLinks.splice(0)) void handleDeepLink(link);

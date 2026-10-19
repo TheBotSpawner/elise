@@ -1,7 +1,10 @@
 import "server-only";
 
 import type { AuthContext } from "@/application/auth-context";
+import { listDesktops } from "@/application/desktop-service";
 import { homeSnapshot } from "@/application/home-service";
+import { desktopReleaseFor, platformFromUserAgent } from "@/config/desktop-releases";
+import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
 import type { HomeSnapshot } from "@/core/home/model";
 
@@ -14,14 +17,40 @@ const EMPTY: HomeSnapshot = {
   scenes: [],
 };
 
-/** Hogar's data, shared by the web page and ELISE Desktop (ADR-081). */
-export async function homeHubPageProps(auth: AuthContext) {
-  // A database without migration 049 yet: the setup screen, never an error page.
-  const snapshot = await homeSnapshot(auth).catch((error) => {
-    if (error instanceof AppError && error.code === "CAPABILITY_UNAVAILABLE") return EMPTY;
-    throw error;
-  });
-  return { snapshot, workspaceId: auth.workspaceId, timezone: auth.profile.timezone };
+/**
+ * Hogar's data, shared by the web page and ELISE Desktop (ADR-081/082): the home, the person's
+ * computers (presence), and the Desktop build for the browser's platform when there is one.
+ */
+export async function homeHubPageProps(auth: AuthContext, userAgent: string | null = null) {
+  const platform = platformFromUserAgent(userAgent);
+  const [snapshot, desktops, release] = await Promise.all([
+    // A database without migration 049 yet: the setup screen, never an error page.
+    homeSnapshot(auth).catch((error) => {
+      if (error instanceof AppError && error.code === "CAPABILITY_UNAVAILABLE") return EMPTY;
+      throw error;
+    }),
+    listDesktops(auth).catch(() => []),
+    platform ? desktopReleaseFor(platform).catch(() => null) : null,
+  ]);
+  return {
+    snapshot,
+    desktops,
+    download: release
+      ? {
+          platform: release.platform,
+          arch: release.arch,
+          version: release.version,
+          url: release.installerUrl,
+          sizeBytes: release.sizeBytes ?? null,
+          beta: release.channel === "beta",
+        }
+      : null,
+    platform,
+    // Developer pairing (the CLI hub) never shows to people in production.
+    devTools: serverEnv().ELISE_ENV === "development",
+    workspaceId: auth.workspaceId,
+    timezone: auth.profile.timezone,
+  };
 }
 
 /**

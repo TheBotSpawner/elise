@@ -108,6 +108,12 @@ export function setHubToken(token: string | null, workspaceId: string | null) {
   persist();
 }
 
+export const engineCredentials = () => secrets.engine ?? null;
+export function setEngineCredentials(engine: DesktopSecrets["engine"] | null) {
+  secrets = { ...secrets, engine: engine ?? undefined };
+  persist();
+}
+
 /** Local Home control needs someone signed in to the workspace that home belongs to. */
 export const mayControlLocalHome = () =>
   session().signedIn &&
@@ -252,7 +258,12 @@ export async function signOutLocal(reason: "user" | "revoked") {
     // offline: the local copy is still removed
   }
   // The hub credential is the home's, not the person's: kept until Hogar unlinks it (ADR-081).
-  secrets = { hubToken: secrets.hubToken, hubWorkspaceId: secrets.hubWorkspaceId };
+  // The engine's own credentials are the home's too: they stay with the computer.
+  secrets = {
+    hubToken: secrets.hubToken,
+    hubWorkspaceId: secrets.hubWorkspaceId,
+    engine: secrets.engine,
+  };
   persist();
   log("desktop_signed_out", { reason });
   events.emit("session");

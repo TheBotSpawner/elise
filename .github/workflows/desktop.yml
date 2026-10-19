@@ -1,8 +1,10 @@
 name: ELISE Desktop
 
-# ADR-081. PRs: compile and type-check Desktop (cheap). main: package + smoke-test on Windows
-# when Desktop-related code changes. Tags desktop-vX.Y.Z: signed installers for Windows and
-# macOS, published as a draft release (nobody is offered it until it's reviewed and published).
+# ADR-081/082. PRs: compile and type-check Desktop (cheap). main: package, build the real
+# Windows installer and smoke-test both (install → launch → Home requirements → uninstall).
+# Tags desktop-vX.Y.Z: installers published as a DRAFT release. Publishing that release (or
+# withdrawing a version by hand) updates the canonical manifest the web download page reads:
+#   https://github.com/<owner>/<repo>/releases/download/desktop-manifest/desktop-releases.json
 on:
   pull_request:
     paths: ["desktop/**", "home-hub/**", "src/core/platform/**", "src/app/api/desktop/**"]
@@ -10,6 +12,13 @@ on:
     branches: [main]
     paths: ["desktop/**", "home-hub/**", "src/core/platform/**", "src/app/api/desktop/**"]
     tags: ["desktop-v*"]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      withdraw:
+        description: "Withdraw this Desktop version from downloads (e.g. 0.2.0)"
+        required: true
 
 concurrency:
   group: desktop-${{ github.ref }}
@@ -61,10 +70,16 @@ jobs:
         env:
           ELISE_CLOUD_URL: https://cloud.example.invalid
       - run: npm run smoke:desktop -- desktop/out/ELISE-win32-x64/elise.exe
+      # The real installer: per-user install, elise://, uninstall entry, launch, Home check.
+      - run: npm run make:desktop -- --targets @electron-forge/maker-squirrel
+        env:
+          ELISE_CLOUD_URL: https://cloud.example.invalid
+      - shell: bash
+        run: node desktop/scripts/installer-smoke.mjs "$(ls desktop/out/make/squirrel.windows/x64/*Setup.exe)"
 
   release:
     name: Desktop · release (${{ matrix.os }})
-    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-v')
     needs: compile
     strategy:
       matrix:
@@ -109,3 +124,35 @@ jobs:
           echo "${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/cert.pfx"
           echo "WINDOWS_CERTIFICATE_FILE=$RUNNER_TEMP/cert.pfx" >> "$GITHUB_ENV"
       - run: npm run publish --prefix desktop
+
+  # The canonical manifest (ADR-082): one fixed release, "desktop-manifest", holds
+  # desktop-releases.json. A published GitHub release adds its Windows installer (prerelease →
+  # beta, release → stable — stable only if signed); a manual run withdraws a version.
+  manifest:
+    name: Desktop · release manifest
+    if: (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'desktop-v')) || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.event.release.tag_name }}
+      PRERELEASE: ${{ github.event.release.prerelease }}
+      SIGNED: ${{ vars.ELISE_DESKTOP_SIGNED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Current manifest
+        run: |
+          gh release view desktop-manifest >/dev/null 2>&1 || gh release create desktop-manifest --title "ELISE Desktop manifest" --notes "Canonical ELISE Desktop release manifest (ADR-082)." --latest=false
+          gh release download desktop-manifest -p desktop-releases.json -D manifest 2>/dev/null || mkdir -p manifest
+      - name: Add the published release
+        if: github.event_name == 'release'
+        run: |
+          gh release download "$TAG" -p "*Setup.exe" -D installer
+          channel=$([ "$PRERELEASE" = "true" ] && echo beta || echo stable)
+          signed=$([ "$SIGNED" = "true" ] && echo --signed || true)
+          node desktop/scripts/release-manifest.mjs --installer "$(ls installer/*Setup.exe)"             --base-url "https://github.com/${{ github.repository }}/releases/download/$TAG"             --channel "$channel" --state published $signed --out manifest/desktop-releases.json
+      - name: Withdraw
+        if: github.event_name == 'workflow_dispatch'
+        run: node desktop/scripts/release-manifest.mjs --withdraw "${{ inputs.withdraw }}" --out manifest/desktop-releases.json
+      - run: gh release upload desktop-manifest manifest/desktop-releases.json --clobber

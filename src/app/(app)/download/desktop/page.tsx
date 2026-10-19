@@ -1,73 +1,107 @@
-import { Download } from "lucide-react";
+import { Check, Download } from "lucide-react";
 import { headers } from "next/headers";
+import Link from "next/link";
 
 import { BackLink } from "@/components/shared/back-link";
 import { PageContainer } from "@/components/shared/page";
 import { buttonVariants } from "@/components/ui/button";
 import {
+  desktopReleaseFor,
   desktopReleases,
   DESKTOP_PLATFORMS,
   platformFromUserAgent,
   type DesktopPlatform,
 } from "@/config/desktop-releases";
 import { getT } from "@/lib/i18n/server";
+import { cn } from "@/lib/utils";
+
+const size = (bytes: number | undefined) => (bytes ? `${Math.round(bytes / 1024 ** 2)} MB` : null);
 
 /**
- * ELISE Desktop (ADR-080): the matching build first, the others below, one sentence on why —
- * and back to Hogar. Builds come from release configuration; with none configured the page
- * says Desktop isn't available yet instead of offering a fake download.
+ * ELISE Desktop (ADR-081/082): the build for this computer first, the others one tap away, and
+ * back to Hogar when setup started there. Builds come from the release manifest — the same one
+ * the updater follows; with none for this audience the page says so instead of a fake link.
  */
 export default async function DesktopDownloadPage({
   searchParams,
 }: PageProps<"/download/desktop">) {
   const [{ t }, h, params] = await Promise.all([getT(), headers(), searchParams]);
   const d = t.download;
-  const releases = desktopReleases();
-  const detected = platformFromUserAgent(h.get("user-agent"));
-  const wanted = (
+  const chosen =
     typeof params.os === "string" && (DESKTOP_PLATFORMS as readonly string[]).includes(params.os)
-      ? params.os
-      : detected
-  ) as DesktopPlatform | null;
-  const main = releases.find((r) => r.platform === wanted) ?? releases[0] ?? null;
-  const others = releases.filter((r) => r !== main);
+      ? (params.os as DesktopPlatform)
+      : null;
+  const platform = chosen ?? platformFromUserAgent(h.get("user-agent"));
+  const [main, all] = await Promise.all([
+    platform ? desktopReleaseFor(platform) : null,
+    desktopReleases(),
+  ]);
+  const release = main ?? (platform ? null : (all[0] ?? null));
+  const fromHome = params.from === "home";
+  const others = DESKTOP_PLATFORMS.filter((p) => p !== release?.platform);
+
   return (
     <PageContainer>
-      <div className="mx-auto flex max-w-xl flex-col gap-6 py-6">
-        {params.from === "home" && <BackLink href="/my-elise/home" label={d.back} />}
-        {main ? (
-          <section className="flex flex-col items-start gap-4">
-            <h1 className="text-[26px] font-light tracking-[-0.02em]">
-              {d.forPlatform(d.platforms[main.platform])}
+      <div className="mx-auto flex max-w-2xl flex-col gap-8 py-4 md:py-10">
+        {fromHome && <BackLink href="/my-elise/home" label={d.back} />}
+        <section className="flex flex-col gap-6 rounded-3xl border border-border bg-surface px-6 py-8 sm:px-10 sm:py-10">
+          <div className="flex flex-col gap-2">
+            <p className="text-[12px] font-medium tracking-[0.3em] text-muted uppercase">
+              {d.title}
+            </p>
+            <h1 className="text-[30px] leading-tight font-light tracking-[-0.025em] sm:text-[36px]">
+              {d.tagline}
             </h1>
-            <p className="text-[14.5px] text-muted">{d.why}</p>
-            <a href={main.downloadUrl} className={buttonVariants({ size: "lg" })}>
-              <Download />
-              {d.cta(d.platforms[main.platform])}
-            </a>
-            <p className="text-[12.5px] text-faint">{d.version(main.version)}</p>
-            {others.length > 0 && (
-              <p className="text-[13.5px] text-muted">
-                {d.others}{" "}
-                {others.map((r, i) => (
-                  <span key={`${r.platform}-${r.architecture ?? ""}`}>
-                    {i > 0 && " · "}
-                    <a href={r.downloadUrl} className="text-accent-text hover:underline">
-                      {d.platforms[r.platform]}
-                      {r.architecture ? ` (${r.architecture})` : ""}
-                    </a>
-                  </span>
-                ))}
+          </div>
+          {release ? (
+            <div className="flex flex-col gap-2">
+              <a
+                href={release.installerUrl}
+                download
+                className={cn(buttonVariants({ size: "lg" }), "self-start max-sm:w-full")}
+              >
+                <Download aria-hidden />
+                {d.cta(d.platforms[release.platform])}
+              </a>
+              <p className="text-[12.5px] text-faint">
+                {d.meta(release.arch, release.version, size(release.sizeBytes))}
               </p>
-            )}
-          </section>
-        ) : (
-          <section className="flex flex-col items-start gap-3">
-            <h1 className="text-[22px] font-light tracking-[-0.02em]">{d.unavailable}</h1>
-            <p className="text-[14.5px] text-muted">{d.why}</p>
-            <p className="text-[14px] text-muted">{d.unavailableBody}</p>
-          </section>
-        )}
+              {release.channel === "beta" && !release.signed && (
+                <p className="text-[12.5px] text-muted">{d.betaNote}</p>
+              )}
+              <p className="text-[13.5px] text-muted">{d.afterDownload}</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <p className="text-[16px]">
+                {platform ? d.unavailableFor(d.platforms[platform]) : d.unavailable}
+              </p>
+              <p className="text-[14px] text-muted">{d.unavailableBody}</p>
+            </div>
+          )}
+          <ul className="flex flex-col gap-2.5 border-t border-border pt-6">
+            {d.benefits.map((b) => (
+              <li key={b} className="flex items-center gap-2.5 text-[14.5px] text-muted">
+                <Check className="size-4 shrink-0 text-success" aria-hidden />
+                {b}
+              </li>
+            ))}
+          </ul>
+        </section>
+        <p className="text-[13.5px] text-muted">
+          {d.others}{" "}
+          {others.map((p, i) => (
+            <span key={p}>
+              {i > 0 && " · "}
+              <Link
+                href={`/download/desktop?os=${p}${fromHome ? "&from=home" : ""}`}
+                className="text-accent-text hover:underline"
+              >
+                {d.platforms[p]}
+              </Link>
+            </span>
+          ))}
+        </p>
       </div>
     </PageContainer>
   );

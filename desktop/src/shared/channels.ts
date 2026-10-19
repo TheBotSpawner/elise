@@ -16,6 +16,11 @@ export const INVOKE = {
   getPreferences: "elise:get-preferences",
   setPreferences: "elise:set-preferences",
   homeState: "elise:home-state",
+  homeSetup: "elise:home-setup",
+  homeEnable: "elise:home-enable",
+  homeReset: "elise:home-reset",
+  homeDiagnostics: "elise:home-diagnostics",
+  restartComputer: "elise:restart-computer",
   homeDevices: "elise:home-devices",
   homeExecute: "elise:home-execute",
   cacheGet: "elise:cache-get",
@@ -28,4 +33,5 @@ export const EVENTS = {
   session: "elise:on-session",
   navigate: "elise:on-navigate",
   update: "elise:on-update",
+  home: "elise:on-home",
 } as const;

@@ -9,6 +9,7 @@ type RealtimeTable =
   | "home_devices"
   | "home_hubs"
   | "home_commands"
+  | "desktop_installations"
   | "tasks"
   | "task_lists"
   | "approvals"

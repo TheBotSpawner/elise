@@ -1,6 +1,7 @@
 # ADR-081: ELISE Desktop v1 — one ELISE, a local renderer, Electron as a replaceable shell
 
-**Status:** Accepted (2026-10-18). Builds on ADR-079 and ADR-080.
+**Status:** Accepted (2026-10-18). Builds on ADR-079 and ADR-080. Its open decision (the
+managed Home runtime) is resolved by ADR-082.
 
 ## Context
 

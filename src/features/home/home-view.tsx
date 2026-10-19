@@ -1,12 +1,11 @@
 "use client";
 
-import { Check, Minus, Pencil, Play, Plus, Search, Star, X } from "lucide-react";
-import Link from "next/link";
+import { Minus, Pencil, Play, Plus, Search, Star, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, Select } from "@/components/ui/input";
@@ -22,18 +21,16 @@ import {
   type HomeDevice,
   type HomeDeviceType,
   type HomeScene,
-  type HomeSetupState,
   type HomeSnapshot,
 } from "@/core/home/model";
+import type { DesktopPresence } from "@/core/platform/presence";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
-import { useFeature } from "@/lib/platform/platform";
 import { cn } from "@/lib/utils";
 
 import {
   controlDeviceAction,
-  createPairingCodeAction,
   createRoomAction,
   deleteSceneAction,
   runSceneAction,
@@ -41,6 +38,8 @@ import {
   updateDeviceAction,
 } from "./actions";
 import { DeviceIcon } from "./device-icon";
+import { HomeSetup, type DesktopDownload } from "./home-setup";
+import { useHomeRuntime } from "./runtime-context";
 
 const CARD = "rounded-2xl border border-border bg-surface";
 const SWATCHES = [
@@ -101,172 +100,42 @@ export function HomeView({
   snapshot,
   workspaceId,
   timezone,
+  desktops = [],
+  download = null,
+  platform = null,
+  devTools = false,
 }: {
   snapshot: HomeSnapshot;
   workspaceId: string;
   timezone: string;
+  /** This person's computers (ADR-081/082): setup advances from their presence. */
+  desktops?: readonly DesktopPresence[];
+  download?: DesktopDownload | null;
+  platform?: "windows" | "macos" | null;
+  devTools?: boolean;
 }) {
-  // Devices, the hub's presence and command results arrive live: setup advances by itself.
-  useRealtimeRefresh(workspaceId, ["home_devices", "home_hubs", "home_commands"]);
-  const setup: HomeSetupState = snapshot.hub?.setup ?? "desktop_not_configured";
-  if (setup !== "hub_ready" || !snapshot.devices.length)
-    return <SetupPanel snapshot={snapshot} state={setup} timezone={timezone} />;
+  // Devices, presence and command results arrive live: setup advances by itself.
+  useRealtimeRefresh(workspaceId, [
+    "home_devices",
+    "home_hubs",
+    "home_commands",
+    "desktop_installations",
+  ]);
+  const runtime = useHomeRuntime();
+  // In Desktop, this computer's Home Hub must be ready too (ADR-082).
+  const localPending = Boolean(runtime?.state && runtime.state.runtime.phase !== "ready");
+  if (snapshot.hub?.setup !== "hub_ready" || !snapshot.devices.length || localPending)
+    return (
+      <HomeSetup
+        snapshot={snapshot}
+        desktops={desktops}
+        download={download}
+        platform={platform}
+        devTools={devTools}
+        timezone={timezone}
+      />
+    );
   return <Dashboard snapshot={snapshot} timezone={timezone} />;
-}
-
-// ── Setup ────────────────────────────────────────────────────────────────────
-
-const STEP_OF: Record<HomeSetupState, number> = {
-  desktop_not_configured: 0,
-  desktop_offline: 0,
-  desktop_update_required: 0,
-  hub_error: 1,
-  hub_initializing: 1,
-  desktop_online: 2,
-  hub_ready: 2,
-};
-
-function SetupPanel({
-  snapshot,
-  state,
-  timezone,
-}: {
-  snapshot: HomeSnapshot;
-  state: HomeSetupState;
-  timezone: string;
-}) {
-  const { t, locale } = useI18n();
-  const s = t.smartHome.setup;
-  // Already in ELISE Desktop (ADR-081): nothing to download or open — this computer is the host.
-  const onDesktop = useFeature({ capability: "home_hub" }) === "supported";
-  const [triedOpen, setTriedOpen] = useState(false);
-  const step = STEP_OF[state];
-  const lastSeen = snapshot.hub?.lastSeenAt
-    ? s.lastSeen(relativeWhen(snapshot.hub.lastSeenAt, new Date(), locale, timezone))
-    : null;
-  const open = () => {
-    // A convenience: the authoritative signal is the hub's heartbeat, never this link.
-    window.location.href = "elise://home";
-    window.setTimeout(() => setTriedOpen(true), 1500);
-  };
-  const content: Record<
-    HomeSetupState,
-    { title: string; body: string | null; action: "download" | "open" | null }
-  > = {
-    desktop_not_configured: {
-      title: s.notConfiguredTitle,
-      body: onDesktop ? s.onThisComputerBody : s.notConfiguredBody,
-      action: onDesktop ? null : "download",
-    },
-    desktop_offline: {
-      title: s.offlineTitle,
-      body: [s.offlineBody, lastSeen].filter(Boolean).join(" "),
-      action: "open",
-    },
-    desktop_update_required: { title: s.updateTitle, body: s.updateBody, action: "open" },
-    hub_initializing: { title: s.initializingTitle, body: s.initializingBody, action: null },
-    hub_error: { title: s.errorTitle, body: s.errorBody, action: "open" },
-    desktop_online: { title: s.detected, body: s.searching, action: null },
-    hub_ready: { title: s.detected, body: s.searching, action: null },
-  };
-  const c = content[state];
-  if (onDesktop && c.action === "open") c.action = null;
-  return (
-    <div className="flex flex-col gap-5">
-      <ol aria-label={t.smartHome.title} className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
-        {s.steps.map((label, i) => (
-          <li
-            key={label}
-            aria-current={i === step ? "step" : undefined}
-            className={cn(
-              "flex items-center gap-1.5",
-              i < step ? "text-success" : i === step ? "text-fg" : "text-faint",
-            )}
-          >
-            {i < step ? (
-              <Check className="size-3.5" aria-hidden />
-            ) : (
-              <span aria-hidden>{i + 1}.</span>
-            )}
-            {label}
-          </li>
-        ))}
-      </ol>
-      <section className={cn(CARD, "flex flex-col items-start gap-3 px-5 py-6")} aria-live="polite">
-        <h2 className="text-[19px] font-medium">{c.title}</h2>
-        {c.body && <p className="max-w-xl text-[14px] text-muted">{c.body}</p>}
-        {(state === "hub_initializing" || state === "desktop_online") && (
-          <span className="h-1 w-40 overflow-hidden rounded-full bg-surface-2">
-            <span className="block h-full w-1/3 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
-          </span>
-        )}
-        <div className="flex flex-wrap gap-2 max-sm:w-full max-sm:[&>*]:flex-1">
-          {c.action === "download" && (
-            <Link href="/download/desktop?from=home" className={buttonVariants()}>
-              {s.download}
-            </Link>
-          )}
-          {c.action === "open" && <Button onClick={open}>{s.openDesktop}</Button>}
-          {c.action === "download" && (
-            <Button variant="secondary" onClick={() => toast(s.haveItBody)}>
-              {s.haveIt}
-            </Button>
-          )}
-        </div>
-        {triedOpen && (
-          <p className="text-[13px] text-muted">
-            {s.notOpened}{" "}
-            <Link href="/download/desktop?from=home" className="text-accent-text hover:underline">
-              {s.download}
-            </Link>
-          </p>
-        )}
-      </section>
-      <DevPairing />
-    </div>
-  );
-}
-
-/** For the development agent (and future ELISE hardware): a one-time pairing code. */
-function DevPairing() {
-  const { t, locale } = useI18n();
-  const s = t.smartHome.setup;
-  const [code, setCode] = useState<{ code: string; expiresAt: string } | null>(null);
-  const [pending, start] = useTransition();
-  return (
-    <details className="text-[13px] text-muted">
-      <summary className="cursor-pointer select-none">{s.devTitle}</summary>
-      <div className="mt-2 flex flex-col items-start gap-2">
-        <p>{s.devBody}</p>
-        {code ? (
-          <>
-            <p className="font-mono text-[18px] tracking-[0.12em] text-fg">{code.code}</p>
-            <p className="text-[12px] text-faint">
-              {new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(
-                new Date(code.expiresAt),
-              )}{" "}
-              · {s.devCommand}
-            </p>
-          </>
-        ) : (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={pending}
-            onClick={() =>
-              start(async () => {
-                const r = await createPairingCodeAction();
-                if (r.ok) setCode(r.value);
-                else toast.error(errorText(t, r.error));
-              })
-            }
-          >
-            {s.devGenerate}
-          </Button>
-        )}
-      </div>
-    </details>
-  );
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────

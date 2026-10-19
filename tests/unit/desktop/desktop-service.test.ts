@@ -20,7 +20,7 @@ vi.mock("@/infrastructure/supabase/desktop-session", () => ({
   },
 }));
 
-const { createDesktopAuthCode, exchangeDesktopCode, desktopHeartbeat } =
+const { createDesktopAuthCode, exchangeDesktopCode, desktopHeartbeat, listDesktops } =
   await import("@/application/desktop-service");
 
 const verifier = "v".repeat(20) + "erifier-for-pkce-tests-0123456789abcdef";
@@ -118,5 +118,44 @@ describe("Desktop presence", () => {
         capabilities: ["computer_control"],
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe("Desktop presence for Hogar", () => {
+  it("only this person's computers in this workspace count; Home progress travels with them", async () => {
+    await desktopHeartbeat(auth, {
+      installationId: installation,
+      platform: "windows",
+      desktopVersion: "1.0.0",
+      bridgeProtocolVersion: 1,
+      capabilities: ["home_hub"],
+      homeRuntime: { phase: "downloading", enabled: true, progress: 42 },
+    });
+    // Someone else's computer, and this person's computer in another workspace.
+    db.rows("desktop_installations").push(
+      {
+        user_id: "user-2",
+        workspace_id: "ws-1",
+        installation_id: "x",
+        name: "Ajena",
+        platform: "windows",
+        revoked_at: null,
+      },
+      {
+        user_id: "user-1",
+        workspace_id: "ws-2",
+        installation_id: "y",
+        name: "Oficina",
+        platform: "windows",
+        revoked_at: null,
+      },
+    );
+    const mine = await listDesktops(auth);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({
+      homeEnabled: true,
+      homeRuntimePhase: "downloading",
+      homeRuntimeProgress: 42,
+    });
   });
 });

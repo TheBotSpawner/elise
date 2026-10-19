@@ -97,6 +97,8 @@ export interface DesktopSecrets {
   hubToken?: string;
   /** Whose home that is: local control only for a person signed in to that workspace. */
   hubWorkspaceId?: string;
+  /** Credentials ELISE created on its own managed engine (ADR-082). */
+  engine?: { haUrl: string; haToken: string; ownerPassword: string | null };
 }
 
 export function readSecrets(): DesktopSecrets {
