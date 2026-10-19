@@ -60,10 +60,18 @@ const sha256 = (file) => createHash("sha256").update(readFileSync(file)).digest(
 const downloadUrl = (tag, name) =>
   `https://github.com/${repo}/releases/download/${tag}/${encodeURIComponent(name)}`;
 
-async function fetchBytes(url) {
-  const res = await fetch(url, { redirect: "follow", cache: "no-store" });
-  if (!res.ok) throw new Error(`GET ${url} → ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+// GitHub's CDN sometimes resets a large download midway: retry before failing the release.
+async function fetchBytes(url, attempts = 4) {
+  for (let i = 1; ; i++) {
+    try {
+      const res = await fetch(url, { redirect: "follow", cache: "no-store" });
+      if (!res.ok) throw new Error(`GET ${url} → ${res.status}`);
+      return Buffer.from(await res.arrayBuffer());
+    } catch (err) {
+      if (i >= attempts) throw err;
+      await new Promise((r) => setTimeout(r, 3000 * i));
+    }
+  }
 }
 
 async function currentManifest() {

@@ -4427,6 +4427,9 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
         "ELISE va a usar el micrófono de esta computadora de forma continua para reconocer su nombre. Eso ocurre acá: el audio no se guarda ni se envía. Solo lo que digas después de “ELISE” se envía para responderte. Podés pausarla desde la bandeja o apagarla acá cuando quieras.",
       wakeConsentConfirm: "Activar",
       wakeChime: "Sonido al activarse",
+      wakeOrb: "Indicador en pantalla",
+      wakeOrbHint:
+        "Una pequeña esfera abajo a la derecha mientras ELISE escucha en segundo plano. No toma el foco ni los clics.",
       wakeWordName: "Palabra de activación: ELISE",
       pause: "Pausar escucha",
       resume: "Reanudar escucha",

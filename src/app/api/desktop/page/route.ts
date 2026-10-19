@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
             theme: auth.profile.theme,
             accent: auth.profile.accent,
             dateOrder: auth.profile.dateOrder,
+            voice: auth.profile.voice,
           },
         });
       }

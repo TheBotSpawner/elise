@@ -387,6 +387,19 @@ function WakeSettings({
                 aria-label={s.wakeChime}
               />
             </label>
+            <label className={row}>
+              <span className="min-w-0">
+                <span className="block text-[14px]">{s.wakeOrb}</span>
+                <span className="block text-[12.5px] text-muted">{s.wakeOrbHint}</span>
+              </span>
+              <Switch
+                checked={prefs.wakeOrb}
+                onCheckedChange={async (v) =>
+                  onChange(await bridge().setPreferences({ wakeOrb: v }))
+                }
+                aria-label={s.wakeOrb}
+              />
+            </label>
             <p className="py-3 text-[12.5px] text-muted">{s.continuousNote}</p>
           </>
         )}

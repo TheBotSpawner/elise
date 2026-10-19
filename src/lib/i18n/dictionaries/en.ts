@@ -4389,6 +4389,9 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
         "ELISE will use this computer's microphone continuously to recognize its name. That happens here: the audio isn't saved or sent. Only what you say after “ELISE” is sent so it can answer. Pause it from the tray or turn it off here anytime.",
       wakeConsentConfirm: "Turn on",
       wakeChime: "Sound when activated",
+      wakeOrb: "On-screen indicator",
+      wakeOrbHint:
+        "A small orb in the bottom-right corner while ELISE listens in the background. It never takes focus or clicks.",
       wakeWordName: "Wake word: ELISE",
       pause: "Pause listening",
       resume: "Resume listening",

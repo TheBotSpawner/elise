@@ -23,6 +23,7 @@ import {
   updateState as currentUpdate,
 } from "./updater";
 import { applyWakeTo, setWakePaused, wake, wakeControl, wakeStatus, watchSystem } from "./wake";
+import { closeWakeOrb, updateWakeOrb } from "./wake-orb";
 import { EVENTS } from "../shared/channels";
 
 /**
@@ -174,7 +175,13 @@ function createWindow(path = "/", opts: { hidden?: boolean } = {}) {
       win.hide();
     }
   });
-  win.on("closed", () => (window = null));
+  win.on("closed", () => {
+    window = null;
+    // Nothing listens without the renderer: the orb goes with it (and never keeps the app open).
+    closeWakeOrb();
+  });
+  for (const e of ["show", "hide", "focus", "blur", "minimize", "restore"] as const)
+    win.on(e as "show", refreshOrb);
 
   // A crashed or killed renderer (memory pressure, sleep, a GPU reset…) comes back by itself, a
   // few times; then the person decides. Reloading inside the event itself can be dropped, so it
@@ -292,6 +299,13 @@ async function restartToUpdate() {
   installUpdate();
 }
 
+/** The background orb (ADR-095): only while ELISE listens and its window isn't the one in use. */
+function refreshOrb() {
+  const w = window && !window.isDestroyed() ? window : null;
+  const inUse = Boolean(w?.isVisible() && !w.isMinimized() && w.isFocused());
+  updateWakeOrb(wakeStatus(), wakeControl().enabled && loadState().preferences.wakeOrb, inUse);
+}
+
 function quit() {
   quitting = true;
   app.quit();
@@ -378,7 +392,10 @@ async function main() {
   host.start();
   registerIpc(host, applyLoginItem, (path) => showWindow(path));
   watchSystem();
-  wake.on("change", () => refreshTray());
+  wake.on("change", () => {
+    refreshTray();
+    refreshOrb();
+  });
   applyLoginItem();
   initUpdater();
 

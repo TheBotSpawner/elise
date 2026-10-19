@@ -11,7 +11,6 @@ import {
   requestDeviceWake,
 } from "@/features/voice/device-wake";
 
-import { useDesktopRouter } from "../router";
 import { VoskWakeDetector, wav } from "./vosk-detector";
 
 /**
@@ -106,11 +105,6 @@ function reportFor(control: WakeControl, phase: VoicePhase, detector: DetectorSt
 
 export function DesktopWake({ children }: { children: ReactNode }) {
   const [control, setControl] = useState<WakeControl>(OFF);
-  const { navigate, pathname } = useDesktopRouter();
-  const route = useRef({ navigate, pathname });
-  useEffect(() => {
-    route.current = { navigate, pathname };
-  }, [navigate, pathname]);
 
   // The control comes from the main process: the person's setting, the tray's pause, the lock.
   useEffect(() => {
@@ -212,8 +206,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       }
       // Only an explicit "abrí ELISE" / "mostrame esto en pantalla" shows the window.
       if (asksToShow(remainder)) void window.eliseDesktop?.showApp?.("/");
-      // The session lives on Inicio: go there inside the window (no focus, no show).
-      if (route.current.pathname !== "/") route.current.navigate("/", { replace: true });
+      // Inicio's session takes it, or on any other page the floating Orb's: the page stays.
       requestDeviceWake(remainder);
       handoffTimer = setTimeout(finishHandOff, HANDOFF_MS);
     }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 
+import type { VoicePreferences } from "@/application/auth-context";
 import { AppShell } from "@/components/elise/app-shell";
 import type { NavUser } from "@/components/elise/navigation/top-nav";
 import { ConfirmProvider } from "@/components/ui/confirm";
@@ -16,6 +17,7 @@ import { HomeRuntimeProvider, type HomeRuntimeControls } from "@/features/home/r
 import { ResultNotifier } from "@/features/schedules/browser-notifications";
 import { SettingsShell } from "@/features/settings/shell";
 import { TimeController } from "@/features/time/time-view";
+import { QuickVoice } from "@/features/voice/quick-voice";
 import { I18nProvider } from "@/lib/i18n/client";
 import { PlatformProvider } from "@/lib/platform/platform";
 import { applyAppearance } from "@/lib/theme";
@@ -45,6 +47,8 @@ interface Bootstrap {
     theme: string;
     accent: string;
     dateOrder: DateOrder;
+    /** Older cloud deploys don't send it. */
+    voice?: VoicePreferences;
   };
 }
 
@@ -125,6 +129,7 @@ function Frame() {
             <UpdateRequiredBanner />
             <CloudBanner />
             <Routes />
+            <QuickVoice prefs={data.profile.voice} />
           </AppShell>
         </LocalHomeRuntime>
       </DesktopWake>

@@ -57,6 +57,8 @@ export function useEliseChat(initial: {
   spaceId?: string;
   /** The conversation's Live Workspace, restored by the server (ADR-013). */
   workspace?: WorkspaceState;
+  /** Voice from any page (the floating Orb): the page and its URL stay as they are. */
+  headless?: boolean;
 }) {
   const attachments = initial.attachments ?? draftAttachments;
   const [messages, setMessages] = useState<ChatMessage[]>(initial.messages ?? []);
@@ -245,7 +247,8 @@ export function useEliseChat(initial: {
                   // The new interaction is now this tab's active one (ADR-032).
                   rememberThread(event.thread);
                   // Keep the URL reloadable without remounting (a voice session reopens on Home).
-                  window.history.replaceState(null, "", threadUrl(event.thread));
+                  if (!initial.headless)
+                    window.history.replaceState(null, "", threadUrl(event.thread));
                 }
                 break;
               case "status":
@@ -346,7 +349,7 @@ export function useEliseChat(initial: {
         if (next) void run(next.text, next.options);
       }
     },
-    [patchAssistant, initial.spaceId, attachments],
+    [patchAssistant, initial.spaceId, initial.headless, attachments],
   );
 
   const stop = useCallback(() => abort.current?.abort(), []);

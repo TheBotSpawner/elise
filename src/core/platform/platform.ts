@@ -103,6 +103,8 @@ export interface DesktopPreferences {
   wakeWord: boolean;
   /** A short, quiet sound when "ELISE" is heard. */
   wakeChime: boolean;
+  /** A small orb in the screen's corner while ELISE listens in the background. */
+  wakeOrb: boolean;
 }
 
 /**

@@ -6,6 +6,7 @@ import { visibleModules } from "@/application/modules-service";
 import { AppShell } from "@/components/elise/app-shell";
 import { ResultNotifier } from "@/features/schedules/browser-notifications";
 import { TimeController } from "@/features/time/time-view";
+import { QuickVoice } from "@/features/voice/quick-voice";
 
 /** Authenticated area. The proxy redirects optimistically; this is the authoritative check. */
 export default async function AppLayout({ children }: LayoutProps<"/">) {
@@ -26,6 +27,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       {/* Native Time (ADR-045): timers belong to the user, so they live on every page. */}
       <TimeController workspaceId={auth.workspaceId} userId={auth.userId} />
       {children}
+      {/* Voice from any page but Inicio: a small Orb in the corner, audio only. */}
+      <QuickVoice prefs={auth.profile.voice} />
     </AppShell>
   );
 }

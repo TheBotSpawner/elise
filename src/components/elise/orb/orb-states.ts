@@ -1,3 +1,5 @@
+import type { VoicePhase } from "@/core/voice/session";
+
 import type { RendererState } from "./orb-renderer";
 
 /**
@@ -62,4 +64,28 @@ const PRIORITY: readonly OrbState[] = [
 
 export function resolveOrbState(active: readonly OrbState[]): OrbState {
   return PRIORITY.find((s) => active.includes(s)) ?? "idle";
+}
+
+/** What a voice session's phase shows on the Orb (none: the chat's own state decides). */
+export function voicePhaseOrb(phase: VoicePhase): OrbState[] {
+  switch (phase) {
+    case "user_speaking":
+      return ["user_speaking"];
+    case "listening":
+    case "interrupted":
+    case "arming":
+      return ["listening"];
+    case "speaking":
+    case "executing":
+    case "waiting_approval":
+    case "sleeping":
+      return [phase];
+    case "finalizing_input":
+    case "thinking":
+      return ["thinking"];
+    case "offline":
+      return ["attention"];
+    default:
+      return [];
+  }
 }

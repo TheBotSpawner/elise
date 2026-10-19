@@ -8,8 +8,12 @@
 export interface WakeWordModel {
   /** What people say ("ELISE"). */
   word: string;
-  /** What the recognizer outputs for it (its vocabulary's spelling). */
-  token: string;
+  /**
+   * What the recognizer outputs for it (its vocabulary's spellings): "elise" said in Spanish,
+   * "elis" said the English way. Measured (ADR-095): adding "elis" took detection to 36/36 and
+   * 23/24 on "Elís" clips, with 0/84 false accepts.
+   */
+  tokens: readonly string[];
   language: "es" | "en";
   engine: "vosk";
   /** Where the device loads it from (inside the app, never the network). */
@@ -259,12 +263,12 @@ const ES_COMPETITORS = [
 ] as const;
 
 /** The grammar the recognizer decodes with: the word, its competitors, or anything else. */
-export const wakeGrammar = (m: WakeWordModel) => [m.token, ...m.competitors, "[unk]"];
+export const wakeGrammar = (m: WakeWordModel) => [...m.tokens, ...m.competitors, "[unk]"];
 
 export const WAKE_MODELS: readonly WakeWordModel[] = [
   {
     word: "ELISE",
-    token: "elise",
+    tokens: ["elise", "elis"],
     language: "es",
     engine: "vosk",
     file: "vosk-model-small-es-0.42.tar.gz",

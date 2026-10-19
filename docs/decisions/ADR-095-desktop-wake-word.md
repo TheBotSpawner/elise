@@ -1,6 +1,7 @@
 # ADR-095: "ELISE" wake word on Desktop, in the background
 
-**Status:** Accepted (2026-10-19). Extends ADR-017 §7 (wake phrase) and ADR-081 (Desktop).
+**Status:** Accepted (2026-10-19). Extends ADR-017 §7 (wake phrase) and ADR-081 (Desktop). §4's navigation to Inicio is
+superseded by ADR-096 (a wake on another page stays there).
 
 ## Context
 
@@ -50,6 +51,16 @@ The set is synthetic: it is a proxy, and real voices must still be tested by han
 
   Misses are voices where "ELISE" sounded like "Elisa" or "Eli". Those stay competitors,
   because accepting them would chime and upload unrelated sentences.
+- **Said the English way ("Elís", no final e).** The first real test (a person with a
+  Bluetooth headset) showed that the Spanish "E-li-se" was always heard and "Elís" was not.
+  The model's vocabulary has "elis", so the grammar now accepts both spellings. Native runtime,
+  quiet / 20 dB:
+
+  | Clips | Before | After |
+  |---|---|---|
+  | "ELISE" (36) | 34 / 32 | 36 / 36 |
+  | "Elís" (24) | 21 / 17 | 23 / 23 |
+  | False accepts (84) | 0 / 0 | 0 / 0 |
 
 ## Decision
 
@@ -98,6 +109,12 @@ The set is synthetic: it is a proxy, and real voices must still be tested by han
      toggle.
    - The tray shows the listening status and "Pausar / Reanudar escucha".
    - A locked screen or sleep releases the microphone; it comes back on unlock or resume.
+   - While it listens in the background, a small orb sits in the bottom-right corner of the
+     screen. It is dim while listening and brighter while ELISE answers.
+     - It is its own tiny window: it never takes focus or clicks, and has no scripts or
+       bridge.
+     - It hides while ELISE's own window is in use.
+     - A setting turns it off (`wakeOrb`, on by default).
    - A missing or denied microphone, or a failed model, shows the real state and retries every
      30 s.
    - "Salir" ends the process.

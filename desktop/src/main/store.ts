@@ -33,6 +33,7 @@ const DEFAULTS = (): DesktopState => ({
     notifications: true,
     wakeWord: false,
     wakeChime: true,
+    wakeOrb: true,
   },
   window: null,
 });

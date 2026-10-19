@@ -2083,7 +2083,7 @@ export function FinanceView({
           type="button"
           onClick={startAdd}
           title={v.tx.newTitle}
-          className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music))] z-30 flex h-13 items-center gap-2 rounded-full bg-fg px-5 text-[15px] font-medium text-bg shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)] transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none md:right-8 md:bottom-8 md:size-14 md:justify-center md:px-0"
+          className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music)+var(--quick-voice-space))] z-30 flex h-13 items-center gap-2 rounded-full bg-fg px-5 text-[15px] font-medium text-bg shadow-[0_10px_30px_-8px_rgba(0,0,0,0.6)] transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none md:right-8 md:bottom-[calc(2rem+var(--quick-voice-space))] md:size-14 md:justify-center md:px-0"
         >
           <Plus className="size-5 md:size-6" aria-hidden />
           <span className="md:sr-only">{v.tx.add}</span>

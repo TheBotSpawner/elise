@@ -358,6 +358,8 @@
    * the timer stacks above it instead of overlapping.
    */
   --activity-music: 0px;
+  /* The floating voice Orb (bottom right) while it shows: other floating actions stand above it. */
+  --quick-voice-space: 0px;
   --activity-bottom: calc(var(--bottom-nav-h) + var(--dock-space) + 16px);
 }
 /* Phones and portrait tablets (< lg): the full top navigation doesn't fit; the bottom one does. */

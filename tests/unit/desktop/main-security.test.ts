@@ -169,6 +169,7 @@ describe("local state", () => {
       // An update never turns the microphone on (ADR-095): the wake word starts off.
       wakeWord: false,
       wakeChime: true,
+      wakeOrb: true,
     });
     expect(migrateState({ installationId: "aa:bb:cc:dd" }).installationId).toMatch(
       /^[0-9a-f-]{36}$/,

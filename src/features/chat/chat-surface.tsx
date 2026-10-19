@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { VoicePreferences } from "@/application/auth-context";
 import { useOrbPresence } from "@/components/elise/orb/orb-presence";
-import { resolveOrbState, type OrbState } from "@/components/elise/orb/orb-states";
+import { resolveOrbState, voicePhaseOrb, type OrbState } from "@/components/elise/orb/orb-states";
 import { threadUrl, type ThreadRef } from "@/core/interaction";
 import { clipText } from "@/core/text";
 import { WORKSPACE_LIMITS, type WorkspaceState } from "@/core/workspace/model";
@@ -221,24 +221,7 @@ export function ChatSurface({
   const last = messages.at(-1);
   const turnTools = last?.role === "assistant" ? last.tools : [];
   const runningTool = turnTools.findLast((x) => !x.outcome);
-  const voiceOrb: OrbState[] =
-    phase === "user_speaking"
-      ? ["user_speaking"]
-      : phase === "listening" || phase === "interrupted" || phase === "arming"
-        ? ["listening"]
-        : phase === "speaking"
-          ? ["speaking"]
-          : phase === "executing"
-            ? ["executing"]
-            : phase === "waiting_approval"
-              ? ["waiting_approval"]
-              : phase === "finalizing_input" || phase === "thinking"
-                ? ["thinking"]
-                : phase === "sleeping"
-                  ? ["sleeping"]
-                  : phase === "offline"
-                    ? ["attention"]
-                    : [];
+  const voiceOrb = voicePhaseOrb(phase);
   const chatOrb: OrbState =
     chatOrbState === "executing" && runningTool && GATHERING.test(runningTool.name)
       ? "searching"

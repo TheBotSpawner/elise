@@ -128,14 +128,14 @@ export class VoskWakeDetector implements WakeDetector {
   }
 
   private recognizer(m: VoskWorker, opts: Parameters<WakeDetector["start"]>[0]) {
-    const heard = (text: string) => text.split(/\s+/).includes(opts.model.token);
+    const heard = (text: string) => text.split(/\s+/).some((w) => opts.model.tokens.includes(w));
     // A partial result is the fastest sign; the refractory time keeps one utterance one wake.
     this.fed = 0;
     return m.recognizer(RATE, wakeGrammar(opts.model), {
       onPartial: (partial) => heard(partial) && this.detected(opts, null),
       onResult: (text, words) => {
         if (!heard(text)) return;
-        const w = words.find((x) => x.word === opts.model.token);
+        const w = words.find((x) => opts.model.tokens.includes(x.word));
         this.detected(opts, w ? w.start : null);
       },
     });
