@@ -108,6 +108,25 @@ export function divideByRate(amount: string, rate: string): string {
   return fromUnits(divRound(toUnits(amount) * RATE_FACTOR, r));
 }
 
+/**
+ * ADR-089: the rate a cross-currency transfer implies, read the readable way round — "1 USD =
+ * 1250 ARS" rather than "1 ARS = 0.0008 USD". Exact (8 decimals), never a float.
+ */
+export function impliedRate(
+  sent: Money,
+  received: Money,
+): { base: string; quote: string; rate: string } | null {
+  const a = toUnits(sent.amount);
+  const b = toUnits(received.amount);
+  if (a <= 0n || b <= 0n) return null;
+  const [num, den, base, quote] =
+    b >= a ? [b, a, sent.currency, received.currency] : [a, b, received.currency, sent.currency];
+  const units = divRound(num * RATE_FACTOR, den);
+  const int = units / RATE_FACTOR;
+  const frac = (units % RATE_FACTOR).toString().padStart(RATE_SCALE, "0").replace(/0+$/, "");
+  return { base, quote, rate: frac ? `${int}.${frac}` : `${int}` };
+}
+
 /** Share of a whole in tenths of a percent (integer math), e.g. 823 → 82.3%. */
 export function shareTenths(part: string, whole: string): number {
   const w = toUnits(whole);

@@ -6,6 +6,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react()],
   resolve: {
+    // Desktop's renderer has its own node_modules: one React for every test.
+    dedupe: ["react", "react-dom"],
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
       // Next.js enforces server-only at build time; in unit tests it is a no-op.

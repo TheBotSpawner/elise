@@ -11,6 +11,7 @@ import {
 } from "@/core/capabilities/finance";
 import { isSingleEmoji } from "@/core/emoji";
 import { cleanCategoryName, duplicateCategory, planCombine } from "@/core/finance/combine";
+import { impliedRate } from "@/core/finance/money";
 
 /**
  * Finance v3 rules (ADR-083): duplicate categories by normalized name and type, combinable
@@ -207,5 +208,31 @@ describe("budgets over several Ámbitos (ADR-087)", () => {
   });
   it("no Ámbito = every Ámbito", () => {
     expect(inBudget(spend(["otro"]), { ...b, bookId: null, bookIds: [] })).toBe(true);
+  });
+});
+
+describe("transfers between currencies (ADR-089)", () => {
+  it("the implied rate reads the readable way round, exactly", () => {
+    expect(
+      impliedRate({ amount: "100", currency: "USD" }, { amount: "128000", currency: "ARS" }),
+    ).toEqual({
+      base: "USD",
+      quote: "ARS",
+      rate: "1280",
+    });
+    // ARS → USD still reads "1 USD = … ARS".
+    expect(
+      impliedRate({ amount: "128000", currency: "ARS" }, { amount: "100", currency: "USD" }),
+    ).toEqual({
+      base: "USD",
+      quote: "ARS",
+      rate: "1280",
+    });
+    expect(
+      impliedRate({ amount: "100", currency: "NZD" }, { amount: "59.5", currency: "USD" })?.rate,
+    ).toBe("1.68067227");
+    expect(
+      impliedRate({ amount: "0", currency: "ARS" }, { amount: "1", currency: "USD" }),
+    ).toBeNull();
   });
 });

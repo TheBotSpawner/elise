@@ -43,6 +43,10 @@ const bridge: EliseDesktopBridge = {
   homeDiagnostics: () => invoke(INVOKE.homeDiagnostics),
   listLocalHomeDevices: () => invoke(INVOKE.homeDevices),
   executeLocalHome: (command) => invoke(INVOKE.homeExecute, command),
+  listHomeDiscoveries: () => invoke(INVOKE.homeDiscoveries),
+  openHomeDiscovery: (flowId) => invoke(INVOKE.homeDiscoveryOpen, { flowId }),
+  answerHomeDiscovery: (flowId, answers) => invoke(INVOKE.homeDiscoveryAnswer, { flowId, answers }),
+  ignoreHomeDiscovery: (flowId, name) => invoke(INVOKE.homeDiscoveryIgnore, { flowId, name }),
   cacheGet: (key) => invoke(INVOKE.cacheGet, key),
   cacheSet: (key, value, sourceUpdatedAt) =>
     invoke(INVOKE.cacheSet, key, value, sourceUpdatedAt ?? null),

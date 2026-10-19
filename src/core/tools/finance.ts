@@ -117,6 +117,9 @@ const txForModel = (t: FinanceTransaction) => ({
         : {}),
   ...(t.subcategory ? { subcategory: t.subcategory } : {}),
   ...(t.type === "transfer" ? { toAccount: t.toAccount } : {}),
+  ...(t.toAmount && t.toCurrency
+    ? { received: { amount: t.toAmount, currency: t.toCurrency } }
+    : {}),
   ...(t.receipt ? { receipt: t.receipt } : {}),
   source: t.provenance.source,
   ...(t.readOnly ? { readOnly: true } : {}),
@@ -698,6 +701,9 @@ export const createTransactionTool: ToolDefinition = {
         bookId: patch.bookId ?? null,
         ...(patch.bookIds ? { bookIds: patch.bookIds } : {}),
         toAccountId: patch.toAccountId ?? null,
+        ...(c.type === "transfer" && c.toAmount && c.toCurrency
+          ? { toAmount: c.toAmount, toCurrency: c.toCurrency }
+          : {}),
         receipt: c.receipt ?? null,
       },
       sourceOf(env.ctx),
@@ -772,6 +778,8 @@ export const updateTransactionTool: ToolDefinition = {
       ...(u.status ? { status: u.status } : {}),
       ...(u.notes !== undefined ? { notes: u.notes } : {}),
       ...(u.receipt !== undefined ? { receipt: u.receipt } : {}),
+      ...(u.toAmount !== undefined ? { toAmount: u.toAmount } : {}),
+      ...(u.toCurrency !== undefined ? { toCurrency: u.toCurrency } : {}),
     });
     return showTransaction(t, "updated", notes);
   },

@@ -129,7 +129,7 @@ export function registerIpc(host: RuntimeHost, applyLoginItem: () => void) {
     // Only ever reached from the person's explicit "Reiniciar ahora" (setup resumes after).
     if (host.home?.runtime.phase !== "restart_required") return;
     log("desktop_restart_requested");
-    execFile(join(process.env.SystemRoot ?? "C:\Windows", "System32", "shutdown.exe"), [
+    execFile(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "shutdown.exe"), [
       "/r",
       "/t",
       "10",
@@ -138,6 +138,36 @@ export function registerIpc(host: RuntimeHost, applyLoginItem: () => void) {
   handle(INVOKE.homeDevices, async () =>
     cloud.mayControlLocalHome() ? host.call("listDevices") : [],
   );
+  // ADR-090: adding devices the engine found. Signed-in owner of this home only; every call is
+  // a named action with validated input (never a URL or a raw request).
+  const flow = z.object({ flowId: z.string().regex(/^[0-9A-Za-z_-]{10,64}$/) });
+  handle(INVOKE.homeDiscoveries, async () =>
+    cloud.mayControlLocalHome() ? host.call("homeDiscoveries", undefined, 20_000) : [],
+  );
+  handle(INVOKE.homeDiscoveryOpen, async (params: unknown) => {
+    if (!cloud.mayControlLocalHome()) return { kind: "aborted", reason: "not_allowed" };
+    return host.call("homeDiscoveryOpen", flow.parse(params), 40_000);
+  });
+  handle(INVOKE.homeDiscoveryAnswer, async (params: unknown) => {
+    if (!cloud.mayControlLocalHome()) return { kind: "aborted", reason: "not_allowed" };
+    const p = flow
+      .extend({
+        answers: z.record(
+          z.string().max(64),
+          z.union([z.string().max(500), z.number(), z.boolean()]),
+        ),
+      })
+      .parse(params);
+    return host.call("homeDiscoveryAnswer", p, 70_000);
+  });
+  handle(INVOKE.homeDiscoveryIgnore, async (params: unknown) => {
+    if (!cloud.mayControlLocalHome()) return false;
+    return host.call(
+      "homeDiscoveryIgnore",
+      flow.extend({ name: z.string().max(80) }).parse(params),
+      20_000,
+    );
+  });
   handle(INVOKE.homeExecute, async (command: unknown) => {
     const c = localHomeCommandSchema.parse(command);
     if (!cloud.mayControlLocalHome()) return { ok: false, error: "NOT_ALLOWED" };

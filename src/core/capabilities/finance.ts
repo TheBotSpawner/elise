@@ -104,6 +104,9 @@ export interface FinanceTransaction {
   /** Transfers: the account the money went to (`account` is where it came from). */
   toAccountId?: string | null;
   toAccount?: string | null;
+  /** ADR-089: a cross-currency transfer's other side — what arrived, in its currency. */
+  toAmount?: string | null;
+  toCurrency?: string | null;
   /** "Comprobante": a link or an id (invoice number, bank reference). */
   receipt?: string | null;
   origin?: TransactionOrigin;
@@ -192,6 +195,9 @@ export interface NewTransaction {
   /** ADR-087: several Ámbitos (the first becomes `bookId`); [] = "Sin clasificar". */
   bookIds?: string[];
   toAccountId?: string | null;
+  /** ADR-089: what arrived, when the destination is in another currency (both or neither). */
+  toAmount?: string | null;
+  toCurrency?: string | null;
   receipt?: string | null;
 }
 
@@ -1370,6 +1376,12 @@ export const createTransactionInput = z
         'Several Ámbitos at once ("es de Personal y de la empresa"), instead of book. The first is the main one.',
       ),
     toAccount: text(80).optional().describe("Transfers: the account the money went to."),
+    toAmount: amountField
+      .optional()
+      .describe(
+        'Transfers between currencies: what ARRIVED ("mandé 100 dólares y me llegaron 128.000 pesos" → amount 100 USD, toAmount 128000, toCurrency ARS). amount/currency is what left.',
+      ),
+    toCurrency: currencyField.optional().describe("The currency of toAmount."),
     receipt: text(500).optional().describe("Comprobante: a link or an id (invoice number)."),
     amount: amountField,
     currency: currencyField.optional(),
@@ -1407,6 +1419,11 @@ export const updateTransactionInput = z
       .optional()
       .describe("Every Ámbito it belongs to, replacing the current ones ([]: Sin clasificar)."),
     toAccount: z.string().trim().max(80).nullable().optional(),
+    toAmount: amountField
+      .nullable()
+      .optional()
+      .describe("What arrived, for a transfer between currencies (null: same currency)."),
+    toCurrency: currencyField.nullable().optional(),
     receipt: z.string().trim().max(500).nullable().optional(),
     amount: amountField.optional(),
     currency: currencyField.optional(),

@@ -156,6 +156,31 @@ describe("several Ámbitos per movement", () => {
     expect(b).toEqual({ book_id: firbot, book_ids: [firbot, personal] });
   });
 
+  it("a transfer between currencies keeps both sides; nothing else can have one", async () => {
+    const t = await one<{ to_amount: string; to_currency: string }>(
+      alice,
+      `insert into public.finance_transactions
+         (workspace_id, transaction_type, amount, currency, transaction_date, fingerprint, to_amount, to_currency)
+       values ($1, 'transfer', 100, 'USD', '2026-10-19', md5(random()::text), 128000, 'ARS')
+       returning to_amount::text, to_currency`,
+      [alice.workspaceId],
+    );
+    expect(t).toEqual({ to_amount: "128000.0000", to_currency: "ARS" });
+    for (const [type, cur, toCur] of [
+      ["expense", "USD", "ARS"], // not a transfer
+      ["transfer", "ARS", "ARS"], // same currency
+    ])
+      await expect(
+        as(
+          alice,
+          `insert into public.finance_transactions
+             (workspace_id, transaction_type, amount, currency, transaction_date, fingerprint, to_amount, to_currency)
+           values ($1, $2, 100, $3, '2026-10-19', md5(random()::text), 5, $4)`,
+          [alice.workspaceId, type, cur, toCur],
+        ),
+      ).rejects.toThrow(/transfer_fx/);
+  });
+
   it("another workspace's Ámbito is refused", async () => {
     const bobs = await book(bob, "Bob");
     await expect(insertTx(alice, ", book_ids", ", $2", [[personal, bobs]])).rejects.toThrow(

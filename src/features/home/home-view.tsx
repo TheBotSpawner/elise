@@ -37,6 +37,7 @@ import {
   saveSceneAction,
   updateDeviceAction,
 } from "./actions";
+import { DeviceDiscovery, useDevicesStepDone } from "./device-discovery";
 import { DeviceIcon } from "./device-icon";
 import { HomeSetup, type DesktopDownload } from "./home-setup";
 import { useHomeRuntime } from "./runtime-context";
@@ -124,7 +125,13 @@ export function HomeView({
   const runtime = useHomeRuntime();
   // In Desktop, this computer's Home Hub must be ready too (ADR-082).
   const localPending = Boolean(runtime?.state && runtime.state.runtime.phase !== "ready");
-  if (snapshot.hub?.setup !== "hub_ready" || !snapshot.devices.length || localPending)
+  // ADR-090: devices, or the person chose to continue without them for now.
+  const [devicesStepDone] = useDevicesStepDone();
+  if (
+    snapshot.hub?.setup !== "hub_ready" ||
+    (!snapshot.devices.length && !devicesStepDone) ||
+    localPending
+  )
     return (
       <HomeSetup
         snapshot={snapshot}
@@ -149,7 +156,7 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<HomeDevice | null>(null);
   const [editing, setEditing] = useState<HomeScene | "new" | null>(null);
-  const [adding, setAdding] = useState<"menu" | "room" | null>(null);
+  const [adding, setAdding] = useState<"menu" | "room" | "devices" | null>(null);
   const hub = snapshot.hub!;
   const types = [...new Set(snapshot.devices.map((d) => d.type))];
   const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
@@ -339,6 +346,9 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
       )}
       <Dialog open={adding === "menu"} onClose={() => setAdding(null)} title={h.add.label}>
         <div className="flex flex-col gap-2">
+          <Button variant="secondary" onClick={() => setAdding("devices")}>
+            {t.smartHome.setup.discover.scan}
+          </Button>
           <Button variant="secondary" onClick={() => setAdding("room")}>
             {h.add.room}
           </Button>
@@ -354,6 +364,13 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
         </div>
       </Dialog>
       {adding === "room" && <NewRoom onClose={() => setAdding(null)} />}
+      <Dialog
+        open={adding === "devices"}
+        onClose={() => setAdding(null)}
+        title={t.smartHome.setup.discover.title}
+      >
+        <DeviceDiscovery onDone={() => setAdding(null)} addedCount={snapshot.devices.length} />
+      </Dialog>
     </div>
   );
 }

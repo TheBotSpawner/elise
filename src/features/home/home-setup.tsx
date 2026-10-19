@@ -33,6 +33,7 @@ import { useFeature } from "@/lib/platform/platform";
 import { cn } from "@/lib/utils";
 
 import { createPairingCodeAction } from "./actions";
+import { DeviceDiscovery, useDevicesStepDone } from "./device-discovery";
 import { useHomeRuntime } from "./runtime-context";
 
 export interface DesktopDownload {
@@ -391,6 +392,7 @@ function Progress({
   onDesktop: boolean;
 }) {
   const { t, locale } = useI18n();
+  const [, markDevicesDone] = useDevicesStepDone();
   const s = t.smartHome.setup;
   const [mode, setMode] = useState<"idle" | "looking" | "not_opened">("idle");
   const open = useOpenDesktop(() => setMode((m) => (m === "looking" ? "not_opened" : m)));
@@ -455,13 +457,12 @@ function Progress({
         </>
       );
     case "hub_ready":
+      // ADR-090: the engine doesn't add what it finds by itself; the person chooses.
       return (
         <>
           <Done label={s.hubReady} />
-          <Heading>{s.searching}</Heading>
-          <p className="max-w-xl text-[15px] text-muted">{s.searchingBody}</p>
-          <Bar percent={null} label={s.searching} />
-          <p className="text-[13.5px] text-faint">{s.tryLine}</p>
+          <Heading>{s.discover.title}</Heading>
+          <DeviceDiscovery onDone={markDevicesDone} addedCount={snapshot.devices.length} />
         </>
       );
     default:

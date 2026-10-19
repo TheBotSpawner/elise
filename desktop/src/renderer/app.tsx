@@ -127,6 +127,10 @@ function LocalHomeRuntime({ children }: { children: ReactNode }) {
       restartComputer: () => b.restartComputer(),
       reset: () => b.resetHome(),
       diagnostics: () => b.homeDiagnostics(),
+      discoveries: () => b.listHomeDiscoveries(),
+      openDiscovery: (id) => b.openHomeDiscovery(id),
+      answerDiscovery: (id, answers) => b.answerHomeDiscovery(id, answers),
+      ignoreDiscovery: (id, name) => b.ignoreHomeDiscovery(id, name),
     };
   }, [state]);
   return <HomeRuntimeProvider value={value}>{children}</HomeRuntimeProvider>;

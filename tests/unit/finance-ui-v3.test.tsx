@@ -251,3 +251,64 @@ describe("several Ámbitos per movement (ADR-087)", () => {
     );
   });
 });
+
+describe("transfer between currencies (ADR-089)", () => {
+  it("shows what arrived and the rate; editing the rate recomputes it; both sides are saved", async () => {
+    const { TransactionDialog } = await import("@/features/finance/transaction-dialog");
+    calls.tool.mockReset().mockResolvedValue({ ok: true, value: null });
+    const accounts = [
+      { id: "a1", name: "Wise", type: "bank", currency: "USD" },
+      { id: "a2", name: "Mercado Pago", type: "digital_wallet", currency: "ARS" },
+    ] as never;
+    const tx = {
+      id: "t9",
+      type: "transfer",
+      amount: "100",
+      currency: "USD",
+      date: "2026-10-19",
+      description: null,
+      counterparty: null,
+      category: null,
+      categoryId: null,
+      categoryPath: [],
+      subcategory: null,
+      account: "Wise",
+      accountId: "a1",
+      toAccount: "Mercado Pago",
+      toAccountId: "a2",
+      toAmount: "128000",
+      toCurrency: "ARS",
+      paymentMethod: null,
+      project: null,
+      status: "completed",
+      notes: null,
+      importId: null,
+      readOnly: false,
+    } as never;
+    wrap(
+      <TransactionDialog
+        open
+        onClose={vi.fn()}
+        transaction={tx}
+        accounts={accounts}
+        categories={cats}
+        defaultCurrency="ARS"
+        today="2026-10-19"
+      />,
+    );
+    const received = screen.getByLabelText("Recibido") as HTMLInputElement;
+    expect(received.value).toBe("128.000");
+    const rate = screen.getByLabelText("Tipo de cambio") as HTMLInputElement;
+    expect(rate.value).toBe("1.280");
+    fireEvent.focus(rate);
+    fireEvent.change(rate, { target: { value: "1300" } });
+    expect(received.value).toBe("130.000");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    });
+    expect(calls.tool).toHaveBeenCalledWith(
+      "finance.updateTransaction",
+      expect.objectContaining({ transaction: "t9", toAmount: "130000", toCurrency: "ARS" }),
+    );
+  });
+});

@@ -178,6 +178,33 @@ const handlers: Record<string, (params: unknown) => unknown> = {
   },
   diagnostics: () => need().diagnostics(),
   listDevices: () => agent?.localDevices() ?? [],
+  // ADR-090: what the engine found on the network, and adding it (named actions only).
+  homeDiscoveries: () => agent?.discoveries() ?? [],
+  homeDiscoveryOpen: (params) => {
+    const { flowId } = z.object({ flowId: z.string().max(64) }).parse(params);
+    if (!agent) return { kind: "aborted", reason: "home_not_running" };
+    return agent.openDiscovery(flowId);
+  },
+  homeDiscoveryAnswer: (params) => {
+    const { flowId, answers } = z
+      .object({
+        flowId: z.string().max(64),
+        answers: z.record(
+          z.string().max(64),
+          z.union([z.string().max(500), z.number(), z.boolean()]),
+        ),
+      })
+      .parse(params);
+    if (!agent) return { kind: "aborted", reason: "home_not_running" };
+    return agent.answerDiscovery(flowId, answers);
+  },
+  homeDiscoveryIgnore: async (params) => {
+    const { flowId, name } = z
+      .object({ flowId: z.string().max(64), name: z.string().max(80) })
+      .parse(params);
+    await agent?.ignoreDiscovery(flowId, name);
+    return true;
+  },
   execute: async (params) => {
     const c = localHomeCommandSchema.parse(params);
     if (!agent) return { ok: false, error: "HOME_NOT_RUNNING" };

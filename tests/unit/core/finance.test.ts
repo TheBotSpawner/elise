@@ -143,6 +143,9 @@ class MemoryFinance implements FinanceProvider {
       paymentMethod: t.paymentMethod ?? null,
       project: t.project ?? null,
       status: t.status ?? "completed",
+      toAccountId: t.toAccountId ?? null,
+      toAmount: t.toAmount ?? null,
+      toCurrency: t.toCurrency ?? null,
     });
   }
   async updateTransaction(id: string, p: TransactionPatch) {
@@ -402,6 +405,32 @@ describe("totals never mix currencies", () => {
 // ── Tools through the executor ───────────────────────────────────────────────
 
 describe("finance tools", () => {
+  it("a transfer between currencies records what left and what arrived", async () => {
+    const { ports, native } = setup();
+    await native.createAccount({ name: "Wise", type: "bank", currency: "USD" });
+    await native.createAccount({ name: "Mercado Pago", type: "digital_wallet", currency: "ARS" });
+    const out = await executeToolCall(ports, ctx, {
+      name: "finance.createTransaction",
+      args: {
+        type: "transfer",
+        amount: "100",
+        currency: "USD",
+        account: "Wise",
+        toAccount: "Mercado Pago",
+        toAmount: "128000",
+        toCurrency: "ARS",
+      },
+    });
+    expect(out.status).toBe("succeeded");
+    expect(native.rows.at(-1)).toMatchObject({
+      type: "transfer",
+      amount: "100",
+      currency: "USD",
+      toAmount: "128000",
+      toCurrency: "ARS",
+    });
+  });
+
   it("chat: description capitalized, category inferred from it, default account when none said", async () => {
     const { ports, native } = setup();
     native.defaultCurrency = "ARS";

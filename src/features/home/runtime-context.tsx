@@ -2,6 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 
+import type { DiscoveredDevice, DiscoveryStep } from "@/core/home/discovery";
 import type { HomeHubLocalState } from "@/core/platform/platform";
 
 /**
@@ -16,6 +17,14 @@ export interface HomeRuntimeControls {
   restartComputer(): Promise<void>;
   reset(): Promise<void>;
   diagnostics(): Promise<string>;
+  /** ADR-090: devices found on the network, added from Hogar. */
+  discoveries(): Promise<DiscoveredDevice[]>;
+  openDiscovery(flowId: string): Promise<DiscoveryStep>;
+  answerDiscovery(
+    flowId: string,
+    answers: Record<string, string | number | boolean>,
+  ): Promise<DiscoveryStep>;
+  ignoreDiscovery(flowId: string, name: string): Promise<boolean>;
 }
 
 const HomeRuntimeContext = createContext<HomeRuntimeControls | null>(null);

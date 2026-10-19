@@ -92,17 +92,69 @@ export function CloudBanner() {
   );
 }
 
+const DISMISSED = "elise.update.dismissed";
+
 /**
- * ELISE Cloud stopped serving this Desktop's protocol (ADR-081): say so once, with the way out.
- * Optional updates stay quiet (tray and Settings).
+ * Updates (ADR-081): when a new version has downloaded in the background, a quiet bar offers
+ * "Actualizar ahora" (ELISE restarts into it; ELISE Home stops cleanly first) or "Más tarde"
+ * (until the next version). When ELISE Cloud stopped serving this Desktop's protocol, the bar
+ * stays until it is updated.
  */
 export function UpdateRequiredBanner() {
   const { t } = useI18n();
   const [update, setUpdate] = useState<DesktopUpdateState | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [dismissed, setDismissed] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(DISMISSED);
+    } catch {
+      return null;
+    }
+  });
   useEffect(() => {
     void bridge().getUpdateState().then(setUpdate);
     return bridge().onUpdate(setUpdate);
   }, []);
+  const version = update?.status === "ready" ? (update.version ?? "") : "";
+  const offered = update?.status === "ready" && !update.required && dismissed !== version;
+  if (offered)
+    return (
+      <div
+        role="status"
+        className="mx-auto mt-2 flex w-[calc(100%-2*var(--page-gutter))] max-w-[960px] flex-wrap items-center gap-3 rounded-xl border border-accent-line bg-accent-soft px-3.5 py-2 text-[13px]"
+      >
+        <span className="min-w-0 flex-1">
+          {installing ? t.desktop.updating : t.desktop.updateReady(version)}
+        </span>
+        {!installing && (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                try {
+                  localStorage.setItem(DISMISSED, version);
+                } catch {
+                  // Storage blocked: dismissed for this session only.
+                }
+                setDismissed(version);
+              }}
+            >
+              {t.desktop.updateLater}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setInstalling(true);
+                void bridge().installUpdate();
+              }}
+            >
+              {t.desktop.updateNow}
+            </Button>
+          </>
+        )}
+      </div>
+    );
   if (!update?.required) return null;
   return (
     <div

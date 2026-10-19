@@ -9,7 +9,8 @@ import { namesTemplate } from "../src/infrastructure/home/home-assistant";
 /**
  * A minimal client for Home Assistant's documented APIs: the WebSocket API (auth, get_states,
  * config/entity_registry/list, subscribe_events state_changed, call_service) and the REST
- * template endpoint for device and area names. Uses Node's built-in WebSocket and fetch.
+ * template endpoint for device and area names. Adding devices (ADR-090) uses the config-flow
+ * endpoints Home Assistant's own frontend uses. Uses Node's built-in WebSocket and fetch.
  */
 export class HomeAssistantClient {
   private ws: WebSocket | null = null;
@@ -127,6 +128,38 @@ export class HomeAssistantClient {
       service_data: c.service_data,
       target: c.target,
     });
+
+  // ── Adding devices (ADR-090) ──────────────────────────────────────────────────
+  // The engine's pending setups for things it found on the network, as its own frontend reads
+  // and answers them. Fixed paths only; the flow id is validated by the caller.
+
+  /** Setups the engine started by itself (not by a person): what it found on the network. */
+  flowProgress = () => this.command<unknown[]>({ type: "config_entries/flow/progress" });
+
+  /** "No, gracias": the engine stops offering this one. */
+  ignoreFlow = (flowId: string, title: string) =>
+    this.command({ type: "config_entries/ignore_flow", flow_id: flowId, title });
+
+  private async flowRequest(flowId: string, body?: Record<string, unknown>): Promise<unknown> {
+    const r = await fetch(
+      new URL(`/api/config/config_entries/flow/${encodeURIComponent(flowId)}`, this.baseUrl),
+      {
+        method: body ? "POST" : "GET",
+        headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    if (r.status === 404) return { type: "abort", reason: "not_found" };
+    if (!r.ok && r.status !== 400) throw new Error(`flow ${r.status}`);
+    return r.json();
+  }
+
+  /** The current step of a pending setup. */
+  flowStep = (flowId: string) => this.flowRequest(flowId);
+  /** Answers it (an empty answer confirms). */
+  flowSubmit = (flowId: string, answers: Record<string, unknown>) =>
+    this.flowRequest(flowId, answers);
 
   /** Device and area names through the documented template API (REST). */
   async names(deviceIds: string[]): Promise<HaNames> {

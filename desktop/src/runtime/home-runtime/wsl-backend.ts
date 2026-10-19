@@ -31,6 +31,7 @@ const MIN_DISK = 12 * 1024 ** 3;
 const SYSTEM32 = join(process.env.SystemRoot ?? "C:\\Windows", "System32");
 const WSL = join(SYSTEM32, "wsl.exe");
 const POWERSHELL = join(SYSTEM32, "WindowsPowerShell", "v1.0", "powershell.exe");
+const REG = join(SYSTEM32, "reg.exe");
 
 type Run = (
   file: string,
@@ -169,7 +170,31 @@ export class WslContainerBackend implements HomeRuntimeBackend {
     ];
   }
 
+  /**
+   * WSL opens its "Welcome to Windows Subsystem for Linux" window the first time a distro starts,
+   * unless the user's Lxss key says it was seen (OOBEComplete, the same value Microsoft's own
+   * test setup writes). ELISE Home runs WSL invisibly: nobody should meet that window.
+   */
+  private async skipWslWelcome() {
+    await this.run(
+      REG,
+      [
+        "add",
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss",
+        "/v",
+        "OOBEComplete",
+        "/t",
+        "REG_DWORD",
+        "/d",
+        "1",
+        "/f",
+      ],
+      15_000,
+    );
+  }
+
   async enableRequirements(): Promise<{ restartRequired: boolean }> {
+    await this.skipWslWelcome();
     // One elevated step: the WSL platform + inbound discovery replies (mDNS, SSDP) for WSL only.
     const rule = (name: string, port: number) =>
       `try { if (-not (Get-NetFirewallHyperVRule -Name '${name}' -ErrorAction SilentlyContinue)) { New-NetFirewallHyperVRule -Name '${name}' -DisplayName 'ELISE Home (${name})' -Direction Inbound -VMCreatorId '${WSL_VM_CREATOR}' -Protocol UDP -LocalPorts ${port} -Action Allow | Out-Null } } catch {}`;
@@ -243,6 +268,7 @@ export class WslContainerBackend implements HomeRuntimeBackend {
     artifact: string,
     onProgress: Parameters<HomeRuntimeBackend["install"]>[2],
   ) {
+    await this.skipWslWelcome();
     await this.ensureMirrored();
     if (!(await this.registered())) {
       const target = join(this.dataDir, "distro");

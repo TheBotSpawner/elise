@@ -64,7 +64,24 @@ type TxRow = Pick<
   | "book_ids"
   | "to_account_id"
   | "receipt"
+  | "to_amount"
+  | "to_currency"
 >;
+
+/**
+ * ADR-089: a transfer's received side, only when it is a transfer into another currency with a
+ * positive amount; anything else has none.
+ */
+function transferSides(
+  type: string,
+  currency: string,
+  toAmount: string | null | undefined,
+  toCurrency: string | null | undefined,
+): { amount: string; currency: string } | null {
+  if (type !== "transfer" || !toAmount || !toCurrency || toCurrency === currency) return null;
+  const amount = normalizeAmount(toAmount);
+  return Number(amount) > 0 ? { amount, currency: toCurrency } : null;
+}
 
 const PAGE = 1000;
 const UUID = /^[0-9a-f-]{36}$/i;
@@ -108,6 +125,8 @@ interface Catalog {
   defaultAccountId: string | null;
   /** ADR-087 (migration 055): budgets over several Ámbitos. */
   budgetBooks: boolean;
+  /** ADR-089 (migration 056): cross-currency transfers. */
+  transferFx: boolean;
 }
 
 const duplicateName = () =>
@@ -131,7 +150,7 @@ export class EliseFinanceProvider implements FinanceProvider {
 
   private load() {
     this.catalog ??= (async () => {
-      const [accounts, categories, books, v3probe, v4probe, defaults, budgetBooks] =
+      const [accounts, categories, books, v3probe, v4probe, defaults, budgetBooks, fx] =
         await Promise.all([
           this.db.from("finance_accounts").select("*").eq("workspace_id", this.workspaceId),
           this.db.from("finance_categories").select("*").eq("workspace_id", this.workspaceId),
@@ -149,6 +168,7 @@ export class EliseFinanceProvider implements FinanceProvider {
             .eq("workspace_id", this.workspaceId)
             .maybeSingle(),
           this.db.from("finance_budgets").select("book_ids").limit(1),
+          this.db.from("finance_transactions").select("to_amount").limit(1),
         ]);
       check(accounts.error, "load accounts");
       check(categories.error, "load categories");
@@ -164,6 +184,7 @@ export class EliseFinanceProvider implements FinanceProvider {
         // Before migration 053 the column doesn't exist: no default account.
         defaultAccountId: defaults.error ? null : (defaults.data?.default_account_id ?? null),
         budgetBooks: !budgetBooks.error,
+        transferFx: !fx.error,
       };
     })();
     return this.catalog;
@@ -174,7 +195,7 @@ export class EliseFinanceProvider implements FinanceProvider {
   }
 
   private columns(c: Catalog) {
-    const books = c.v4 ? ", book_ids" : "";
+    const books = `${c.v4 ? ", book_ids" : ""}${c.transferFx ? ", to_amount::text, to_currency" : ""}`;
     if (c.v3) return `${TRANSACTION_COLUMNS}, merged_source_count${books}`;
     return c.v2 ? `${TRANSACTION_COLUMNS}${books}` : V1_COLUMNS;
   }
@@ -216,6 +237,8 @@ export class EliseFinanceProvider implements FinanceProvider {
       books: books.filter((b): b is string => b !== null),
       toAccountId: r.to_account_id ?? null,
       toAccount: to?.name ?? null,
+      toAmount: r.to_amount != null ? normalizeAmount(String(r.to_amount)) : null,
+      toCurrency: r.to_currency ?? null,
       receipt: r.receipt ?? null,
       origin: r.import_id ? "import" : (ORIGIN[r.source] ?? "manual"),
       readOnly: false,
@@ -326,6 +349,8 @@ export class EliseFinanceProvider implements FinanceProvider {
     if (!catalog.v2 && (t.type === "transfer" || t.toAccountId)) throw needsUpdate();
     const bookIds = t.bookIds ?? (t.bookId ? [t.bookId] : []);
     if (bookIds.length > 1 && !catalog.v4) throw needsUpdate();
+    const fx = transferSides(t.type, t.currency, t.toAmount, t.toCurrency);
+    if (fx && !catalog.transferFx) throw needsUpdate();
     const row = {
       workspace_id: this.workspaceId,
       transaction_type: t.type,
@@ -351,6 +376,7 @@ export class EliseFinanceProvider implements FinanceProvider {
         ? {
             book_id: bookIds[0] ?? null,
             ...(catalog.v4 ? { book_ids: bookIds } : {}),
+            ...(fx ? { to_amount: fx.amount, to_currency: fx.currency } : {}),
             to_account_id: t.toAccountId ?? null,
             receipt: t.receipt ?? null,
           }
@@ -389,6 +415,25 @@ export class EliseFinanceProvider implements FinanceProvider {
       p.toAccountId !== undefined ||
       p.receipt !== undefined;
     if ((v2Fields || p.type === "transfer") && !catalog.v2) throw needsUpdate();
+    // ADR-089: the received side is set together (both or neither); a same-currency or
+    // non-transfer movement never keeps one.
+    const nextType = p.type ?? current.type;
+    const nextCurrency = p.currency ?? current.currency;
+    const fxTouched = p.toAmount !== undefined || p.toCurrency !== undefined;
+    const fx = transferSides(
+      nextType,
+      nextCurrency,
+      p.toAmount !== undefined ? p.toAmount : current.toAmount,
+      p.toCurrency !== undefined ? p.toCurrency : current.toCurrency,
+    );
+    if (fxTouched && fx && !catalog.transferFx) throw needsUpdate();
+    const fxFields = catalog.transferFx
+      ? fx
+        ? { to_amount: fx.amount, to_currency: fx.currency }
+        : current.toAmount || fxTouched
+          ? { to_amount: null, to_currency: null }
+          : {}
+      : {};
     // Several Ámbitos (ADR-087): the set wins; the database keeps book_id as its first.
     if ((p.bookIds?.length ?? 0) > 1 && !catalog.v4) throw needsUpdate();
     const set = <K extends string, V>(key: K, value: V | undefined) =>
@@ -416,6 +461,7 @@ export class EliseFinanceProvider implements FinanceProvider {
         ...set("status", p.status),
         ...set("notes", p.notes),
         ...books,
+        ...fxFields,
         ...set("to_account_id", p.toAccountId),
         ...set("receipt", p.receipt),
         fingerprint: fingerprint(next),
@@ -508,18 +554,26 @@ export class EliseFinanceProvider implements FinanceProvider {
     id: string,
     p: { name?: string; type?: AccountType; currency?: string | null; archived?: boolean },
   ) {
+    const fields = {
+      ...(p.name !== undefined ? { name: p.name } : {}),
+      ...(p.type !== undefined ? { account_type: p.type } : {}),
+      ...(p.currency !== undefined ? { currency: p.currency } : {}),
+      ...(p.archived !== undefined
+        ? p.archived
+          ? { status: "archived" as const, archived_at: new Date().toISOString() }
+          : { status: "active" as const, archived_at: null }
+        : {}),
+    };
+    // Only its default Ámbito or "por defecto" changes (stored elsewhere): an empty UPDATE
+    // returns no row, which used to surface as "Ese elemento ya no existe".
+    if (!Object.keys(fields).length) {
+      const current = (await this.listAccounts()).find((a) => a.id === id);
+      if (!current) throw new AppError("NOT_FOUND", "Account not found");
+      return current;
+    }
     const { data, error } = await this.db
       .from("finance_accounts")
-      .update({
-        ...(p.name !== undefined ? { name: p.name } : {}),
-        ...(p.type !== undefined ? { account_type: p.type } : {}),
-        ...(p.currency !== undefined ? { currency: p.currency } : {}),
-        ...(p.archived !== undefined
-          ? p.archived
-            ? { status: "archived" as const, archived_at: new Date().toISOString() }
-            : { status: "active" as const, archived_at: null }
-          : {}),
-      })
+      .update(fields)
       .eq("id", id)
       .eq("workspace_id", this.workspaceId)
       .select("*")

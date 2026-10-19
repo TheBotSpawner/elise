@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import type { HomeRuntimeStatus } from "@/core/home/runtime";
 
+import type { DiscoveredDevice, DiscoveryStep } from "../home/discovery";
+
 /**
  * One ELISE, several surfaces (ADR-081). Product code asks "does this platform support X?",
  * never "is this Electron?". Web, Desktop and (later) Mobile each answer with a capability set
@@ -169,6 +171,14 @@ export interface EliseDesktopBridge {
   homeDiagnostics(): Promise<string>;
   listLocalHomeDevices(): Promise<LocalHomeDevice[]>;
   executeLocalHome(command: LocalHomeCommand): Promise<LocalHomeResult>;
+  /** ADR-090: devices the home engine found on the network, and adding them. */
+  listHomeDiscoveries(): Promise<DiscoveredDevice[]>;
+  openHomeDiscovery(flowId: string): Promise<DiscoveryStep>;
+  answerHomeDiscovery(
+    flowId: string,
+    answers: Record<string, string | number | boolean>,
+  ): Promise<DiscoveryStep>;
+  ignoreHomeDiscovery(flowId: string, name: string): Promise<boolean>;
   cacheGet(key: string): Promise<CachedSnapshot | null>;
   cacheSet(key: string, value: unknown, sourceUpdatedAt?: string | null): Promise<void>;
   onNavigate(listener: (path: string) => void): () => void;

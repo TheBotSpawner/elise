@@ -58,7 +58,8 @@ export function initUpdater() {
     set({ status: "error", message: "update_failed" });
   });
   setTimeout(() => checkForUpdates(), 30_000);
-  setInterval(() => checkForUpdates(), 6 * 60 * 60_000);
+  // Hourly: a new version is offered the same day it is published (download is background).
+  setInterval(() => checkForUpdates(), 60 * 60_000);
 }
 
 export function checkForUpdates() {

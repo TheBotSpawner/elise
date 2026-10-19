@@ -18,6 +18,7 @@ import {
   type FinanceTransaction,
   type TransactionType,
 } from "@/core/capabilities/finance";
+import { divideByRate, impliedRate, multiplyByRate } from "@/core/finance/money";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -304,6 +305,9 @@ export function TransactionDialog({
       ? (source.books ?? (source.book ? [source.book] : []))
       : [defaultBook ?? books.find((b) => b.isDefault)?.name].filter((b): b is string => !!b),
     toAccount: source?.toAccount ?? "",
+    // ADR-089: what arrived, when the destination is in another currency.
+    toAmount: source?.toAmount ? typedAmount(source.toAmount, locale) : "",
+    toCurrency: source?.toCurrency ?? "",
     subcategory: source?.subcategory ?? "",
     receipt: transaction?.receipt ?? "",
   });
@@ -338,6 +342,18 @@ export function TransactionDialog({
   const set = <K extends keyof typeof v>(k: K, value: (typeof v)[K]) =>
     setV((s) => ({ ...s, [k]: value }));
   const transfer = v.type === "transfer";
+  // ADR-089: a transfer into another currency records what arrived, and the rate they imply.
+  const fx = transfer && Boolean(v.toCurrency) && v.toCurrency !== v.currency;
+  const [rateDraft, setRateDraft] = useState<string | null>(null);
+  const sentNow = fx ? parseTypedAmount(v.amount, locale) : null;
+  const receivedNow = fx ? parseTypedAmount(v.toAmount, locale) : null;
+  const pair =
+    sentNow && receivedNow
+      ? impliedRate(
+          { amount: sentNow, currency: v.currency },
+          { amount: receivedNow, currency: v.toCurrency },
+        )
+      : null;
   const allCategories = [...categories, ...extraCategories];
   const compatible = allCategories.filter(
     (c) => transfer || c.type === v.type || c.type === "both",
@@ -365,6 +381,11 @@ export function TransactionDialog({
       setError(t.finance.ws.toAccount);
       return;
     }
+    const received = fx ? parseTypedAmount(v.toAmount, locale) : null;
+    if (fx && !received) {
+      setError(x.receivedRequired);
+      return;
+    }
     setError(null);
     const fields = {
       type: v.type,
@@ -380,6 +401,7 @@ export function TransactionDialog({
       subcategory: v.subcategory.trim() || undefined,
       receipt: v.receipt.trim() || undefined,
       toAccount: (transfer && v.toAccount) || undefined,
+      ...(received ? { toAmount: received, toCurrency: v.toCurrency } : {}),
     };
     startTransition(async () => {
       const r = editing
@@ -395,6 +417,8 @@ export function TransactionDialog({
             subcategory: fields.subcategory ?? null,
             receipt: fields.receipt ?? null,
             toAccount: fields.toAccount ?? null,
+            // A transfer that no longer crosses currencies drops its received side.
+            ...(!received && transaction?.toAmount ? { toAmount: null, toCurrency: null } : {}),
             ...(books.length ? { books: v.books } : {}),
             status: v.status,
           })
@@ -589,7 +613,12 @@ export function TransactionDialog({
                   ...(transfer ? [] : [{ value: "", label: x.noAccount }]),
                   ...accountNames.map((a) => ({ value: a, label: a })),
                 ]}
-                onChange={(a) => set(k, a)}
+                onChange={(a) => {
+                  set(k, a);
+                  // The destination's own currency, when it has one other than what left.
+                  const cur = accounts.find((x) => x.name === a)?.currency;
+                  if (k === "toAccount" && cur) set("toCurrency", cur === v.currency ? "" : cur);
+                }}
                 // Opens the inline form (even with nothing typed): it used to create an account
                 // only from typed text, so a plain click did nothing.
                 action={{
@@ -613,6 +642,85 @@ export function TransactionDialog({
                   toast.success(x.created);
                 }}
               />
+            </div>
+          )}
+          {transfer && (
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              {fx ? (
+                <>
+                  <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-2">
+                    <Field id="tx-received" label={x.received}>
+                      <Input
+                        id="tx-received"
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={v.toAmount}
+                        onChange={(e) => set("toAmount", e.target.value)}
+                        className={cn(FIELD, "font-mono")}
+                      />
+                    </Field>
+                    <Field id="tx-received-currency" label={t.finance.currency}>
+                      <Select
+                        id="tx-received-currency"
+                        value={v.toCurrency}
+                        onChange={(e) => set("toCurrency", e.target.value)}
+                        className={FIELD}
+                      >
+                        {currencies
+                          .filter((c) => c !== v.currency)
+                          .map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                      </Select>
+                    </Field>
+                  </div>
+                  {/* The rate follows from the two amounts; editing it recomputes what arrived. */}
+                  <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
+                    <label htmlFor="tx-rate">{x.rate}</label>
+                    <span>1 {pair?.base ?? v.currency} =</span>
+                    <Input
+                      id="tx-rate"
+                      inputMode="decimal"
+                      value={rateDraft ?? (pair ? typedAmount(pair.rate, locale) : "")}
+                      onFocus={() => setRateDraft(pair ? typedAmount(pair.rate, locale) : "")}
+                      onBlur={() => setRateDraft(null)}
+                      onChange={(e) => {
+                        setRateDraft(e.target.value);
+                        const rate = parseTypedAmount(e.target.value, locale);
+                        const sent = parseTypedAmount(v.amount, locale);
+                        if (!rate || !sent) return;
+                        const base = pair?.base ?? v.currency;
+                        const got =
+                          base === v.currency
+                            ? multiplyByRate(sent, rate)
+                            : divideByRate(sent, rate);
+                        set("toAmount", typedAmount(got, locale));
+                      }}
+                      className="h-9 w-36 font-mono"
+                    />
+                    <span>{pair?.quote ?? v.toCurrency}</span>
+                    <button
+                      type="button"
+                      onClick={() => setV((s) => ({ ...s, toAmount: "", toCurrency: "" }))}
+                      className="ml-auto text-[12.5px] text-faint hover:text-fg"
+                    >
+                      {x.sameCurrency}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    set("toCurrency", currencies.find((c) => c !== v.currency) ?? "USD")
+                  }
+                  className="self-start text-[12.5px] text-accent-text hover:underline"
+                >
+                  {x.otherCurrency}
+                </button>
+              )}
             </div>
           )}
           <Field id="tx-date" label={t.finance.date}>

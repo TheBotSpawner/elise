@@ -408,6 +408,10 @@ describe("artifacts and provisioning", () => {
     expect(wsl.detail).toMatch(/Virtual Machine Platform/);
     // Enabling turns the platform on explicitly; no running hypervisor yet → one restart.
     expect((await backend.enableRequirements()).restartRequired).toBe(true);
+    // WSL's "Welcome" window is marked as seen before WSL first runs (nobody should meet it).
+    expect(commands).toContain(
+      "reg.exe add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss /v OOBEComplete /t REG_DWORD /d 1 /f",
+    );
     const elevated = commands.find((c) => c.includes("EncodedCommand"))!;
     const encoded = /EncodedCommand','([^']+)'/.exec(elevated)![1]!;
     expect(Buffer.from(encoded, "base64").toString("utf16le")).toContain(

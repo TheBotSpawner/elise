@@ -38,7 +38,7 @@ import {
   type GroupTotal,
 } from "@/core/capabilities/finance";
 import { planCombine } from "@/core/finance/combine";
-import { addAmounts, compareAmounts } from "@/core/finance/money";
+import { addAmounts, compareAmounts, impliedRate } from "@/core/finance/money";
 import { shiftPeriod, type Period } from "@/core/periods";
 import { financeTrendVisual, type VisualizationSpec } from "@/core/workspace/visualization";
 import { Menu } from "@/features/native/native-ui";
@@ -187,6 +187,18 @@ export function FinanceNav({
       </Link>
     </nav>
   );
+}
+
+/** "1 USD = 1250 ARS" for a cross-currency transfer (ADR-089). */
+function rateText(tx: FinanceTransaction): string | null {
+  if (!tx.toAmount || !tx.toCurrency) return null;
+  const r = impliedRate(
+    { amount: tx.amount, currency: tx.currency },
+    { amount: tx.toAmount, currency: tx.toCurrency },
+  );
+  return r
+    ? `1 ${r.base} = ${Number(r.rate).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${r.quote}`
+    : null;
 }
 
 /** Every Ámbito of a movement (ADR-087): "Personal + Empresa". */
@@ -608,7 +620,9 @@ function TransactionRow({
   const label = tx.description || tx.counterparty || tx.category || "—";
   const meta = [
     tx.type === "transfer"
-      ? `${tx.account ?? "—"} → ${tx.toAccount ?? "—"}`
+      ? `${tx.account ?? "—"} → ${tx.toAccount ?? "—"}${
+          tx.toAmount && tx.toCurrency ? ` (${money(tx.toAmount, tx.toCurrency)})` : ""
+        }`
       : [tx.category ?? t.finance.v21.noCategory, tx.subcategory].filter(Boolean).join(" › "),
     bookLabel(tx) ?? (tx.readOnly ? null : t.finance.ws.unclassified),
     tx.type !== "transfer" ? (tx.account ?? tx.paymentMethod) : null,
@@ -1346,6 +1360,13 @@ function DetailDrawer({
         ? `${tx.account ?? "—"} → ${tx.toAccount ?? "—"}`
         : (tx.account ?? tx.paymentMethod),
     ],
+    // ADR-089: a transfer into another currency shows what arrived and the rate it implies.
+    ...(tx.toAmount && tx.toCurrency
+      ? ([
+          [t.finance.v21.tx.received, money(tx.toAmount, tx.toCurrency)],
+          [t.finance.v21.tx.rate, rateText(tx)],
+        ] as [string, string | null][])
+      : []),
     [t.finance.counterparty, tx.counterparty],
     [t.finance.project, tx.project],
     [ws.receipt, receiptLink ? null : tx.receipt],

@@ -2,6 +2,14 @@ import { EliseCloud } from "./cloud";
 import type { HubConfig } from "./config";
 import { HomeAssistantClient } from "./home-assistant-client";
 import {
+  discoveredDevices,
+  discoveryStep,
+  isFlowId,
+  stepAnswers,
+  type DiscoveredDevice,
+  type DiscoveryStep,
+} from "../src/core/home/discovery";
+import {
   HOME_PROTOCOL_VERSION,
   hubCommandSchema,
   validateAction,
@@ -110,6 +118,40 @@ export class HubAgent {
     } catch (e) {
       log("home_sync_deferred", { message: (e as Error).message });
     }
+  }
+
+  // ── Adding devices (ADR-090), local only: the engine's token never leaves this computer ──
+
+  async discoveries(): Promise<DiscoveredDevice[]> {
+    if (!this.connected) return [];
+    return discoveredDevices(await this.ha.flowProgress());
+  }
+
+  async openDiscovery(flowId: string): Promise<DiscoveryStep> {
+    if (!isFlowId(flowId)) return { kind: "aborted", reason: "not_found" };
+    return discoveryStep(await this.ha.flowStep(flowId), flowId);
+  }
+
+  async answerDiscovery(flowId: string, answers: Record<string, unknown>): Promise<DiscoveryStep> {
+    if (!isFlowId(flowId)) return { kind: "aborted", reason: "not_found" };
+    const current = discoveryStep(await this.ha.flowStep(flowId), flowId);
+    const fields = current.kind === "form" ? current.fields : [];
+    const step = discoveryStep(
+      await this.ha.flowSubmit(flowId, stepAnswers(fields, answers)),
+      flowId,
+    );
+    if (step.kind === "added") {
+      log("home_device_added");
+      // Its devices show up in the registry within seconds; ELISE picks them up twice to be sure.
+      for (const ms of [4000, 20_000])
+        setTimeout(() => void this.sync().catch(() => undefined), ms);
+    }
+    return step;
+  }
+
+  async ignoreDiscovery(flowId: string, name: string) {
+    if (!isFlowId(flowId)) return;
+    await this.ha.ignoreFlow(flowId, name.slice(0, 80));
   }
 
   /** Meaningful changes only: a device's primary entity, batched for a moment. */

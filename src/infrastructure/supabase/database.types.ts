@@ -1001,6 +1001,9 @@ export type FinanceTransactionRow = {
   merged_source_count?: number | null;
   /** ADR-087 (migration 053): every Ámbito; book_id is its first. */
   book_ids?: string[];
+  /** ADR-089 (migration 056): a cross-currency transfer's received side. */
+  to_amount?: string | null;
+  to_currency?: string | null;
 };
 
 export type ImportRow = {
