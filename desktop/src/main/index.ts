@@ -5,6 +5,7 @@ import { HOME_RUNTIME_BUSY, progressPercent } from "@/core/home/runtime";
 import { parseDeepLink } from "@/core/platform/links";
 import type { HomeHubLocalState } from "@/core/platform/platform";
 
+import { startAlarms } from "./alarms";
 import * as cloud from "./cloud";
 import { computerName, configureHome, watchHome } from "./home";
 import { words } from "./i18n";
@@ -394,6 +395,15 @@ async function main() {
   watchSystem();
   // A tap on the corner Orb ends the background conversation (the session lives in the window).
   wakeOrb.on("end", () => broadcast(EVENTS.voiceEnd, null));
+  wakeOrb.on("show", () => showWindow());
+  // ADR-100: a kept alarm rings in the window (hidden is fine; created if there is none).
+  startAlarms((item) => {
+    if (!window || window.isDestroyed()) window = createWindow("/", { hidden: true });
+    const w = window;
+    if (w.webContents.isLoading())
+      w.webContents.once("did-finish-load", () => w.webContents.send(EVENTS.alarmFire, item));
+    else w.webContents.send(EVENTS.alarmFire, item);
+  });
   wake.on("change", () => {
     refreshTray();
     refreshOrb();

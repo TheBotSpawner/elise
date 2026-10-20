@@ -8,7 +8,13 @@ import { initialVoice, type VoiceState } from "@/core/voice/session";
 import type { SendOptions, StreamListener } from "@/features/chat/use-elise-chat";
 import { useI18n } from "@/lib/i18n/client";
 
-import { onDeviceWake, onVoiceEnd, publishVoicePhase, useDeviceWake } from "./device-wake";
+import {
+  onDeviceWake,
+  pageHasWake,
+  onVoiceEnd,
+  publishVoicePhase,
+  useDeviceWake,
+} from "./device-wake";
 import { Microphone, MicError } from "./microphone";
 import { SpeechPlayer } from "./speech-player";
 import {
@@ -26,6 +32,7 @@ export function useVoice({
   stop,
   subscribe,
   level,
+  deviceWakeFallback = false,
 }: {
   prefs: VoicePreferences;
   send: (text: string, options?: SendOptions) => Promise<void>;
@@ -34,6 +41,8 @@ export function useVoice({
   subscribe: (fn: StreamListener) => () => void;
   /** Shared with the Orb: the live input or output amplitude. */
   level: { current: number };
+  /** The corner Orb's session: device wakes reach it only when no page has a conversation. */
+  deviceWakeFallback?: boolean;
 }) {
   const { locale } = useI18n();
   const language: "es" | "en" = prefs.language === "auto" ? locale : prefs.language;
@@ -122,8 +131,8 @@ export function useVoice({
   // The device's wake word hands over here, and learns when the session is busy (one mic).
   useEffect(() => {
     if (!deviceWake) return;
-    return onDeviceWake((remainder) => void controller.deviceWake(remainder));
-  }, [controller, deviceWake]);
+    return onDeviceWake((remainder) => void controller.deviceWake(remainder), deviceWakeFallback);
+  }, [controller, deviceWake, deviceWakeFallback]);
   useEffect(
     () => (deviceWake ? onVoiceEnd(() => controller.end()) : undefined),
     [controller, deviceWake],
@@ -132,10 +141,12 @@ export function useVoice({
   useEffect(() => {
     if (deviceWake) controller.warmUp();
   }, [controller, deviceWake]);
+  // The corner Orb never speaks over the page's conversation (Inicio's phase is the real one).
+  const publishes = () => !deviceWakeFallback || !pageHasWake();
   useEffect(() => {
-    if (deviceWake) publishVoicePhase(state.phase);
-  }, [deviceWake, state.phase]);
-  useEffect(() => () => publishVoicePhase("idle"), []);
+    if (deviceWake && publishes()) publishVoicePhase(state.phase);
+  }, [deviceWake, state.phase]); // eslint-disable-line react-hooks/exhaustive-deps -- publishes reads live state
+  useEffect(() => () => void (publishes() && publishVoicePhase("idle")), []); // eslint-disable-line react-hooks/exhaustive-deps -- on unmount only
 
   // Never listen in the background on the web (Desktop's background voice is the person's
   // choice, ADR-095); follow the network honestly.

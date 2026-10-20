@@ -16,6 +16,7 @@ import {
 import { HomeRuntimeProvider, type HomeRuntimeControls } from "@/features/home/runtime-context";
 import { ResultNotifier } from "@/features/schedules/browser-notifications";
 import { SettingsShell } from "@/features/settings/shell";
+import { AlarmController } from "@/features/time/alarm-controller";
 import { TimeController } from "@/features/time/time-view";
 import { QuickVoice } from "@/features/voice/quick-voice";
 import { I18nProvider } from "@/lib/i18n/client";
@@ -126,6 +127,7 @@ function Frame() {
             {/* What the web's (app) layout mounts on every page. */}
             <ResultNotifier userId={data.userId} />
             <TimeController workspaceId={data.workspaceId} userId={data.userId} />
+            <AlarmController workspaceId={data.workspaceId} />
             <UpdateRequiredBanner />
             <CloudBanner />
             <Routes />

@@ -15,6 +15,7 @@ import {
   VOICE_ORB_STATES,
 } from "@/core/platform/platform";
 
+import { alarmItemsSchema, scheduleAlarms } from "./alarms";
 import * as cloud from "./cloud";
 import { resetHome } from "./home";
 import { log, recentLogs } from "./log";
@@ -149,6 +150,7 @@ export function registerIpc(
   handle(INVOKE.voiceOrb, (state: unknown) =>
     setWakeOrbState(z.enum(VOICE_ORB_STATES).parse(state)),
   );
+  handle(INVOKE.alarmSchedule, (items: unknown) => scheduleAlarms(alarmItemsSchema.parse(items)));
   // The person asked to see ELISE ("abrí ELISE"): the only voice path that shows the window.
   handle(INVOKE.showApp, (path: unknown) =>
     showApp(

@@ -456,7 +456,21 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     key: "time",
     status: "available",
     internal: true,
-    operations: { start: WRITE, list: READ, control: WRITE, addTime: WRITE, now: READ },
+    operations: {
+      start: WRITE,
+      list: READ,
+      control: WRITE,
+      addTime: WRITE,
+      now: READ,
+      // Alarms (ADR-100): one alarm at a time; low-risk, audited writes like timers.
+      setAlarm: WRITE,
+      listAlarms: READ,
+      changeAlarm: WRITE,
+      deleteAlarm: WRITE,
+      alarmAction: WRITE,
+      alarmSounds: WRITE,
+      alarmDestinations: WRITE,
+    },
   },
   // Universal Recall: the user's past interactions, read-only (ADR-012).
   history: {

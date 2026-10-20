@@ -282,7 +282,14 @@ export function evidenceSources(tools: ShownTool[]) {
 /** Results presented as Surfaces: one quiet chip each, which brings the Surface into view. */
 function SurfaceChips({ message, handlers }: { message: ChatMessage; handlers: ThreadHandlers }) {
   const { t } = useI18n();
-  const shown = message.tools.filter((tool) => tool.surfaceIds?.length && tool.outcome);
+  // One chip per Surface: several writes into the same one (a saved plan's events) are one result.
+  const seen = new Set<string>();
+  const shown = message.tools.filter((tool) => {
+    const id = tool.surfaceIds?.[0];
+    if (!id || !tool.outcome || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
   if (!shown.length || !handlers.onShowSurface) return null;
   const storedId = message.serverId ?? (message.fresh ? null : message.id);
   const show = (tool: ShownTool) =>

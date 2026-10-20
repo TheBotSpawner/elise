@@ -84,6 +84,8 @@ function addMonths(date: string, n: number): string {
 export const daysBetween = (from: string, to: string) =>
   Array.from({ length: Math.max(0, dayDiff(from, to)) }, (_, i) => addDays(from, i));
 
+const within = (day: string, r: DayRange) => day >= r.from && day < r.to;
+
 /** The local dates a view shows, [from, to); agenda shows what is loaded. */
 export function viewRange(
   view: CalendarView,
@@ -405,7 +407,11 @@ export function navigate(
         ? today
         : change.shift
           ? shiftAnchor(view, p.anchor, change.shift, p.range)
-          : p.anchor;
+          : view !== p.view && within(today, viewRange(p.view, p.anchor, p.range))
+            ? // Another view of what's on screen, which includes today: centered on today
+              // (this week → this month, not the month the week started in).
+              today
+            : p.anchor;
   // Agenda moved in time lists a window of the same length from the new date.
   const range =
     view === "agenda" && change.shift

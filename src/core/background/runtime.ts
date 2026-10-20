@@ -18,7 +18,18 @@ export type BackgroundJob =
     }
   | { type: "recall.backfill"; payload: { workspaceId: string } }
   /** A timer's end (ADR-045): runs at endsAt and applies only if the timer is still at `version`. */
-  | { type: "time.complete"; payload: { workspaceId: string; timerId: string; version: number } };
+  | { type: "time.complete"; payload: { workspaceId: string; timerId: string; version: number } }
+  /** An alarm's time, or a snooze's end (ADR-100): applies only if nothing moved on since. */
+  | {
+      type: "time.alarm";
+      payload: {
+        workspaceId: string;
+        alarmId?: string;
+        version?: number;
+        occurrenceId?: string;
+        rings?: number;
+      };
+    };
 
 export interface BackgroundRuntime {
   /** Same idempotency key → the runtime starts at most one execution. */

@@ -1,6 +1,7 @@
 import { AbortTaskRunError, task } from "@trigger.dev/sdk";
 import { z } from "zod";
 
+import { alarmRun } from "@/application/alarm-service";
 import { ownerContext } from "@/application/background";
 import { completeTimerRun } from "@/application/time-service";
 import { logger } from "@/infrastructure/observability/logger";
@@ -29,6 +30,33 @@ export const timeCompleteTask = task({
     const result = await completeTimerRun(parsed.data, ownerContext, createAdminClient());
     logger.info("time.complete_run", { result });
     if (result === "early") throw new Error("Timer not due yet");
+    return { result };
+  },
+});
+
+/**
+ * An alarm's time, or a snooze's end (ADR-100). Re-reads the alarm: a version that moved on
+ * (changed, disabled, deleted, already fired by a read) means this run is stale.
+ */
+const alarmPayload = z.object({
+  workspaceId: z.uuid(),
+  alarmId: z.uuid().optional(),
+  version: z.number().int().min(1).optional(),
+  occurrenceId: z.uuid().optional(),
+  rings: z.number().int().min(0).optional(),
+});
+
+export const timeAlarmTask = task({
+  id: "time-alarm",
+  maxDuration: 60,
+  retry: { maxAttempts: 5, factor: 2, minTimeoutInMs: 1_000, maxTimeoutInMs: 30_000 },
+  run: async (input: z.infer<typeof alarmPayload>) => {
+    const parsed = alarmPayload.safeParse(input);
+    if (!parsed.success || (!parsed.data.alarmId && !parsed.data.occurrenceId))
+      throw new AbortTaskRunError("Invalid alarm payload");
+    const result = await alarmRun(parsed.data, createAdminClient());
+    logger.info("time.alarm_run", { result });
+    if (result === "early") throw new Error("Alarm not due yet");
     return { result };
   },
 });

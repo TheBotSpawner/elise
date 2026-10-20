@@ -804,16 +804,19 @@ export function habitsVisual(
     .map((h) => ({
       id: h.habitId,
       label: `${h.icon ? `${h.icon} ` : ""}${h.name}`.slice(0, 60) || "—",
+      // Done shows done, today included (the column highlight already marks today).
       days: h.week.days.map((d) =>
-        d.date === h.today.date
-          ? ("today" as const)
-          : d.future
-            ? ("future" as const)
-            : !d.scheduled || d.skipped
-              ? ("rest" as const)
-              : d.met
-                ? ("done" as const)
-                : ("miss" as const),
+        d.met && !d.skipped
+          ? ("done" as const)
+          : d.date === h.today.date
+            ? ("today" as const)
+            : d.future
+              ? ("future" as const)
+              : !d.scheduled || d.skipped
+                ? ("rest" as const)
+                : d.met
+                  ? ("done" as const)
+                  : ("miss" as const),
       ),
       summary: `${h.week.done} / ${h.week.goal}`,
       state: h.week.atRisk

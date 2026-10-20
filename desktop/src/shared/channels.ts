@@ -35,6 +35,7 @@ export const INVOKE = {
   wakeReport: "elise:wake-report",
   voiceOrb: "elise:voice-orb",
   showApp: "elise:show-app",
+  alarmSchedule: "elise:alarm-schedule",
 } as const;
 
 export const EVENTS = {
@@ -46,4 +47,6 @@ export const EVENTS = {
   wake: "elise:on-wake",
   /** The person tapped the corner Orb: end the background conversation. */
   voiceEnd: "elise:on-voice-end",
+  /** A kept alarm is due: ring it (ADR-100). */
+  alarmFire: "elise:on-alarm-fire",
 } as const;

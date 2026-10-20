@@ -9,8 +9,9 @@ import { APP_ORIGIN } from "./protocol";
  * A voice conversation in the background (ADR-095): ELISE's Orb in the bottom-right corner while
  * she listens to the person or answers — never while she only waits for "ELISE", never while
  * ELISE's own window is the one in use. It never takes focus (the active app keeps it); a tap on
- * it ends the conversation. Its page draws ELISE's Orb and nothing else: no preload, no bridge —
- * a tap reaches here as an in-page navigation to "#end".
+ * it ends the conversation. A small eye on its left brings ELISE's window to the front. Its page
+ * draws ELISE's Orb and nothing else: no preload, no bridge — a tap reaches here as an in-page
+ * navigation to "#end" (the orb) or "#show" (the eye).
  */
 export const wakeOrb = new EventEmitter();
 
@@ -32,11 +33,14 @@ function create() {
   // the screen's edge).
   const MARGIN = Math.round(SIZE * 0.3);
   const BOTTOM = Math.round(SIZE * 0.45);
+  // The eye overlaps the orb's left edge by half its width (orb.html draws it there).
+  const EYE = Math.round(SIZE * 0.24);
+  const WIDTH = SIZE + Math.round(EYE / 2);
   const win = new BrowserWindow({
-    width: SIZE,
+    width: WIDTH,
     height: SIZE,
     useContentSize: true,
-    x: workArea.x + workArea.width - SIZE - MARGIN,
+    x: workArea.x + workArea.width - WIDTH - MARGIN,
     y: workArea.y + workArea.height - SIZE - BOTTOM,
     frame: false,
     transparent: true,
@@ -51,11 +55,14 @@ function create() {
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
   });
   win.setAlwaysOnTop(true, "floating");
-  // Its page goes nowhere else; "#end" is the only thing it says.
+  // Its page goes nowhere else; "#end" and "#show" are the only things it says.
   win.webContents.on("will-navigate", (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("did-navigate-in-page", (_e, url) => {
-    if (!new URL(url).hash.startsWith("#end")) return;
+    const hash = new URL(url).hash;
+    // The eye: ELISE to the front; the conversation goes on there (the orb then hides itself).
+    if (hash.startsWith("#show")) return void wakeOrb.emit("show");
+    if (!hash.startsWith("#end")) return;
     shown = false;
     wakeOrb.emit("end");
     // After its shrink-away (orb.html), unless a new conversation already brought it back.

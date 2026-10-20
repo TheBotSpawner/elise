@@ -13,6 +13,7 @@ import type { Task, TaskProvider, TaskQuery } from "@/core/capabilities/tasks";
 import { AppError } from "@/core/errors";
 import { makeExternalRef } from "@/core/providers/refs";
 import type { CapabilityBinding } from "@/core/providers/types";
+import { ALARM_TOOLS } from "@/core/tools/alarms";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { CONTEXT_TOOLS } from "@/core/tools/contexts";
 import { ECONOMY_TOOLS } from "@/core/tools/economy";
@@ -267,6 +268,7 @@ export function makePorts(
       ...METHOD_TOOLS,
       ...MUSIC_TOOLS,
       ...TIME_TOOLS,
+      ...ALARM_TOOLS,
       ...TEAM_MESSAGING_TOOLS,
     ),
     providers: {

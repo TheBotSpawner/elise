@@ -17,6 +17,7 @@ import { AppError } from "@/core/errors";
 import type { ThreadRef } from "@/core/interaction";
 import type { KnowledgeManager } from "@/core/knowledge/admin";
 import type { CapabilityBinding } from "@/core/providers/types";
+import { ALARM_TOOLS } from "@/core/tools/alarms";
 import { CALENDAR_TOOLS } from "@/core/tools/calendar";
 import { CONTEXT_TOOLS } from "@/core/tools/contexts";
 import { ECONOMY_TOOLS } from "@/core/tools/economy";
@@ -100,6 +101,7 @@ import {
 import { SupabaseKnowledgeReader } from "@/infrastructure/supabase/repositories/knowledge";
 import { SupabaseRecallReader } from "@/infrastructure/supabase/repositories/recall";
 
+import { alarmStore } from "./alarm-service";
 import type { AuthContext } from "./auth-context";
 import { contextStore } from "./contexts-service";
 import { economyCapability } from "./economy-service";
@@ -150,6 +152,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...METHOD_TOOLS,
   ...MUSIC_TOOLS,
   ...TIME_TOOLS,
+  ...ALARM_TOOLS,
   ...TEAM_MESSAGING_TOOLS,
 );
 
@@ -563,9 +566,9 @@ function providerFactory(
       if (binding.providerKey !== "slack") throw unsupported("team_messaging", binding);
       return slackProviderFor(auth, binding);
     },
-    // The user's own timers (ADR-045): personal, through RLS.
+    // The user's own timers (ADR-045) and alarms (ADR-100): personal, through RLS.
     time() {
-      return timerStore(auth);
+      return { ...timerStore(auth), ...alarmStore(auth) };
     },
     // The Morning Brief service builds on this module; loaded lazily to keep imports acyclic.
     briefs() {

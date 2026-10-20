@@ -230,8 +230,18 @@ export interface EliseDesktopBridge {
   reportWake(status: WakeReport): Promise<void>;
   /** What a background conversation is doing, for the corner Orb (ADR-095). Never words. */
   reportVoiceOrb?(state: VoiceOrbState): Promise<void>;
+  /** The next alarms this installation rings, kept by the app (ADR-100): server truth, ≤50. */
+  alarmSchedule?(items: DesktopAlarmItem[]): Promise<void>;
+  /** A kept alarm is due here. */
+  onAlarmFire?(listener: (item: DesktopAlarmItem) => void): () => void;
   /** Only when the person asked to see ELISE ("abrí ELISE"): never on a wake word alone. */
   showApp(path?: string): Promise<void>;
+}
+
+export interface DesktopAlarmItem {
+  alarmId: string;
+  fireAt: string;
+  label: string | null;
 }
 
 export interface CachedSnapshot<T = unknown> {

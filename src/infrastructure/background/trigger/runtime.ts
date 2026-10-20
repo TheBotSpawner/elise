@@ -47,6 +47,13 @@ const TASKS: Record<
     id: "time-complete",
     tag: (p) => `timer:${(p as { timerId: string }).timerId}`,
   },
+  "time.alarm": {
+    id: "time-alarm",
+    tag: (p) => {
+      const a = p as { alarmId?: string; occurrenceId?: string };
+      return a.alarmId ? `alarm:${a.alarmId}` : `alarm_occurrence:${a.occurrenceId}`;
+    },
+  },
   "structured.bulk": {
     id: "structured-bulk",
     tag: (p) => `background_job:${(p as { jobId: string }).jobId}`,

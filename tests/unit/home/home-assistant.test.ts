@@ -165,6 +165,20 @@ describe("opening apps on a TV", () => {
     expect(cast!.capabilities).not.toContainEqual({ type: "app" });
   });
 
+  it("a Cast-only TV offers no power and doesn't claim off: its 'off' only quits the app", () => {
+    const idle = { ...tv, state: "off" };
+    const [cast] = normalizeRegistry([idle], [{ ...entry, platform: "cast" }], names).devices;
+    expect(cast!.capabilities.map((c) => c.type)).not.toContain("power");
+    expect(cast!.capabilities.map((c) => c.type)).toContain("volume");
+    expect(cast!.state.on).toBeUndefined();
+    const [playing] = normalizeRegistry(
+      [{ ...tv, state: "playing" }],
+      [{ ...entry, platform: "cast" }],
+      names,
+    ).devices;
+    expect(playing!.state.on).toBe(true);
+  });
+
   it("validates the app by the words people use and opens it by link", () => {
     const [d] = normalizeRegistry([tv], [entry], names).devices;
     const device = { ...d!, id: "x", aliases: [], roomId: null, favorite: false } as HomeDevice;

@@ -174,8 +174,8 @@ describe("provider catalog", () => {
     const spotify = PROVIDER_CATALOG.find((e) => e.id === "spotify")!;
     expect(summarize(spotify, ACCOUNTS, true).status).toBe("not_connected");
     // Planned providers are listed but can't be connected yet.
-    const github = PROVIDER_CATALOG.find((e) => e.id === "github")!;
-    expect(summarize(github, ACCOUNTS, true).status).toBe("unavailable");
+    const deezer = PROVIDER_CATALOG.find((e) => e.id === "deezer")!;
+    expect(summarize(deezer, ACCOUNTS, true).status).toBe("unavailable");
     // Slack is live (ADR-062): not connected until a workspace is.
     const slack = PROVIDER_CATALOG.find((e) => e.id === "slack")!;
     expect(summarize(slack, ACCOUNTS, true).status).toBe("not_connected");

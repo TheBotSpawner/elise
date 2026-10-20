@@ -18,24 +18,36 @@ export const useDeviceWake = () => useContext(DeviceWakeContext);
 
 type WakeListener = (remainder: string) => void;
 let pending: string | null = null;
-let wakeListener: WakeListener | null = null;
+/** A page's own conversation (Inicio, a chat): it always gets the wake first. */
+let page: WakeListener | null = null;
+/** The corner Orb (QuickVoice): only on pages without a conversation of their own. */
+let corner: WakeListener | null = null;
 
 /** The device heard the word: the session picks it up now, or as soon as it mounts. */
 export function requestDeviceWake(remainder: string) {
-  if (wakeListener) wakeListener(remainder);
+  const l = page ?? corner;
+  if (l) l(remainder);
   else pending = remainder;
 }
 
-/** The voice session (one at a time) receives device wakes. */
-export function onDeviceWake(listener: WakeListener): () => void {
-  wakeListener = listener;
+/** A page's conversation is mounted: the corner Orb stays out of the wake and its phase. */
+export const pageHasWake = () => page !== null;
+
+/**
+ * A voice session receives device wakes. By priority, not mount order: the corner Orb
+ * (`fallback`) never takes a wake from the page's own conversation, even while it animates out.
+ */
+export function onDeviceWake(listener: WakeListener, fallback = false): () => void {
+  if (fallback) corner = listener;
+  else page = listener;
   if (pending !== null) {
     const r = pending;
     pending = null;
-    listener(r);
+    (page ?? corner)?.(r);
   }
   return () => {
-    if (wakeListener === listener) wakeListener = null;
+    if (page === listener) page = null;
+    if (corner === listener) corner = null;
   };
 }
 

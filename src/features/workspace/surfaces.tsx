@@ -64,6 +64,7 @@ import {
   VisionSurfaceBody,
 } from "@/features/native/goal-surfaces";
 import { TeamMessagesBody, TeamThreadBody } from "@/features/team-messaging/cards";
+import { AlarmsBody } from "@/features/time/alarms-view";
 import { ClockSurfaceBody, TimerSurfaceBody } from "@/features/time/time-view";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -141,6 +142,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   personality: Sparkles,
   home: House,
   day_plan: CalendarClock,
+  alarms: AlarmClock,
 };
 
 export interface SurfaceHandlers {
@@ -1085,6 +1087,8 @@ export function SurfaceBody({
       return <PersonalityPicker p={p} />;
     case "home":
       return <HomeResultBody p={p} />;
+    case "alarms":
+      return <AlarmsBody p={p} />;
     case "day_plan":
       return <DayPlanBody p={p} focus={size === "focus"} />;
     case "schedule": {

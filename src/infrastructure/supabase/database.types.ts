@@ -1569,6 +1569,73 @@ export type HomeCommandRow = {
   result: Json | null;
 };
 
+/** Alarms (ADR-100, migration 058). */
+export type AlarmRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  label: string | null;
+  local_time: string;
+  local_date: string | null;
+  weekdays: number[];
+  timezone: string;
+  enabled: boolean;
+  sound: string | null;
+  snooze_minutes: number;
+  destinations: Json;
+  state: "scheduled" | "ringing" | "snoozed" | "done" | "off";
+  next_fire_at: Ts | null;
+  snoozed_until: Ts | null;
+  version: number;
+  created_from_conversation_id: string | null;
+  created_from_session_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type AlarmOccurrenceRow = {
+  id: string;
+  alarm_id: string;
+  workspace_id: string;
+  user_id: string;
+  fire_at: Ts;
+  status: "ringing" | "snoozed" | "dismissed" | "missed" | "expired";
+  ringing_since: Ts | null;
+  snoozed_until: Ts | null;
+  rings: number;
+  ended_at: Ts | null;
+  receipts: Json;
+  label: string | null;
+  sound: string | null;
+  destinations: Json;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type BrowserEndpointRow = {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  endpoint_id: string;
+  name: string;
+  last_seen_at: Ts | null;
+  revoked_at: Ts | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type AlarmSoundRow = {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  name: string;
+  storage_path: string;
+  mime_type: "audio/mpeg" | "audio/ogg" | "audio/wav" | "audio/mp4";
+  size_bytes: number;
+  duration_ms: number | null;
+  created_at: Ts;
+};
+
 export type TimerRow = {
   id: string;
   workspace_id: string;
@@ -1631,6 +1698,16 @@ export type Database = {
         "workspace_id" | "name" | "description" | "instructions" | "created_by_user_id"
       >;
       timers: Table<TimerRow, "workspace_id" | "user_id" | "kind" | "state">;
+      alarms: Table<AlarmRow, "workspace_id" | "user_id" | "local_time" | "timezone">;
+      alarm_occurrences: Table<
+        AlarmOccurrenceRow,
+        "alarm_id" | "workspace_id" | "user_id" | "fire_at" | "status"
+      >;
+      browser_endpoints: Table<BrowserEndpointRow, "user_id" | "workspace_id" | "endpoint_id">;
+      alarm_sounds: Table<
+        AlarmSoundRow,
+        "user_id" | "workspace_id" | "name" | "storage_path" | "mime_type" | "size_bytes"
+      >;
       homes: Table<HomeRow, "workspace_id" | "name">;
       home_hubs: Table<HomeHubRow, "workspace_id" | "home_id" | "token_prefix">;
       home_hub_credentials: Table<HomeHubCredentialRow, "hub_id" | "token_hash">;

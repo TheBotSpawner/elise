@@ -69,6 +69,7 @@ import type { ShortcutStore } from "../shortcuts/model";
 import type { MethodStore } from "../skills/model";
 import type { StructuredAnalysis } from "../structured/analysis";
 import type { StudyPort } from "../study/model";
+import type { AlarmStore } from "../timers/alarms";
 import type { TimerStore } from "../timers/model";
 import type { BriefPort } from "../tools/planning";
 import type { WakeStatus } from "../voice/session";
@@ -177,7 +178,7 @@ export interface CapabilityProviders {
   /** Music playback through the user's music provider (ADR-042). */
   music: MusicProvider;
   /** The user's own timers, Pomodoros and stopwatches (ADR-045). */
-  time: TimerStore;
+  time: TimerStore & AlarmStore;
   /** Workspace messaging (Slack), read live (ADR-062). */
   team_messaging: TeamMessagingProvider;
 }
@@ -522,6 +523,8 @@ export type ToolDisplay =
   | { kind: "economy"; economy: SurfacePayloads["economy"]; title: string; key: string }
   /** A day's plan (ADR-098): validated by core/planning, never by the model. */
   | { kind: "day_plan"; plan: SurfacePayloads["day_plan"] }
+  /** Alarms (ADR-100): computed by ELISE, with where each can really ring. */
+  | { kind: "alarms"; alarms: SurfacePayloads["alarms"] }
   /** A spreadsheet from chat, analyzed by the Finance import pipeline (ADR-075). */
   | { kind: "finance_import"; financeImport: SurfacePayloads["finance_import"] }
   /** Home devices and what a command did to them (ADR-079). */

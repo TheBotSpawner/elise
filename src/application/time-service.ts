@@ -60,6 +60,11 @@ export const timePreferencesSchema = z.object({
   sound: z.enum(SOUNDS),
   notify: z.boolean(),
   pomodoro: pomodoroSchema,
+  alarmSound: z.string().min(1).max(60),
+  alarmVolume: z.number().int().min(0).max(100),
+  alarmDestinations: z
+    .array(z.object({ kind: z.enum(["browser", "desktop"]), id: z.uuid() }))
+    .max(10),
 });
 
 const toTimer = (r: TimerRow): Timer => ({

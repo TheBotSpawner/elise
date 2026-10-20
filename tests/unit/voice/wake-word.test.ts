@@ -6,6 +6,7 @@ import {
   deviceMayListen,
   onDeviceWake,
   onVoicePhase,
+  pageHasWake,
   publishVoicePhase,
   requestDeviceWake,
 } from "@/features/voice/device-wake";
@@ -95,5 +96,19 @@ describe("the hand-off between the device and the session", () => {
       { type: "rest", speak: true, bargeIn: true, continuous: false },
     );
     expect(busy.phase).toBe("speaking");
+  });
+});
+
+describe("device wake routing (ADR-095/096)", () => {
+  it("the page's conversation gets the wake, whatever mounted last", () => {
+    const got: string[] = [];
+    const offPage = onDeviceWake((r) => got.push(`page:${r}`));
+    const offCorner = onDeviceWake((r) => got.push(`corner:${r}`), true);
+    expect(pageHasWake()).toBe(true);
+    requestDeviceWake("hola");
+    offPage();
+    requestDeviceWake("chau");
+    offCorner();
+    expect(got).toEqual(["page:hola", "corner:chau"]);
   });
 });

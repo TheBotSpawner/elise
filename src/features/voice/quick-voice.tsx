@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
@@ -24,15 +25,34 @@ const OWN_CONVERSATION = /^\/($|chat\/|onboarding)/;
 export function QuickVoice({ prefs }: { prefs: VoicePreferences | undefined }) {
   const pathname = usePathname();
   const [round, setRound] = useState(0);
+  const reduced = useReducedMotion();
   // No prefs: a Desktop on a cloud that doesn't send them yet (older deploy).
-  if (!prefs?.enabled || OWN_CONVERSATION.test(pathname)) return null;
+  const show = Boolean(prefs?.enabled) && !OWN_CONVERSATION.test(pathname);
   return (
-    <QuickVoiceSession
-      key={round}
-      prefs={prefs}
-      startNow={round > 0}
-      renew={() => setRound((r) => r + 1)}
-    />
+    // It bounces in when it appears (leaving Inicio) and out when it goes (back to Inicio).
+    <AnimatePresence>
+      {show && prefs && (
+        <motion.div
+          key="quick-voice"
+          initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.3 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.3 }}
+          transition={
+            reduced
+              ? { duration: 0.15 }
+              : { type: "spring", stiffness: 520, damping: 17, mass: 0.8 }
+          }
+          className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music)-6px)] z-30 md:right-8 md:bottom-7"
+        >
+          <QuickVoiceSession
+            key={round}
+            prefs={prefs}
+            startNow={round > 0}
+            renew={() => setRound((r) => r + 1)}
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -51,7 +71,14 @@ function QuickVoiceSession({
   const { send, stop, subscribe, getThread, orbState: chatOrb } = useEliseChat({ headless: true });
   const level = useRef(-1);
   // The browser's wake phrase belongs to Inicio; here a tap (or Desktop's "ELISE") starts it.
-  const voice = useVoice({ prefs: { ...prefs, wakeEnabled: false }, send, stop, subscribe, level });
+  const voice = useVoice({
+    prefs: { ...prefs, wakeEnabled: false },
+    send,
+    stop,
+    subscribe,
+    level,
+    deviceWakeFallback: true,
+  });
   const phase = voice.state.phase;
   // The song this conversation asked for started: she doesn't talk over it.
   const musicPlaying = Boolean(useMusic().payload?.playing);
@@ -92,7 +119,7 @@ function QuickVoiceSession({
       title={active ? t.voice.end : t.voice.start}
       aria-pressed={active}
       // Centered on Finance's "+" (52 px, 56 px from md); the Orb draws past its 64 px target.
-      className="fixed right-4 bottom-[calc(var(--activity-bottom)+var(--activity-music)-6px)] z-30 grid size-16 place-items-center rounded-full opacity-90 transition-[opacity,transform,background-color,box-shadow] duration-200 ease-out hover:scale-105 hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none active:scale-90 aria-pressed:scale-110 aria-pressed:bg-[var(--accent-soft)] aria-pressed:opacity-100 aria-pressed:shadow-[0_0_28px_2px_var(--accent-line)] md:right-8 md:bottom-7"
+      className="grid size-16 place-items-center rounded-full opacity-90 transition-[opacity,transform,background-color,box-shadow] duration-200 ease-out hover:scale-105 hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none active:scale-90 aria-pressed:scale-110 aria-pressed:bg-[var(--accent-soft)] aria-pressed:opacity-100 aria-pressed:shadow-[0_0_28px_2px_var(--accent-line)]"
     >
       <Orb state={state} size={88} className="pointer-events-none -m-3" levelSource={level} />
     </button>

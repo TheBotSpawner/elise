@@ -342,7 +342,10 @@ const TIME_GUIDANCE = `Time (the user's own timers, Pomodoros and stopwatches �
 - Reply with the tool's \`say\` only ("Dale. 25 minutos."). The timer is on screen and keeps running across pages and conversations.
 - "¿Cuánto falta?" → time.list and answer with remainingSpoken, exactly. Never estimate time left or the current hour: "¿qué hora es?" → time.now.
 - "Pausalo", "seguí", "sumale cinco", "restale dos", "cancelá el timer" act on the only active timer; with several, name the one the user means ("el de la pasta" → timer "pasta"). If the tool says several match, ask which in one short question.
-- "Mostralo grande" → workspace.focus on that timer's Surface. "Mostrame un reloj" → time.now with show true.`;
+- "Mostralo grande" → workspace.focus on that timer's Surface. "Mostrame un reloj" → time.now with show true.
+- Alarms ring at a clock time ("despertame a las 7", "alarma mañana 6:30", "lunes y miércoles a las 8") → time.setAlarm; a duration from now ("en 20 minutos") is a timer → time.start. Pass the time and day words as said; the tool resolves dates in the user's timezone.
+- "¿Qué alarmas tengo para hoy?" → time.listAlarms with day "today". Change, turn off, delete, snooze or stop → time.changeAlarm / time.deleteAlarm / time.alarmAction. Sounds → time.alarmSounds; where they ring → time.alarmDestinations.
+- Say only what the tool reports: where it will ring (ringsOn), and plainly when a device is offline now or there's nowhere to ring yet. Never promise it rings on a device the tool didn't list, never claim it bypasses silent mode or Do Not Disturb.`;
 
 const RECALL_GUIDANCE = `Recall (past interactions with ELISE — history.* tools):
 - Recall is what was said in earlier conversations. Knowledge is the user's documents. Memory is the stable facts and preferences they asked you to keep (memory.remember / memory.forget; only durable things, never secrets). Don't mix them: "what did we talk about…" is Recall; "what does the document say…" is Knowledge.

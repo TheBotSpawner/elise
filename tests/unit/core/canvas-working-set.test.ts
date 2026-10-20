@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AuthContext } from "@/application/auth-context";
-import { WorkspaceSession, type ReadRunner } from "@/application/workspace-service";
+import { isReadTool, WorkspaceSession, type ReadRunner } from "@/application/workspace-service";
 import { executeToolCall, type ToolCallOutcome } from "@/core/agents/executor";
 import {
   checkInDate,
@@ -10,9 +10,12 @@ import {
   type HabitEntry,
 } from "@/core/capabilities/habits";
 import type { Task } from "@/core/capabilities/tasks";
+import { proposeDayTool } from "@/core/tools/planning";
+import { showTool } from "@/core/tools/workspace";
 import { changeOf } from "@/core/workspace/lifecycle";
 import { applyOps, emptyWorkspace, type Surface, type SurfaceDraft } from "@/core/workspace/model";
 import { parseWorkspace, type SurfacePayloads } from "@/core/workspace/registry";
+import { habitsVisual } from "@/core/workspace/visualization";
 
 import { makeCtx, makePorts } from "../../fixtures/core-fakes";
 
@@ -384,5 +387,24 @@ describe("habit history", () => {
     expect(thu.scheduled).toBe(false);
     expect(thu.met).toBe(true);
     expect(p.week.goal).toBe(3);
+  });
+});
+
+describe("habits on the canvas", () => {
+  it("today's cell fills once today is done (not only the counter)", () => {
+    const p = habitProgress(habit(), [done(TODAY)], TODAY);
+    const spec = habitsVisual([p], "es")!.spec as { rows: { days: string[]; summary: string }[] };
+    const idx = p.week.days.findIndex((d) => d.date === TODAY);
+    expect(spec.rows[0]!.days[idx]).toBe("done");
+    const open = habitProgress(habit(), [], TODAY);
+    const openSpec = habitsVisual([open], "es")!.spec as { rows: { days: string[] }[] };
+    expect(openSpec.rows[0]!.days[idx]).toBe("today");
+  });
+});
+
+describe("refresh replays only reads", () => {
+  it("a day's plan re-checks against the calendar; screen tools never replay", () => {
+    expect(isReadTool(proposeDayTool)).toBe(true);
+    expect(isReadTool(showTool)).toBe(false);
   });
 });

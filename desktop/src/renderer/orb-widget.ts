@@ -5,7 +5,8 @@ import { toRendererState, type OrbState } from "@/components/elise/orb/orb-state
  * The background conversation's orb (ADR-095), in its own tiny window: ELISE's real Orb renderer
  * on a canvas, nothing else (no React, no bridge). The main process tells it what the
  * conversation is doing (`eliseOrb.state`) and pops it in when it appears (`eliseOrb.pop`).
- * A tap ends the conversation: the main process watches for "#end" (no bridge here).
+ * A tap ends the conversation; the eye brings ELISE to the front: the main process watches for
+ * "#end" and "#show" (no bridge here).
  */
 const canvas = document.querySelector("canvas")!;
 const ctx = canvas.getContext("2d")!;
@@ -22,15 +23,19 @@ const setState = (s: string) => {
   state: setState,
   pop: (s: string) => {
     setState(s);
-    canvas.classList.remove("in", "out");
+    for (const el of [canvas, document.body]) el.classList.remove("in", "out");
     void canvas.offsetWidth; // restart the transition
-    canvas.classList.add("in");
+    for (const el of [canvas, document.body]) el.classList.add("in");
   },
 };
 
 canvas.addEventListener("click", () => {
-  canvas.classList.add("out");
+  for (const el of [canvas, document.body]) el.classList.add("out");
   location.hash = `end-${Date.now()}`;
+});
+// The eye: ELISE's window to the front; the orb itself keeps working as before.
+document.getElementById("eye")!.addEventListener("click", () => {
+  location.hash = `show-${Date.now()}`;
 });
 
 const loop = (now: number) => {

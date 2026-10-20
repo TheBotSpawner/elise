@@ -40,7 +40,9 @@ type RealtimeTable =
   | "imports"
   | "structured_sources"
   | "live_workspaces"
-  | "timers";
+  | "timers"
+  | "alarms"
+  | "alarm_occurrences";
 
 /**
  * Subscribes to workspace-scoped row changes (RLS still applies server-side) and calls

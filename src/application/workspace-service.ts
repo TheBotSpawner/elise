@@ -443,6 +443,27 @@ export class WorkspaceSession implements WorkspacePort {
   }
 
   /**
+   * A day's plan whose blocks are all in the calendar has done its job (ADR-098): only that
+   * day's calendar stays, refreshed — no plan, no card per saved event.
+   */
+  private async planSaved(ops: WorkspaceOp[], read: ReadRunner, at: string) {
+    for (const o of ops) {
+      const s = o.op === "update" ? this.value.surfaces.find((x) => x.id === o.id) : null;
+      if (s?.type !== "day_plan") continue;
+      const p = s.payload as SurfacePayloads["day_plan"];
+      if (!p.blocks.length || p.blocks.some((b) => b.state !== "saved")) continue;
+      const q = {
+        tool: "calendar.listEvents",
+        args: { from: p.date },
+      };
+      const day = await read(q).catch(() => null);
+      if (day?.status !== "succeeded") continue;
+      this.present(q.tool, queryKey(q.tool, q.args), day, q);
+      this.apply([{ op: "dismiss", id: s.id, at }]);
+    }
+  }
+
+  /**
    * After a successful write (ADR-029): every visible Surface that shows the changed resource is
    * reconciled — its own read re-run and its payload replaced in place (same id, pins kept,
    * Focus kept); a deleted resource's card leaves (and Focus with it); a collection that is now
@@ -519,6 +540,7 @@ export class WorkspaceSession implements WorkspacePort {
     );
     const ops = results.filter((o): o is WorkspaceOp => o !== null);
     this.apply(ops);
+    await this.planSaved(ops, read, at);
     logger.info("workspace.reconciled", {
       capability: change.capability,
       operation: change.operation,
@@ -533,11 +555,14 @@ export class WorkspaceSession implements WorkspacePort {
   }
 }
 
+const REPLAYABLE_SCREEN_READS = new Set(["planning.proposeDay"]);
+
 /** A registered read (never a write, never a screen tool): the only kind a refresh may replay. */
 export function isReadTool(tool: AnyToolDefinition | undefined): boolean {
   return (
     !!tool &&
-    tool.capability !== "workspace" &&
+    // Screen tools never replay; a day's plan is a pure read of the calendar (ADR-098).
+    (tool.capability !== "workspace" || REPLAYABLE_SCREEN_READS.has(tool.name)) &&
     getOperation(tool.capability, tool.operation)?.kind === "read"
   );
 }

@@ -73,6 +73,8 @@ export const SURFACE_TYPES = [
   "home",
   /** A day's plan (ADR-098): time blocks for one date, proposed until the calendar holds them. */
   "day_plan",
+  /** Alarms (ADR-100): the user's alarms or the sound picker; one Surface, updated in place. */
+  "alarms",
 ] as const;
 export type SurfaceType = (typeof SURFACE_TYPES)[number];
 

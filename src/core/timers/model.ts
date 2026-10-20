@@ -39,6 +39,10 @@ export interface TimePreferences {
   /** A browser notification too (when the browser grants it), not only in ELISE. */
   notify: boolean;
   pomodoro: PomodoroConfig;
+  /** Alarms (ADR-100): the default sound (bundled key or "upload:<id>"), volume, destinations. */
+  alarmSound: string;
+  alarmVolume: number;
+  alarmDestinations: { kind: "browser" | "desktop"; id: string }[];
 }
 
 const MIN = 60_000;
@@ -53,6 +57,9 @@ export const DEFAULT_TIME_PREFERENCES: TimePreferences = {
     cycles: 4,
     autoStart: "breaks",
   },
+  alarmSound: "brisa",
+  alarmVolume: 80,
+  alarmDestinations: [],
 };
 
 export const TIME_LIMITS = {

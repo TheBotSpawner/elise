@@ -32,10 +32,10 @@ const BY_PREFIX: Record<string, ActivityKey> = {
   schedules: "schedules",
   finance: "finance",
   structured: "structured",
-  habits: "native",
-  goals: "native",
-  lists: "native",
-  notes: "native",
+  habits: "habits",
+  goals: "goals",
+  lists: "lists",
+  notes: "notes",
 };
 
 /** Human activity label for a tool ("Searching your knowledge"), never its internal name. */

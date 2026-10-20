@@ -310,6 +310,12 @@ export function normalizeRegistry(
             }),
           }
         : stateOf(primary);
+    // Google Cast only sees what is cast: its "off" quits the app and means "nothing cast", not
+    // a TV that's off. No power then (Android TV Remote gives the real one), no off/on guess.
+    if (entry?.platform === "cast" && kind.type === "media_player") {
+      kind.capabilities = kind.capabilities.filter((c) => c.type !== "power");
+      if (!["playing", "paused", "buffering"].includes(primary.state)) delete state.on;
+    }
     devices.push({
       providerKey: key,
       providerDeviceId,

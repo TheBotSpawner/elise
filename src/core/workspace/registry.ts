@@ -995,6 +995,42 @@ export const PAYLOADS = {
   finance_import: financeImportPayload,
   personality: z.object({ current: z.enum(PERSONALITIES) }),
   home: homePayload,
+  alarms: z.object({
+    alarms: z
+      .array(
+        z.object({
+          id: text(40),
+          label: text(80).nullable(),
+          time: z.string().regex(/^\d{2}:\d{2}$/),
+          date: isoDay.nullable(),
+          weekdays: z.array(z.number().int().min(0).max(6)).max(7),
+          enabled: z.boolean(),
+          state: z.enum(["scheduled", "ringing", "snoozed", "done", "off"]),
+          nextFireAt: text(40).nullable(),
+          sound: text(60).nullable(),
+          soundName: text(60),
+          snoozeMinutes: z.number().int(),
+          destinations: z
+            .array(
+              z.object({
+                kind: z.enum(["browser", "desktop"]),
+                id: text(40),
+                name: text(80).nullable(),
+                online: z.boolean(),
+              }),
+            )
+            .max(10),
+        }),
+      )
+      .max(12),
+    sounds: z
+      .array(z.object({ key: text(60), name: text(60), kind: z.enum(["bundled", "upload"]) }))
+      .max(20)
+      .optional(),
+    defaultSound: text(60),
+    timezone: text(64),
+    focus: text(40).optional(),
+  }),
   day_plan: z.object({
     date: isoDay,
     timezone: text(60),
@@ -1613,6 +1649,22 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     actions: () => [],
     describe: (p) =>
       `${p.title} (hub ${p.hub}): ${p.items.map((i) => `${i.name} ${i.status === "state" ? "" : `${i.status} `}${i.detail}`).join("; ")}`,
+  },
+  // Alarms (ADR-100): the list, or the sounds to try; the devices say where each can ring.
+  alarms: {
+    sizes: ["small", "medium", "large"],
+    size: "medium",
+    priority: 84,
+    actions: () => [],
+    describe: (p) =>
+      p.alarms.length
+        ? p.alarms
+            .map(
+              (a) =>
+                `${a.time} ${a.label ? q(a.label) : ""} ${a.date ?? `weekdays ${a.weekdays.join(",")}`} ${a.enabled ? a.state : "off"} (alarm ${a.id})`,
+            )
+            .join("; ")
+        : `Alarm sounds: ${(p.sounds ?? []).map((s) => s.name).join(", ")}`,
   },
   // A day's plan (ADR-098): the proposal is the answer; saving it is the conversation's.
   day_plan: {

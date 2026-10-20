@@ -18,6 +18,7 @@ import {
   TeamReactionLine,
   TeamThreadCard,
 } from "@/features/team-messaging/cards";
+import { AlarmsBody } from "@/features/time/alarms-view";
 import { WeatherView } from "@/features/workspace/canvas/weather";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -364,6 +365,17 @@ export function DisplayCard({
       return <TeamDraftCard display={display} rise={rise} embedded={embedded} />;
     case "team_reaction":
       return <TeamReactionLine display={display} />;
+    case "alarms":
+      return (
+        <motion.section {...rise} aria-label={t.time.alarms.title} className={CARD}>
+          <Header
+            label={t.time.alarms.title}
+            href="/my-elise/time"
+            linkLabel={t.time.settings.title}
+          />
+          <AlarmsBody p={display.alarms} />
+        </motion.section>
+      );
     case "habits":
       return <HabitsCard display={display} rise={rise} />;
     case "habit_stats":

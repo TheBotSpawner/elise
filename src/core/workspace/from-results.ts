@@ -942,6 +942,15 @@ export function surfacesFromOutcome(
         }),
       );
     }
+    case "alarms":
+      // One alarms Surface: a new list, a change or the sound picker updates it in place.
+      return one(
+        draft("alarms", "alarms", d.alarms, opts, {
+          title: "",
+          source: { capability: "time", label: null },
+          ref: null,
+        }),
+      );
     case "day_plan":
       // One plan per day: every change to that day's proposal updates it, never a second one.
       return one(
