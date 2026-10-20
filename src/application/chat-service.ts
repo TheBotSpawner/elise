@@ -1120,8 +1120,8 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
           const failedRun = outcome && outcome.status !== "succeeded";
           const text = problem
             ? es
-              ? `No pude resolverla: ${problem}`
-              : `I couldn't resolve it: ${problem}`
+              ? `Quedó pendiente: ${problem}`
+              : `It's still pending: ${problem}`
             : a.decision === "rejected"
               ? es
                 ? `Listo, no lo hago: ${a.summary}.`

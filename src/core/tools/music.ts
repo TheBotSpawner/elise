@@ -686,7 +686,7 @@ export const channelTool: ToolDefinition = {
         output: {
           found: false,
           instructions:
-            "No YouTube channel could be confirmed for that name. Say exactly that («No encontré un canal de YouTube que pueda confirmar con ese nombre») and ask for its @handle, link or spelling. Never search the web to guess it, never play another channel.",
+            "No YouTube channel could be confirmed for that name. Ask, positively, for its @handle, link or spelling so you can play it («Pasame el @ o el link del canal y lo pongo»). Never search the web to guess it, never play another channel.",
         },
       };
     if (decision.kind === "ambiguous")

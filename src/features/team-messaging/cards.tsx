@@ -160,10 +160,16 @@ export function TeamMessagesCard({
   return (
     <motion.section {...rise} aria-label={t.chat.resultLabel} className={CARD}>
       <Header
-        label={`${display.channel && !display.query ? t.teamMessaging.recentIn(display.channel) : t.teamMessaging.label} · ${t.teamMessaging.results(rows.length)}`}
+        label={
+          display.unread
+            ? `${t.teamMessaging.label} · ${t.teamMessaging.unreadLabel}`
+            : `${display.channel && !display.query ? t.teamMessaging.recentIn(display.channel) : t.teamMessaging.label} · ${t.teamMessaging.results(rows.length)}`
+        }
       />
       {rows.length === 0 && display.files.length === 0 ? (
-        <p className="text-[14px] text-muted">{t.teamMessaging.noResults}</p>
+        <p className="text-[14px] text-muted">
+          {display.unread ? t.teamMessaging.noUnread : t.teamMessaging.noResults}
+        </p>
       ) : (
         <ul className="flex flex-col divide-y divide-border">
           {rows.slice(0, 10).map((m) => (
@@ -335,7 +341,9 @@ export function TeamMessagesBody({
   return (
     <div className="flex flex-col gap-2">
       {p.items.length === 0 && p.files.length === 0 ? (
-        <p className="text-[14px] text-muted">{t.teamMessaging.noResults}</p>
+        <p className="text-[14px] text-muted">
+          {p.unread ? t.teamMessaging.noUnread : t.teamMessaging.noResults}
+        </p>
       ) : (
         <ul className="-my-1 flex flex-col divide-y divide-border">
           {p.items.map((m) => (

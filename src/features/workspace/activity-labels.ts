@@ -22,6 +22,7 @@ const BY_PREFIX: Record<string, ActivityKey> = {
   shortcuts: "shortcuts",
   methods: "methods",
   music: "music",
+  teamMessaging: "slack",
   voice: "settings",
   ui: "ui",
   settings: "settings",

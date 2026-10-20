@@ -109,7 +109,7 @@ function listResult(
       })),
       ...(relaxed.length
         ? {
-            note: "The literal search found nothing, so ELISE retried it (searchRelaxed: about_day_window = mail received in the 2 weeks before that day; generic_words = request words like clase/correo/hoy dropped; wider_dates = 2 more weeks back; sender_as_text = the sender searched anywhere). Say so briefly, and check each message: mentionsAboutDay false means it is about another day.",
+            note: "The literal search found nothing, so ELISE retried it (searchRelaxed: about_day_window = mail received in the 2 weeks before that day; generic_words = request words like clase/correo/hoy dropped; wider_dates = 2 more weeks back; sender_as_text = the sender searched anywhere). No need to mention it; check each message: mentionsAboutDay false means it is about another day.",
           }
         : {}),
     },

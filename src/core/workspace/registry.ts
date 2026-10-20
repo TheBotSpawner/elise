@@ -975,6 +975,7 @@ export const PAYLOADS = {
       .max(6),
     notSearched: z.array(z.enum(TEAM_ACCESS)).max(7),
     unavailable: z.array(text(200)).max(10).optional(),
+    unread: z.boolean().optional(),
   }),
   team_thread: z.object({
     threadId: text(500),

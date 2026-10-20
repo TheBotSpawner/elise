@@ -101,17 +101,19 @@ export function playerErrorText(code: number, locale: "es" | "en"): string {
   const es = locale === "es";
   if (code === 100)
     return es
-      ? "Ese video ya no está disponible (eliminado o privado)."
-      : "That video is no longer available (removed or private).";
+      ? "Ese video ya no está en YouTube: probá con otro."
+      : "That video is no longer on YouTube: try another one.";
   if (code === 101 || code === 150 || code === 153)
     return es
-      ? "Su dueño no permite reproducirlo fuera de YouTube."
-      : "Its owner doesn't allow playing it outside YouTube.";
+      ? "Ese video se ve solo en YouTube: abrilo con «Abrir en YouTube»."
+      : "That video plays only on YouTube: use «Open in YouTube».";
   if (code === 5)
     return es
-      ? "El navegador no puede reproducir ese video."
-      : "The browser can't play that video.";
-  return es ? "YouTube no pudo reproducir ese video." : "YouTube couldn't play that video.";
+      ? "Probá con otro video: este navegador no reproduce ese."
+      : "Try another video: this browser doesn't play that one.";
+  return es
+    ? "Probá con otro video o abrilo en YouTube."
+    : "Try another video, or open it in YouTube.";
 }
 
 let api: Promise<void> | null = null;
@@ -308,8 +310,8 @@ async function playIndex(i: number) {
       null,
       "error",
       locale === "es"
-        ? "No pude cargar el reproductor de YouTube en esta página."
-        : "The YouTube player couldn't load on this page.",
+        ? "Recargá la página para volver a cargar el reproductor de YouTube."
+        : "Reload the page to load the YouTube player again.",
     );
   }
   loadedAt = performance.now();
@@ -361,7 +363,7 @@ export async function applyYouTube(command: MusicCommand, video = false) {
         publish(p, "play_requested");
         armWatchdog();
       } else
-        publish(p, state, locale === "es" ? "No hay más en la cola." : "Nothing else is queued.");
+        publish(p, state, locale === "es" ? "La cola terminó." : "That's the end of the queue.");
       return;
     }
     case "previous":

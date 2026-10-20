@@ -124,7 +124,7 @@ describe("YouTube player state", () => {
     await vi.waitFor(() => expect(fake.loaded).toEqual(["a", "b"]));
     emit("onError", 150);
     await vi.waitFor(() => expect(state()).toBe("error"));
-    expect(musicStore.get().payload?.notice).toMatch(/fuera de YouTube/);
+    expect(musicStore.get().payload?.notice).toMatch(/solo en YouTube/);
   });
 
   it("one persistent player: the next track loads into it", async () => {
@@ -170,6 +170,6 @@ describe("YouTube player state", () => {
     await vi.advanceTimersByTimeAsync(PLAYER_LOAD_TIMEOUT_MS + 1);
     await started;
     expect(state()).toBe("error");
-    expect(musicStore.get().payload?.notice).toMatch(/No pude cargar/);
+    expect(musicStore.get().payload?.notice).toMatch(/volver a cargar el reproductor/);
   });
 });

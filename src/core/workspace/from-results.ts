@@ -408,6 +408,7 @@ function teamMessagesSurface(d: Display<"team_messages">, opts: PresentOptions) 
       ...(d.unavailable?.length
         ? { unavailable: d.unavailable.slice(0, 10).map((u) => clip(u, 200)) }
         : {}),
+      ...(d.unread ? { unread: true } : {}),
     },
     opts,
     {

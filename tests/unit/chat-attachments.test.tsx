@@ -233,7 +233,7 @@ describe("chips", () => {
       </I18nProvider>,
     );
     expect(screen.getByText("informe.pdf")).toBeInTheDocument();
-    expect(screen.getByText("No se pudo subir")).toBeInTheDocument();
+    expect(screen.getByText("Reintentá la subida")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Reintentar subir informe.pdf" }));
     await t.finish();
     expect(screen.getByText(/PDF ·/)).toBeInTheDocument();

@@ -22,6 +22,15 @@ const API = "https://api.elevenlabs.io/v1";
 const TDD = "wss://api.elevenlabs.io/v1/text-to-dialogue/stream-input";
 const FORMAT = "pcm_24000";
 
+/**
+ * A stable HTTP model for the lines a dialogue model gets wrong (a word or two). Same voices.
+ * ponytail: fixed id; make it configurable if an account ever lacks it (failover covers it).
+ */
+const STABLE_MODEL = "eleven_flash_v2_5";
+
+/** "Okay.", "Un segundo.", "Ahí va.": three words or fewer. */
+export const isShortLine = (text: string) => text.trim().split(/\s+/).length <= 3;
+
 /** Models that only stream through Text to Dialogue (WebSocket). */
 export const isDialogueModel = (model: string) => /^eleven_v(3|4)/.test(model);
 
@@ -96,6 +105,11 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
     const text = sanitizeForProvider(request.text);
     if (!text) throw new AppError("VALIDATION_ERROR", "Nothing to say");
     const voice = this.voiceFor(request.voice);
+    // A dialogue model (v3/v4) improvises on a line of a word or two ("Okay.", "Ahí va."):
+    // stray sounds, a mechanical beep, that the acknowledgement cache then repeats. Those lines
+    // go to a stable model with the same voice; whole sentences keep the dialogue model.
+    if (isDialogueModel(this.model) && isShortLine(text))
+      return this.http(text, voice, request, signal, STABLE_MODEL);
     return isDialogueModel(this.model)
       ? this.dialogue(
           withDelivery(text, request.delivery, this.model),
@@ -112,6 +126,7 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
     voice: string,
     request: SynthesisRequest,
     signal?: AbortSignal,
+    model: string = this.model,
   ): Promise<ReadableStream<Uint8Array>> {
     const started = Date.now();
     const res = await fetch(
@@ -121,7 +136,7 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
         headers: { "xi-api-key": this.apiKey, "content-type": "application/json" },
         body: JSON.stringify({
           text,
-          model_id: this.model,
+          model_id: model,
           language_code: request.language,
           voice_settings: this.settings,
           ...(request.previousText

@@ -279,6 +279,8 @@ export type ToolDisplay =
       notSearched: TeamAccess[];
       /** Workspaces that couldn't be searched (cross-workspace search). */
       unavailable?: string[];
+      /** The user's unread messages (ADR-099), not a search. */
+      unread?: boolean;
     }
   | { kind: "team_thread"; thread: TeamThread }
   | {
