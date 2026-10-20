@@ -648,6 +648,7 @@ export const en = {
       goals: "Set goals and follow how they go.",
       notes: "Notes ELISE can look up.",
       finance: "Income, expenses and budgets.",
+      time: "Alarms, timers and stopwatches.",
       home: "Lights, climate and modes at home.",
     } as Record<NativeModuleKey, string>,
     intents: {
@@ -657,6 +658,7 @@ export const en = {
       goals: "Follow my goals",
       notes: "Take notes",
       finance: "Sort out my finances",
+      time: "Set alarms and timers",
       home: "Control my home",
     } as Record<NativeModuleKey, string>,
     back: "Back",

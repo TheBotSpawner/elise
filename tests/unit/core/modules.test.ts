@@ -35,6 +35,7 @@ describe("native module registry", () => {
       "goals",
       "notes",
       "finance",
+      "time",
       "home",
     ]);
     for (const k of keys)

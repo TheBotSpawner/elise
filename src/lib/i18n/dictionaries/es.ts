@@ -173,7 +173,7 @@ export const es: Dictionary = {
     shortcuts: "Atajos",
     methods: "Métodos",
     music: "Música",
-    time: "Tiempo",
+    time: "Tiempos",
     team_messaging: "Mensajería de equipo",
   },
   providers: {
@@ -658,6 +658,7 @@ export const es: Dictionary = {
       goals: "Definí metas y seguí su avance.",
       notes: "Notas que ELISE puede consultar.",
       finance: "Ingresos, gastos y presupuestos.",
+      time: "Alarmas, temporizadores y cronómetros.",
       home: "Luces, aire y modos de tu casa.",
     } as Record<NativeModuleKey, string>,
     intents: {
@@ -667,6 +668,7 @@ export const es: Dictionary = {
       goals: "Seguir mis objetivos",
       notes: "Tomar notas",
       finance: "Ordenar mis finanzas",
+      time: "Poner alarmas y temporizadores",
       home: "Controlar mi casa",
     } as Record<NativeModuleKey, string>,
     back: "Volver",

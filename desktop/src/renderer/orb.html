@@ -42,11 +42,12 @@
         opacity: 0;
         transform: scale(0.6);
       }
-      /* The eye: subtle, on the orb's left edge; a tap brings ELISE to the front. */
+      /* The eye: subtle, at the orb's bottom left; a tap brings ELISE to the front. */
       #eye {
         position: absolute;
         left: 0;
-        top: calc(50% - var(--eye) / 2);
+        /* Bottom-left, overlapping the orb's lower edge. */
+        bottom: 6vh;
         width: var(--eye);
         height: var(--eye);
         padding: 0;

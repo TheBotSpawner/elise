@@ -109,6 +109,29 @@ export const NATIVE_MODULES = [
     ],
   },
   {
+    // Tiempos (ADR-045, ADR-100): alarms, timers and stopwatches.
+    key: "time",
+    capability: "time",
+    route: "/my-elise/time",
+    order: 65,
+    available: true,
+    defaultForExistingUsers: true,
+    defaultForNewUsers: true,
+    suggested: true,
+    searchTerms: [
+      "tiempos",
+      "alarmas",
+      "alarma",
+      "despertador",
+      "temporizador",
+      "timer",
+      "cronometro",
+      "pomodoro",
+      "alarms",
+      "stopwatch",
+    ],
+  },
+  {
     // ELISE Home (ADR-079): hiding it never unpairs the hub or deletes rooms, modes or aliases.
     key: "home",
     capability: "home",
