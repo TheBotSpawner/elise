@@ -13,6 +13,7 @@ import {
   type EliseConnectivity,
   type PlatformCapability,
   VOICE_ORB_STATES,
+  WAKE_ORB_CORNERS,
 } from "@/core/platform/platform";
 
 import { alarmItemsSchema, scheduleAlarms } from "./alarms";
@@ -58,6 +59,7 @@ const prefsSchema = z
     wakeWord: z.boolean(),
     wakeChime: z.boolean(),
     wakeOrb: z.boolean(),
+    wakeOrbCorner: z.enum(WAKE_ORB_CORNERS),
   })
   .partial()
   .strict();
@@ -138,7 +140,12 @@ export function registerIpc(
     const p = prefsSchema.parse(patch);
     updateState((s) => ({ ...s, preferences: { ...s.preferences, ...p } }));
     if (p.startAtLogin !== undefined) applyLoginItem();
-    if (p.wakeWord !== undefined || p.wakeChime !== undefined || p.wakeOrb !== undefined)
+    if (
+      p.wakeWord !== undefined ||
+      p.wakeChime !== undefined ||
+      p.wakeOrb !== undefined ||
+      p.wakeOrbCorner !== undefined
+    )
       wakePreferenceChanged();
     if (p.wakeWord !== undefined) log("desktop_wake_preference", { on: p.wakeWord });
     return loadState().preferences;

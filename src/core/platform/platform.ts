@@ -105,7 +105,12 @@ export interface DesktopPreferences {
   wakeChime: boolean;
   /** ELISE's Orb in the screen's corner during a background voice conversation. */
   wakeOrb: boolean;
+  /** ADR-102: which corner of the screen in use it shows in. */
+  wakeOrbCorner: WakeOrbCorner;
 }
+
+export const WAKE_ORB_CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"] as const;
+export type WakeOrbCorner = (typeof WAKE_ORB_CORNERS)[number];
 
 /**
  * Whether this computer should be listening for "ELISE" now (main → renderer): the person's

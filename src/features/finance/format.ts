@@ -55,6 +55,14 @@ export function parseTypedAmount(value: string, locale: "es" | "en"): string | n
   return parsed && !parsed.negative && parsed.amount !== "0" ? parsed.amount : null;
 }
 
+/** ADR-101: an opening balance as typed: zero and negative ("-2.500,50") are valid. */
+export function parseTypedSignedAmount(value: string, locale: "es" | "en"): string | null {
+  if (!value.trim()) return "0";
+  const parsed = parseAmount(value, locale === "es" ? "comma_decimal" : "dot_decimal");
+  if (!parsed) return null;
+  return parsed.negative && parsed.amount !== "0" ? `-${parsed.amount}` : parsed.amount;
+}
+
 /** a as a percentage of b (0–100) for bar widths, computed on exact amounts. */
 export function share(a: string, b: string): number {
   const whole = toUnits(b);

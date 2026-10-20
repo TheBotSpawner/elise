@@ -19,6 +19,9 @@ import {
   UNCLASSIFIED,
   updateCategoryInput,
   deleteCategoryInput,
+  balancesInput,
+  type AccountBalance,
+  type AccountBalances,
   type ConvertedTotals,
   type FinanceBook,
   createAccountInput,
@@ -177,7 +180,7 @@ export const getSummaryTool: ToolDefinition = {
   capability: "finance",
   operation: "getSummary",
   description:
-    '"¿Cuánto gasté este mes?", "my September summary", "this month vs last month", "Q3 vs Q2": income, expenses and net PER CURRENCY, top categories, largest transactions, change vs the comparison period and grounded insights. Filters narrow it (category, counterparty, project…). Use it instead of adding numbers yourself.',
+    '"¿Cuánto gasté este mes?", "my September summary", "this month vs last month", "Q3 vs Q2": a period\'s income, expenses and net PER CURRENCY (never an account\'s balance: finance.getBalances), top categories, largest transactions, change vs the comparison period and grounded insights. Filters narrow it (category, counterparty, project…). Use it instead of adding numbers yourself.',
   input: summaryInput,
   async describe() {
     return { summary: "Finance summary" };
@@ -415,6 +418,101 @@ export const listAccountsTool: ToolDefinition = {
     };
   },
 };
+
+/**
+ * ADR-101: what each account holds according to ELISE — its opening balance plus every
+ * completed movement through the day, computed by the database (never by the model, never from a
+ * period's income and expenses). Several accounts match a name → each is returned, labeled.
+ */
+export const getBalancesTool: ToolDefinition = {
+  name: "finance.getBalances",
+  capability: "finance",
+  operation: "getBalances",
+  description:
+    '"¿Cuánta plata tengo en Mercado Pago?", "saldo de mi cuenta", "how much is in my Visa", "mis saldos": the CURRENT recorded balance of an account (or all), on a day if asked. Use it for any balance question — never finance.getSummary, which only gives a period\'s income and expenses.',
+  input: balancesInput,
+  route: nativeOnly,
+  async describe() {
+    return { summary: "Account balances" };
+  },
+  async run(raw, env) {
+    const input = balancesInput.parse(raw);
+    const p = provider(env);
+    const asOf = input.asOf ?? today(env);
+    const all = await p.listAccounts();
+    const accounts = input.account ? findByName(all, input.account, (a) => a.name) : all;
+    if (input.account && !accounts.length)
+      return {
+        output: {
+          found: false,
+          accounts: all.map((a) => a.name),
+          instructions: `No account is named like "${input.account}". Say so and name the ones that exist; don't guess.`,
+        },
+      };
+    const rows = await nativeFeature(p.accountBalances?.bind(p))(asOf);
+    const balances = accountBalances(accounts, rows, asOf);
+    const locale = env.ctx.locale;
+    return {
+      output: {
+        asOf,
+        accounts: balances.map(({ account: a, rows: r, beforeOpening }) => ({
+          account: a.name,
+          type: a.type,
+          currency: a.currency,
+          balances: r.map((x) => ({
+            currency: x.currency,
+            balance: money(x.balance, x.currency, locale),
+            ...(x.currency !== a.currency && a.currency
+              ? { note: "Movements in another currency: kept apart, never converted." }
+              : {}),
+            ...(x.pendingCount
+              ? { pending: { count: x.pendingCount, amount: money(x.pending, x.currency, locale) } }
+              : {}),
+          })),
+          openingBalance:
+            a.currency && a.openingBalance !== undefined
+              ? money(a.openingBalance, a.currency, locale)
+              : null,
+          openingBalanceDate: a.openingBalanceDate ?? null,
+          openingBalanceSet: a.openingBalanceSet ?? false,
+          movementsCounted: r.reduce((n, x) => n + x.counted, 0),
+          lastMovement: r.reduce<string | null>(
+            (d, x) => (x.lastMovement && (!d || x.lastMovement > d) ? x.lastMovement : d),
+            null,
+          ),
+          ...(beforeOpening ? { beforeOpening: true } : {}),
+        })),
+        ...(accounts.length > 1 && input.account
+          ? { note: "Several accounts match: give each balance with its account's name." }
+          : {}),
+        provenance:
+          "Recorded balance calculated by ELISE: opening balance + the completed movements recorded in ELISE Finanzas through asOf. ELISE isn't connected to any bank: it is never the bank's live balance.",
+        instructions:
+          "Lead with the balance: 'Según tus movimientos registrados en ELISE, el saldo calculado de <cuenta> es <balance> al <asOf>.' Quote amounts exactly, one per currency. If openingBalanceSet is false, add one short sentence: it starts from a saldo inicial of 0, and they can set the real one in Cuentas or by telling you. Pending movements aren't included: mention them only if present. A negative balance on a credit card is what is owed. beforeOpening: that day is before the opening balance's date, so ELISE has no balance for it. Don't add income/expense totals unless asked.",
+      },
+      display: { kind: "finance_balances", asOf, balances },
+    };
+  },
+};
+
+/** Each account with its balance rows (one per currency; zero in its currency when it has none). */
+export function accountBalances(
+  accounts: FinanceAccount[],
+  rows: AccountBalance[],
+  asOf: string,
+): AccountBalances[] {
+  return accounts.map((account) => {
+    const own = rows.filter((r) => r.accountId === account.id);
+    return {
+      account,
+      // The account's own currency first; others after, never converted.
+      rows: own.sort((x, y) =>
+        x.currency === account.currency ? -1 : y.currency === account.currency ? 1 : 0,
+      ),
+      beforeOpening: Boolean(account.openingBalanceDate && asOf < account.openingBalanceDate),
+    };
+  });
+}
 
 export const listCategoriesTool: ToolDefinition = {
   name: "finance.listCategories",
@@ -881,7 +979,13 @@ export const createAccountTool: ToolDefinition = {
   async run(raw, env) {
     const a = createAccountInput.parse(raw);
     const account = await writable(env).createAccount(
-      { name: a.name, type: a.type, currency: a.currency ?? null },
+      {
+        name: a.name,
+        type: a.type,
+        currency: a.currency ?? null,
+        ...(a.openingBalance !== undefined ? { openingBalance: a.openingBalance } : {}),
+        ...(a.openingBalanceDate !== undefined ? { openingBalanceDate: a.openingBalanceDate } : {}),
+      },
       sourceOf(env.ctx),
     );
     return {
@@ -920,6 +1024,8 @@ export const updateAccountTool: ToolDefinition = {
       type: u.type,
       currency: u.currency,
       archived: u.archived,
+      ...(u.openingBalance !== undefined ? { openingBalance: u.openingBalance } : {}),
+      ...(u.openingBalanceDate !== undefined ? { openingBalanceDate: u.openingBalanceDate } : {}),
     });
     if (u.book !== undefined) {
       const bookId = u.book === null ? null : (await resolveBook(p, u.book)).id;
@@ -936,6 +1042,13 @@ export const updateAccountTool: ToolDefinition = {
         account: { name: updated.name, type: updated.type, currency: updated.currency },
         ...(u.archived ? { archived: true } : {}),
         ...(u.default !== undefined ? { default: u.default } : {}),
+        ...(u.openingBalance !== undefined || u.openingBalanceDate !== undefined
+          ? {
+              openingBalance: updated.openingBalance ?? null,
+              openingBalanceDate: updated.openingBalanceDate ?? null,
+              note: "Only the starting point changed; no movement was created or edited. finance.getBalances gives the new balance.",
+            }
+          : {}),
       },
       display: { kind: "finance_accounts", accounts: [updated] },
       target: { type: "finance_account", id: updated.id },
@@ -1551,6 +1664,7 @@ export const FINANCE_TOOLS = [
   listTransactionsTool,
   getTransactionTool,
   listAccountsTool,
+  getBalancesTool,
   listCategoriesTool,
   createTransactionTool,
   updateTransactionTool,

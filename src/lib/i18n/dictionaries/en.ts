@@ -2513,6 +2513,24 @@ export const en = {
     accountName: "Name",
     accountNamePlaceholder: "Visa, Cash USD, PayPal…",
     accountType: "Type",
+    // ADR-101: an account's recorded balance.
+    balance: {
+      title: "Balances",
+      recorded: "Recorded balance",
+      asOf: (date: string) => `as of ${date}`,
+      opening: "Opening balance",
+      openingHint:
+        "What the account held before the movements recorded in ELISE. Negative for debt. It never creates a movement.",
+      openingDate: "True at the start of",
+      openingDateHint: "Leave it empty if it was before every movement.",
+      openingUnset: "Opening balance not set (0 is used)",
+      provenance: "Calculated from your movements recorded in ELISE; not your bank's balance.",
+      pending: (n: number, amount: string) =>
+        `${n} pending ${n === 1 ? "movement" : "movements"} (${amount}) not included.`,
+      lastMovement: (date: string) => `Last movement ${date}`,
+      beforeOpening: "That day is before the opening balance's date: no balance is known for it.",
+      needsCurrency: "Choose the account's currency to set an opening balance.",
+    },
     accountTypes: {
       cash: "Cash",
       bank: "Bank account",
@@ -4244,6 +4262,10 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
         continue: "Continue",
         later: "Skip for now",
         appearing: "Added devices show up in Hogar within seconds.",
+        // ADR-103
+        onNetwork: "Found on your network",
+        onNetworkHint: "They're on your network, but not part of your devices until you add them.",
+        ignore: "Ignore",
         showValue: "Show",
         hideValue: "Hide",
         fields: {
@@ -4515,7 +4537,14 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       wakeChime: "Sound when activated",
       wakeOrb: "On-screen indicator",
       wakeOrbHint:
-        "ELISE's Orb in the bottom-right corner while she listens to you or answers. It never takes focus or clicks.",
+        "ELISE's Orb on the screen you're using while she listens to you or answers. It never takes focus; tap it to end the conversation.",
+      wakeOrbCorner: "Indicator position",
+      wakeOrbCorners: {
+        "bottom-right": "Bottom right",
+        "bottom-left": "Bottom left",
+        "top-right": "Top right",
+        "top-left": "Top left",
+      },
       wakeWordName: "Wake word: ELISE",
       pause: "Pause listening",
       resume: "Resume listening",

@@ -6,6 +6,13 @@ import { DeviceDiscovery } from "@/features/home/device-discovery";
 import { HomeRuntimeProvider, type HomeRuntimeControls } from "@/features/home/runtime-context";
 import { I18nProvider } from "@/lib/i18n/client";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+// ADR-103: adopting what a finished setup brought in is a server action.
+vi.mock("@/features/home/actions", () => ({
+  adoptNewDevicesAction: vi.fn(async () => ({ ok: true, value: { added: 0 } })),
+  updateDeviceAction: vi.fn(async () => ({ ok: true, value: null })),
+}));
+
 /**
  * Hogar's "Dispositivos" step (ADR-090): it lists what was found, adds what the person picks
  * (a confirmation or a pairing code), lets them skip one, and always lets them continue.

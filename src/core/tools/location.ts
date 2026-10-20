@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { timezoneLabel } from "@/lib/timezones";
+
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import {
   coarse,
@@ -20,7 +22,8 @@ import {
   type Ranked,
 } from "../location/resolve";
 import { clipText as clip } from "../text";
-import { isLocalDateTime, toLocalDateTime, zonedDateTimeToUtc } from "../time";
+import { canonicalTimezone, isLocalDateTime, toLocalDateTime, zonedDateTimeToUtc } from "../time";
+import { cityFromTimezone } from "../weather/model";
 import type { MapPayload, PlacePayload } from "../workspace/location";
 
 /**
@@ -162,7 +165,13 @@ export const searchPlacesTool: ToolDefinition = {
           "placeId" in w
             ? await maps(env).getPlace(w.placeId, env.ctx.locale)
             : await (async () => {
-                const n = await named(env, w.address, contextAnchors(env));
+                const anchors = contextAnchors(env);
+                const n = await named(
+                  env,
+                  w.address,
+                  anchors,
+                  anchors.length ? null : await regionBias(env),
+                );
                 return n.ranked.length && confidenceOf(n.ranked) === "low" ? n : n.ranked[0]?.place;
               })();
         if (found && "ranked" in found) return ambiguous(found);
@@ -254,11 +263,32 @@ interface Named {
 }
 
 /**
- * The geocoder (biased to the context), plus a place search around the context when the
- * geocoder alone isn't a clear nearby match for the words.
+ * ADR-102: with no position shared and nothing on the map, the city of the user's timezone biases
+ * the provider — a preference, never a filter, never used to rank and never said to be where they
+ * are. "Conde 3095" from Buenos Aires is found in Buenos Aires (unbiased: no result at all);
+ * "10 Downing Street, London" is still London.
  */
-async function named(env: ToolRunEnv, text: string, anchors: LatLng[]): Promise<Named> {
-  const near = anchors[0] ?? null;
+async function regionBias(env: ToolRunEnv): Promise<LatLng | null> {
+  const zone = canonicalTimezone(env.ctx.timezone);
+  if (!cityFromTimezone(zone)) return null;
+  const hits = await maps(env)
+    .geocode(timezoneLabel(zone, env.ctx.locale), env.ctx.locale, null)
+    .catch(() => []);
+  return hits[0] ? coarse(hits[0].location) : null;
+}
+
+/**
+ * The geocoder (biased to the context), plus a place search around the context when the
+ * geocoder alone isn't a clear nearby match for the words. `bias`: where to look first when the
+ * conversation has no anchor (the timezone's city).
+ */
+async function named(
+  env: ToolRunEnv,
+  text: string,
+  anchors: LatLng[],
+  bias: LatLng | null = null,
+): Promise<Named> {
+  const near = anchors[0] ?? bias;
   const geo = await maps(env).geocode(text, env.ctx.locale, near);
   const first = rankCandidates(text, geo, anchors);
   const top = first[0];
@@ -389,7 +419,12 @@ export const geocodeTool: ToolDefinition = {
   },
   async run(raw, env) {
     const { address } = geocodeInput.parse(raw);
-    const results = await maps(env).geocode(address, env.ctx.locale);
+    const anchors = contextAnchors(env);
+    const results = await maps(env).geocode(
+      address,
+      env.ctx.locale,
+      anchors[0] ?? (await regionBias(env)),
+    );
     if (!results.length)
       return {
         output: { found: false, instructions: "That address wasn't found. Ask for more detail." },
@@ -514,11 +549,14 @@ export const getRouteTool: ToolDefinition = {
     if (points.includes("unknown_here")) return needsLocation(`${from} → ${r.to}`);
     const [origin, destination, ...stops] = points as Waypoint[];
     const anchors = contextAnchors(env);
+    const hasNamed = "address" in origin! || "address" in destination!;
+    // Only when a named end needs it and nothing else anchors the trip (ADR-102).
+    const bias = hasNamed && !anchors.length ? await regionBias(env) : null;
     // Nothing found for a name: the routing provider resolves the text itself, as before.
     const [fromN, toN] = (
       await Promise.all([
-        "address" in origin! ? named(env, origin.address, anchors) : null,
-        "address" in destination! ? named(env, destination.address, anchors) : null,
+        "address" in origin! ? named(env, origin.address, anchors, bias) : null,
+        "address" in destination! ? named(env, destination.address, anchors, bias) : null,
       ])
     ).map((n) => (n?.ranked.length ? n : null));
     // A settled end is context for the other: "from Palermo to <a street without a city>".

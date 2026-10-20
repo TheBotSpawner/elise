@@ -8,13 +8,16 @@ import { Orb } from "@/components/elise/orb/orb";
 import { PageContainer, PageHeader } from "@/components/shared/page";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
+import { Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type {
   DesktopInfo,
   DesktopPreferences,
   DesktopUpdateState,
   HomeHubLocalState,
+  WakeOrbCorner,
 } from "@/core/platform/platform";
+import { WAKE_ORB_CORNERS } from "@/core/platform/platform";
 import { getDictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -400,6 +403,29 @@ function WakeSettings({
                 aria-label={s.wakeOrb}
               />
             </label>
+            {prefs.wakeOrb && (
+              <label className={row}>
+                <span className="text-[14px]">{s.wakeOrbCorner}</span>
+                <Select
+                  value={prefs.wakeOrbCorner}
+                  className="h-9 w-auto"
+                  aria-label={s.wakeOrbCorner}
+                  onChange={async (e) =>
+                    onChange(
+                      await bridge().setPreferences({
+                        wakeOrbCorner: e.target.value as WakeOrbCorner,
+                      }),
+                    )
+                  }
+                >
+                  {WAKE_ORB_CORNERS.map((c) => (
+                    <option key={c} value={c}>
+                      {s.wakeOrbCorners[c]}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            )}
             <p className="py-3 text-[12.5px] text-muted">{s.continuousNote}</p>
           </>
         )}

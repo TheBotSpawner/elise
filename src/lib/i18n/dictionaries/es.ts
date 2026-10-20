@@ -2547,6 +2547,24 @@ export const es: Dictionary = {
     accountName: "Nombre",
     accountNamePlaceholder: "Visa, Efectivo USD, PayPal…",
     accountType: "Tipo",
+    // ADR-101: el saldo registrado de una cuenta.
+    balance: {
+      title: "Saldos",
+      recorded: "Saldo registrado",
+      asOf: (date: string) => `al ${date}`,
+      opening: "Saldo inicial",
+      openingHint:
+        "Lo que tenía la cuenta antes de los movimientos cargados en ELISE. Negativo si es deuda. Nunca crea un movimiento.",
+      openingDate: "Vigente al comienzo del",
+      openingDateHint: "Dejalo vacío si es anterior a todos los movimientos.",
+      openingUnset: "Saldo inicial sin definir (se usa 0)",
+      provenance: "Calculado con tus movimientos registrados en ELISE; no es el saldo del banco.",
+      pending: (n: number, amount: string) =>
+        `${n} ${n === 1 ? "movimiento pendiente" : "movimientos pendientes"} (${amount}) sin incluir.`,
+      lastMovement: (date: string) => `Último movimiento: ${date}`,
+      beforeOpening: "Ese día es anterior a la fecha del saldo inicial: no hay saldo conocido.",
+      needsCurrency: "Elegí la moneda de la cuenta para cargar un saldo inicial.",
+    },
     accountTypes: {
       cash: "Efectivo",
       bank: "Cuenta bancaria",
@@ -4280,6 +4298,11 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
         continue: "Continuar",
         later: "Omitir por ahora",
         appearing: "Los dispositivos agregados aparecen en Hogar en unos segundos.",
+        // ADR-103
+        onNetwork: "Encontrados en tu red",
+        onNetworkHint:
+          "Están en tu red, pero no son parte de tus dispositivos hasta que los agregues.",
+        ignore: "Ignorar",
         showValue: "Mostrar",
         hideValue: "Ocultar",
         fields: {
@@ -4552,7 +4575,14 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
       wakeChime: "Sonido al activarse",
       wakeOrb: "Indicador en pantalla",
       wakeOrbHint:
-        "La esfera de ELISE abajo a la derecha mientras te escucha o te responde. No toma el foco ni los clics.",
+        "La esfera de ELISE en la pantalla que estás usando mientras te escucha o te responde. No toma el foco; tocala para terminar la conversación.",
+      wakeOrbCorner: "Posición del indicador",
+      wakeOrbCorners: {
+        "bottom-right": "Abajo a la derecha",
+        "bottom-left": "Abajo a la izquierda",
+        "top-right": "Arriba a la derecha",
+        "top-left": "Arriba a la izquierda",
+      },
       wakeWordName: "Palabra de activación: ELISE",
       pause: "Pausar escucha",
       resume: "Reanudar escucha",

@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
 import {
+  adoptNewHomeDevices,
   createHomeRoom,
   createPairingCode,
   deleteHomeScene,
@@ -71,6 +72,11 @@ export async function runSceneAction(sceneId: string) {
     });
     return commands.length ? executeHomeCommands(auth, commands, "user_ui") : [];
   });
+}
+
+/** ADR-103: the devices a setup the person just finished brought in. */
+export async function adoptNewDevicesAction(since: string) {
+  return run(async () => adoptNewHomeDevices(await requireAuthContext(), since));
 }
 
 export async function updateDeviceAction(deviceId: string, patch: unknown) {

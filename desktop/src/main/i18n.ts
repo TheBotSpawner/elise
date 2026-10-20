@@ -16,6 +16,7 @@ const ES = {
   settings: "Configuración",
   pauseListening: "Pausar escucha de “ELISE”",
   resumeListening: "Reanudar escucha de “ELISE”",
+  enableListening: "Activar escucha de “ELISE”…",
   wake: (s: WakeReport, c: WakeControl): string =>
     c.suspended
       ? "○ Escucha detenida (pantalla bloqueada)"
@@ -48,6 +49,7 @@ const EN: typeof ES = {
   settings: "Settings",
   pauseListening: "Pause listening for “ELISE”",
   resumeListening: "Resume listening for “ELISE”",
+  enableListening: "Turn on listening for “ELISE”…",
   wake: (s: WakeReport, c: WakeControl) =>
     c.suspended
       ? "○ Listening stopped (screen locked)"

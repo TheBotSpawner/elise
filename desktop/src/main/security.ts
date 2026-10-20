@@ -13,6 +13,9 @@ import { APP_ORIGIN } from "./protocol";
  */
 const ALLOWED_PERMISSIONS = new Set([
   "media", // the microphone, for voice
+  // ADR-102: "Usar mi ubicación actual" — only asked when that setting is on (the renderer
+  // decides), only for the app's own pages, and Windows' own location permission still applies.
+  "geolocation",
   "notifications",
   "clipboard-sanitized-write",
   "fullscreen",

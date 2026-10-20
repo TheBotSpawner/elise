@@ -32,6 +32,7 @@ import {
 } from "./email-cards";
 import {
   FinanceBreakdownCard,
+  FinanceBalancesCard,
   FinanceBooksCard,
   FinanceBudgetsCard,
   FinanceListCard,
@@ -404,6 +405,8 @@ export function DisplayCard({
       return <FinanceListCard display={display} rise={rise} />;
     case "finance_books":
       return <FinanceBooksCard display={display} rise={rise} />;
+    case "finance_balances":
+      return <FinanceBalancesCard display={display} rise={rise} />;
     case "finance_budgets":
       return <FinanceBudgetsCard display={display} rise={rise} />;
     case "finance_report":

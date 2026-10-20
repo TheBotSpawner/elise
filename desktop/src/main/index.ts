@@ -24,7 +24,7 @@ import {
   updateState as currentUpdate,
 } from "./updater";
 import { applyWakeTo, setWakePaused, wake, wakeControl, wakeStatus, watchSystem } from "./wake";
-import { closeWakeOrb, updateWakeOrb, wakeOrb } from "./wake-orb";
+import { closeWakeOrb, updateWakeOrb, wakeOrb, watchDisplays } from "./wake-orb";
 import { EVENTS } from "../shared/channels";
 
 /**
@@ -273,7 +273,9 @@ function refreshTray() {
           ? { label: w.resumeListening, click: () => void setWakePaused(false) }
           : { label: w.pauseListening, click: () => void setWakePaused(true) },
       ]
-    : [];
+    : // ADR-102: turned off (by voice, too) → always one click from turning it back on, in
+      // Settings (where its consent lives).
+      [{ label: w.enableListening, click: () => showWindow("/settings/desktop") }];
   tray.setToolTip(c.cloud === "online" ? `ELISE · ${w.connected}` : `ELISE · ${w.cloudOffline}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -304,7 +306,8 @@ async function restartToUpdate() {
 function refreshOrb() {
   const w = window && !window.isDestroyed() ? window : null;
   const inUse = Boolean(w?.isVisible() && !w.isMinimized() && w.isFocused());
-  updateWakeOrb(wakeStatus(), wakeControl().enabled && loadState().preferences.wakeOrb, inUse);
+  const p = loadState().preferences;
+  updateWakeOrb(wakeStatus(), wakeControl().enabled && p.wakeOrb, inUse, p.wakeOrbCorner);
 }
 
 function quit() {
@@ -393,6 +396,7 @@ async function main() {
   host.start();
   registerIpc(host, applyLoginItem, (path) => showWindow(path));
   watchSystem();
+  watchDisplays();
   // A tap on the corner Orb ends the background conversation (the session lives in the window).
   wakeOrb.on("end", () => broadcast(EVENTS.voiceEnd, null));
   wakeOrb.on("show", () => showWindow());

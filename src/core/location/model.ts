@@ -195,6 +195,11 @@ export const DEVICE_LOCATION_LIMITS = {
   maxAccuracyMeters: 5_000,
   /** How long a turn may wait for a fresh fix before going on without it. */
   captureTimeoutMs: 3_500,
+  /**
+   * The same with no usable sample at all (ADR-102): a first fix on Windows took ~5 s, and
+   * giving up sooner only means asking the person where they are.
+   */
+  firstCaptureTimeoutMs: 8_000,
 } as const;
 
 /**

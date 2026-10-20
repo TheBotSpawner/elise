@@ -79,7 +79,7 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   ],
   [
     "finance",
-    /\b(gast\w*|plata|dinero|finanz\w*|presupuest\w*|ingres\w*|expens\w*|budget|spend\w*|money|pesos|d[oó]lar\w*|transacci\w*|pagu[eé]|pag[oó]|cobr\w*|sueldo|salary)\b|\$/i,
+    /\b(gast\w*|plata|dinero|saldos?|balances?|finanz\w*|presupuest\w*|ingres\w*|expens\w*|budget|spend\w*|money|pesos|d[oó]lar\w*|transacci\w*|pagu[eé]|pag[oó]|cobr\w*|sueldo|salary)\b|\$/i,
   ],
   [
     "teamMessaging",

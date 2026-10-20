@@ -14,14 +14,18 @@ import {
   Wifi,
   type LucideIcon,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { createElement, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import type { DiscoveredDevice, DiscoveryField, DiscoveryStep } from "@/core/home/discovery";
+import type { HomeDevice } from "@/core/home/model";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { adoptNewDevicesAction } from "./actions";
+import { FoundDevices } from "./found-devices";
 import { useHomeRuntime } from "./runtime-context";
 
 const DONE_KEY = "elise.home.devicesStep";
@@ -88,12 +92,16 @@ const POLL_MS = 10_000;
 export function DeviceDiscovery({
   onDone,
   addedCount,
+  found: onNetwork = [],
 }: {
   /** Continue to Hogar (with or without devices). */
   onDone: () => void;
   /** Devices already in Hogar (the step can finish once there is one). */
   addedCount: number;
+  /** ADR-103: devices the engine registered by itself, waiting for "Agregar". */
+  found?: readonly HomeDevice[];
 }) {
+  const router = useRouter();
   const { t } = useI18n();
   const d = t.smartHome.setup.discover;
   const runtime = useHomeRuntime();
@@ -139,7 +147,20 @@ export function DeviceDiscovery({
   }, [runtime, scan]);
 
   const after = (id: string, step: DiscoveryStep) => {
-    if (step.kind === "added") return set(id, { kind: "added" });
+    if (step.kind === "added") {
+      // ADR-103: what the engine registers right after this is the device just added (the
+      // agent resyncs after 4 s and 20 s); anything else it finds later waits for "Agregar".
+      const since = new Date(Date.now() - 15_000).toISOString();
+      for (const ms of [6_000, 23_000])
+        setTimeout(
+          () =>
+            void adoptNewDevicesAction(since).then(
+              (r) => r.ok && r.value.added && router.refresh(),
+            ),
+          ms,
+        );
+      return set(id, { kind: "added" });
+    }
     if (step.kind === "confirm" || step.kind === "form") return set(id, { kind: "form", step });
     if (step.kind === "aborted")
       return set(id, {
@@ -184,6 +205,7 @@ export function DeviceDiscovery({
   return (
     <div className="flex flex-col gap-4">
       <p className="max-w-xl text-[15px] text-muted">{d.body}</p>
+      <FoundDevices devices={onNetwork} />
       <div
         className="flex flex-wrap items-center gap-2.5 text-[13.5px] text-muted"
         aria-live="polite"

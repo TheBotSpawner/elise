@@ -219,6 +219,28 @@ describe("location.getRoute resolution", () => {
     ]);
   });
 
+  it("no position and no map: the timezone's city biases the geocoder, never the ranking (ADR-102)", async () => {
+    const CITY = { lat: -34.6037, lng: -58.3816 };
+    const { capability, calls } = maps();
+    const biased: LocationCapability = {
+      ...capability,
+      geocode: async (address, lang, bias) =>
+        /^buenos aires, argentina$/i.test(address)
+          ? [place("city", "Buenos Aires, Argentina", CITY)]
+          : capability.geocode(address, lang, bias),
+    };
+    const { ports, ctx } = setup(biased);
+    const out = await executeToolCall(ports, ctx, {
+      name: "location.getRoute",
+      args: { from: "Greenhill", to: "Main Avenue 1200", mode: "drive" },
+    });
+    expect(out).toMatchObject({ status: "succeeded", output: { found: true } });
+    const geocodes = calls.filter((c) => c.op === "geocode").map((c) => c.arg as { bias: LatLng });
+    expect(geocodes[0]!.bias).toEqual({ lat: -34.604, lng: -58.382 });
+    // Never said to be where the user is.
+    expect(JSON.stringify(out)).not.toContain("-34.604");
+  });
+
   it("a true tie with no context shows both and asks", async () => {
     const both: LocationCapability = {
       ...maps().capability,

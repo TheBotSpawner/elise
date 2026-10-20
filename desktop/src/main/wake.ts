@@ -5,6 +5,7 @@ import type { WakeControl, WakeReport } from "@/core/platform/platform";
 
 import { log } from "./log";
 import { loadState } from "./store";
+import { isWakeOrbWindow } from "./wake-orb";
 import { EVENTS } from "../shared/channels";
 
 /**
@@ -30,6 +31,8 @@ export const wakeStatus = () => status;
 function publish() {
   const c = wakeControl();
   for (const w of BrowserWindow.getAllWindows()) {
+    // The corner orb only draws while shown: it keeps its throttling (and gets no events).
+    if (isWakeOrbWindow(w)) continue;
     w.webContents.send(EVENTS.wake, c);
     // A hidden window that listens must keep its timers and audio running at full rate.
     w.webContents.setBackgroundThrottling(!c.enabled);

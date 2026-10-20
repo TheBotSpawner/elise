@@ -9,6 +9,7 @@ import {
   trendFromGroups,
   trendGranularity,
   type BudgetUsage,
+  type AccountBalances,
   type FinanceAccount,
   type FinanceBook,
   type FinanceCategory,
@@ -155,6 +156,8 @@ export interface FinanceOverview {
   /** Budgets of the period's month (today's month when the period includes today). */
   budgets: { month: string; usages: BudgetUsage[] } | null;
   settings: { defaultCurrency: string | null };
+  /** ADR-101: every account's recorded balance today (null before migration 059). */
+  balances: AccountBalances[] | null;
   /** Any transaction at all (ELISE or a connected sheet): onboarding only when there is none. */
   hasAny: boolean;
   today: string;
@@ -187,41 +190,55 @@ export async function financeOverview(
     0,
     7,
   );
-  const [summary, trend, list, accounts, categories, books, settings, extra, budgets, byBook, any] =
-    await Promise.all([
-      read(auth, "finance.getSummary", { ...shared, compare: "previous" }, "finance_summary"),
-      groups(granularity),
+  const [
+    summary,
+    trend,
+    list,
+    accounts,
+    categories,
+    books,
+    settings,
+    extra,
+    budgets,
+    byBook,
+    any,
+    balances,
+  ] = await Promise.all([
+    read(auth, "finance.getSummary", { ...shared, compare: "previous" }, "finance_summary"),
+    groups(granularity),
+    read(
+      auth,
+      "finance.listTransactions",
+      {
+        ...shared,
+        // Movements show what's still to be paid too; totals keep counting completed only.
+        status: filters.status ? ["pending"] : ["completed", "pending"],
+        limit: 100,
+      },
+      "finance_transactions",
+    ),
+    read(auth, "finance.listAccounts", {}, "finance_accounts"),
+    read(auth, "finance.listCategories", {}, "finance_categories"),
+    optional(read(auth, "finance.listBooks", {}, "finance_books")),
+    auth.db
+      .from("finance_settings")
+      .select("default_currency")
+      .eq("workspace_id", auth.workspaceId)
+      .maybeSingle(),
+    analysis ? optional(Promise.all([groups("counterparty"), groups("project")])) : null,
+    optional(
       read(
         auth,
-        "finance.listTransactions",
-        {
-          ...shared,
-          // Movements show what's still to be paid too; totals keep counting completed only.
-          status: filters.status ? ["pending"] : ["completed", "pending"],
-          limit: 100,
-        },
-        "finance_transactions",
+        "finance.getBudgets",
+        { month: budgetMonth, ...(filters.book ? { book: filters.book } : {}) },
+        "finance_budgets",
       ),
-      read(auth, "finance.listAccounts", {}, "finance_accounts"),
-      read(auth, "finance.listCategories", {}, "finance_categories"),
-      optional(read(auth, "finance.listBooks", {}, "finance_books")),
-      auth.db
-        .from("finance_settings")
-        .select("default_currency")
-        .eq("workspace_id", auth.workspaceId)
-        .maybeSingle(),
-      analysis ? optional(Promise.all([groups("counterparty"), groups("project")])) : null,
-      optional(
-        read(
-          auth,
-          "finance.getBudgets",
-          { month: budgetMonth, ...(filters.book ? { book: filters.book } : {}) },
-          "finance_budgets",
-        ),
-      ),
-      filters.book ? Promise.resolve([]) : optional(groups("book")),
-      hasAnyFinance(auth),
-    ]);
+    ),
+    filters.book ? Promise.resolve([]) : optional(groups("book")),
+    hasAnyFinance(auth),
+    // The same tool chat uses: the screen and ELISE always say the same balance.
+    optional(read(auth, "finance.getBalances", {}, "finance_balances")),
+  ]);
   return {
     filters,
     period,
@@ -240,6 +257,7 @@ export async function financeOverview(
     byBook: byBook ?? [],
     budgets: budgets ? { month: budgets.month, usages: budgets.budgets } : null,
     settings: { defaultCurrency: settings.data?.default_currency ?? null },
+    balances: balances?.balances ?? null,
     hasAny: any || list.total > 0,
     today,
   };

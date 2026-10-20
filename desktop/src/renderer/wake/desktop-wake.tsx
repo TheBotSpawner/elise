@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import { voicePhaseOrb } from "@/components/elise/orb/orb-states";
 import type { WakeControl, WakeReport } from "@/core/platform/platform";
 import type { VoicePhase } from "@/core/voice/session";
+import { sessionCommand } from "@/core/voice/session-control";
 import { matchWake } from "@/core/voice/wake";
 import { asksToShow, WAKE_MODELS, type DetectorState } from "@/core/voice/wake-detector";
 import {
@@ -221,6 +222,17 @@ export function DesktopWake({ children }: { children: ReactNode }) {
           if (!m.matched && text.trim()) return finishHandOff();
           remainder = m.remainder;
         }
+      }
+      // ADR-102: "ELISE, dejá de escuchar" — nothing starts (and a session open ends);
+      // "desactivá la activación por voz" also turns the setting off (Settings or the tray
+      // turn it back on).
+      const command = sessionCommand(remainder);
+      if (command) {
+        console.debug("[wake] session command", { command });
+        if (command === "disable_wake")
+          void window.eliseDesktop?.setPreferences?.({ wakeWord: false }).catch(() => undefined);
+        requestVoiceEnd();
+        return finishHandOff();
       }
       // Only an explicit "abrí ELISE" / "mostrame esto en pantalla" shows the window.
       if (asksToShow(remainder)) void window.eliseDesktop?.showApp?.("/");

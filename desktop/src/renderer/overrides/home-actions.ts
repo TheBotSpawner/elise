@@ -13,6 +13,7 @@ import { CloudUnavailableError } from "../rpc";
  * the same canonical model). Everything else needs the cloud and says so.
  */
 export const {
+  adoptNewDevicesAction,
   runSceneAction,
   updateDeviceAction,
   removeDeviceAction,

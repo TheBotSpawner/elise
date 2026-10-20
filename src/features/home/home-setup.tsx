@@ -462,7 +462,11 @@ function Progress({
         <>
           <Done label={s.hubReady} />
           <Heading>{s.discover.title}</Heading>
-          <DeviceDiscovery onDone={markDevicesDone} addedCount={snapshot.devices.length} />
+          <DeviceDiscovery
+            onDone={markDevicesDone}
+            addedCount={snapshot.devices.length}
+            found={snapshot.found}
+          />
         </>
       );
     default:

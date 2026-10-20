@@ -301,6 +301,63 @@ export function FinanceListCard({
   );
 }
 
+/** ADR-101: each account's recorded balance, per currency, with where the number comes from. */
+export function FinanceBalancesCard({
+  display,
+  rise,
+}: {
+  display: D<"finance_balances">;
+  rise: MotionProps;
+}) {
+  const { t } = useI18n();
+  const money = useMoney();
+  const day = useDay();
+  if (!display.balances.length) return null;
+  const b = t.finance.balance;
+  return (
+    <motion.section {...rise} aria-label={b.title} className={CARD}>
+      <Header label={`${t.finance.title} · ${b.title} · ${b.asOf(day(display.asOf))}`} />
+      <ul className="flex flex-col divide-y divide-border">
+        {display.balances.map(({ account, rows, beforeOpening }) => (
+          <li key={account.id} className="flex flex-col gap-1 py-2 first:pt-0 last:pb-0">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[14px] font-medium">{account.name}</span>
+              <span className="flex flex-col items-end font-mono text-[15px]">
+                {beforeOpening ? (
+                  <span className="font-sans text-[12.5px] text-faint">—</span>
+                ) : rows.length ? (
+                  rows.map((r) => (
+                    <span
+                      key={r.currency}
+                      className={cn(compareAmounts(r.balance, "0") < 0 && "text-danger-text")}
+                    >
+                      {money(r.balance, r.currency)}
+                    </span>
+                  ))
+                ) : (
+                  <span>{account.currency ? money("0", account.currency) : "0"}</span>
+                )}
+              </span>
+            </div>
+            {beforeOpening && <p className="text-[12.5px] text-faint">{b.beforeOpening}</p>}
+            {!beforeOpening && account.openingBalanceSet === false && (
+              <p className="text-[12.5px] text-faint">{b.openingUnset}</p>
+            )}
+            {rows
+              .filter((r) => r.pendingCount > 0)
+              .map((r) => (
+                <p key={r.currency} className="text-[12.5px] text-faint">
+                  {b.pending(r.pendingCount, money(r.pending, r.currency))}
+                </p>
+              ))}
+          </li>
+        ))}
+      </ul>
+      <p className="text-[12px] text-faint">{b.provenance}</p>
+    </motion.section>
+  );
+}
+
 export function FinanceBooksCard({
   display,
   rise,

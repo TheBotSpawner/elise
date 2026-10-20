@@ -4,7 +4,11 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 
 import { SNAPSHOT_SCHEMA_VERSION } from "@/core/platform/links";
-import type { CachedSnapshot, DesktopPreferences } from "@/core/platform/platform";
+import {
+  WAKE_ORB_CORNERS,
+  type CachedSnapshot,
+  type DesktopPreferences,
+} from "@/core/platform/platform";
 
 import { log } from "./log";
 
@@ -34,6 +38,7 @@ const DEFAULTS = (): DesktopState => ({
     wakeWord: false,
     wakeChime: true,
     wakeOrb: true,
+    wakeOrbCorner: "bottom-right",
   },
   window: null,
 });
@@ -52,13 +57,16 @@ export function migrateState(raw: unknown): DesktopState {
   const base = DEFAULTS();
   if (!raw || typeof raw !== "object") return base;
   const r = raw as Partial<DesktopState>;
+  const preferences = { ...base.preferences, ...(r.preferences ?? {}) };
+  if (!WAKE_ORB_CORNERS.includes(preferences.wakeOrbCorner))
+    preferences.wakeOrbCorner = base.preferences.wakeOrbCorner;
   return {
     version: STATE_VERSION,
     installationId:
       typeof r.installationId === "string" && /^[0-9a-f-]{36}$/.test(r.installationId)
         ? r.installationId
         : base.installationId,
-    preferences: { ...base.preferences, ...(r.preferences ?? {}) },
+    preferences,
     window: r.window ?? null,
   };
 }

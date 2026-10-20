@@ -892,6 +892,10 @@ export type FinanceAccountRow = {
   archived_at: Ts | null;
   /** ADR-052 (migration 039). Optional in reads so a database without it still works. */
   default_book_id?: string | null;
+  /** ADR-101 (migration 059): numeric read as text; optional until it is applied. */
+  opening_balance?: string;
+  opening_balance_date?: string | null;
+  opening_balance_set_at?: Ts | null;
 };
 
 export type FinanceBookRow = {
@@ -1521,6 +1525,8 @@ export type HomeDeviceRow = {
   favorite: boolean;
   hidden: boolean;
   removed_at: Ts | null;
+  /** ADR-103 (migration 060): null = found on the network, not added by the person yet. */
+  added_at?: Ts | null;
   created_at: Ts;
   updated_at: Ts;
 };
@@ -1991,6 +1997,22 @@ export type Database = {
       finance_uncombine_transaction: {
         Args: { p_id: string };
         Returns: number;
+      };
+      /** ADR-101 (migration 059). Amounts come as exact decimal text. */
+      finance_account_balances: {
+        Args: { p_workspace: string; p_as_of: string };
+        Returns: {
+          account_id: string;
+          currency: string;
+          opening: string;
+          movements: string;
+          balance: string;
+          pending: string;
+          counted: number;
+          pending_count: number;
+          first_movement: string | null;
+          last_movement: string | null;
+        }[];
       };
       record_web_usage: {
         Args: { p_workspace_id: string; p_searches: number; p_fetches: number };

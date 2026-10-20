@@ -170,7 +170,13 @@ describe("local state", () => {
       wakeWord: false,
       wakeChime: true,
       wakeOrb: true,
+      wakeOrbCorner: "bottom-right",
     });
+    // A corner that isn't one goes back to the default (ADR-102).
+    expect(
+      migrateState({ installationId: id, preferences: { wakeOrbCorner: "middle" } }).preferences
+        .wakeOrbCorner,
+    ).toBe("bottom-right");
     expect(migrateState({ installationId: "aa:bb:cc:dd" }).installationId).toMatch(
       /^[0-9a-f-]{36}$/,
     );

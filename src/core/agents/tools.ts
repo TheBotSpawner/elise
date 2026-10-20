@@ -14,6 +14,7 @@ import type {
 } from "../capabilities/email";
 import type { EmailTriageGroup } from "../capabilities/email-triage";
 import type {
+  AccountBalances,
   BudgetUsage,
   FinanceAccount,
   FinanceBook,
@@ -334,6 +335,8 @@ export type ToolDisplay =
       change: "created" | "updated" | "archived" | "shown";
     }
   | { kind: "finance_accounts"; accounts: FinanceAccount[] }
+  /** ADR-101: recorded balances per account and currency, computed by the database. */
+  | { kind: "finance_balances"; asOf: string; balances: AccountBalances[] }
   | { kind: "finance_categories"; categories: FinanceCategory[] }
   /** ADR-052: Ámbitos, budget use (computed by ELISE) and a prepared report. */
   | { kind: "finance_books"; books: FinanceBook[] }

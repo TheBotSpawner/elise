@@ -69,9 +69,24 @@ export async function permissionStatus(): Promise<DeviceLocationStatus> {
 
 export type LocateResult = "shared" | "denied" | "failed";
 
-/** One fix (prompts the first time). The coordinates are rounded before they're kept. */
-function capture(timeout: number): Promise<LocateResult> {
+/** The fix in progress, if any: a turn that stops waiting doesn't cancel it. */
+let inFlight: Promise<LocateResult> | null = null;
+
+/**
+ * One fix (prompts the first time). The coordinates are rounded before they're kept.
+ * `wait`: how long the caller waits; the fix itself may take up to 15 s (Windows' first fix took
+ * ~5 s in testing), and when it lands later it is kept for the next question (ADR-102).
+ */
+function capture(wait: number): Promise<LocateResult> {
   if (!supported()) return Promise.resolve("failed");
+  inFlight ??= fix().finally(() => (inFlight = null));
+  return Promise.race([
+    inFlight,
+    new Promise<LocateResult>((resolve) => setTimeout(() => resolve("failed"), wait)),
+  ]);
+}
+
+function fix(): Promise<LocateResult> {
   return new Promise((resolve) =>
     navigator.geolocation.getCurrentPosition(
       (p) => {
@@ -89,7 +104,7 @@ function capture(timeout: number): Promise<LocateResult> {
       },
       (e) => resolve(e.code === e.PERMISSION_DENIED ? "denied" : "failed"),
       // Coarse is enough (it's rounded anyway); a fix up to a minute old is fine.
-      { enableHighAccuracy: false, maximumAge: 60_000, timeout },
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 15_000 },
     ),
   );
 }
@@ -105,7 +120,13 @@ export async function locationForTurn(message: string): Promise<LatLng | null> {
       LOCATION_SIGNAL.test(message) || WEATHER_HERE_SIGNAL.test(message),
     ) === "refresh"
   )
-    await capture(DEVICE_LOCATION_LIMITS.captureTimeoutMs);
+    // With a usable older sample a short wait is enough (it's sent if the fix is slow); with
+    // none, waiting longer beats asking the person where they are (ADR-102).
+    await capture(
+      usableDeviceLocation(sample, Date.now())
+        ? DEVICE_LOCATION_LIMITS.captureTimeoutMs
+        : DEVICE_LOCATION_LIMITS.firstCaptureTimeoutMs,
+    );
   return sharedLocation();
 }
 

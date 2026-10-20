@@ -677,7 +677,10 @@ export interface HomeSnapshot {
     lastSyncAt: string | null;
   } | null;
   rooms: HomeRoom[];
+  /** The person's devices: the only ones ELISE lists, controls or puts in modes. */
   devices: HomeDevice[];
+  /** ADR-103: found on the network by the engine, waiting for the person's "Agregar". */
+  found?: HomeDevice[];
   groups: HomeGroup[];
   scenes: HomeScene[];
 }

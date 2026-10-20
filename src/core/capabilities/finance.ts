@@ -128,6 +128,32 @@ export interface FinanceAccount {
   defaultBookId?: string | null;
   /** ADR-087: movements recorded without an account go to this one. */
   isDefault?: boolean;
+  /**
+   * ADR-101: the balance at the start of `openingBalanceDate` (null: before any movement), in
+   * the account's currency. "0" by default; `openingBalanceSet` says whether someone set it.
+   */
+  openingBalance?: string;
+  openingBalanceDate?: string | null;
+  openingBalanceSet?: boolean;
+}
+
+/**
+ * ADR-101: an account's recorded balance in one currency, computed by the database from the
+ * ledger (opening balance + completed, active movements through `asOf`). Exact decimals.
+ */
+export interface AccountBalance {
+  accountId: string;
+  currency: string;
+  /** The opening balance counted here ("0" for a currency that isn't the account's). */
+  opening: string;
+  movements: string;
+  balance: string;
+  /** Pending movements' effect, never inside `balance`. */
+  pending: string;
+  counted: number;
+  pendingCount: number;
+  firstMovement: string | null;
+  lastMovement: string | null;
 }
 
 export interface FinanceCategory {
@@ -256,14 +282,21 @@ export interface FinanceProvider {
   uncombineTransaction?(id: string): Promise<number>;
   listAccounts(): Promise<FinanceAccount[]>;
   createAccount(
-    a: { name: string; type: AccountType; currency: string | null },
+    a: { name: string; type: AccountType; currency: string | null } & OpeningBalancePatch,
     source: EntrySource,
   ): Promise<FinanceAccount>;
   /** Rename, retype, set currency or archive (its transactions keep their history). */
   updateAccount(
     id: string,
-    patch: { name?: string; type?: AccountType; currency?: string | null; archived?: boolean },
+    patch: {
+      name?: string;
+      type?: AccountType;
+      currency?: string | null;
+      archived?: boolean;
+    } & OpeningBalancePatch,
   ): Promise<FinanceAccount>;
+  /** ADR-101: every active account's recorded balance on `asOf` (ELISE Finance only). */
+  accountBalances?(asOf: string): Promise<AccountBalance[]>;
   listCategories(): Promise<FinanceCategory[]>;
   createCategory(
     c: { name: string; type: CategoryType; parentId: string | null; icon?: string | null },
@@ -306,6 +339,20 @@ export interface FinanceProvider {
   ): Promise<Budget>;
   listRates?(): Promise<FxRate[]>;
   saveRate?(r: FxRate & { note?: string | null }): Promise<FxRate>;
+}
+
+/** ADR-101: an account and its balance rows, as the tool and the Cuentas screen show them. */
+export interface AccountBalances {
+  account: FinanceAccount;
+  rows: AccountBalance[];
+  /** The day asked is before the opening balance's date: no balance is known for it. */
+  beforeOpening: boolean;
+}
+
+/** ADR-101: setting an opening balance never touches a movement. */
+export interface OpeningBalancePatch {
+  openingBalance?: string;
+  openingBalanceDate?: string | null;
 }
 
 export interface Budget {
@@ -1274,6 +1321,30 @@ export const amountField = z
   })
   .transform(normalizeAmount);
 
+/** ADR-101: an opening balance may be zero or negative (a card's debt, an overdraft). */
+export const signedAmountField = z
+  .union([z.string(), z.number()])
+  .transform((v) => (typeof v === "number" ? String(v) : v.trim()))
+  // The database keeps |amount| < 10^15 (4 decimals: 10^19 units).
+  .refine((v) => isDecimal(v) && toUnits(v) < 10n ** 19n && toUnits(v) > -(10n ** 19n), {
+    message: 'An amount with "." as decimal separator, e.g. "150000", "-2500.5" or "0"',
+  })
+  .transform(normalizeAmount);
+
+const openingFields = {
+  openingBalance: signedAmountField
+    .optional()
+    .describe(
+      'What the account held before the movements recorded in ELISE ("tenía 150 mil en Mercado Pago"), in its currency. Negative for debt. Never a movement.',
+    ),
+  openingBalanceDate: isoDate
+    .nullable()
+    .optional()
+    .describe(
+      "The day that balance was true at its start: movements from that day on add to it, earlier ones are already inside it. Omit (or null) when it was before every movement.",
+    ),
+};
+
 export const currencyField = z
   .string()
   .trim()
@@ -1447,6 +1518,7 @@ export const createAccountInput = z
       .enum(["cash", "bank", "credit_card", "debit_card", "digital_wallet", "business", "other"])
       .default("other"),
     currency: currencyField.optional(),
+    ...openingFields,
   })
   .strict();
 
@@ -1474,6 +1546,20 @@ export const updateAccountInput = z
       .describe(
         'true: movements without an account go here ("usá Mercado Pago por defecto"); false: none.',
       ),
+    ...openingFields,
+  })
+  .strict();
+
+/** ADR-101: recorded balances (all accounts, or the ones whose name matches). */
+export const balancesInput = z
+  .object({
+    account: z
+      .string()
+      .trim()
+      .max(80)
+      .optional()
+      .describe('An account name as the user said it ("Mercado Pago"). Omit for every account.'),
+    asOf: isoDate.optional().describe("The balance at the end of this day. Omit for today."),
   })
   .strict();
 

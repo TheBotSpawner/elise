@@ -85,6 +85,16 @@ export function useVoice({
           wake,
           online: () => navigator.onLine,
           trace: voiceTrace(),
+          // ADR-102: on ELISE Desktop the wake word is its own persisted setting (re-enabled
+          // from Settings or the tray). The controller turns a browser's wake phrase off itself.
+          disableWake: () => {
+            const desktop = (
+              window as {
+                eliseDesktop?: { setPreferences?: (p: { wakeWord: boolean }) => Promise<unknown> };
+              }
+            ).eliseDesktop;
+            void desktop?.setPreferences?.({ wakeWord: false });
+          },
           warmAcknowledgements: (language, delivery) =>
             void fetch("/api/voice/speak/warm", {
               method: "POST",

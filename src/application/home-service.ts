@@ -110,7 +110,9 @@ async function currentHub(db: Db, homeId: string) {
 export async function homeSnapshot(
   auth: AuthContext,
   options: { includeHidden?: boolean } = {},
-): Promise<HomeSnapshot & { hidden: HomeDevice[]; hubInfo: HomeHubRow | null }> {
+): Promise<
+  HomeSnapshot & { hidden: HomeDevice[]; found: HomeDevice[]; hubInfo: HomeHubRow | null }
+> {
   const home = await currentHome(auth.db, auth.workspaceId);
   if (!home)
     return {
@@ -121,6 +123,7 @@ export async function homeSnapshot(
       groups: [],
       scenes: [],
       hidden: [],
+      found: [],
       hubInfo: null,
     };
   const [hub, rooms, devices, groups, scenes] = await Promise.all([
@@ -136,7 +139,9 @@ export async function homeSnapshot(
     auth.db.from("home_scenes").select("*").eq("home_id", home.id).order("name"),
   ]);
   for (const r of [rooms, devices, groups, scenes]) check(r.error, "load the home");
-  const all = (devices.data ?? []).map((d) => ({ row: d, device: deviceOf(d) }));
+  // ADR-103: only what the person added (before migration 060 the column is absent: all were).
+  const rows = (devices.data ?? []).map((d) => ({ row: d, device: deviceOf(d) }));
+  const all = rows.filter((x) => x.row.added_at !== null);
   return {
     home,
     hub: hub
@@ -162,6 +167,7 @@ export async function homeSnapshot(
     })),
     devices: all.filter((x) => !x.row.hidden || options.includeHidden).map((x) => x.device),
     hidden: all.filter((x) => x.row.hidden).map((x) => x.device),
+    found: rows.filter((x) => x.row.added_at === null && !x.row.hidden).map((x) => x.device),
     groups: (groups.data ?? []).map((g) => ({
       id: g.id,
       name: g.name,
@@ -463,7 +469,8 @@ export async function hubSync(hub: AuthedHub, raw: unknown) {
 
   const { data: existing, error } = await db
     .from("home_devices")
-    .select("id, provider_key, room_override")
+    // "*": added_at exists only once migration 060 is applied.
+    .select("*")
     .eq("hub_id", hub.id)
     .eq("workspace_id", hub.workspaceId);
   check(error, "sync devices");
@@ -486,7 +493,13 @@ export async function hubSync(hub: AuthedHub, raw: unknown) {
     if (prior)
       await db
         .from("home_devices")
-        .update({ ...fields, ...(prior.room_override ? {} : { room_id: room }) })
+        .update({
+          ...fields,
+          ...(prior.room_override ? {} : { room_id: room }),
+          // ADR-103: a device the person removed that the engine brings back is found again,
+          // not silently theirs again.
+          ...(prior.removed_at && prior.added_at !== undefined ? { added_at: null } : {}),
+        })
         .eq("id", prior.id)
         .eq("workspace_id", hub.workspaceId);
     else
@@ -754,6 +767,8 @@ const devicePatch = z
     roomId: z.uuid().nullable().optional(),
     favorite: z.boolean().optional(),
     hidden: z.boolean().optional(),
+    /** ADR-103: "Agregar" on a device found on the network. */
+    added: z.literal(true).optional(),
   })
   .strict();
 
@@ -767,10 +782,32 @@ export async function updateHomeDevice(auth: AuthContext, deviceId: string, raw:
       ...(p.roomId !== undefined ? { room_id: p.roomId, room_override: true } : {}),
       ...(p.favorite !== undefined ? { favorite: p.favorite } : {}),
       ...(p.hidden !== undefined ? { hidden: p.hidden } : {}),
+      ...(p.added ? { added_at: new Date().toISOString(), hidden: false } : {}),
     })
     .eq("id", z.uuid().parse(deviceId))
     .eq("workspace_id", auth.workspaceId);
   check(error, "update the device");
+}
+
+/**
+ * ADR-103: right after the person finishes adding a device in Hogar's setup, what the engine
+ * registered since then is theirs — that's what they just added. Only rows found since `since`
+ * (at most ten minutes back), never ones they ignored.
+ */
+export async function adoptNewHomeDevices(auth: AuthContext, since: string) {
+  const at = new Date(z.iso.datetime().parse(since));
+  const floor = new Date(Date.now() - 10 * 60_000);
+  const { data, error } = await auth.db
+    .from("home_devices")
+    .update({ added_at: new Date().toISOString() })
+    .eq("workspace_id", auth.workspaceId)
+    .is("added_at", null)
+    .is("removed_at", null)
+    .eq("hidden", false)
+    .gte("created_at", (at > floor ? at : floor).toISOString())
+    .select("id");
+  check(error, "add the new devices");
+  return { added: data?.length ?? 0 };
 }
 
 /**

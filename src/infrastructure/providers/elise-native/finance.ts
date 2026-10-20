@@ -4,6 +4,7 @@ import {
   norm,
   STARTER_CATEGORIES,
   UNCLASSIFIED,
+  type AccountBalance,
   type AccountType,
   type Budget,
   type CategoryType,
@@ -14,6 +15,7 @@ import {
   type FinanceTransaction,
   type FxRate,
   type NewTransaction,
+  type OpeningBalancePatch,
   type TransactionFilter,
   type TransactionOrigin,
   type TransactionPatch,
@@ -22,7 +24,7 @@ import type { EntrySource } from "@/core/capabilities/habits";
 import { isSingleEmoji } from "@/core/emoji";
 import { AppError } from "@/core/errors";
 import { cleanCategoryName, categoryKey, duplicateCategory } from "@/core/finance/combine";
-import { normalizeAmount } from "@/core/finance/money";
+import { normalizeAmount, toUnits } from "@/core/finance/money";
 import type {
   FinanceAccountRow,
   FinanceBookRow,
@@ -94,12 +96,20 @@ const ORIGIN: Record<string, TransactionOrigin> = {
   system: "system",
 };
 
-const toAccount = (r: FinanceAccountRow): FinanceAccount => ({
+/** `opening`: exact opening balances as text (ADR-101), once migration 059 is applied. */
+const toAccount = (r: FinanceAccountRow, opening?: Map<string, string> | null): FinanceAccount => ({
   id: r.id,
   name: r.name,
   type: r.account_type,
   currency: r.currency,
   defaultBookId: r.default_book_id ?? null,
+  ...(opening
+    ? {
+        openingBalance: normalizeAmount(opening.get(r.id) ?? "0"),
+        openingBalanceDate: r.opening_balance_date ?? null,
+        openingBalanceSet: Boolean(r.opening_balance_set_at),
+      }
+    : {}),
 });
 
 const toBook = (r: FinanceBookRow): FinanceBook => ({
@@ -127,6 +137,8 @@ interface Catalog {
   budgetBooks: boolean;
   /** ADR-089 (migration 056): cross-currency transfers. */
   transferFx: boolean;
+  /** ADR-101 (migration 059): exact opening balances by account; null before it is applied. */
+  opening: Map<string, string> | null;
 }
 
 const duplicateName = () =>
@@ -150,7 +162,7 @@ export class EliseFinanceProvider implements FinanceProvider {
 
   private load() {
     this.catalog ??= (async () => {
-      const [accounts, categories, books, v3probe, v4probe, defaults, budgetBooks, fx] =
+      const [accounts, categories, books, v3probe, v4probe, defaults, budgetBooks, fx, opening] =
         await Promise.all([
           this.db.from("finance_accounts").select("*").eq("workspace_id", this.workspaceId),
           this.db.from("finance_categories").select("*").eq("workspace_id", this.workspaceId),
@@ -169,6 +181,11 @@ export class EliseFinanceProvider implements FinanceProvider {
             .maybeSingle(),
           this.db.from("finance_budgets").select("book_ids").limit(1),
           this.db.from("finance_transactions").select("to_amount").limit(1),
+          // numeric as text: an amount never passes through a float.
+          this.db
+            .from("finance_accounts")
+            .select("id, opening_balance::text")
+            .eq("workspace_id", this.workspaceId),
         ]);
       check(accounts.error, "load accounts");
       check(categories.error, "load categories");
@@ -185,6 +202,14 @@ export class EliseFinanceProvider implements FinanceProvider {
         defaultAccountId: defaults.error ? null : (defaults.data?.default_account_id ?? null),
         budgetBooks: !budgetBooks.error,
         transferFx: !fx.error,
+        opening: opening.error
+          ? null
+          : new Map(
+              (opening.data as unknown as { id: string; opening_balance: string }[]).map((r) => [
+                r.id,
+                r.opening_balance,
+              ]),
+            ),
       };
     })();
     return this.catalog;
@@ -520,15 +545,15 @@ export class EliseFinanceProvider implements FinanceProvider {
   }
 
   async listAccounts() {
-    const { accounts, defaultAccountId } = await this.load();
+    const { accounts, defaultAccountId, opening } = await this.load();
     return accounts
       .filter((a) => !a.archived_at)
-      .map((a) => ({ ...toAccount(a), isDefault: a.id === defaultAccountId }))
+      .map((a) => ({ ...toAccount(a, opening), isDefault: a.id === defaultAccountId }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async createAccount(
-    a: { name: string; type: AccountType; currency: string | null },
+    a: { name: string; type: AccountType; currency: string | null } & OpeningBalancePatch,
     source: EntrySource,
   ) {
     const existing = (await this.listAccounts()).find((x) => norm(x.name) === norm(a.name));
@@ -542,19 +567,79 @@ export class EliseFinanceProvider implements FinanceProvider {
         currency: a.currency,
         source,
         created_by_user_id: this.userId,
+        ...(await this.openingFields(a, a.currency)),
       })
-      .select("*")
+      .select("id")
       .single();
     check(error, "add the account");
     this.invalidate();
-    return toAccount(data!);
+    return this.accountById(data!.id);
+  }
+
+  private async accountById(id: string) {
+    const account = (await this.listAccounts()).find((x) => x.id === id);
+    if (!account) throw new AppError("NOT_FOUND", "Account not found");
+    return account;
+  }
+
+  /**
+   * ADR-101: the columns an opening-balance change writes. It needs migration 059 and, unless
+   * it is zero, the account's currency (an amount is always in one currency). Never a movement.
+   */
+  private async openingFields(p: OpeningBalancePatch, currency: string | null | undefined) {
+    if (p.openingBalance === undefined && p.openingBalanceDate === undefined) return {};
+    if (!(await this.load()).opening) throw needsUpdate();
+    if (p.openingBalance !== undefined && toUnits(p.openingBalance) !== 0n && !currency)
+      throw new AppError("VALIDATION_ERROR", "An opening balance needs the account's currency", {
+        recovery: "review",
+        details: { reason: "opening_needs_currency" },
+      });
+    return {
+      ...(p.openingBalance !== undefined ? { opening_balance: p.openingBalance } : {}),
+      ...(p.openingBalanceDate !== undefined ? { opening_balance_date: p.openingBalanceDate } : {}),
+      opening_balance_set_at: new Date().toISOString(),
+    };
+  }
+
+  async accountBalances(asOf: string): Promise<AccountBalance[]> {
+    const { data, error } = await this.db.rpc("finance_account_balances", {
+      p_workspace: this.workspaceId,
+      p_as_of: asOf,
+    });
+    if (error && notMigrated(error.code)) throw needsUpdate();
+    check(error, "compute account balances");
+    return (data ?? []).map((r) => ({
+      accountId: r.account_id,
+      currency: r.currency,
+      opening: normalizeAmount(r.opening),
+      movements: normalizeAmount(r.movements),
+      balance: normalizeAmount(r.balance),
+      pending: normalizeAmount(r.pending),
+      counted: r.counted,
+      pendingCount: r.pending_count,
+      firstMovement: r.first_movement,
+      lastMovement: r.last_movement,
+    }));
   }
 
   async updateAccount(
     id: string,
-    p: { name?: string; type?: AccountType; currency?: string | null; archived?: boolean },
+    p: {
+      name?: string;
+      type?: AccountType;
+      currency?: string | null;
+      archived?: boolean;
+    } & OpeningBalancePatch,
   ) {
+    const opening =
+      p.openingBalance !== undefined || p.openingBalanceDate !== undefined
+        ? await this.openingFields(
+            p,
+            p.currency !== undefined ? p.currency : (await this.accountById(id)).currency,
+          )
+        : {};
     const fields = {
+      ...opening,
       ...(p.name !== undefined ? { name: p.name } : {}),
       ...(p.type !== undefined ? { account_type: p.type } : {}),
       ...(p.currency !== undefined ? { currency: p.currency } : {}),
@@ -581,7 +666,8 @@ export class EliseFinanceProvider implements FinanceProvider {
     check(error, "update the account");
     if (!data) throw new AppError("NOT_FOUND", "Account not found");
     this.invalidate();
-    return toAccount(data);
+    // An archived account isn't listed any more: described from the row written.
+    return data.archived_at ? toAccount(data) : this.accountById(id);
   }
 
   async setDefaultAccount(accountId: string | null) {

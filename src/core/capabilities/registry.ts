@@ -217,6 +217,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       listTransactions: READ,
       getTransaction: READ,
       listAccounts: READ,
+      // ADR-101: recorded balances (opening balance + movements), computed by the database.
+      getBalances: READ,
       listCategories: READ,
       createTransaction: WRITE,
       updateTransaction: WRITE,

@@ -31,6 +31,7 @@ import {
   UNCLASSIFIED,
   type AccountType,
   type BudgetUsage,
+  type AccountBalances,
   type FinanceAccount,
   type FinanceBook,
   type FinanceCategory,
@@ -53,7 +54,14 @@ import { financeToolAction, matchingIdsAction, setDefaultCurrencyAction } from "
 import { budgetLook, Budgets } from "./budgets";
 import { CategoryManager } from "./category-manager";
 import { CombineDialog } from "./combine-dialog";
-import { COMMON_CURRENCIES, share, useMoney, usePeriodLabel } from "./format";
+import {
+  COMMON_CURRENCIES,
+  parseTypedSignedAmount,
+  share,
+  useDay,
+  useMoney,
+  usePeriodLabel,
+} from "./format";
 import { MovementMenu, useLongPress, type MovementMenuState } from "./movement-menu";
 import { categoryIcon, TransactionDialog } from "./transaction-dialog";
 
@@ -1525,14 +1533,22 @@ function AccountManager({
   accounts,
   books,
   defaultCurrency,
+  balances,
 }: {
   open: boolean;
   onClose: () => void;
   accounts: FinanceAccount[];
   books: FinanceBook[];
   defaultCurrency: string | null;
+  /** ADR-101: null until the database has balances (then nothing about them shows). */
+  balances: AccountBalances[] | null;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const money = useMoney();
+  const day = useDay();
+  const [opening, setOpening] = useState("");
+  const [openingDate, setOpeningDate] = useState("");
+  const withOpening = balances !== null;
   const confirm = useConfirm();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -1547,6 +1563,24 @@ function AccountManager({
     setType(a === "new" ? "bank" : a.type);
     setCurrency(a === "new" ? "" : (a.currency ?? ""));
     setBook(a === "new" ? "" : (books.find((b) => b.id === a.defaultBookId)?.name ?? ""));
+    setOpening(
+      a === "new" || !a.openingBalance || a.openingBalance === "0"
+        ? ""
+        : a.openingBalance.replace(".", locale === "es" ? "," : "."),
+    );
+    setOpeningDate(a === "new" ? "" : (a.openingBalanceDate ?? ""));
+  };
+  const openingValue = withOpening ? parseTypedSignedAmount(opening, locale) : "0";
+  // An amount is always in one currency: without the account's, only zero can be saved.
+  const openingBlocked = openingValue === null || (openingValue !== "0" && !currency);
+  const openingArgs = (a: FinanceAccount | "new") => {
+    if (!withOpening || openingValue === null) return {};
+    const changed =
+      a === "new"
+        ? openingValue !== "0" || Boolean(openingDate)
+        : openingValue !== (a.openingBalance ?? "0") ||
+          openingDate !== (a.openingBalanceDate ?? "");
+    return changed ? { openingBalance: openingValue, openingBalanceDate: openingDate || null } : {};
   };
   const run = (tool: string, args: unknown) =>
     startTransition(async () => {
@@ -1570,8 +1604,14 @@ function AccountManager({
           className="flex flex-col gap-3"
           onSubmit={(e) => {
             e.preventDefault();
+            if (openingBlocked) return;
             if (editing === "new")
-              run("finance.createAccount", { name, type, ...(currency ? { currency } : {}) });
+              run("finance.createAccount", {
+                name,
+                type,
+                ...(currency ? { currency } : {}),
+                ...openingArgs("new"),
+              });
             else
               run("finance.updateAccount", {
                 account: editing.name,
@@ -1579,6 +1619,7 @@ function AccountManager({
                 type,
                 currency: currency || null,
                 ...(books.length ? { book: book || null } : {}),
+                ...openingArgs(editing),
               });
           }}
         >
@@ -1636,6 +1677,37 @@ function AccountManager({
               </Select>
             )}
           </div>
+          {withOpening && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="acct-opening">{t.finance.balance.opening}</Label>
+                <Input
+                  id="acct-opening"
+                  inputMode="decimal"
+                  value={opening}
+                  placeholder="0"
+                  aria-invalid={openingBlocked || undefined}
+                  onChange={(e) => setOpening(e.target.value)}
+                  className="h-11 font-mono"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="acct-opening-date">{t.finance.balance.openingDate}</Label>
+                <Input
+                  id="acct-opening-date"
+                  type="date"
+                  value={openingDate}
+                  onChange={(e) => setOpeningDate(e.target.value)}
+                  className="h-11"
+                />
+              </div>
+              <p className="text-[12.5px] text-faint sm:col-span-2">
+                {openingValue !== null && openingValue !== "0" && !currency
+                  ? t.finance.balance.needsCurrency
+                  : `${t.finance.balance.openingHint} ${t.finance.balance.openingDateHint}`}
+              </p>
+            </div>
+          )}
           <div className="flex items-center justify-end gap-2">
             {editing !== "new" && (
               <Button
@@ -1657,7 +1729,7 @@ function AccountManager({
             <Button variant="ghost" onClick={() => setEditing(null)}>
               {t.finance.cancel}
             </Button>
-            <Button type="submit" disabled={pending || !name.trim()}>
+            <Button type="submit" disabled={pending || !name.trim() || openingBlocked}>
               {t.finance.save}
             </Button>
           </div>
@@ -1668,28 +1740,58 @@ function AccountManager({
             <p className="text-[13.5px] text-muted">{t.finance.noAccounts}</p>
           ) : (
             <ul className="flex flex-col divide-y divide-border">
-              {accounts.map((a) => (
-                <li key={a.id}>
-                  <button
-                    type="button"
-                    onClick={() => edit(a)}
-                    className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-active"
-                  >
-                    <span className="text-[14px]">{a.name}</span>
-                    <span className="text-[12.5px] text-faint">
-                      {[
-                        a.isDefault ? t.finance.defaultAccountTag : null,
-                        t.finance.accountTypes[a.type],
-                        a.currency,
-                        books.find((b) => b.id === a.defaultBookId)?.name,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  </button>
-                </li>
-              ))}
+              {accounts.map((a) => {
+                const rows = balances?.find((b) => b.account.id === a.id)?.rows;
+                const last = rows?.reduce<string | null>(
+                  (d, r) => (r.lastMovement && (!d || r.lastMovement > d) ? r.lastMovement : d),
+                  null,
+                );
+                return (
+                  <li key={a.id}>
+                    <button
+                      type="button"
+                      onClick={() => edit(a)}
+                      className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-active"
+                    >
+                      <span className="flex min-w-0 flex-col">
+                        <span className="text-[14px]">{a.name}</span>
+                        <span className="text-[12.5px] text-faint">
+                          {[
+                            a.isDefault ? t.finance.defaultAccountTag : null,
+                            t.finance.accountTypes[a.type],
+                            a.currency,
+                            books.find((b) => b.id === a.defaultBookId)?.name,
+                            last ? t.finance.balance.lastMovement(day(last)) : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </span>
+                      {/* ADR-101: the same number ELISE says (finance.getBalances). */}
+                      {rows && (
+                        <span className="flex shrink-0 flex-col items-end font-mono text-[13.5px]">
+                          {rows.length ? (
+                            rows.map((r) => (
+                              <span
+                                key={r.currency}
+                                className={cn(r.balance.startsWith("-") && "text-danger-text")}
+                              >
+                                {money(r.balance, r.currency)}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-faint">0</span>
+                          )}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
+          )}
+          {balances && accounts.length > 0 && (
+            <p className="text-[12px] text-faint">{t.finance.balance.provenance}</p>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <div className="flex items-center gap-2">
@@ -2290,6 +2392,7 @@ export function FinanceView({
         accounts={overview.accounts}
         books={overview.books}
         defaultCurrency={overview.settings.defaultCurrency}
+        balances={overview.balances}
       />
     </div>
   );

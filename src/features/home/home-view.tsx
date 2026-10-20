@@ -56,6 +56,7 @@ import {
 } from "./actions";
 import { DeviceDiscovery, useDevicesStepDone } from "./device-discovery";
 import { DeviceIcon } from "./device-icon";
+import { FoundDevices } from "./found-devices";
 import { HomeSetup, type DesktopDownload } from "./home-setup";
 import { useHomeRuntime } from "./runtime-context";
 
@@ -248,6 +249,8 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
         )}
       </section>
 
+      <FoundDevices devices={snapshot.found ?? []} />
+
       <section aria-labelledby="home-devices" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 max-sm:w-full sm:mr-auto">
@@ -371,7 +374,11 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
         onClose={() => setAdding(null)}
         title={h.setup.discover.title}
       >
-        <DeviceDiscovery onDone={() => setAdding(null)} addedCount={snapshot.devices.length} />
+        <DeviceDiscovery
+          onDone={() => setAdding(null)}
+          addedCount={snapshot.devices.length}
+          found={snapshot.found}
+        />
       </Dialog>
     </div>
   );

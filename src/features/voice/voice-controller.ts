@@ -19,6 +19,7 @@ import {
   type VoiceState,
   type WakeStatus,
 } from "@/core/voice/session";
+import { sessionCommand } from "@/core/voice/session-control";
 import {
   ackIntent,
   pickAcknowledgement,
@@ -184,6 +185,11 @@ export interface VoiceDeps {
   online?: () => boolean;
   /** Development diagnostics: lifecycle events with timings, never audio or full text. */
   trace?: (event: string, data?: Record<string, unknown>) => void;
+  /**
+   * ADR-102: "desactivá la activación por voz" — turn the wake word off where it lives (ELISE
+   * Desktop's setting). The session itself ends either way.
+   */
+  disableWake?: () => void;
 }
 
 interface SpokenTurn {
@@ -425,6 +431,7 @@ export class VoiceController {
   private pendingRemainder: string | null = null;
   private sayRemainder(text: string) {
     if (!isHearing(this.state)) return;
+    if (this.sessionControl(text)) return;
     this.stopTicker();
     this.mic?.discard();
     this.act({ type: "speech_start" });
@@ -664,9 +671,28 @@ export class VoiceController {
       else this.listen();
       return;
     }
+    if (this.sessionControl(text)) return;
     this.lastActivity = this.now;
     this.beginTurn(text, result.language, utterance.durationMs);
     this.startTail();
+  }
+
+  /**
+   * ADR-102: "dejá de escuchar", "basta", "silencio" — the whole utterance is a stop: the
+   * conversation ends now (microphone released, playback stopped, nothing sent to the agent) and
+   * the device goes back to waiting for its wake word. No acknowledgement: silence was asked for.
+   */
+  private sessionControl(text: string): boolean {
+    const command = sessionCommand(text);
+    if (!command) return false;
+    this.trace("session_command", { command });
+    if (command === "disable_wake") {
+      this.deps.disableWake?.();
+      // The browser's wake phrase, for this page.
+      this.setPrefs({ wakeEnabled: false });
+    }
+    this.end();
+    return true;
   }
 
   private beginTurn(text: string, language: VoiceLanguage | null, durationMs: number) {
