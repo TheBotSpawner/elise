@@ -327,7 +327,7 @@ export const updateVoiceTool: ToolDefinition = {
   capability: "settings",
   operation: "updateVoice",
   description:
-    '"Desactivá la conversación continua", "activá la conversación continua", "hablame en inglés": continuous conversation (ELISE keeps listening between replies; "Elise" wakes a resting session in an open tab) and the voice language. The wake phrase is always "Elise" — another phrase isn\'t supported, say so. Hearing "Elise" with the app closed or the screen locked isn\'t possible on the web — never promise it.',
+    '"Desactivá la conversación continua", "activá la conversación continua", "hablame en inglés": continuous conversation. Never for "dejá de escuchar", "basta", "silencio" or "cortá la conversación": those only end the current conversation (the device does it) — change nothing, answer at most "Listo." (ELISE keeps listening between replies; "Elise" wakes a resting session in an open tab) and the voice language. The wake phrase is always "Elise" — another phrase isn\'t supported, say so. Hearing "Elise" with the app closed or the screen locked isn\'t possible on the web — never promise it.',
   input: voiceInput,
   async describe(raw) {
     const q = voiceInput.parse(raw);

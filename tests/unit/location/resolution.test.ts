@@ -12,7 +12,10 @@ import {
   type Route,
 } from "@/core/location/model";
 import {
+  addressQuery,
   confidenceOf,
+  houseNumber,
+  withHouseNumber,
   implausibleRoute,
   plausiblePairs,
   rankCandidates,
@@ -60,6 +63,30 @@ const near = place("near", "Main Avenue 1200, Northport, Westland", {
   lng: -58.39,
 });
 const hood = place("hood", "Greenhill, Northport, Westland", NEIGHBOURHOOD);
+
+describe("house numbers (ADR-102)", () => {
+  it("reads the Rioplatense “al 3187” as the number the geocoder needs", () => {
+    expect(addressQuery("Coronel Ramón Falcón al 3187, Liniers")).toBe(
+      "Coronel Ramón Falcón 3187, Liniers",
+    );
+    expect(addressQuery("Corrientes altura 1500")).toBe("Corrientes 1500");
+    expect(addressQuery("Cabildo Nº 2000")).toBe("Cabildo 2000");
+    expect(houseNumber("Coronel Ramón Falcón al 3187, Liniers")).toBe("3187");
+    expect(houseNumber("Av. 9 de Julio 1000")).toBe("1000");
+    expect(houseNumber("Plaza de Mayo")).toBeNull();
+    expect(houseNumber("10 Downing Street, London")).toBeNull();
+  });
+
+  it("never accepts another number on the same street", () => {
+    const at = (address: string) => place(address, address, NEIGHBOURHOOD);
+    const kept = withHouseNumber(
+      [at("Cnel. Ramón L. Falcón 7059, Liniers"), at("Cnel. Ramón L. Falcón 3187, CABA")],
+      "3187",
+    );
+    expect(kept.map((p) => p.id)).toEqual(["Cnel. Ramón L. Falcón 3187, CABA"]);
+    expect(withHouseNumber([at("Falcón 31870")], "3187")).toEqual([]);
+  });
+});
 
 describe("candidate ranking", () => {
   it("an address without a city resolves near the context, not to the geocoder's first pick", () => {
@@ -239,6 +266,22 @@ describe("location.getRoute resolution", () => {
     expect(geocodes[0]!.bias).toEqual({ lat: -34.604, lng: -58.382 });
     // Never said to be where the user is.
     expect(JSON.stringify(out)).not.toContain("-34.604");
+  });
+
+  it("a street found only with another number asks instead of routing there (ADR-102)", async () => {
+    const other = place("other", "Main Avenue 7059, Northport, Westland", near.location);
+    const { capability, calls } = maps();
+    const { ports, ctx } = setup({
+      ...capability,
+      geocode: async () => [other],
+      searchPlaces: async () => [other],
+    });
+    const out = await executeToolCall(ports, ctx, {
+      name: "location.getRoute",
+      args: { from: "Greenhill", to: "Main Avenue al 1200", mode: "drive" },
+    });
+    expect(out).toMatchObject({ status: "succeeded", output: { found: false } });
+    expect(calls.some((c) => c.op === "route")).toBe(false);
   });
 
   it("a true tie with no context shows both and asks", async () => {

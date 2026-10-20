@@ -4,6 +4,7 @@ import type { ThreadRef } from "@/core/interaction";
 import { isCancellation, progressContent, TranscriptTimeline } from "@/core/voice/live";
 import type { VoicePhase, VoiceProblem, VoiceState } from "@/core/voice/session";
 import { initialVoice } from "@/core/voice/session";
+import { sessionCommand } from "@/core/voice/session-control";
 import { ackIntent, progressLine, PROGRESS_AFTER_MS } from "@/core/voice/speech-plan";
 import { draftAttachments } from "@/features/chat/draft-attachments";
 import type { SendOptions, StreamListener } from "@/features/chat/use-elise-chat";
@@ -60,6 +61,8 @@ export class LiveVoiceSession {
   private delegations: Delegation[] = [];
   /** Arrival of the last user transcript fragment (client clock). */
   private lastUserText = 0;
+  /** ADR-102: checks a settled utterance for "dejá de escuchar" before anything else. */
+  private controlTimer = 0;
   private chain: Promise<void> = Promise.resolve();
   private active: Delegation | null = null;
   private progressSent = new Set<string>();
@@ -216,6 +219,11 @@ export class LiveVoiceSession {
         this.set(this.state.phase === "speaking" ? "interrupted" : "user_speaking", {
           partial: this.timeline.partial().slice(-240),
         });
+        window.clearTimeout(this.controlTimer);
+        this.controlTimer = window.setTimeout(
+          () => this.sessionControl(this.timeline.partial()),
+          SETTLE_MS + 100,
+        );
         break;
       case "session.output_transcript.delta":
         this.timeline.add("assistant", event.delta ?? "", performance.now());
@@ -247,6 +255,8 @@ export class LiveVoiceSession {
     while (performance.now() < deadline && performance.now() - this.lastUserText < SETTLE_MS)
       await sleep(80);
     let text = this.timeline.takeRequest();
+    // ADR-102: a stop never reaches ELISE's turn engine (it once turned a setting off).
+    if (this.sessionControl(text)) return;
     const delegation: Delegation = {
       id,
       text,
@@ -528,8 +538,31 @@ export class LiveVoiceSession {
       void this.sleepNow().then(() => this.set("sleeping", { sleep: "hidden" }));
   }
 
+  /**
+   * ADR-102: "dejá de escuchar", "basta", "silencio" — the whole utterance is a stop: the session
+   * closes now (microphone, audio, the realtime connection) and nothing is delegated or changed.
+   * "Desactivá la activación por voz" also turns ELISE Desktop's wake word off.
+   */
+  private sessionControl(text: string): boolean {
+    if (this.ended) return false;
+    const command = sessionCommand(text);
+    if (!command) return false;
+    if (command === "disable_wake")
+      void (
+        window as {
+          eliseDesktop?: { setPreferences?: (p: { wakeWord: boolean }) => Promise<unknown> };
+        }
+      ).eliseDesktop
+        ?.setPreferences?.({ wakeWord: false })
+        .catch(() => undefined);
+    this.deps.stop();
+    void this.end();
+    return true;
+  }
+
   async end() {
     this.ended = true;
+    window.clearTimeout(this.controlTimer);
     await this.close("close_requested");
     this.set("idle", { partial: "", sleep: null });
   }

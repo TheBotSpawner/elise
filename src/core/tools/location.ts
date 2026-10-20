@@ -15,7 +15,10 @@ import {
   type Waypoint,
 } from "../location/model";
 import {
+  addressQuery,
   confidenceOf,
+  houseNumber,
+  withHouseNumber,
   implausibleRoute,
   plausiblePairs,
   rankCandidates,
@@ -260,6 +263,8 @@ interface Named {
   text: string;
   places: Place[];
   ranked: Ranked[];
+  /** ADR-102: a house number was asked for and no candidate has it. */
+  missingNumber?: string;
 }
 
 /**
@@ -289,13 +294,18 @@ async function named(
   bias: LatLng | null = null,
 ): Promise<Named> {
   const near = anchors[0] ?? bias;
-  const geo = await maps(env).geocode(text, env.ctx.locale, near);
-  const first = rankCandidates(text, geo, anchors);
+  const query = addressQuery(text);
+  // A house number is part of the address: a candidate with another one is another place.
+  const number = houseNumber(text);
+  const keep = (ps: Place[]) => (number ? withHouseNumber(ps, number) : ps);
+  const geoAll = await maps(env).geocode(query, env.ctx.locale, near);
+  const geo = keep(geoAll);
+  const first = rankCandidates(query, geo, anchors);
   const top = first[0];
   if (top && top.text >= 0.75 && (top.nearKm === null || top.nearKm <= 50))
     return { text, places: geo, ranked: first };
   const found = await maps(env).searchPlaces({
-    query: text,
+    query,
     near,
     radiusMeters: near ? LOCATION_LIMITS.maxRadiusMeters : null,
     rank: "relevance",
@@ -303,8 +313,22 @@ async function named(
     limit: 3,
     language: env.ctx.locale,
   });
-  const places = [...geo, ...found];
-  return { text, places, ranked: rankCandidates(text, places, anchors) };
+  const places = [...geo, ...keep(found)];
+  // Found only with other numbers → ask. Found nothing at all → the router reads the text itself.
+  if (number && !places.length && (geoAll.length || found.length))
+    return { text, places, ranked: [], missingNumber: number };
+  return { text, places, ranked: rankCandidates(query, places, anchors) };
+}
+
+/** That street exists but not with that number: ask, never route to another address. */
+function numberNotFound(n: Named) {
+  return {
+    output: {
+      found: false,
+      which: n.text,
+      instructions: `No address "${clip(n.text, 120)}" with the number ${n.missingNumber} was found. Say so plainly and ask the user to confirm the number and the neighbourhood or city. Never route to another number.`,
+    },
+  };
 }
 
 /** Several equally good matches: show them and ask, instead of routing to a guess. */
@@ -553,12 +577,12 @@ export const getRouteTool: ToolDefinition = {
     // Only when a named end needs it and nothing else anchors the trip (ADR-102).
     const bias = hasNamed && !anchors.length ? await regionBias(env) : null;
     // Nothing found for a name: the routing provider resolves the text itself, as before.
-    const [fromN, toN] = (
-      await Promise.all([
-        "address" in origin! ? named(env, origin.address, anchors, bias) : null,
-        "address" in destination! ? named(env, destination.address, anchors, bias) : null,
-      ])
-    ).map((n) => (n?.ranked.length ? n : null));
+    const both = await Promise.all([
+      "address" in origin! ? named(env, origin.address, anchors, bias) : null,
+      "address" in destination! ? named(env, destination.address, anchors, bias) : null,
+    ]);
+    for (const n of both) if (n?.missingNumber) return numberNotFound(n);
+    const [fromN, toN] = both.map((n) => (n?.ranked.length ? n : null));
     // A settled end is context for the other: "from Palermo to <a street without a city>".
     const settled = (w: Waypoint, n: Named | null | undefined): LatLng | null =>
       n
@@ -680,7 +704,10 @@ export const getRouteTool: ToolDefinition = {
         instructions:
           (taken.some((t) => t.assumed)
             ? "An address was taken as the match nearest to the context (resolved, assumed): name it briefly so the user can correct it. "
-            : "") +
+            : taken.length
+              ? // ADR-102: the same street and number can exist in two places (Falcón 3187 in Flores and in Ciudadela).
+                "Say where each named address was resolved, street, number and neighbourhood or city (resolved.taken), in a few words. "
+              : "") +
           (alternatives.length
             ? "The route is on screen. In one or two sentences give the time by each mode (driving first), leaving now. Don't ask for the mode or time; the user can refine."
             : "The route is on screen. Give the time and arrival in one sentence, mentioning the assumption (leaving now) if no time was given. Travel times are estimates; with traffic for driving."),

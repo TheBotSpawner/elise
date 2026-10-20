@@ -452,6 +452,15 @@ describe("continuous voice controller", () => {
     expect(controller.state.phase).toBe("thinking");
   });
 
+  it("“Dejá de escuchar.” ends the session: nothing is sent, the microphone is released (ADR-102)", async () => {
+    const { controller, sent, say, mic } = setup({ transcripts: ["Dejá de escuchar."] });
+    await controller.start();
+    await say();
+    expect(sent).toEqual([]);
+    expect(mic.closed).toBe(1);
+    expect(controller.state.phase).toBe("idle");
+  });
+
   it("uses the speculative transcript taken at the pause when nothing was said after it", async () => {
     const { controller, uploads, say } = setup();
     await controller.start();

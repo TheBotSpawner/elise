@@ -63,6 +63,31 @@ function tokens(s: string): string[] {
     .filter((t) => t.length >= 2 && !STOP.has(t));
 }
 
+/**
+ * "Falcón al 3187", "altura 3187", "Nº 3187" → "Falcón 3187". Rioplatense addresses name the
+ * house number after "al"; geocoders read it only bare, and with "al" they return just the
+ * street (ADR-102: "Coronel Ramón Falcón al 3187" came back as the street, then a place search
+ * picked "Falcón 7059").
+ */
+export function addressQuery(text: string): string {
+  return text
+    .replace(/(?<=\p{L}\.?\s)(?:al|altura(?:\s+del?)?|n[°º]|nro\.?|n[uú]mero)\s*(?=\d)/giu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** The house number asked for (the last number after a street word); null when there is none. */
+export function houseNumber(text: string): string | null {
+  const all = [...addressQuery(text).matchAll(/\p{L}\.?\s+(\d{1,5})(?!\d)/gu)];
+  return all.at(-1)?.[1] ?? null;
+}
+
+/** The candidates whose address carries exactly that number (never 7059 for 3187). */
+export function withHouseNumber(places: Place[], number: string): Place[] {
+  const re = new RegExp(`(?<!\\d)${number}(?!\\d)`);
+  return places.filter((p) => re.test(`${p.name} ${p.address ?? ""}`));
+}
+
 /** Proximity on a coarse scale: same metro area, same region, same country-ish, far. */
 const proximity = (km: number | null) =>
   km === null ? 0.5 : km <= 30 ? 1 : km <= 100 ? 0.7 : km <= 500 ? 0.25 : 0;

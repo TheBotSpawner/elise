@@ -71,6 +71,20 @@ Three problems were reported from real use of ELISE Desktop on Windows:
      never a filter. It never affects ranking or confidence, and is never said to be where the
      user is. Explicit places win: "10 Downing Street, London" stays in London.
 
+- **House numbers (follow-up, same day).** "Coronel Ramón Falcón al 3187, Liniers" was routed to
+  "Falcón 7059". Two causes:
+  - Google reads the Rioplatense "al 3187" as just the street (`addressQuery` now drops "al",
+    "altura" and "Nº" before the number);
+  - nothing stopped another number on the same street from being accepted. A candidate must now
+    carry the number asked for; when none does, ELISE asks and never routes elsewhere.
+
+  ELISE also always says where each address was resolved. The same street and number can exist
+  twice: Falcón 3187 is in Flores and in Ciudadela, next to Liniers.
+- **Spoken stop in GPT-Live too.** The realtime session checks each settled utterance and every
+  delegation. A stop closes the session and is never delegated: an older build sent "dejá de
+  escuchar" to the agent, which turned continuous conversation off. The settings tool now says
+  those phrases never change a setting.
+
 ## Consequences
 
 - **Verified live through `location.getRoute` with Google** (2026-10-20):
