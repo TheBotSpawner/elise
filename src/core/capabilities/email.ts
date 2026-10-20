@@ -165,6 +165,11 @@ export const searchInput = z
     subject: headerText(200).optional(),
     after: date.optional().describe("Received on or after this local date (YYYY-MM-DD)."),
     before: date.optional().describe("Received before this local date (YYYY-MM-DD), exclusive."),
+    aboutDay: date
+      .optional()
+      .describe(
+        "The day the email should be ABOUT (a class, meeting, deadline) — not when it arrived. Use it instead of after/before for '¿hay un mail para la clase de hoy?': ELISE looks at mail received in the two weeks before and marks which messages mention that day.",
+      ),
     unread: z.boolean().optional(),
     inInbox: z.boolean().optional().describe("Only messages still in the inbox."),
     sent: z.boolean().optional().describe("Only messages the user sent."),

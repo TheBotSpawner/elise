@@ -77,6 +77,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       getThread: READ,
       getMessage: READ,
       findUser: READ,
+      // What the user hasn't read yet (ADR-099): read state, never marked as read by ELISE.
+      unread: READ,
       draftMessage: WRITE,
       sendMessage: { kind: "external_communication", risk: "high", defaultApproval: "always_ask" },
       reply: { kind: "external_communication", risk: "high", defaultApproval: "always_ask" },

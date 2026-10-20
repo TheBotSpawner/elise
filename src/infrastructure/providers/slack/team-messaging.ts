@@ -10,6 +10,8 @@ import type {
   TeamSearchQuery,
   TeamSearchResult,
   TeamThread,
+  TeamUnread,
+  TeamUnreadResult,
   TeamWindow,
 } from "@/core/capabilities/team-messaging";
 import { channelKey, matchPeople } from "@/core/capabilities/team-messaging";
@@ -34,6 +36,10 @@ const UNLISTED_PAGE = 15;
 const PAGE = 50;
 /** Channels and people read per request, at most (pages of 200). */
 const LIST_PAGES = 3;
+/** Unread (ADR-099): conversations checked, how many at once, and the page read in each. */
+const UNREAD_SCAN = 30;
+const UNREAD_PARALLEL = 5;
+const UNREAD_PAGE = 15;
 const PEOPLE_PAGES = 5;
 
 export interface SlackConnection {
@@ -482,6 +488,60 @@ export class SlackProvider implements TeamMessagingProvider {
         !m.subtype ||
         ["bot_message", "thread_broadcast", "file_share", "me_message"].includes(m.subtype),
     );
+  }
+
+  /**
+   * Unread (ADR-099): Slack has no "unread" call for a user token, so per conversation:
+   * conversations.info gives where the user last read (`last_read`), conversations.history
+   * what came after it — from others, one small page. Direct conversations first; a bounded
+   * scan (rate limits), with how much was checked said. Nothing is marked as read.
+   */
+  async unread(): Promise<TeamUnreadResult> {
+    const me = (await this.team()).userId;
+    const all = await this.channels();
+    const ordered = [
+      ...all.filter((c) => c.is_im),
+      ...all.filter((c) => c.is_mpim),
+      ...all.filter((c) => !c.is_im && !c.is_mpim),
+    ];
+    const scan = ordered.slice(0, UNREAD_SCAN);
+    const found: TeamUnread[] = [];
+    for (let i = 0; i < scan.length; i += UNREAD_PARALLEL) {
+      const batch = await Promise.all(
+        scan.slice(i, i + UNREAD_PARALLEL).map(async (c) => {
+          const info = await this.http
+            .call<{
+              channel?: { last_read?: string; unread_count_display?: number };
+            }>("conversations.info", { channel: c.id })
+            .catch(() => null);
+          const lastRead = info?.channel?.last_read;
+          // Not a member, or Slack already says nothing is unread.
+          if (!lastRead || info?.channel?.unread_count_display === 0) return null;
+          const res = await this.http
+            .call<{ messages?: SlackMessage[]; has_more?: boolean }>("conversations.history", {
+              channel: c.id,
+              oldest: lastRead,
+              inclusive: false,
+              limit: UNREAD_PAGE,
+            })
+            .catch(() => null);
+          const fresh = this.conversational(res?.messages ?? []).filter(
+            (m) => !me || m.user !== me,
+          );
+          if (!fresh.length) return null;
+          const where = await this.channelInfo(c.id);
+          return {
+            channel: await this.channel(c),
+            count: fresh.length,
+            more: Boolean(res?.has_more),
+            messages: await Promise.all(fresh.slice(0, 3).map((m) => this.message(where, m))),
+          } satisfies TeamUnread;
+        }),
+      );
+      found.push(...batch.filter((x): x is TeamUnread => x !== null));
+    }
+    found.sort((a, b) => (b.messages[0]?.date ?? "").localeCompare(a.messages[0]?.date ?? ""));
+    return { conversations: found, checked: scan.length, total: all.length };
   }
 
   async getRecent(channelId: string, window: TeamWindow) {

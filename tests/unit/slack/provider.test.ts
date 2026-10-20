@@ -367,3 +367,41 @@ describe("Slack text", () => {
     expect(threadTsFromPermalink("https://x.slack.com/archives/C1/p1")).toBeNull();
   });
 });
+
+/** Unread (ADR-099): after each conversation's last_read, from others; DMs first; read-only. */
+describe("unread", () => {
+  it("counts what came after last_read, skips own messages and read conversations", async () => {
+    const fake = new FakeSlack({
+      "conversations.info": (a) => ({
+        channel:
+          a.channel === "D4"
+            ? { last_read: "1760900000.000000", unread_count_display: 2 }
+            : a.channel === "C1"
+              ? { last_read: "1760800000.000000" }
+              : { last_read: "1760900000.000000", unread_count_display: 0 },
+      }),
+      "conversations.history": (a) => ({
+        messages:
+          a.channel === "D4"
+            ? [
+                { ts: "1760900200.000100", user: "U4", text: "¿Viste el presupuesto?" },
+                { ts: "1760900100.000100", user: "U4", text: "Hola" },
+              ]
+            : [{ ts: "1760800100.000100", user: "UME", text: "lo mío" }],
+      }),
+    });
+    const p = provider(fake, scopesFor(["direct"]));
+    const r = await p.unread();
+    expect(r.conversations.map((c) => [c.channel.name, c.count])).toEqual([["rod", 2]]);
+    expect(r.checked).toBe(3);
+    // The DM is read first; history starts after last_read; nothing is ever marked.
+    expect(fake.of("conversations.info")[0]!.args.channel).toBe("D4");
+    expect(fake.of("conversations.history")[0]!.args).toMatchObject({
+      oldest: "1760900000.000000",
+      inclusive: false,
+    });
+    expect(fake.calls.some((c) => c.method === "conversations.mark")).toBe(false);
+    // C2 said nothing is unread: no history read for it.
+    expect(fake.of("conversations.history").some((c) => c.args.channel === "C2")).toBe(false);
+  });
+});

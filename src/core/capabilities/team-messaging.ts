@@ -127,6 +127,23 @@ export interface TeamWindow {
 }
 
 /** Contract every Team Messaging provider implements. Ids are canonical refs from this provider. */
+/** One conversation with messages the user hasn't read (ADR-099). */
+export interface TeamUnread {
+  channel: TeamChannel;
+  /** Unread messages counted (from others); `more`: there are more than were read. */
+  count: number;
+  more: boolean;
+  /** The newest few, newest first. */
+  messages: TeamMessage[];
+}
+
+export interface TeamUnreadResult {
+  conversations: TeamUnread[];
+  /** Conversations checked, of how many the user is in (a bounded scan). */
+  checked: number;
+  total: number;
+}
+
 export interface TeamMessagingProvider {
   /** What this connection may reach (from its stored grant; no provider call). */
   access(): Promise<readonly TeamAccess[]>;
@@ -147,6 +164,8 @@ export interface TeamMessagingProvider {
   /** Posts exactly `text`. Resolves only once the provider confirmed it. */
   post(input: { to: string; text: string; threadId: string | null }): Promise<TeamMessage>;
   react(messageId: string, emoji: string, on: boolean): Promise<void>;
+  /** What arrived after the user last read each conversation, direct ones first; bounded. */
+  unread(): Promise<TeamUnreadResult>;
 }
 
 // ── Model-facing inputs ──────────────────────────────────────────────────────

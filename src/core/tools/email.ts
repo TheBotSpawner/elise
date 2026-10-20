@@ -27,6 +27,7 @@ import {
   type EmailThread,
   type FollowUp,
 } from "../capabilities/email";
+import { mentionsDay, searchLadder, type Relaxation } from "../capabilities/email-search";
 import {
   triageAccount,
   type EmailTriageItem,
@@ -87,10 +88,31 @@ function listResult(
   messages: EmailMessage[],
   limit: number,
   timezone: string,
+  /** What the search did to find these (ADR-099): said, never silent. */
+  search: { aboutDay?: string; relaxed?: Relaxation[] } = {},
 ): ToolRunResult<unknown> {
-  const sorted = sortNewest(messages).slice(0, limit);
+  const { aboutDay, relaxed = [] } = search;
+  // A notice about the day asked for comes first; the rest newest first.
+  const about = (m: EmailMessage) =>
+    aboutDay ? mentionsDay(`${m.subject} ${m.snippet}`, aboutDay) : false;
+  const sorted = sortNewest(messages)
+    .sort((a, b) => Number(about(b)) - Number(about(a)))
+    .slice(0, limit);
   return {
-    output: { count: sorted.length, messages: sorted.map((m) => messageForModel(m, timezone)) },
+    output: {
+      count: sorted.length,
+      ...(relaxed.length ? { searchRelaxed: relaxed } : {}),
+      ...(aboutDay ? { aboutDay } : {}),
+      messages: sorted.map((m) => ({
+        ...messageForModel(m, timezone),
+        ...(aboutDay ? { mentionsAboutDay: about(m) } : {}),
+      })),
+      ...(relaxed.length
+        ? {
+            note: "The literal search found nothing, so ELISE retried it (searchRelaxed: about_day_window = mail received in the 2 weeks before that day; generic_words = request words like clase/correo/hoy dropped; wider_dates = 2 more weeks back; sender_as_text = the sender searched anywhere). Say so briefly, and check each message: mentionsAboutDay false means it is about another day.",
+          }
+        : {}),
+    },
     display: { kind: "email_list", messages: sorted.map(withoutBody) },
   };
 }
@@ -190,12 +212,31 @@ export const searchTool: ToolDefinition = {
   },
   async run(input, env) {
     const q = searchInput.parse(input);
-    const messages = await provider(env).search(toQuery(q, env.ctx.timezone));
-    return listResult(messages, q.limit, env.ctx.timezone);
+    // The request as asked first; a search that finds nothing is retried (ADR-099).
+    for (const step of searchLadder(q)) {
+      const messages = await provider(env).search(toQuery(step.query, env.ctx.timezone));
+      if (messages.length)
+        return listResult(messages, q.limit, env.ctx.timezone, {
+          aboutDay: q.aboutDay,
+          relaxed: step.relaxed.filter((r) => r !== "about_day_window"),
+        });
+    }
+    return listResult([], q.limit, env.ctx.timezone, { aboutDay: q.aboutDay });
   },
   merge(results, input, ctx) {
     const q = searchInput.parse(input);
-    return listResult(mergedMessages(results), q.limit, ctx.timezone);
+    const relaxed = [
+      ...new Set(
+        results.flatMap(
+          ({ result }) =>
+            (result.output as { searchRelaxed?: Relaxation[] } | undefined)?.searchRelaxed ?? [],
+        ),
+      ),
+    ];
+    return listResult(mergedMessages(results), q.limit, ctx.timezone, {
+      aboutDay: q.aboutDay,
+      relaxed,
+    });
   },
 };
 

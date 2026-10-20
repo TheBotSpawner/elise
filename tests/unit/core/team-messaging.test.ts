@@ -152,6 +152,28 @@ class FakeTeam implements TeamMessagingProvider {
   async react(id: string, emoji: string, on: boolean) {
     this.reactions.push({ id, emoji, on });
   }
+  async unread() {
+    const dm = {
+      id: "slack:d1",
+      name: "Rod Díaz",
+      kind: "direct" as const,
+      topic: null,
+      url: null,
+      provenance: this.prov(),
+    };
+    return {
+      conversations: [
+        {
+          channel: dm,
+          count: 2,
+          more: false,
+          messages: [this.msg("1760900000.000100", "¿Viste el presupuesto?", "D1")],
+        },
+      ],
+      checked: 30,
+      total: 80,
+    };
+  }
 }
 
 function setup(opts: { firbotContext?: string; larrea?: boolean } = {}) {
@@ -563,5 +585,27 @@ describe("Morning Brief", () => {
     );
     // Monday 08:00 → the previous run was Friday 08:00 local.
     expect(prev).toEqual(new Date("2026-10-16T11:00:00Z"));
+  });
+});
+
+/** Unread (ADR-099): what arrived after the user last read, said with how much was checked. */
+describe("unread Slack messages", () => {
+  it("checks every workspace, says who wrote and where, and that the scan was bounded", async () => {
+    const { ports } = setup();
+    const out = await executeToolCall(ports, makeCtx({ timezone: tz }), {
+      name: "teamMessaging.unread",
+      args: {},
+    });
+    expect(out.status).toBe("succeeded");
+    const o = (
+      out as {
+        output: { conversations: { workspace: string; unread: number }[]; scope?: string };
+      }
+    ).output;
+    expect(o.conversations.map((c) => [c.workspace, c.unread]).sort()).toEqual([
+      ["Firbot", 2],
+      ["Larrea", 2],
+    ]);
+    expect(o.scope).toMatch(/60 most likely conversations of 160/);
   });
 });
