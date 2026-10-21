@@ -23,7 +23,11 @@ export function desktopBuildConfig(mode: string) {
     supabasePublishableKey: env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
     updateFeed: env.ELISE_UPDATE_FEED ?? "",
     channel: env.ELISE_DESKTOP_CHANNEL === "beta" ? "beta" : "stable",
-    googleMapsKey: env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
+    // Desktop's own Maps key when there is one (ADR-104): the web key is restricted to the web's
+    // site, and Google refuses it from elise-app://app/ (RefererNotAllowedMapError). The Desktop
+    // key ships in the installer, so it is restricted by API (Maps JavaScript API) and quota.
+    googleMapsKey:
+      env.ELISE_DESKTOP_GOOGLE_MAPS_API_KEY || (env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? ""),
     // The map needs its Map ID too: without it a packaged build treats Maps as not configured
     // and every route shows "El mapa no está disponible" (ADR-104).
     googleMapsMapId: env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "",

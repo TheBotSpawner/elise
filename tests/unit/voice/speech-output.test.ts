@@ -120,6 +120,31 @@ describe("speech formatter", () => {
     expect(formatForSpeech("A las 14:30 hay reunión.", "es")).toContain("dos y media");
   });
 
+  it("ADR-104: a street number is said in words; a year stays as written", () => {
+    expect(formatForSpeech("Hasta Pedro Lozano 4418, en Villa Devoto.", "es")).toBe(
+      "Hasta Pedro Lozano cuatro mil cuatrocientos dieciocho, en Villa Devoto.",
+    );
+    expect(formatForSpeech("Son 1500 metros.", "es")).toBe("Son mil quinientos metros.");
+    expect(formatForSpeech("Pasó en 2026 y en octubre de 1998.", "es")).toBe(
+      "Pasó en 2026 y en octubre de 1998.",
+    );
+    expect(formatForSpeech("Conde 2026, Colegiales.", "es")).toBe(
+      "Conde dos mil veintiséis, Colegiales.",
+    );
+    expect(formatForSpeech("Hace 22° y llueve un 40%.", "es")).toBe(
+      "Hace 22° y llueve un 40 por ciento.",
+    );
+    expect(formatForSpeech("La reunión es a las 14:30.", "es")).toContain("dos y media");
+  });
+
+  it("ADR-104: a long code (ticket, ID) is said digit by digit", () => {
+    expect(formatForSpeech("Confirma la creación del ticket 2043535 y otro más.", "es")).toBe(
+      "Confirma la creación del ticket dos cero cuatro tres cinco tres cinco y otro más.",
+    );
+    // Amounts with separators stay amounts.
+    expect(formatForSpeech("Son 1.573.655 pesos.", "es")).toContain("un millón");
+  });
+
   it("ADR-104: an opening “OK” is said the Rioplatense way; elsewhere it's left alone", () => {
     expect(formatForSpeech("OK, te lo reviso.", "es")).toBe("Dale, te lo reviso.");
     expect(formatForSpeech("Okay.", "es")).toBe("Dale.");

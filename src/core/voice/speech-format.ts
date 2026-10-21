@@ -263,6 +263,23 @@ export function formatForSpeech(text: string, lang: Lang): string {
     const n = parseGrouped(num, lang);
     return (n !== null ? numberWords(n, lang) : null) ?? m;
   });
+  // ADR-104: a long code with no separators (a ticket 2043535, an ID, a phone) is said digit by
+  // digit, the way it's read out loud — never as "two million forty-three thousand…".
+  t = t.replace(/(?<![\d.,:/-])(\d{6,})(?![\d]|[.,]\d)/g, (_m, num: string) =>
+    [...num].map((d) => numberWords(Number(d), lang)).join(" "),
+  );
+  // ADR-104: plain integers of 3–5 digits ("Pedro Lozano 4418", "1500 metros") in words too:
+  // the voice stumbled on a street number. A year stays as written ("en 2026", "de 1998").
+  const yearBefore =
+    lang === "es"
+      ? /(?:^|\s)(?:de|del|en|año|el|desde|hasta|para|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\s$/i
+      : /(?:^|\s)(?:in|of|since|until|by|year|january|february|march|april|may|june|july|august|september|october|november|december)\s$/i;
+  // (Decimals were said above: a comma or dot left after a number is punctuation.)
+  t = t.replace(/(?<![\d.,:/-])(\d{3,5})(?![\d:/%]|[.,]\d|\s?°)/g, (m, num: string, at: number) => {
+    const n = Number(num);
+    if (n >= 1900 && n <= 2099 && yearBefore.test(t.slice(Math.max(0, at - 12), at))) return m;
+    return numberWords(n, lang) ?? m;
+  });
   // "&" and "/" read badly; arrows and bullets are visual only.
   t = t
     .replace(/\s&\s/g, lang === "es" ? " y " : " and ")
