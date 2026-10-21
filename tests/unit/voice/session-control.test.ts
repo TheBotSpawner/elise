@@ -34,6 +34,8 @@ describe("sessionCommand (ADR-102)", () => {
     "Mostrame la app",
     "Abrí ELISE",
     "ELISE, vení",
+    "mostrame.",
+    "Elise, mostrá",
   ])("%s → show (ADR-104)", (text) => expect(sessionCommand(text)).toBe("show"));
 
   it.each([

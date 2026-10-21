@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     if (!auth) throw unauthorized();
     const parsed = body.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw new AppError("VALIDATION_ERROR", "Invalid speech request");
-    const { stream, sampleRate } = await synthesizeSentence(
+    const { stream, sampleRate, source } = await synthesizeSentence(
       auth,
       parsed.data.text,
       parsed.data.language,
@@ -39,6 +39,8 @@ export async function POST(request: NextRequest) {
       headers: {
         "content-type": "application/octet-stream",
         "x-audio-format": `pcm_s16le;rate=${sampleRate}`,
+        // ADR-104: provider:model:origin, for the voice diagnostics (no content).
+        "x-speech-source": source,
         "cache-control": "no-store",
       },
     });

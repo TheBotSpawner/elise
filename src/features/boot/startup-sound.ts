@@ -1,5 +1,7 @@
 "use client";
 
+import { logSound } from "@/features/voice/sound-log";
+
 /**
  * ELISE's startup sound (ADR-046, Parts X-AA): one short, soft "system online" tone, played
  * with the Orb's boot sequence. Synthesized with Web Audio — an original sound, no file, no
@@ -43,6 +45,7 @@ export function setStartupSoundEnabled(on: boolean) {
 
 /** The tone itself: two soft partials rising a fifth, a brief shimmer, a filter opening up. */
 export function synthesize(ctx: AudioContext) {
+  logSound("startup");
   const t0 = ctx.currentTime + 0.02;
   const end = t0 + STARTUP_SOUND.durationS;
   const master = ctx.createGain();

@@ -14,6 +14,7 @@ import {
   interactionSoundsEnabled,
   setInteractionSoundsEnabled,
 } from "@/features/feedback/completion";
+import { downloadSoundLog } from "@/features/voice/sound-log";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { WebSpeechWakeEngine } from "@/features/voice/wake-engine";
 import { useI18n } from "@/lib/i18n/client";
@@ -246,6 +247,22 @@ function SoundsCard() {
             listeners.forEach((l) => l());
           }}
         />
+      </SettingRow>
+      {/* ADR-104: what ELISE played in the last 90 s, to find where an odd sound came from. */}
+      <SettingRow
+        id="voice-diagnostics"
+        label={t.settings.voiceDiagnostics.title}
+        hint={t.settings.voiceDiagnostics.hint}
+      >
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            if (!downloadSoundLog()) toast.message(t.settings.voiceDiagnostics.empty);
+          }}
+        >
+          {t.settings.voiceDiagnostics.download}
+        </Button>
       </SettingRow>
     </SettingsCard>
   );

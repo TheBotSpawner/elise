@@ -225,7 +225,7 @@ function createWindow(path = "/", opts: { hidden?: boolean } = {}) {
   return win;
 }
 
-function showWindow(path?: string) {
+function showWindow(path?: string, opts: { raise?: boolean } = {}) {
   if (!window || window.isDestroyed()) {
     window = createWindow(path);
     return;
@@ -237,6 +237,18 @@ function showWindow(path?: string) {
   }
   window.show();
   window.focus();
+  // Windows won't let a background app take the foreground by itself (it only flashes the
+  // taskbar). When the person asked for ELISE out loud, she comes over the app in front for a
+  // moment and stays on top of it (ADR-104); the keyboard follows when Windows allows it.
+  if (opts.raise && process.platform === "win32") {
+    const w = window;
+    w.setAlwaysOnTop(true, "screen-saver");
+    w.moveTop();
+    w.focus();
+    setTimeout(() => {
+      if (!w.isDestroyed()) w.setAlwaysOnTop(false);
+    }, 300);
+  }
   const contents = window.webContents;
   // Its page died while hidden: bring it back (at the asked page) instead of showing it empty.
   if (contents.isCrashed()) return loadApp(window, path);
@@ -394,7 +406,8 @@ async function main() {
   hardenSessions();
   handleAppProtocol(RENDERER_DIR, DEV_URL, wakeModelDir());
   host.start();
-  registerIpc(host, applyLoginItem, (path) => showWindow(path));
+  // "ELISE, mostrate" (ADR-104): asked for out loud while another app is in front.
+  registerIpc(host, applyLoginItem, (path) => showWindow(path, { raise: true }));
   watchSystem();
   watchDisplays();
   // A tap on the corner Orb ends the background conversation (the session lives in the window).

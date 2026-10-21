@@ -14,6 +14,8 @@ import {
   requestVoiceEnd,
 } from "@/features/voice/device-wake";
 
+import { logSound } from "@/features/voice/sound-log";
+
 import { VoskWakeDetector, wav } from "./vosk-detector";
 
 /**
@@ -34,6 +36,7 @@ const OFF: WakeControl = { enabled: false, paused: false, suspended: false, chim
 
 /** A short, quiet two-note sound: heard, not announced. */
 function tone(kind: "wake" | "error") {
+  logSound(`chime:${kind}`);
   try {
     const ctx = new AudioContext();
     const t = ctx.currentTime + 0.01;

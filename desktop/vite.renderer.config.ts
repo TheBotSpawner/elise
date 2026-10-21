@@ -153,6 +153,7 @@ export default defineConfig(({ mode }) => {
         build.supabasePublishableKey,
       ),
       "process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY": JSON.stringify(build.googleMapsKey),
+      "process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID": JSON.stringify(build.googleMapsMapId),
       "process.env.NEXT_PUBLIC_APP_URL": JSON.stringify(build.cloudUrl),
       "process.env.NODE_ENV": JSON.stringify(mode === "production" ? "production" : "development"),
       "process.env": "{}",

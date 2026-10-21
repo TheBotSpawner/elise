@@ -1,6 +1,7 @@
 "use client";
 
 import { ALARM_LIMITS, ALARM_SOUNDS, isBundledSound, uploadSoundId } from "@/core/timers/alarms";
+import { logSound } from "@/features/voice/sound-log";
 
 /**
  * Alarm sounds (ADR-100), played on this device. ELISE's own are synthesized here from their
@@ -26,6 +27,7 @@ export async function unlockAlarmAudio() {
 export const audioReady = () => context()?.state === "running";
 
 function cycle(c: AudioContext, key: keyof typeof ALARM_SOUNDS, volume: number, at: number) {
+  logSound(`alarm:${key}`);
   const s = ALARM_SOUNDS[key];
   const gain = Math.max(0, Math.min(1, volume / 100)) * (s.wave === "square" ? 0.08 : 0.22);
   s.notes.forEach((freq, i) => {

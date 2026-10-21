@@ -78,6 +78,21 @@ export function sanitizeForProvider(text: string): string {
     .trim();
 }
 
+/**
+ * The model that really synthesizes a line (ADR-104): the dialogue model only for a quiet or
+ * whispered delivery of a full sentence; the stable model for everything else.
+ */
+export function modelFor(
+  model: string,
+  text: string,
+  request: Pick<SynthesisRequest, "delivery" | "fixedLine">,
+): string {
+  const expressive = request.delivery === "quiet" || request.delivery === "whisper";
+  return isDialogueModel(model) && (!expressive || isShortLine(text) || request.fixedLine)
+    ? STABLE_MODEL
+    : model;
+}
+
 export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
   readonly id = "elevenlabs";
   readonly format = { encoding: "pcm_s16le", sampleRate: 24_000 } as const;
@@ -113,8 +128,7 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
     // provider measured clean. The dialogue model now speaks only what only it can do: a
     // whispered or quiet delivery. Everything else uses the stable model (HTTP, with the
     // previous segment for continuous intonation).
-    const expressive = request.delivery === "quiet" || request.delivery === "whisper";
-    if (isDialogueModel(this.model) && (!expressive || isShortLine(text) || request.fixedLine))
+    if (modelFor(this.model, text, request) !== this.model)
       return this.http(text, voice, request, signal, STABLE_MODEL);
     return isDialogueModel(this.model)
       ? this.dialogue(

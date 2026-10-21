@@ -3,6 +3,8 @@
 import { playbackGain, type VoiceDelivery } from "@/core/voice/delivery";
 import type { VoiceLanguage } from "@/core/voice/providers";
 
+import { logAudio, logSound } from "./sound-log";
+
 /**
  * Plays ELISE's spoken reply segment by segment (16-bit PCM from /api/voice/speak, scheduled
  * on Web Audio). The next segment is requested while the current one plays and scheduled
@@ -249,6 +251,10 @@ export class SpeechPlayer {
   private async stream(res: Response, flight: Flight, generation: number, arm: () => void) {
     const { controller, item } = flight;
     const rate = Number(/rate=(\d+)/.exec(res.headers.get("x-audio-format") ?? "")?.[1] ?? 24000);
+    logSound(
+      "segment",
+      `${res.headers.get("x-speech-source") ?? "prepared"}${flight.item.retried ? " (retry)" : ""} | ${item.text}`,
+    );
     const reader = res.body!.getReader();
     let carry: Uint8Array | null = null;
     let pending: Uint8Array[] = [];
@@ -324,6 +330,7 @@ export class SpeechPlayer {
         ? Math.round((earliest - this.nextTime) * 1000)
         : 0;
     const startAt = Math.max(this.nextTime, earliest);
+    logAudio(pcm, rate, startAt - this.ctx.currentTime);
     if (!this.sources.size && this.nextTime <= this.ctx.currentTime) this.onStart?.();
     source.start(startAt);
     this.nextTime = startAt + buffer.duration;
@@ -357,6 +364,7 @@ export class SpeechPlayer {
 
   /** A very short, quiet tone when the wake phrase is heard (no "Yes?" every time). */
   chime() {
+    logSound("chime:wake");
     void this.ctx.resume();
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();

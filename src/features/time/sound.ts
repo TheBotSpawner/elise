@@ -1,6 +1,7 @@
 "use client";
 
 import type { TimerSound } from "@/core/timers/model";
+import { logSound } from "@/features/voice/sound-log";
 
 /**
  * ELISE's timer sound (ADR-045): a short synthesized chime (no file, no jarring alarm). Browsers
@@ -40,6 +41,7 @@ export function playChime(sound: TimerSound): boolean {
   const c = context();
   if (!c || c.state !== "running") return false;
   const { notes, gain } = STYLES[sound];
+  logSound(`timer:${sound}`);
   const start = c.currentTime + 0.02;
   notes.forEach((freq, i) => {
     const t = start + i * 0.16;

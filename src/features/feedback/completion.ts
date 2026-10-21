@@ -1,5 +1,7 @@
 "use client";
 
+import { logSound } from "@/features/voice/sound-log";
+
 /**
  * Completion feedback (ADR-072): checking a habit day, completing a task or reaching a goal
  * feels finished — a short accent pop on what was tapped, one soft tone, and on phones a tap of
@@ -41,6 +43,7 @@ export function setInteractionSoundsEnabled(on: boolean) {
 
 /** One quick rising pair (a soft "tick-ting"); a goal adds a higher partial that lingers. */
 export function synthesizeCompletion(ctx: AudioContext, kind: CompletionKind) {
+  logSound(`completion:${kind}`);
   const t0 = ctx.currentTime + 0.005;
   const end = t0 + COMPLETION_SOUND.durationS[kind];
   const master = ctx.createGain();

@@ -3095,6 +3095,12 @@ export const es: Dictionary = {
       soundHint:
         "Un sonido corto y suave cuando abrís ELISE. Solo una vez por sesión, nunca al navegar.",
     },
+    voiceDiagnostics: {
+      title: "Diagnóstico de voz",
+      hint: "Si escuchaste un sonido raro, descargá lo que ELISE reprodujo en los últimos 90 segundos y compartilo con soporte. Se guarda solo en este dispositivo.",
+      download: "Descargar",
+      empty: "Todavía no hay audio de voz para descargar.",
+    },
     interaction: {
       sound: "Sonidos de interacción",
       soundHint: "Al completar hábitos, tareas y objetivos.",

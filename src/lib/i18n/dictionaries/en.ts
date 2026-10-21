@@ -3060,6 +3060,12 @@ export const en = {
       soundHint:
         "A short, soft sound when you open ELISE. Once per session, never while navigating.",
     },
+    voiceDiagnostics: {
+      title: "Voice diagnostics",
+      hint: "Heard an odd sound? Download what ELISE played in the last 90 seconds and share it with support. Kept only on this device.",
+      download: "Download",
+      empty: "No voice audio to download yet.",
+    },
     interaction: {
       sound: "Interaction sounds",
       soundHint: "When you complete habits, tasks and goals.",

@@ -24,6 +24,9 @@ export function desktopBuildConfig(mode: string) {
     updateFeed: env.ELISE_UPDATE_FEED ?? "",
     channel: env.ELISE_DESKTOP_CHANNEL === "beta" ? "beta" : "stable",
     googleMapsKey: env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
+    // The map needs its Map ID too: without it a packaged build treats Maps as not configured
+    // and every route shows "El mapa no está disponible" (ADR-104).
+    googleMapsMapId: env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID ?? "",
   };
 }
 export type DesktopBuildConfig = ReturnType<typeof desktopBuildConfig>;

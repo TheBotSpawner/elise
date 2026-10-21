@@ -44,7 +44,9 @@ const DISABLE = [
 const SHOW = [
   /^(?:mostrate|muestrate|abrite|aparece|aparecete|apareceme|veni|vente|veni para aca|traete)$/,
   /^(?:abri|abrime|mostrame|traeme|pone|pasame) (?:la |tu )?(?:app|aplicacion|ventana|pantalla)(?: de elise)?$/,
-  /^(?:abri|abrir)$/,
+  // Said alone (after the name), these can only mean ELISE herself; a recognizer often hears
+  // "mostrate" as "mostrame".
+  /^(?:abri|abrir|mostrame|mostra|muestra|aparece|apareci)$/,
   /^(?:show yourself|show up|open up|come up|open the app|bring (?:yourself|the app) up)$/,
 ];
 

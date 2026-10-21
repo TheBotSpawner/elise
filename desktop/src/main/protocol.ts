@@ -46,12 +46,14 @@ export function contentSecurityPolicy(dev: boolean) {
     "default-src 'self'",
     // The same third-party players and maps the web uses; nothing else runs.
     // Development only adds the dev server and React Refresh's inline preamble.
-    `script-src 'self' https://sdk.scdn.co https://www.youtube.com https://maps.googleapis.com ${dev ? `'unsafe-inline' ${devServer.join(" ")}` : ""}`,
-    "style-src 'self' 'unsafe-inline'",
+    // Maps (ADR-104): scripts only from its two named hosts (never a wildcard script); its
+    // data, tiles and fonts from Google's hosts, as on the web.
+    `script-src 'self' https://sdk.scdn.co https://www.youtube.com https://maps.googleapis.com https://maps.gstatic.com ${dev ? `'unsafe-inline' ${devServer.join(" ")}` : ""}`,
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: https:",
-    "font-src 'self' data:",
+    "font-src 'self' data: https://fonts.gstatic.com",
     "media-src 'self' data: blob: https:",
-    `connect-src 'self' ${[...supabase, "https://maps.googleapis.com", ...devServer].join(" ")}`,
+    `connect-src 'self' ${[...supabase, "https://*.googleapis.com", "https://*.gstatic.com", "https://*.google.com", ...devServer].join(" ")}`,
     "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://sdk.scdn.co",
     "worker-src 'self' blob:",
     "object-src 'none'",

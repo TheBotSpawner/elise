@@ -7,6 +7,7 @@ import { previewText, type VoiceKey } from "@/core/voice/catalog";
 import type { VoiceDelivery } from "@/core/voice/delivery";
 import { VOICE_LIMITS, type VoiceLanguage } from "@/core/voice/providers";
 import { recognitionContext } from "@/core/voice/recognition";
+import { modelFor } from "@/infrastructure/ai/elevenlabs/speech";
 import { formatForSpeech } from "@/core/voice/speech-format";
 import { acknowledgements } from "@/core/voice/speech-plan";
 import { toSpeakable } from "@/core/voice/speech-text";
@@ -166,7 +167,7 @@ export async function synthesizeSentence(
   language: VoiceLanguage | null,
   previous?: string,
   delivery: VoiceDelivery = "normal",
-): Promise<{ stream: ReadableStream<Uint8Array>; sampleRate: number }> {
+): Promise<{ stream: ReadableStream<Uint8Array>; sampleRate: number; source: string }> {
   if (!auth.profile.voice.enabled || !auth.profile.voice.speak)
     throw new AppError("PERMISSION_DENIED", "Spoken replies are turned off in Settings", {
       recovery: "review",
@@ -191,6 +192,7 @@ export async function synthesizeSentence(
         },
       }),
       sampleRate: provider.format.sampleRate,
+      source: `${provider.id}:${provider.model}:cache`,
     };
   const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
   const stream = await withUsageScope(scope, () =>
@@ -207,13 +209,20 @@ export async function synthesizeSentence(
       AbortSignal.timeout(SPEAK_TIMEOUT_MS),
     ),
   );
-  if (!fixed) return { stream, sampleRate: provider.format.sampleRate };
+  // ADR-104 diagnostics: who really spoke it (after a failover, the fallback; within ElevenLabs,
+  // the routed model). No text, no audio.
+  const model =
+    provider.id === "elevenlabs"
+      ? modelFor(provider.model, spoken, { delivery, fixedLine: fixed })
+      : provider.model;
+  const source = `${provider.id}:${model}:${fixed ? "fixed" : "live"}`;
+  if (!fixed) return { stream, sampleRate: provider.format.sampleRate, source };
   const [live, copy] = stream.tee();
   void new Response(copy)
     .arrayBuffer()
     .then((b) => b.byteLength && ackAudio.set(key, new Uint8Array(b)))
     .catch(() => undefined);
-  return { stream: live, sampleRate: provider.format.sampleRate };
+  return { stream: live, sampleRate: provider.format.sampleRate, source };
 }
 
 /**
