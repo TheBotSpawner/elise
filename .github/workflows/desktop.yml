@@ -81,12 +81,34 @@ jobs:
         env:
           ELISE_CLOUD_URL: https://cloud.example.invalid
       - shell: bash
-        run: node desktop/scripts/installer-smoke.mjs "$(ls desktop/out/make/squirrel.windows/x64/*Setup.exe)"
+        run: node desktop/scripts/installer-smoke.mjs "$(ls desktop/out/make/squirrel.windows/x64/*Setup*.exe)"
+
+  # Published from the owner's computer (publish-release.mjs creates the tag): one binary per
+  # version, so CI never rebuilds and re-uploads over it.
+  published:
+    name: Desktop · already published?
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-v')
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - id: check
+        run: |
+          v="${GITHUB_REF_NAME#desktop-v}"
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets \
+               --jq '.assets[].name' 2>/dev/null | grep -qx "ELISE-Setup-$v.exe"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "desktop-v$v already has its installer: nothing to publish."
+          fi
 
   release:
     name: Desktop · publish (Windows)
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-v')
-    needs: compile
+    if: >-
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-v') &&
+      needs.published.outputs.skip != 'true'
+    needs: [compile, published]
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -131,7 +153,7 @@ jobs:
       - run: npm run make:desktop -- --targets @electron-forge/maker-squirrel
       - name: Installer smoke test (install → launch → uninstall)
         shell: bash
-        run: node desktop/scripts/installer-smoke.mjs "$(ls desktop/out/make/squirrel.windows/x64/*Setup.exe)"
+        run: node desktop/scripts/installer-smoke.mjs "$(ls desktop/out/make/squirrel.windows/x64/*Setup*.exe)"
       - name: Publish (manifest last)
         shell: bash
         run: |

@@ -1,4 +1,4 @@
-import { dirname, resolve } from "node:path";
+import { posix as path } from "node:path";
 
 const posix = (p: string) => p.replaceAll("\\", "/");
 
@@ -7,12 +7,15 @@ const posix = (p: string) => p.replaceAll("\\", "/");
  * Vite applies the "@" alias before any plugin (even enforce: "pre"), and shared code also
  * imports relatively ("./actions"): every form maps to the same key. Matching the raw specifier
  * only used to miss every override, silently.
+ * Paths are joined as POSIX strings, never resolved against the current directory: a Windows
+ * path ("D:/repo/src/…") then gives the same key on any OS (CI runs Linux).
  */
 export function overrideKey(source: string, importer: string | undefined, srcDir: string) {
   const src = posix(srcDir).replace(/\/$/, "");
-  const spec = posix(
-    source.startsWith(".") && importer ? resolve(dirname(importer.split("?")[0]!), source) : source,
-  );
+  const spec =
+    source.startsWith(".") && importer
+      ? path.join(path.dirname(posix(importer.split("?")[0]!)), source)
+      : posix(source);
   return spec.startsWith(`${src}/`)
     ? `@/${spec.slice(src.length + 1).replace(/\.(t|j)sx?$/, "")}`
     : source;
