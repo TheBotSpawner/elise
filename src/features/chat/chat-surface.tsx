@@ -14,7 +14,7 @@ import { clipText } from "@/core/text";
 import { WORKSPACE_LIMITS, type WorkspaceState } from "@/core/workspace/model";
 import { ContextIndicator, type ContextOption } from "@/features/contexts/context-indicator";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
-import { duckMusic, receiveMusic } from "@/features/music/controller";
+import { duckMusic, musicDucks, receiveMusic } from "@/features/music/controller";
 import { useMusic } from "@/features/music/music-view";
 import { receiveTimers } from "@/features/time/time-view";
 import { useDeviceCapture, useDeviceWake } from "@/features/voice/device-wake";
@@ -207,9 +207,11 @@ export function ChatSurface({
   );
   // Music lowers while ELISE speaks and comes back after (where the volume can be set) — lower
   // still while she whispers (ADR-049).
-  const speaking = voiceSession.state.phase === "speaking";
+  // ADR-104: also while she listens (from the moment she hears "ELISE"), or the person has to
+  // talk over the music to be understood.
+  const ducked = musicDucks(voiceSession.state.phase) || deviceCapture !== null;
   const delivery = voiceSession.state.delivery;
-  useEffect(() => void duckMusic(speaking, delivery), [speaking, delivery]);
+  useEffect(() => void duckMusic(ducked, delivery), [ducked, delivery]);
   // Music starting or stopping changes the room: voice re-measures it (never heard as speech).
   const musicPlaying = Boolean(useMusic().payload?.playing);
   const ambientRef = useRef(voiceSession.ambientChanged);

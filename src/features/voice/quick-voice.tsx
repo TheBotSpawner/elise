@@ -8,6 +8,7 @@ import type { VoicePreferences } from "@/application/auth-context";
 import { Orb } from "@/components/elise/orb/orb";
 import { resolveOrbState, voicePhaseOrb } from "@/components/elise/orb/orb-states";
 import { useEliseChat } from "@/features/chat/use-elise-chat";
+import { duckMusic, musicDucks } from "@/features/music/controller";
 import { useMusic } from "@/features/music/music-view";
 import { useI18n } from "@/lib/i18n/client";
 
@@ -82,6 +83,10 @@ function QuickVoiceSession({
     deviceWakeFallback: true,
   });
   const phase = voice.state.phase;
+  // ADR-104: the music lowers while this session listens or speaks (Inicio does the same).
+  const ducked = musicDucks(phase) || deviceCapture !== null;
+  const delivery = voice.state.delivery;
+  useEffect(() => void duckMusic(ducked, delivery), [ducked, delivery]);
   // The song this conversation asked for started: she doesn't talk over it.
   const musicPlaying = Boolean(useMusic().payload?.playing);
   const musicStarted = useRef(voice.musicStarted);

@@ -1,3 +1,4 @@
+import { DUCK_FACTOR } from "@/core/voice/delivery";
 import {
   EndOfSpeech,
   type DetectorState,
@@ -164,6 +165,8 @@ export class VoskWakeDetector implements WakeDetector {
     ).map((f) => f.data);
     this.post = [];
     this.end.reset();
+    // The music is lowered as the word is heard: what follows is measured against that room.
+    if (opts.listenThrough?.()) this.end.scaleFloor(DUCK_FACTOR.normal);
     this.state = "capturing";
     opts.onState("capturing");
     opts.onDetected();
@@ -195,7 +198,9 @@ export class VoskWakeDetector implements WakeDetector {
     const entry = { start: -1, data: x };
     this.ring.push(entry);
     if (this.ring.length > RING_FRAMES) this.ring.shift();
-    if (this.end.speech(energy)) {
+    // With ELISE's music playing, the gate stays open: music sets the room's loudness, and a
+    // voice under it never passed "3× the room" without shouting (ADR-104).
+    if (this.end.speech(energy) || opts.listenThrough?.()) {
       // Opening: the moments just before go first, so the word keeps its start.
       if (this.gate === 0)
         for (const f of this.ring.slice(-1 - GATE_LEAD_FRAMES, -1)) if (f.start < 0) this.feed(f);

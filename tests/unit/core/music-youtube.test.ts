@@ -39,6 +39,22 @@ const cand = (
 const best = (cs: MusicCandidate[], q: string) =>
   rankCandidates(cs, parseMusicRequest({ query: q }))[0]!;
 
+describe("titles as written vs as heard (ADR-104)", () => {
+  const RAUW = [
+    cand("Rauw Alejandro ft. Tainy - Pensándote (Official Audio)", "Rauw Alejandro", "pensandote"),
+    cand("Rauw Alejandro - Desenfocao' (Official Video)", "Rauw Alejandro", "desenfocao"),
+    cand("Rauw Alejandro - Desenfocao'", "LatinHype", "fan"),
+  ];
+  it("“Desenfocado de Rauw Alejandro” is Desenfocao' — the official video, not another song", () => {
+    for (const q of ["Desenfocado de Rauw Alejandro", "Desenfocado de Row Alejandro"]) {
+      const top = best(RAUW, q);
+      expect(top.item.ref).toBe("yt:video:desenfocao");
+      // Confident enough to play it, instead of asking whether to search again.
+      expect(top.confidence).toBeGreaterThanOrEqual(PLAY_CONFIDENCE);
+    }
+  });
+});
+
 const DAFT = [
   cand("How Daft Punk made One More Time", "Music Explained", "explain"),
   cand("One More Time - Daft Punk (Karaoke Version)", "Sing King", "karaoke"),

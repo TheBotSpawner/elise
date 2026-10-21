@@ -25,6 +25,17 @@ describe("the wake word as data", () => {
   });
 });
 
+describe("over ELISE's own music (ADR-104)", () => {
+  it("a normal voice counts as speech once the music is lowered, not only a shout", () => {
+    const e = new EndOfSpeech();
+    for (let i = 0; i < 200; i++) e.learn(0.05); // loud music sets the room
+    const voice = 0.06;
+    expect(e.speech(voice)).toBe(false); // before: only a shout (> 0.15) would pass
+    e.scaleFloor(0.35); // the music goes down to 35 % as the word is heard
+    expect(e.speech(voice)).toBe(true);
+  });
+});
+
 describe("the end of what followed the word", () => {
   const run = (frames: number[]) => {
     const e = new EndOfSpeech();

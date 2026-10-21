@@ -305,6 +305,12 @@ export interface WakeDetector {
     onDetected: () => void;
     onCaptured: (capture: WakeCapture) => void;
     onState: (state: DetectorState) => void;
+    /**
+     * ADR-104: ELISE's own music is playing — the room's loudness says nothing about whether
+     * someone speaks, so the recognizer hears everything (no energy gate), and after the word
+     * the room is measured as it will be with the music lowered.
+     */
+    listenThrough?: () => boolean;
   }): Promise<void>;
   /** Releases the microphone at once (a pause, a lock, the setting off). */
   stop(): void;
@@ -329,6 +335,10 @@ export class EndOfSpeech {
   /** Before the word: learn the room. */
   learn(rms: number) {
     this.floor = this.floor * 0.95 + Math.min(rms, 0.05) * 0.05;
+  }
+  /** The room just got quieter by this factor (ELISE lowered her music): speech is relative. */
+  scaleFloor(factor: number) {
+    this.floor = Math.max(0.004, this.floor * factor);
   }
   /** Whether a frame sounds like speech in this room. */
   speech(rms: number) {

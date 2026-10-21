@@ -132,12 +132,42 @@ const words = (s: string) =>
     .split(" ")
     .filter((w) => w && !FILLER.has(w));
 
+/** Whether a and b differ by at most one edit (insert, delete or replace one letter). */
+function oneEditApart(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+      continue;
+    }
+    if (++edits > 1) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else {
+      i++;
+      j++;
+    }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
+/**
+ * ADR-104: a long word one letter off is the same word — how titles are written ("Desenfocao'",
+ * the Caribbean dropped d) and how a recognizer hears them ("Desenfocado"). Exact matching made
+ * the right song score zero and another of the artist's play instead.
+ */
+const sameWord = (w: string, h: string) => w === h || (w.length >= 5 && oneEditApart(w, h));
+
 function coverage(needle: string | null, haystack: string): number {
   if (!needle) return 0;
   const want = words(needle);
   if (!want.length) return 0;
-  const have = new Set(fold(haystack).split(" "));
-  return want.filter((w) => have.has(w)).length / want.length;
+  const have = fold(haystack).split(" ");
+  return want.filter((w) => have.some((h) => sameWord(w, h))).length / want.length;
 }
 
 /** A provider's candidate: an upload with its channel and (when known) length. */

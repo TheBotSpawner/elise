@@ -15,6 +15,7 @@ import {
   requestVoiceEnd,
 } from "@/features/voice/device-wake";
 
+import { musicStore } from "@/features/music/store";
 import { logSound } from "@/features/voice/sound-log";
 
 import { VoskWakeDetector, wav } from "./vosk-detector";
@@ -172,6 +173,8 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       if (detector.state === "stopped" || detector.state === "held" || failed()) {
         void detector.start({
           model: MODEL,
+          // ADR-104: through ELISE's own music, without having to shout.
+          listenThrough: () => Boolean(musicStore.get().payload?.playing),
           onState: (s) => {
             if (s === "no_microphone" || s === "mic_denied" || s === "model_failed") {
               retryAt = Date.now() + RETRY_MS;

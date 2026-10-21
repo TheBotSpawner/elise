@@ -3,6 +3,7 @@
 import type { ToolDisplay } from "@/core/agents/tools";
 import { duckedVolume, type MusicCommand } from "@/core/capabilities/music";
 import type { VoiceDelivery } from "@/core/voice/delivery";
+import type { VoicePhase } from "@/core/voice/session";
 
 import { musicAction } from "./actions";
 import { setSpotifyLocalVolume, spotifyLocalVolume, startSpotifyPlayer } from "./spotify-player";
@@ -155,6 +156,20 @@ let ducking: Promise<void> = Promise.resolve();
  * where the volume can be set precisely (the embedded player, ELISE's own Spotify device, or a
  * remote device that supports volume); otherwise nothing is done — never faked.
  */
+/**
+ * ADR-104: the voice phases with the music lowered — while ELISE listens as well as while she
+ * speaks (a voice under full music had to shout to be understood).
+ */
+const DUCK_PHASES: ReadonlySet<VoicePhase> = new Set([
+  "arming",
+  "listening",
+  "user_speaking",
+  "finalizing_input",
+  "interrupted",
+  "speaking",
+]);
+export const musicDucks = (phase: VoicePhase) => DUCK_PHASES.has(phase);
+
 export function duckMusic(on: boolean, delivery: VoiceDelivery = "normal") {
   ducking = ducking.then(() => applyDuck(on, delivery)).catch(() => undefined);
   return ducking;
