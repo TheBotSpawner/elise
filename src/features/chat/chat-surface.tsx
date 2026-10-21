@@ -17,7 +17,7 @@ import { SpaceGlyph } from "@/features/knowledge/appearance";
 import { duckMusic, receiveMusic } from "@/features/music/controller";
 import { useMusic } from "@/features/music/music-view";
 import { receiveTimers } from "@/features/time/time-view";
-import { useDeviceWake } from "@/features/voice/device-wake";
+import { useDeviceCapture, useDeviceWake } from "@/features/voice/device-wake";
 import { useLiveVoice } from "@/features/voice/use-live-voice";
 import { useVoice } from "@/features/voice/use-voice";
 import type { DockCaption } from "@/features/workspace/canvas/dock";
@@ -183,6 +183,7 @@ export function ChatSurface({
   // A Desktop that listens for "ELISE" (ADR-095) hands over to the legacy session: the one with
   // a wake path, and no open realtime connection between conversations.
   const deviceWake = useDeviceWake();
+  const deviceCapture = useDeviceCapture();
   const voiceSession = runtime === "live" && !deviceWake ? liveVoice : legacyVoice;
   // Music (ADR-042): results of music tools reach the page's one player state.
   useEffect(
@@ -226,7 +227,9 @@ export function ChatSurface({
   const last = messages.at(-1);
   const turnTools = last?.role === "assistant" ? last.tools : [];
   const runningTool = turnTools.findLast((x) => !x.outcome);
-  const voiceOrb = voicePhaseOrb(phase);
+  // ADR-104: the device heard "ELISE" and is still capturing or transcribing — the session hasn't
+  // taken over yet, but the Orb already listens.
+  const voiceOrb = [...voicePhaseOrb(phase), ...(deviceCapture ? [deviceCapture] : [])];
   const chatOrb: OrbState =
     chatOrbState === "executing" && runningTool && GATHERING.test(runningTool.name)
       ? "searching"

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext } from "react";
+import { createContext, useContext, useSyncExternalStore } from "react";
 
 import type { VoicePhase } from "@/core/voice/session";
 
@@ -78,6 +78,29 @@ export function onVoicePhase(listener: PhaseListener): () => void {
   phaseListeners.add(listener);
   listener(lastPhase);
   return () => void phaseListeners.delete(listener);
+}
+
+/**
+ * ADR-104: what the device's own capture is doing before the session takes over — "listening"
+ * from the moment it heard "ELISE" while the person keeps talking, "thinking" while it transcribes
+ * — so the page's Orb reacts at once instead of staying idle for those seconds.
+ */
+export type DeviceCapture = "listening" | "thinking" | null;
+let capture: DeviceCapture = null;
+const captureListeners = new Set<() => void>();
+
+export function publishDeviceCapture(next: DeviceCapture) {
+  if (next === capture) return;
+  capture = next;
+  captureListeners.forEach((l) => l());
+}
+
+export function useDeviceCapture(): DeviceCapture {
+  return useSyncExternalStore(
+    (l) => (captureListeners.add(l), () => void captureListeners.delete(l)),
+    () => capture,
+    () => null,
+  );
 }
 
 /** Phases where the device may hold the microphone for the wake word. */

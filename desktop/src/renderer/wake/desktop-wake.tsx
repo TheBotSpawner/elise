@@ -10,6 +10,7 @@ import {
   DeviceWakeContext,
   deviceMayListen,
   onVoicePhase,
+  publishDeviceCapture,
   requestDeviceWake,
   requestVoiceEnd,
 } from "@/features/voice/device-wake";
@@ -181,6 +182,8 @@ export function DesktopWake({ children }: { children: ReactNode }) {
           },
           onDetected: () => {
             if (controlRef.current.chime) tone("wake");
+            // The page's Orb listens with the person from the word on (ADR-104).
+            publishDeviceCapture("listening");
           },
           onCaptured: (capture) => void handOff(capture),
         });
@@ -189,6 +192,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     };
 
     const finishHandOff = () => {
+      publishDeviceCapture(null);
       handingOff = false;
       if (handoffTimer) clearTimeout(handoffTimer);
       handoffTimer = null;
@@ -200,6 +204,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     ) {
       // The session takes the conversation: stop listening for the word (the mic stays open).
       handingOff = true;
+      publishDeviceCapture("thinking");
       detector.hold();
       report("in_conversation");
       if (!navigator.onLine) {
@@ -246,6 +251,8 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       if (asksToShow(remainder)) void window.eliseDesktop?.showApp?.("/");
       // Inicio's session takes it, or on any other page the floating Orb's: the page stays.
       requestDeviceWake(remainder);
+      // From here the session's own phase drives the Orb.
+      publishDeviceCapture(null);
       handoffTimer = setTimeout(finishHandOff, HANDOFF_MS);
     }
 

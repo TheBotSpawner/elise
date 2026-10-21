@@ -11,6 +11,7 @@ import { useEliseChat } from "@/features/chat/use-elise-chat";
 import { useMusic } from "@/features/music/music-view";
 import { useI18n } from "@/lib/i18n/client";
 
+import { useDeviceCapture } from "./device-wake";
 import { useVoice } from "./use-voice";
 
 /** Pages with a conversation of their own: a floating Orb there would be a second one. */
@@ -69,6 +70,7 @@ function QuickVoiceSession({
 }) {
   const { t } = useI18n();
   const { send, stop, subscribe, getThread, orbState: chatOrb } = useEliseChat({ headless: true });
+  const deviceCapture = useDeviceCapture();
   const level = useRef(-1);
   // The browser's wake phrase belongs to Inicio; here a tap (or Desktop's "ELISE") starts it.
   const voice = useVoice({
@@ -104,6 +106,7 @@ function QuickVoiceSession({
   if (!voice.supported) return null;
   const state = resolveOrbState([
     ...voicePhaseOrb(phase),
+    ...(deviceCapture ? [deviceCapture] : []),
     ...(phase === "error" ? (["error"] as const) : []),
     chatOrb,
   ]);

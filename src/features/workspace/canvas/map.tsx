@@ -39,7 +39,27 @@ const MAP_ID =
 declare global {
   interface Window {
     __eliseMapsReady?: () => void;
+    /** Google calls it when the key is refused (e.g. this origin isn't authorized). */
+    gm_authFailure?: () => void;
   }
+}
+
+/**
+ * ADR-104: a refused key (RefererNotAllowedMapError: ELISE Desktop's elise-app:// origin wasn't
+ * authorized) made Google paint its grey "Oops! Something went wrong" over the card. Once refused,
+ * every map renders as the list instead, for the rest of the session.
+ */
+let authFailed = false;
+const authListeners = new Set<() => void>();
+function onAuthFailure(listener: () => void): () => void {
+  if (typeof window !== "undefined" && !window.gm_authFailure)
+    window.gm_authFailure = () => {
+      authFailed = true;
+      console.warn("[maps] the Maps key was refused for this origin", window.location.origin);
+      authListeners.forEach((l) => l());
+    };
+  authListeners.add(listener);
+  return () => void authListeners.delete(listener);
 }
 
 let loading: Promise<void> | null = null;
@@ -110,7 +130,8 @@ function MapCanvas({
   const dark = useDark();
   const box = useRef<HTMLDivElement>(null);
   const markers = useRef(new Map<string, google.maps.marker.AdvancedMarkerElement>());
-  const [failed, setFailed] = useState(!KEY || !MAP_ID);
+  const [failed, setFailed] = useState(!KEY || !MAP_ID || authFailed);
+  useEffect(() => onAuthFailure(() => setFailed(true)), []);
   const select = useRef(onSelect);
   useEffect(() => {
     select.current = onSelect;

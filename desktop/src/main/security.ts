@@ -70,8 +70,11 @@ export function hardenSessions() {
     if (!ok) log("desktop_permission_denied", { permission });
     callback(ok);
   });
+  // Electron hands the check "elise-app://app/" (a trailing slash): compared exactly with the
+  // origin it never matched, so every permission check said "denied" — Settings showed the
+  // location as blocked although the request itself was allowed (ADR-104).
   s.setPermissionCheckHandler(
-    (_wc, permission, origin) => ALLOWED_PERMISSIONS.has(permission) && origin === APP_ORIGIN,
+    (_wc, permission, origin) => ALLOWED_PERMISSIONS.has(permission) && isAppUrl(origin),
   );
 
   app.on("web-contents-created", (_e, contents: WebContents) => {
