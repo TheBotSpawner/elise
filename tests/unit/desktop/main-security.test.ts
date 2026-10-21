@@ -222,6 +222,8 @@ describe("the wake word's files", () => {
     await expect(call(INVOKE.wakeReport, fromApp, "recording_audio")).rejects.toThrow();
     await expect(call(INVOKE.showApp, fromApp, "https://evil.example")).rejects.toThrow();
     await expect(call(INVOKE.showApp, fromApp, "javascript:alert(1)")).rejects.toThrow();
+    // ADR-106: only "up" or "down" — never a command.
+    await expect(call(INVOKE.adjustVolume, fromApp, "calc.exe")).rejects.toThrow();
     await expect(
       call(INVOKE.wakePause, { senderFrame: { origin: "https://evil" } }, true),
     ).rejects.toThrow();

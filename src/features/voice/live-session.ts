@@ -546,7 +546,9 @@ export class LiveVoiceSession {
   private sessionControl(text: string): boolean {
     if (this.ended) return false;
     const command = sessionCommand(text);
-    if (!command) return false;
+    // Volume is answered by the device's wake path and the speech pipeline; a Live session
+    // delegates it like any request (ADR-106).
+    if (!command || command === "volume_up" || command === "volume_down") return false;
     if (command === "disable_wake")
       void (
         window as {

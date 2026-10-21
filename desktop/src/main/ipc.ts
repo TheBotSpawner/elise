@@ -99,6 +99,50 @@ export function connectivity(host: RuntimeHost): EliseConnectivity {
   };
 }
 
+/** Volume keys pressed per request: Windows moves 2 points per press, so about 10 points. */
+const VOLUME_STEPS = 5;
+
+/**
+ * ADR-106: "ELISE, subí / bajá el volumen" — the computer's volume, a few points. Windows presses
+ * the volume key (its own volume indicator shows); macOS sets the output volume. A fixed command
+ * with no text from the page in it. Resolves whether it ran.
+ */
+function adjustSystemVolume(direction: "up" | "down"): Promise<boolean> {
+  const run = (file: string, args: string[]) =>
+    new Promise<boolean>((resolve) =>
+      execFile(file, args, { windowsHide: true, timeout: 5000 }, (error) => {
+        if (error) log("desktop_volume_failed", { direction });
+        resolve(!error);
+      }),
+    );
+  if (process.platform === "win32") {
+    const key = direction === "up" ? 175 : 174;
+    return run(
+      join(
+        process.env.SystemRoot ?? "C:\\Windows",
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+      ),
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `$w = New-Object -ComObject WScript.Shell; 1..${VOLUME_STEPS} | ForEach-Object { $w.SendKeys([char]${key}) }`,
+      ],
+    );
+  }
+  if (process.platform === "darwin") {
+    const delta = direction === "up" ? "+ 10" : "- 10";
+    return run("osascript", [
+      "-e",
+      `set volume output volume ((output volume of (get volume settings)) ${delta})`,
+    ]);
+  }
+  return Promise.resolve(false);
+}
+
 /**
  * Every bridge call lands here: only ELISE's own page may call (sender origin), every argument
  * is validated, and nothing but these typed operations exists — no generic executor.
@@ -167,6 +211,9 @@ export function registerIpc(
         .nullable()
         .parse(path ?? null) ?? undefined,
     ),
+  );
+  handle(INVOKE.adjustVolume, (direction: unknown) =>
+    adjustSystemVolume(z.enum(["up", "down"]).parse(direction)),
   );
   handle(INVOKE.homeState, () => host.home);
   // Long operations return at once; progress arrives as onHomeHub events.

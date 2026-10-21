@@ -474,6 +474,23 @@ describe("continuous voice controller", () => {
     expect(controller.state.phase).toBe("idle");
   });
 
+  it("“Bajá el volumen” on Desktop lowers the computer's volume; nothing goes to the agent (ADR-106)", async () => {
+    const { controller, sent, say } = setup({ transcripts: ["Bajá el volumen."] });
+    const moved: string[] = [];
+    controller.update({ adjustVolume: (d) => void moved.push(d) });
+    await controller.start();
+    await say();
+    expect(moved).toEqual(["down"]);
+    expect(sent).toEqual([]);
+  });
+
+  it("on the web, “bajá el volumen” is an ordinary request", async () => {
+    const { controller, sent, say } = setup({ transcripts: ["Bajá el volumen."] });
+    await controller.start();
+    await say();
+    expect(sent.map((s) => s.text)).toEqual(["Bajá el volumen."]);
+  });
+
   it("without a window to show (the web), “mostrate” is an ordinary request", async () => {
     const { controller, sent, say } = setup({ transcripts: ["Mostrate."] });
     await controller.start();

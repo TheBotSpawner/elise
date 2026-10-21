@@ -6,9 +6,10 @@
  * The whole utterance must be the command (the wake word, "che", "por favor", "ya" aside):
  * "anotá la frase 'dejá de escuchar'" or "¿por qué dejás de escuchar?" are ordinary requests.
  * ADR-104: "ELISE, mostrate" / "abrite" brings ELISE Desktop's window to the front ("show").
+ * ADR-106: "ELISE, subí / bajá el volumen" moves the computer's volume a few points (Desktop).
  */
 
-export type SessionCommand = "stop" | "disable_wake" | "show";
+export type SessionCommand = "stop" | "disable_wake" | "show" | "volume_up" | "volume_down";
 
 const fold = (s: string) =>
   s
@@ -50,6 +51,22 @@ const SHOW = [
   /^(?:show yourself|show up|open up|come up|open the app|bring (?:yourself|the app) up)$/,
 ];
 
+/**
+ * The computer's volume, said alone: "subí el volumen", "bajale un poco el volumen", "más
+ * volumen". A device or the music named ("subí el volumen de la tele", "bajá la música") is
+ * not this: it goes to ELISE, which controls the home and the music.
+ */
+const VOLUME_UP = [
+  /^(?:subi|subile|subime|sube|suba|subir|aumenta|aumentale|aumente|subi un poco|subile un poco) (?:un poco )?(?:el |la )?(?:volumen|sonido)(?: un poco| mas)?$/,
+  /^(?:mas volumen|mas fuerte|volumen mas alto|mas alto)$/,
+  /^(?:turn (?:the )?(?:volume|sound|it) up|volume up|louder)$/,
+];
+const VOLUME_DOWN = [
+  /^(?:baja|bajale|bajame|baje|bajar|disminui|disminuye|disminuya|baja un poco|bajale un poco) (?:un poco )?(?:el |la )?(?:volumen|sonido)(?: un poco| mas)?$/,
+  /^(?:menos volumen|mas bajo|volumen mas bajo|mas despacio)$/,
+  /^(?:turn (?:the )?(?:volume|sound|it) down|volume down|quieter)$/,
+];
+
 /** Folding drops accents, so the patterns above only need their unaccented forms to match. */
 export function sessionCommand(text: string): SessionCommand | null {
   let s = fold(text);
@@ -59,5 +76,7 @@ export function sessionCommand(text: string): SessionCommand | null {
   if (DISABLE.some((r) => r.test(s))) return "disable_wake";
   if (STOP.some((r) => r.test(s))) return "stop";
   if (SHOW.some((r) => r.test(s))) return "show";
+  if (VOLUME_UP.some((r) => r.test(s))) return "volume_up";
+  if (VOLUME_DOWN.some((r) => r.test(s))) return "volume_down";
   return null;
 }

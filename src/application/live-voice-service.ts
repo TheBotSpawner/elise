@@ -22,6 +22,7 @@ import type { AuthContext } from "./auth-context";
 import type { ChatStreamEvent } from "./chat-protocol";
 import { prepareTurn, type TurnEventSink } from "./chat-service";
 import { openThread } from "./interaction-thread";
+import { memoryForContext } from "./memory-service";
 import { queueRecallIndex } from "./recall-service";
 
 /**
@@ -59,6 +60,7 @@ export async function createLiveSession(auth: AuthContext, sdp: string) {
       locale: auth.profile.locale,
       displayName: auth.profile.displayName,
       personality: auth.profile.personality,
+      memory: await memoryForContext(auth),
     }),
     // GPT-Live speaks with its own voices: the chosen voice's stand-in, fixed for the session.
     voice: openaiVoiceFor(auth.profile.voice.voice),

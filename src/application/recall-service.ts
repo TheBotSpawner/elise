@@ -20,6 +20,7 @@ import { createAdminClient } from "@/infrastructure/supabase/admin";
 import { SupabaseRecallReader } from "@/infrastructure/supabase/repositories/recall";
 
 import type { AuthContext } from "./auth-context";
+import { learnFromConversation, learnFromSession } from "./memory-learning";
 
 /**
  * Universal Recall indexing (ADR-012). Runs with the service role, every statement scoped to
@@ -257,8 +258,10 @@ export function queueRecallIndex(workspaceId: string, thread: ThreadRef) {
       });
     } else if (thread.kind === "conversation") {
       await indexConversation(workspaceId, thread.id);
+      await learnFromConversation(workspaceId, thread.id);
     } else {
       await indexVoiceSession(workspaceId, thread.id);
+      await learnFromSession(workspaceId, thread.id);
     }
   };
   void run().catch((error) =>

@@ -193,6 +193,27 @@ export function formatForSpeech(text: string, lang: Lang): string {
   // Only there: "el OK del banco" or a product name is left alone. The screen keeps the text.
   if (lang === "es") t = t.replace(/(^|[.!?¡¿]\s+)(?:ok|okay|okey)\b[,.!]?\s*/gi, "$1Dale, ");
   t = t.replace(/Dale, ([.!?])/g, "Dale$1").replace(/Dale, $/, "Dale.");
+  if (lang === "es") {
+    // Durations are not times of day: "1:55:30" is a race time, and "5:30 el kilómetro", "5:30
+    // a 6 min/km" or "ritmo de 5:30" are paces — never "las cinco y media de la madrugada".
+    // "uno" agrees with what it counts: "un minuto", "veintiún segundos", "una hora".
+    const count = (n: number, one: string, many: string, feminine = false) =>
+      `${(numberWords(n, "es") ?? String(n)).replace(/uno$/, feminine ? "una" : n === 1 ? "un" : "ún")} ${n === 1 ? one : many}`;
+    const mins = (m: number, s: number) =>
+      `${count(m, "minuto", "minutos")}${s ? ` y ${count(s, "segundo", "segundos")}` : ""}`;
+    t = t.replace(
+      /\b(\d{1,2}):([0-5]\d):([0-5]\d)\b/g,
+      (_, h, m, s) => `${count(Number(h), "hora", "horas", true)}, ${mins(Number(m), Number(s))}`,
+    );
+    t = t.replace(
+      /\b(\d{1,2}):([0-5]\d)(?=(?:\s*(?:a|y|-|–)\s*\d{1,2}(?::[0-5]\d)?)?\s*(?:min(?:utos)?\b|\/\s*km\b|(?:el|por|cada) (?:km|kil[oó]metro)))/gi,
+      (_, m, s) => mins(Number(m), Number(s)),
+    );
+    t = t.replace(
+      /\b(ritmo|pace|promedio|parcial|tiempo) (de |en )?(\d{1,2}):([0-5]\d)\b/gi,
+      (_, word, prep, m, s) => `${word} ${prep ?? ""}${mins(Number(m), Number(s))}`,
+    );
+  }
   // Times: "a las 14:30" / "14:30 hs" → "a las dos y media de la tarde".
   t = t.replace(/\b(?:(?:a )?las |la )?(\d{1,2}):(\d{2})(?:\s?(?:hs|h|horas))?\b/gi, (m, h, mm) => {
     const said = clock(Number(h), Number(mm), lang);

@@ -104,6 +104,17 @@ export function useVoice({
                   ).eliseDesktop
                     ?.showApp?.()
                     ?.catch(() => undefined),
+                // ADR-106: "subí / bajá el volumen" — the computer's.
+                adjustVolume: (direction: "up" | "down") =>
+                  void (
+                    window as {
+                      eliseDesktop?: {
+                        adjustVolume?: (d: "up" | "down") => Promise<boolean>;
+                      };
+                    }
+                  ).eliseDesktop
+                    ?.adjustVolume?.(direction)
+                    ?.catch(() => undefined),
               }
             : {}),
           warmAcknowledgements: (language, delivery) =>

@@ -242,6 +242,13 @@ export function DesktopWake({ children }: { children: ReactNode }) {
         void window.eliseDesktop?.showApp?.();
         return finishHandOff();
       }
+      // ADR-106: "ELISE, bajá el volumen" — the computer's volume, and nothing else starts.
+      if (command === "volume_up" || command === "volume_down") {
+        void window.eliseDesktop
+          ?.adjustVolume?.(command === "volume_up" ? "up" : "down")
+          .catch(() => undefined);
+        return finishHandOff();
+      }
       if (command) {
         console.debug("[wake] session command", { command });
         if (command === "disable_wake")

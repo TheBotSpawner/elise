@@ -11,13 +11,7 @@ import {
   type SettingsStore,
   type VoiceSettings,
 } from "@/core/capabilities/settings";
-import {
-  activeFacts,
-  forget,
-  remember,
-  type MemoryFact,
-  type RememberInput,
-} from "@/core/memory/model";
+import { activeFacts, remember, type MemoryFact, type RememberInput } from "@/core/memory/model";
 import type { ElisePersonality } from "@/core/personality";
 import { indexSession, type IndexPorts } from "@/core/recall/indexer";
 import {
@@ -389,17 +383,36 @@ class FakeSettings implements SettingsStore {
   memoryOn = true;
   facts: MemoryFact[] = [];
   async memory() {
-    return { enabled: this.memoryOn, facts: activeFacts(this.facts) };
+    return {
+      enabled: this.memoryOn,
+      learning: { on: false, available: false },
+      facts: activeFacts(this.facts),
+      profile: [],
+    };
   }
   async remember(input: RememberInput) {
-    const r = remember(this.facts, input, "2026-10-16T12:00:00.000Z", `f${this.facts.length + 1}`);
-    this.facts = r.facts;
+    const now = this.facts.find((f) => f.key === input.key && f.status === "active") ?? null;
+    const r = remember(now, input, "2026-10-16T12:00:00.000Z", `f${this.facts.length + 1}`);
+    if (r.kind === "insert") this.facts = [...this.facts, r.fact];
+    if (r.kind === "replace")
+      this.facts = [...this.facts.map((f) => (f.id === r.replaced.id ? r.replaced : f)), r.fact];
+    if (r.kind === "confirm") this.facts = this.facts.map((f) => (f.id === r.fact.id ? r.fact : f));
     return r;
   }
   async forget(idOrKey: string) {
-    const before = this.facts.length;
-    this.facts = forget(this.facts, idOrKey);
-    return before - this.facts.length;
+    const key = this.facts.find((f) => f.id === idOrKey)?.key ?? idOrKey;
+    const gone = this.facts.filter((f) => f.key === key);
+    this.facts = this.facts.filter((f) => f.key !== key);
+    return { forgotten: gone.length, sources: [...new Set(gone.flatMap((f) => f.sources))] };
+  }
+  async reflect() {
+    return { said: [], inferred: [], changes: [], profile: [], episodes: [], omitted: 0 };
+  }
+  learningOn = true;
+  async stopLearning() {
+    const was = this.learningOn;
+    this.learningOn = false;
+    return was;
   }
   async voice() {
     return this.voiceSettings;
@@ -457,17 +470,23 @@ describe("self-control tools", () => {
       args: { key: "trabajo.horario", value: "De 9 a 18", stated: true },
     });
     expect(saved).toMatchObject({ status: "succeeded", output: { saved: true } });
-    expect(settings.facts[0]).toMatchObject({ sources: ["conv-1"], confidence: "stated" });
+    expect(settings.facts[0]).toMatchObject({ sources: ["conv-1"], provenance: "user_explicit" });
     const listed = await executeToolCall(ports, ctx, { name: "memory.list", args: {} });
     expect(listed).toMatchObject({
       status: "succeeded",
-      output: { enabled: true, facts: [{ key: "trabajo.horario", value: "De 9 a 18" }] },
+      output: {
+        enabled: true,
+        facts: [{ key: "trabajo.horario", value: "De 9 a 18", source: "said" }],
+      },
     });
     const gone = await executeToolCall(ports, ctx, {
       name: "memory.forget",
       args: { fact: "trabajo.horario" },
     });
-    expect(gone).toMatchObject({ status: "succeeded", output: { forgotten: 1 } });
+    expect(gone).toMatchObject({
+      status: "succeeded",
+      output: { forgotten: 1, wontRelearn: true, conversationsStillInHistory: 1 },
+    });
     expect(settings.facts).toEqual([]);
   });
 

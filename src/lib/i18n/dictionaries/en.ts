@@ -2983,8 +2983,30 @@ export const en = {
         "History: what you talked about before; ELISE searches it when you ask.",
         "Knowledge: your documents and sources. Methods: how you want ELISE to do something.",
       ],
+      learn: "Learn from my conversations",
+      learnHint:
+        "ELISE keeps what's worth remembering from what you tell her — preferences, projects, routines — without asking each time.",
+      learnInfo: [
+        "What it reads: what you write or say in conversations from the moment you turn it on. Never earlier conversations.",
+        "When: a few minutes after each conversation, in the background.",
+        "What it never keeps: passwords or codes, health, religion, politics, sexuality, finances, nor what ELISE says, quotes or examples.",
+        "Each fact says where it came from. You can correct or forget it, and once forgotten it isn't learned again.",
+        "It has a monthly spending cap. When it's reached, learning pauses until next month; what ELISE knows is still used.",
+      ],
+      learnSince: (date: string) => `Learning since ${date}.`,
+      learnUnavailable: {
+        rollout: "Not available in this version of ELISE yet.",
+        unpriced:
+          "Not available: the model's price isn't configured, and without it there's no spending cap.",
+      },
+      spend: (used: string, cap: string) => `This month: ${used} of ${cap}`,
+      upgrading: "Memory is being upgraded: you can see it, but not change it until it's done.",
+      profile: "How ELISE sees you",
+      profileHint: "A summary of your facts. Every line comes from the facts below.",
+      recent: "Recently learned",
       summary: "What ELISE remembers",
-      summaryHint: "Saved when you ask “remember that…” or add it here.",
+      summaryHint:
+        "Saved when you ask “remember that…”, add it here or, if you turn it on, learned from your conversations.",
       empty: "Nothing saved yet.",
       count: (n: number) => `${n} ${n === 1 ? "fact" : "facts"}`,
       off: "Memory is off: ELISE neither uses nor adds anything. What's saved stays here.",
@@ -3003,6 +3025,24 @@ export const en = {
         n === 1 ? "From a conversation" : `From ${n} conversations`,
       fromSettings: "Added in Settings",
       inferred: "Inferred",
+      provenance: {
+        user_explicit: "You said it",
+        user_settings: "You wrote it here",
+        tool_verified: "From your data",
+        inferred: "ELISE inferred it",
+        unknown: "Unknown origin",
+      },
+      certainty: (pct: number) => `${pct}% sure`,
+      confirmed: (date: string) => `confirmed ${date}`,
+      times: (n: number) => `${n} times`,
+      learned: "learned from your conversations",
+      viewSource: "View conversation",
+      forgetTitle: "Forget this?",
+      forgetBody:
+        "I'll remove it from your memory, with its earlier versions and what was summarized from it, and won't learn it again. The conversations where you said it stay in your History: you can delete them there.",
+      forgotten: "Forgotten. I won't learn it again.",
+      clearBody:
+        "I'll remove every fact and the summary, and won't learn them again. Your conversations stay in History.",
     },
     storage: {
       used: (size: string) => `${size} used`,

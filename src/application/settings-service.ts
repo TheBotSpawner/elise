@@ -24,7 +24,8 @@ import { availableVoiceKeys } from "@/infrastructure/ai/voices";
 
 import { VOICE_PREFERENCE_KEY, type AuthContext } from "./auth-context";
 import { listConnections } from "./connections-service";
-import { forgetFact, getMemory, rememberFact } from "./memory-service";
+import { reflectOnMemory } from "./memory-reflect";
+import { forgetFact, getMemory, rememberFact, setLearning } from "./memory-service";
 import { moduleVisibility, setModuleVisibility } from "./modules-service";
 import { listSchedules, setSchedulePaused, updateSchedule } from "./schedules-service";
 
@@ -166,20 +167,37 @@ export function settingsStore(auth: AuthContext): SettingsStore {
     setVoice: (key) => setPreferredVoice(auth, key, "ai"),
     personality: async () => auth.profile.personality,
     setPersonality: (p) => setPersonality(auth, p, "ai"),
-    memory: () => getMemory(auth),
+    async memory() {
+      const m = await getMemory(auth);
+      return {
+        enabled: m.enabled,
+        learning: { on: m.learning.on, available: m.learning.available },
+        facts: m.facts,
+        profile: m.profile,
+      };
+    },
+    // Audit rows carry metadata only (ADR-107): never the fact, its key or its value.
     async remember(input) {
       const r = await rememberFact(auth, input);
-      if (!r.kept)
+      if (r.kind !== "kept")
         await audit(auth, "ai", "memory.remembered", {
-          key: r.fact.key,
-          replaced: String(Boolean(r.replaced)),
+          category: r.fact.category,
+          provenance: r.fact.provenance,
+          replaced: String(r.kind === "replace"),
         });
       return r;
     },
     async forget(idOrKey) {
-      const n = await forgetFact(auth, idOrKey);
-      if (n) await audit(auth, "ai", "memory.forgotten", { count: String(n) });
-      return n;
+      const r = await forgetFact(auth, idOrKey);
+      if (r.forgotten) await audit(auth, "ai", "memory.forgotten", { count: String(r.forgotten) });
+      return r;
+    },
+    reflect: (question, range) => reflectOnMemory(auth, question, range),
+    async stopLearning() {
+      const wasOn = (await getMemory(auth)).learning.on;
+      await setLearning(auth, false);
+      await audit(auth, "ai", "memory.learning_stopped", { was_on: String(wasOn) });
+      return wasOn;
     },
   };
 }

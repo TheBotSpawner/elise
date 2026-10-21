@@ -125,7 +125,9 @@ export function Dock({
   return (
     <div
       className={cn(
-        "pointer-events-none z-30 flex flex-col items-center gap-2.5",
+        // Above the docked YouTube player (z-30), so the video slides under the dock, never
+        // over it; below the navigation (z-40).
+        "pointer-events-none z-[35] flex flex-col items-center gap-2.5",
         inline
           ? "relative mt-9 w-full"
           : cn("fixed inset-x-3 md:inset-x-0", besideDrawer && "md:right-[400px]"),

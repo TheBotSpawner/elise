@@ -44,6 +44,8 @@ These documents are the source of truth for product and architecture decisions. 
 | `26-elise-home-hub-dev.md`         | ELISE Home Hub development (ADR-079/080) |
 | `27-elise-desktop.md`              | ELISE Desktop: develop, release, operate (ADR-081) |
 | `28-voice-quality-2026-10.md`      | Voice quality and Desktop parity report (ADR-104) |
+| `ELISE_Memory_Audit_vs_Honcho_Report.md` | Memory audit vs Honcho (2026-10, before ADR-107) |
+| `30-native-memory-implementation.md` | Native continuous memory: implementation report (ADR-107) |
 
 ## roadmap/
 

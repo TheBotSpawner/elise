@@ -1,5 +1,5 @@
 import { AppError } from "../errors";
-import type { MemoryFact, RememberInput, RememberResult } from "../memory/model";
+import type { MemoryChange, MemoryFact, ProfileLine, RememberInput } from "../memory/model";
 import type { ElisePersonality } from "../personality";
 import { isValidTimezone } from "../time";
 import type { VoiceKey } from "../voice/catalog";
@@ -77,11 +77,46 @@ export interface SettingsStore {
   modules(): Promise<{ key: string; enabled: boolean }[]>;
   /** Turns modules on or off (audited); data is never touched. */
   setModules(changes: Record<string, boolean>): Promise<void>;
-  /** Memory (ADR-068): whether it's on, and the active facts. */
-  memory(): Promise<{ enabled: boolean; facts: MemoryFact[] }>;
-  remember(input: RememberInput): Promise<RememberResult>;
-  /** Forgets a fact by id or key; how many were removed. */
-  forget(idOrKey: string): Promise<number>;
+  /** Memory (ADR-068, ADR-107): whether it's on, learning, the active facts and the profile. */
+  memory(): Promise<{
+    enabled: boolean;
+    learning: { on: boolean; available: boolean };
+    facts: MemoryFact[];
+    profile: ProfileLine[];
+  }>;
+  remember(input: RememberInput): Promise<MemoryChange>;
+  /**
+   * Forgets a fact by id or key, with its earlier values and what was derived from it; how many
+   * were removed, and the interactions that had supported it (still in History).
+   */
+  forget(idOrKey: string): Promise<{ forgotten: number; sources: string[] }>;
+  /** Evidence for a question about the person: facts, how they changed, and past episodes. */
+  reflect(question: string, range: { from?: string; to?: string }): Promise<MemoryEvidence>;
+  /** Stops learning from conversations (only Settings turns it on). Whether it was on. */
+  stopLearning(): Promise<boolean>;
+}
+
+/** What memory.reflect returns: grouped by how ELISE knows it, never mixed (ADR-107). */
+export interface MemoryEvidence {
+  said: EvidenceFact[];
+  inferred: EvidenceFact[];
+  /** Earlier values of these facts, oldest first: how things changed. */
+  changes: { key: string; value: string; until: string }[];
+  profile: string[];
+  episodes: { at: string; title: string | null; excerpt: string; interactionId: string }[];
+  /** Episodes left out because they mention something the person asked ELISE to forget. */
+  omitted: number;
+}
+
+export interface EvidenceFact {
+  key: string;
+  value: string;
+  provenance: MemoryFact["provenance"];
+  certainty: number;
+  since: string;
+  lastConfirmed: string;
+  /** Separate interactions that support it. */
+  times: number;
 }
 
 const norm = (s: string) =>

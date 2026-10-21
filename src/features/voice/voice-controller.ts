@@ -201,6 +201,8 @@ export interface VoiceDeps {
   disableWake?: () => void;
   /** ADR-104: "ELISE, mostrate" — ELISE Desktop's window to the front. Absent on the web. */
   showApp?: () => void;
+  /** ADR-106: the computer's volume, a few points (ELISE Desktop only). */
+  adjustVolume?: (direction: "up" | "down") => void;
 }
 
 interface SpokenTurn {
@@ -710,7 +712,18 @@ export class VoiceController {
     if (!command) return false;
     // On the web there is no window to bring up: the request goes to ELISE as usual.
     if (command === "show" && !this.deps.showApp) return false;
+    const volume = command === "volume_up" ? "up" : command === "volume_down" ? "down" : null;
+    // On the web there is no computer volume to reach: ELISE answers it as usual.
+    if (volume && !this.deps.adjustVolume) return false;
     this.trace("session_command", { command });
+    if (volume) {
+      // Done at once and quietly; the conversation goes on as after any turn.
+      this.deps.adjustVolume!(volume);
+      this.lastActivity = this.now;
+      if (this.state.phase === "sleeping") this.afterSleep();
+      else this.listen();
+      return true;
+    }
     if (command === "show") {
       // The window comes up; the turn ends quietly (the person is now looking at ELISE).
       this.deps.showApp!();

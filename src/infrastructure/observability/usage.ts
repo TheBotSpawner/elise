@@ -2,7 +2,7 @@ import "server-only";
 
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import { priceFor, UNIT_PRICES } from "@/config/pricing";
+import { priceFor, UNIT_PRICES, type TokenPrice } from "@/config/pricing";
 
 import { logger } from "./logger";
 
@@ -47,8 +47,59 @@ export function withUsageFeature<T>(feature: string, fn: () => T): T {
   return current ? storage.run({ ...current, feature }, fn) : fn();
 }
 
+let configured: { raw: string | undefined; prices: Record<string, TokenPrice> } | null = null;
+
+/**
+ * A model's price: AI_MODEL_PRICES (configuration, verified by whoever deploys) first, then
+ * the built-in list. Null when unknown — callers that must bound a cost then refuse to run.
+ */
+export function modelPrice(model: string | null | undefined): TokenPrice | null {
+  if (!model) return null;
+  // Read directly (declared and documented in server-env): metering must not depend on the
+  // rest of the configuration being valid.
+  const raw = process.env.AI_MODEL_PRICES?.trim() || undefined;
+  if (!configured || configured.raw !== raw) {
+    let prices: Record<string, TokenPrice> = {};
+    try {
+      const parsed = raw ? (JSON.parse(raw) as Record<string, Partial<TokenPrice>>) : {};
+      prices = Object.fromEntries(
+        Object.entries(parsed).filter(
+          (e): e is [string, TokenPrice] =>
+            typeof e[1]?.input === "number" &&
+            typeof e[1]?.output === "number" &&
+            e[1].input >= 0 &&
+            e[1].output >= 0,
+        ),
+      );
+    } catch {
+      logger.warn("usage.prices_unreadable", {});
+    }
+    configured = { raw, prices };
+  }
+  const prices = configured.prices;
+  const key = Object.keys(prices)
+    .sort((a, b) => b.length - a.length)
+    .find((k) => model.startsWith(k));
+  return key ? prices[key]! : priceFor(model);
+}
+
+/** USD for a call of these tokens on this model, or null when the model has no price. */
+export function tokenCost(
+  model: string | null | undefined,
+  tokens: { input: number; output: number; cached?: number },
+): number | null {
+  const price = modelPrice(model);
+  if (!price) return null;
+  const cached = tokens.cached ?? 0;
+  const fresh = Math.max(0, tokens.input - cached);
+  return (
+    (fresh * price.input + cached * (price.cached ?? price.input) + tokens.output * price.output) /
+    1_000_000
+  );
+}
+
 export function estimateCost(r: UsageRecord): number | null {
-  const price = priceFor(r.model);
+  const price = modelPrice(r.model);
   if (price && (r.inputTokens || r.outputTokens)) {
     const cached = r.cachedTokens ?? 0;
     const fresh = Math.max(0, (r.inputTokens ?? 0) - cached);

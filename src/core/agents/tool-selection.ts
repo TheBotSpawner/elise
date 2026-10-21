@@ -86,6 +86,11 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
     /\b(slack|canal(es)?|channels?|threads?|hilos?|dijeron|dijo|habl[oó]|hablaron|hablamos|coment[oó]|mensajes?|mand[aá]le|escribile|avisale|reacci[oó]n|reaccion[aá]|workspace|equipo|team)\b|#[\w-]+|👍|✅/i,
   ],
   ["structured", /\b(base de datos|database|registros?|records?|crm|tablas?|notion)\b/i],
+  // Memory (ADR-107): "acordate que…", "olvidate de eso", "¿qué sabés de mí?", "¿cómo suelo…?".
+  [
+    "memory",
+    /(?<!\p{L})(record[aá]\p{L}*|acord[aá]\p{L}*|acu[eé]rdate|olvid\p{L}*|no recuerdes|memoria|sab[eé]s de m[ií]|conoc[eé]s de m[ií]|qu[eé] sab[eé]s|suelo|sol[ií]a|prefer[ií]\p{L}*|prefiero|aprend\p{L}*|ya no es (cierto|as[ií])|eso cambi[oó]|remember|forget|about me|do i usually|learn\p{L}*)(?!\p{L})/iu,
+  ],
   [
     "contexts",
     /\b(contextos?|contexts?|clientes?|clients?|secci[oó]n|section|perfil|carrera|materias?|proyectos?|projects?|poneme al d[ií]a|catch me up)\b/i,

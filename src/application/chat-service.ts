@@ -524,7 +524,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     now: new Date(),
     availableCapabilities: [...capabilities],
     accounts: accountSummaries(bindings),
-    memory: await perf.time("memory", memoryForContext(auth)),
+    memory: await perf.time("memory", memoryForContext(auth, input.message)),
     history,
     userMessage: input.message,
     attachments: attached,

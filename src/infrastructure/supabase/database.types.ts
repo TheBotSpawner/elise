@@ -1146,6 +1146,9 @@ export type InteractionSessionRow = {
   summarized_turns: number;
   index_version: number;
   metadata: Json;
+  /** ADR-107 (migration 062): what memory learning has read, and a run in progress. */
+  memory_learned_through: Ts | null;
+  memory_learning_at: Ts | null;
   created_at: Ts;
   updated_at: Ts;
 };
@@ -1630,6 +1633,69 @@ export type BrowserEndpointRow = {
   updated_at: Ts;
 };
 
+/** ADR-107 (migration 062): native memory. */
+export type MemoryFactRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  key: string;
+  value: string;
+  category:
+    | "preference"
+    | "fact"
+    | "project"
+    | "relationship"
+    | "routine"
+    | "goal"
+    | "constraint"
+    | "decision";
+  provenance: "user_explicit" | "user_settings" | "tool_verified" | "inferred" | "unknown";
+  certainty: number;
+  status: "active" | "superseded";
+  sources: string[];
+  corroborations: number;
+  observed_at: Ts;
+  last_confirmed_at: Ts;
+  extractor: string | null;
+  extraction_ref: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type MemorySuppressionRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  key_hash: string;
+  value_hash: string;
+  word_hashes: string[];
+  print_version: number;
+  created_at: Ts;
+};
+
+export type MemoryProfileRow = {
+  workspace_id: string;
+  user_id: string;
+  version: number;
+  lines: Json;
+  extractor: string | null;
+  generated_at: Ts;
+};
+
+export type MemorySpendRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  kind: "extract" | "consolidate";
+  job_ref: string;
+  month: string;
+  estimated_usd: number;
+  actual_usd: number | null;
+  status: "reserved" | "settled" | "released";
+  created_at: Ts;
+  settled_at: Ts | null;
+};
+
 export type AlarmSoundRow = {
   id: string;
   user_id: string;
@@ -1710,6 +1776,19 @@ export type Database = {
         "alarm_id" | "workspace_id" | "user_id" | "fire_at" | "status"
       >;
       browser_endpoints: Table<BrowserEndpointRow, "user_id" | "workspace_id" | "endpoint_id">;
+      memory_facts: Table<
+        MemoryFactRow,
+        "workspace_id" | "user_id" | "key" | "value" | "provenance"
+      >;
+      memory_suppressions: Table<
+        MemorySuppressionRow,
+        "workspace_id" | "user_id" | "key_hash" | "value_hash"
+      >;
+      memory_profiles: Table<MemoryProfileRow, "workspace_id" | "user_id">;
+      memory_spend: Table<
+        MemorySpendRow,
+        "workspace_id" | "user_id" | "kind" | "job_ref" | "month" | "estimated_usd"
+      >;
       alarm_sounds: Table<
         AlarmSoundRow,
         "user_id" | "workspace_id" | "name" | "storage_path" | "mime_type" | "size_bytes"
@@ -2013,6 +2092,23 @@ export type Database = {
           first_movement: string | null;
           last_movement: string | null;
         }[];
+      };
+      /** ADR-107 (migration 062): service role only. */
+      memory_reserve_spend: {
+        Args: {
+          p_workspace_id: string;
+          p_user_id: string;
+          p_kind: "extract" | "consolidate";
+          p_job_ref: string;
+          p_estimate: number;
+          p_user_cap: number;
+          p_workspace_cap?: number | null;
+        };
+        Returns: string | null;
+      };
+      memory_settle_spend: {
+        Args: { p_id: string; p_actual: number | null };
+        Returns: undefined;
       };
       record_web_usage: {
         Args: { p_workspace_id: string; p_searches: number; p_fetches: number };

@@ -28,6 +28,7 @@ import { logger } from "@/infrastructure/observability/logger";
 import type { AuthContext } from "./auth-context";
 import { listContextProfiles, listEntities } from "./contexts-service";
 import { createExecutorPorts, toolContext } from "./elise";
+import { memoryForContext } from "./memory-service";
 import { methodSpaces, methodStore, recordMethodUse } from "./methods-service";
 import { createScheduledConversation } from "./scheduled-conversation";
 import { studyFocus } from "./study-service";
@@ -542,6 +543,7 @@ export function morningBriefHandler(deps: {
         userName: auth.profile.displayName,
         locale: auth.profile.locale,
         personality: auth.profile.personality,
+        memory: await memoryForContext(auth),
         instructions:
           [
             followed &&

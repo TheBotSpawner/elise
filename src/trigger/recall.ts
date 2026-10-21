@@ -1,6 +1,7 @@
 import { AbortTaskRunError, schedules, task } from "@trigger.dev/sdk";
 import { z } from "zod";
 
+import { learnFromConversation, learnFromSession } from "@/application/memory-learning";
 import { indexConversation, indexVoiceSession, sweepRecall } from "@/application/recall-service";
 import { withUsageScope } from "@/infrastructure/observability/usage";
 
@@ -26,11 +27,18 @@ export const recallIndexTask = task({
     const parsed = indexPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid recall payload");
     const { workspaceId, conversationId, sessionId } = parsed.data;
-    return withUsageScope({ workspaceId, feature: "recall_index" }, () =>
+    const indexed = await withUsageScope({ workspaceId, feature: "recall_index" }, () =>
       conversationId
         ? indexConversation(workspaceId, conversationId)
         : indexVoiceSession(workspaceId, sessionId!),
     );
+    // ADR-107: then memory learning, if its author opted in (it checks, batches and budgets).
+    await (
+      conversationId
+        ? learnFromConversation(workspaceId, conversationId)
+        : learnFromSession(workspaceId, sessionId!)
+    ).catch(() => undefined);
+    return indexed;
   },
 });
 

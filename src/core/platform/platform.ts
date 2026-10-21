@@ -241,6 +241,8 @@ export interface EliseDesktopBridge {
   onAlarmFire?(listener: (item: DesktopAlarmItem) => void): () => void;
   /** Only when the person asked to see ELISE ("abrí ELISE"): never on a wake word alone. */
   showApp(path?: string): Promise<void>;
+  /** "ELISE, subí / bajá el volumen": the computer's own volume, a few points (ADR-106). */
+  adjustVolume?(direction: "up" | "down"): Promise<boolean>;
 }
 
 export interface DesktopAlarmItem {

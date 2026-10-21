@@ -10,6 +10,7 @@ import {
   editMemoryFact,
   forgetFact,
   rememberFact,
+  setLearning,
   setMemoryEnabled,
 } from "@/application/memory-service";
 import {
@@ -211,13 +212,31 @@ export async function setMemoryEnabledAction(enabled: boolean): Promise<Result> 
   );
 }
 
+/** Learning from conversations (ADR-107): the person's explicit opt-in, or opt-out. */
+export async function setLearningAction(on: boolean): Promise<Result> {
+  return attempt(async () => {
+    const auth = await requireAuthContext();
+    await setLearning(auth, z.boolean().parse(on));
+    await auth.db.from("audit_events").insert({
+      workspace_id: auth.workspaceId,
+      user_id: auth.userId,
+      event_type: on ? "memory.learning_on" : "memory.learning_off",
+      resource_type: "user_profile",
+      resource_id: auth.userId,
+      origin: "user_ui",
+      result: "success",
+      metadata: {},
+    });
+  }, "/settings/memory");
+}
+
 export async function addMemoryAction(input: { key: string; value: string }): Promise<Result> {
   return attempt(async () => {
     const v = z.object({ key: z.string().trim().min(1).max(60), value: factValue }).parse(input);
     await rememberFact(await requireAuthContext(), {
       ...v,
-      confidence: "stated",
-      conversationId: null,
+      provenance: "user_settings",
+      source: null,
     });
   }, "/settings/memory");
 }

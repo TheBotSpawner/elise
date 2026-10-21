@@ -90,6 +90,23 @@ const serverEnvSchema = z.object({
   /** 32 random bytes, base64. Encrypts OAuth credentials at rest. */
   ELISE_ENCRYPTION_KEY: z.string().min(1).optional(),
   ELISE_ENCRYPTION_KEY_PREVIOUS: z.string().min(1).optional(),
+  /**
+   * Native memory (ADR-107). MEMORY_LEARNING is the rollout switch for learning from
+   * conversations ("on" lets people opt in from Settings; off by default). Caps are hard USD
+   * limits per calendar month (UTC) for background memory work: per person, and optionally per
+   * workspace. MEMORY_FINGERPRINT_KEY keys the do-not-relearn hashes (defaults to a key derived
+   * from ELISE_ENCRYPTION_KEY).
+   */
+  MEMORY_LEARNING: z.enum(["on", "off"]).default("off"),
+  MEMORY_USER_MONTHLY_USD: z.coerce.number().min(0).max(100).default(0.5),
+  MEMORY_WORKSPACE_MONTHLY_USD: z.coerce.number().min(0).max(10_000).optional(),
+  MEMORY_FINGERPRINT_KEY: z.string().min(16).optional(),
+  /**
+   * Prices for models src/config/pricing.ts doesn't list, as JSON, per 1M tokens:
+   * {"gpt-6-luna":{"input":0.1,"cached":0.01,"output":0.5}}. Verify them on the provider's
+   * pricing page; a model without a price can't be budgeted, so memory learning won't run on it.
+   */
+  AI_MODEL_PRICES: z.string().min(2).optional(),
   CHAT_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(20),
   /** Comma-separated emails allowed to see internal pages (/admin/usage). Empty: nobody. */
   ELISE_ADMIN_EMAILS: z.string().optional(),

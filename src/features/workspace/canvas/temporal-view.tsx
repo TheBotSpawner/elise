@@ -129,10 +129,9 @@ export function TemporalView({
     <div ref={ref} className="-mx-2 [scrollbar-width:thin] overflow-x-auto px-2 pb-2">
       <ol
         aria-label={t.canvas.compositions.temporal}
-        className="relative grid min-h-[520px] items-center"
+        className="grid min-h-[520px]"
         style={{ gridTemplateColumns: `repeat(${items.length}, minmax(${col}px, 1fr))` }}
       >
-        <span aria-hidden className="absolute inset-x-0 top-1/2 h-px bg-axis" />
         {items.map((it, i) => {
           const above = i % 2 === 0;
           return (
@@ -145,8 +144,11 @@ export function TemporalView({
                 ease: EASE,
                 delay: reduced ? 0 : Math.min(i, 8) * 0.04,
               }}
-              className="relative flex h-full flex-col px-2"
+              // Two equal halves: the card sits in its half against the axis, so it always meets
+              // its own stem (the axis is drawn per column, across the whole scroll width).
+              className="relative grid grid-rows-2 px-2"
             >
+              <span aria-hidden className="absolute inset-x-0 top-1/2 h-px bg-axis" />
               {i === nowIndex && (
                 <span
                   aria-hidden
@@ -159,10 +161,7 @@ export function TemporalView({
                 </span>
               )}
               <div
-                className={cn(
-                  "flex flex-1 flex-col",
-                  above ? "justify-end pb-9" : "order-2 justify-start pt-9",
-                )}
+                className={cn(above ? "row-start-1 self-end pb-9" : "row-start-2 self-start pt-9")}
               >
                 {card(it, i)}
               </div>

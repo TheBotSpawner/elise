@@ -91,6 +91,22 @@ describe("speech formatter", () => {
     expect(formatForSpeech("Subió 12%.", "es")).toBe("Subió 12 por ciento.");
   });
 
+  it("paces and race times are durations, never times of day", () => {
+    expect(formatForSpeech("Equivale a un ritmo de 5:30 a 6 minutos por kilómetro.", "es")).toBe(
+      "Equivale a un ritmo de cinco minutos y treinta segundos a 6 minutos por kilómetro.",
+    );
+    expect(formatForSpeech("Los 21 km a 5:30 el kilómetro te llevan 1:55:30.", "es")).toBe(
+      "Los 21 km a cinco minutos y treinta segundos el kilómetro te llevan una hora, cincuenta y cinco minutos y treinta segundos.",
+    );
+    expect(formatForSpeech("Mantené 4:45/km.", "es")).toBe(
+      "Mantené cuatro minutos y cuarenta y cinco segundos/km.",
+    );
+    // A time of day is still a time of day.
+    expect(formatForSpeech("Salí a las 5:30 para correr.", "es")).toBe(
+      "Salí a las cinco y media de la madrugada para correr.",
+    );
+  });
+
   it("number words are exact (Spanish agreement included)", () => {
     expect(numberWords(21_000, "es")).toBe("veintiún mil");
     expect(numberWords(100, "es")).toBe("cien");

@@ -3015,8 +3015,31 @@ export const es: Dictionary = {
         "Historial: lo que hablaron antes; ELISE lo busca cuando le preguntás.",
         "Conocimiento: tus documentos y fuentes. Métodos: cómo querés que ELISE haga algo.",
       ],
+      learn: "Aprender de mis conversaciones",
+      learnHint:
+        "ELISE guarda sola lo que conviene recordar de lo que le contás: preferencias, proyectos, rutinas. Sin preguntarte cada vez.",
+      learnInfo: [
+        "Qué lee: lo que vos escribís o decís en conversaciones desde que lo activás. Nunca conversaciones anteriores.",
+        "Cuándo: unos minutos después de cada conversación, en segundo plano.",
+        "Qué no guarda nunca: contraseñas o códigos, salud, religión, política, sexualidad, finanzas, ni lo que dice ELISE, citas o ejemplos.",
+        "Cada dato dice de dónde salió. Lo podés corregir u olvidar, y si lo olvidás no lo vuelve a aprender.",
+        "Tiene un tope de gasto mensual. Si se alcanza, deja de aprender hasta el mes siguiente; lo que ya sabe lo sigue usando.",
+      ],
+      learnSince: (date: string) => `Aprendiendo desde el ${date}.`,
+      learnUnavailable: {
+        rollout: "Todavía no está disponible en esta versión de ELISE.",
+        unpriced:
+          "No está disponible: falta configurar el precio del modelo, y sin eso no se puede poner un tope de gasto.",
+      },
+      spend: (used: string, cap: string) => `Este mes: ${used} de ${cap}`,
+      upgrading:
+        "La memoria se está actualizando: podés verla, pero no cambiarla hasta que termine.",
+      profile: "Cómo te ve ELISE",
+      profileHint: "Un resumen de tus datos. Cada línea sale de los datos de abajo.",
+      recent: "Aprendido recientemente",
       summary: "Lo que ELISE recuerda",
-      summaryHint: "Se guarda cuando le pedís «acordate que…» o lo agregás acá.",
+      summaryHint:
+        "Se guarda cuando le pedís «acordate que…», lo agregás acá o, si lo activás, lo aprende de tus conversaciones.",
       empty: "Todavía no hay nada guardado.",
       count: (n: number) => `${n} ${n === 1 ? "dato" : "datos"}`,
       off: "La memoria está desactivada: ELISE no usa ni agrega nada. Lo guardado sigue acá.",
@@ -3034,6 +3057,24 @@ export const es: Dictionary = {
       fromConversation: (n: number) => (n === 1 ? "De una conversación" : `De ${n} conversaciones`),
       fromSettings: "Agregado en Configuración",
       inferred: "Inferido",
+      provenance: {
+        user_explicit: "Lo dijiste vos",
+        user_settings: "Lo escribiste acá",
+        tool_verified: "De tus datos",
+        inferred: "ELISE lo infirió",
+        unknown: "Origen desconocido",
+      },
+      certainty: (pct: number) => `seguridad ${pct}%`,
+      confirmed: (date: string) => `confirmado el ${date}`,
+      times: (n: number) => `${n} veces`,
+      learned: "aprendido de tus conversaciones",
+      viewSource: "Ver conversación",
+      forgetTitle: "¿Olvidar este dato?",
+      forgetBody:
+        "Lo saco de tu memoria, con sus versiones anteriores y lo que se resumió de él, y no lo vuelvo a aprender. Las conversaciones donde lo dijiste siguen en tu Historial: si querés, las borrás desde ahí.",
+      forgotten: "Olvidado. No lo voy a volver a aprender.",
+      clearBody:
+        "Saco todos los datos y el resumen, y no los vuelvo a aprender. Tus conversaciones siguen en el Historial.",
     },
     storage: {
       used: (size: string) => `${size} usados`,

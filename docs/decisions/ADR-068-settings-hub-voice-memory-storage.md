@@ -1,6 +1,6 @@
 # ADR-068: Settings hub — simple Voice, Memory, Storage, Account, Usage and Billing
 
-**Status:** Accepted (2026-10-16). Refines ADR-012 (self-control), ADR-014, ADR-017 and ADR-049
+**Status:** Accepted (2026-10-16). Memory storage, context and learning superseded in part by ADR-107. Refines ADR-012 (self-control), ADR-014, ADR-017 and ADR-049
 (voice), ADR-019 (entitlements, usage) and ADR-066 (responsive). No database migration:
 everything new lives in existing tables and columns.
 

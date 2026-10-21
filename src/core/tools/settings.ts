@@ -9,6 +9,7 @@ import {
   type SettingsStore,
 } from "../capabilities/settings";
 import { AppError } from "../errors";
+import { MEMORY_CATEGORIES } from "../memory/model";
 import { NATIVE_MODULES, type NativeModuleKey } from "../modules/registry";
 import { PERSONALITIES, PERSONALITY_NAMES, type ElisePersonality } from "../personality";
 import {
@@ -514,14 +515,22 @@ export const nextVoiceTool: ToolDefinition = {
   },
 };
 
-// ── Memory (ADR-068) ─────────────────────────────────────────────────────────
+// ── Memory (ADR-068, ADR-107) ────────────────────────────────────────────────
+
+const SOURCE: Record<string, string> = {
+  user_explicit: "said",
+  user_settings: "written in Settings",
+  tool_verified: "from their data",
+  inferred: "inferred",
+  unknown: "unknown",
+};
 
 export const listMemoryTool: ToolDefinition = {
   name: "memory.list",
   capability: "settings",
   operation: "listMemory",
   description:
-    '"¿Qué sabés de mí?", "¿qué recordás?": the facts in the user\'s Memory, and whether Memory is on. Memory is stable preferences and facts about the user — not past conversations (that is Recall) nor their documents (Knowledge).',
+    '"¿Qué sabés de mí?", "¿qué recordás?": the facts in the user\'s Memory (where each comes from, how sure, when), the short profile, and whether Memory and learning are on. Memory is stable preferences and facts — not past conversations (Recall) nor documents (Knowledge). Say which facts they told you and which you inferred.',
   input: z.object({}).strict(),
   async describe() {
     return { summary: "Read Memory" };
@@ -531,12 +540,17 @@ export const listMemoryTool: ToolDefinition = {
     return {
       output: {
         enabled: m.enabled,
+        learning: m.learning,
         facts: m.facts.map((f) => ({
           id: f.id,
           key: f.key,
           value: f.value,
-          confidence: f.confidence,
+          source: SOURCE[f.provenance],
+          ...(f.provenance === "inferred" ? { certainty: f.certainty } : {}),
+          lastConfirmed: f.lastConfirmedAt.slice(0, 10),
+          ...(f.learned ? { learnedFromConversations: true } : {}),
         })),
+        profile: m.profile.map((l) => l.text),
       },
     };
   },
@@ -554,6 +568,7 @@ const rememberInput = z
     stated: z
       .boolean()
       .describe("True when the user said it explicitly; false when you inferred it."),
+    category: z.enum(MEMORY_CATEGORIES).optional(),
   })
   .strict();
 
@@ -562,7 +577,7 @@ export const rememberTool: ToolDefinition = {
   capability: "settings",
   operation: "remember",
   description:
-    'Save one stable fact or preference about the user to Memory: "acordate que trabajo de 9 a 18", "prefiero respuestas cortas", "mi socia se llama Ana". Only durable things that help later — never one-off details, secrets, passwords, card numbers, health or other sensitive data unless the user explicitly asks. Not what Settings holds (language, time zone) nor how to do a task (that is a Method). Saving the same key again updates it.',
+    'Save one stable fact or preference about the user to Memory: "acordate que trabajo de 9 a 18", "prefiero respuestas cortas", "mi socia se llama Ana", or a correction ("eso ya no es así, ahora…"). Only durable things that help later — never one-off details, secrets, passwords, card numbers, health or other sensitive data unless the user explicitly asks. Not what Settings holds (language, time zone) nor how to do a task (that is a Method). Saving the same key again updates it (the old value stays as history).',
   input: rememberInput,
   async describe(raw) {
     return { summary: `Remember ${rememberInput.parse(raw).key}` };
@@ -577,17 +592,20 @@ export const rememberTool: ToolDefinition = {
     const r = await store(env).remember({
       key: q.key,
       value: q.value,
-      confidence: q.stated ? "stated" : "inferred",
-      conversationId: env.ctx.conversationId ?? null,
+      category: q.category,
+      provenance: q.stated ? "user_explicit" : "inferred",
+      source: env.ctx.conversationId ?? env.ctx.interactionSessionId ?? null,
     });
+    const kept = r.kind === "kept";
+    const replaced = r.kind === "replace" ? r.replaced : null;
     return {
       output: {
-        saved: !r.kept,
-        kept: r.kept,
+        saved: !kept,
+        kept,
         key: r.fact.key,
         value: r.fact.value,
-        ...(r.replaced ? { replaced: r.replaced.value } : {}),
-        ...(r.kept
+        ...(replaced ? { replaced: replaced.value } : {}),
+        ...(kept
           ? { note: "The user said something different before; it was kept. Ask if it changed." }
           : {}),
       },
@@ -596,7 +614,7 @@ export const rememberTool: ToolDefinition = {
         changes: [
           {
             setting: "memory",
-            from: r.replaced?.value ?? null,
+            from: replaced?.value ?? null,
             to: r.fact.value,
             subject: r.fact.key,
           },
@@ -617,19 +635,91 @@ export const forgetTool: ToolDefinition = {
   capability: "settings",
   operation: "forget",
   description:
-    '"Olvidate de eso", "borrá lo que sabés de mi horario": removes a fact from Memory (memory.list first for its id or key).',
+    '"Olvidate de eso", "no recuerdes que…", "borrá lo que sabés de mi horario": removes a fact from Memory with its earlier values and what was derived from it, and ELISE won\'t learn it again (memory.list first for its id or key). It does NOT delete the conversations where it was said: say so, and offer deleting those in History only if they ask.',
   input: forgetInput,
   async describe(raw) {
     return { summary: `Forget ${forgetInput.parse(raw).fact}` };
   },
   async run(raw, env) {
     const { fact } = forgetInput.parse(raw);
-    const removed = await store(env).forget(fact);
-    if (!removed)
+    const r = await store(env).forget(fact);
+    if (!r.forgotten)
       throw new AppError("NOT_FOUND", "No memory matches that. Use memory.list.", {
         recovery: "review",
       });
-    return { output: { forgotten: removed } };
+    return {
+      output: {
+        forgotten: r.forgotten,
+        wontRelearn: true,
+        conversationsStillInHistory: r.sources.length,
+        ...(r.sources.length
+          ? {
+              note: "Removed from Memory only. The conversations where it was said are still in History; they can be deleted there.",
+            }
+          : {}),
+      },
+    };
+  },
+};
+
+const reflectInput = z
+  .object({
+    question: z
+      .string()
+      .trim()
+      .min(3)
+      .max(300)
+      .describe('What to find out about the user, in their words: "cómo planifico la semana".'),
+    from: z.string().date().optional().describe("Only episodes on or after this day."),
+    to: z.string().date().optional().describe("Only episodes before this day."),
+  })
+  .strict();
+
+export const reflectMemoryTool: ToolDefinition = {
+  name: "memory.reflect",
+  capability: "settings",
+  operation: "reflectMemory",
+  description:
+    '"¿Cómo suelo organizarme?", "¿cómo cambiaron mis horarios de estudio?", "¿qué sabés de cómo planifico?", "¿por qué creés que prefiero…?": gathers the evidence about the user — what they said, what was inferred, how it changed, and past conversations — to reason over. Answer separating "me dijiste…", "por lo que vi, parece que…" (inferences) and "no tengo evidencia de…"; cite dates; never present an inference as something they said. For a single known fact, memory.list is enough.',
+  input: reflectInput,
+  async describe() {
+    return { summary: "Gather what I know about you" };
+  },
+  async run(raw, env) {
+    const q = reflectInput.parse(raw);
+    const e = await store(env).reflect(q.question, { from: q.from, to: q.to });
+    const enough = e.said.length + e.inferred.length + e.episodes.length > 0;
+    return {
+      output: {
+        ...e,
+        enough,
+        ...(enough
+          ? {}
+          : { note: "No evidence about this: say you don't know rather than guess." }),
+        ...(e.omitted
+          ? {
+              omittedNote:
+                "Some past conversations were left out: they mention things the user asked you to forget.",
+            }
+          : {}),
+      },
+    };
+  },
+};
+
+export const stopLearningTool: ToolDefinition = {
+  name: "memory.stopLearning",
+  capability: "settings",
+  operation: "stopLearning",
+  description:
+    '"Dejá de aprender de nuestras conversaciones", "no aprendas más de lo que te digo": stops learning from conversations. What is already in Memory stays (they can forget facts or clear it). Turning learning on is only possible in Settings › Memoria.',
+  input: z.object({}).strict(),
+  async describe() {
+    return { summary: "Stop learning from conversations" };
+  },
+  async run(_raw, env) {
+    const wasOn = await store(env).stopLearning();
+    return { output: { stopped: true, wasOn, factsKept: true } };
   },
 };
 
@@ -785,6 +875,8 @@ export const SETTINGS_TOOLS = [
   listMemoryTool,
   rememberTool,
   forgetTool,
+  reflectMemoryTool,
+  stopLearningTool,
   listModulesTool,
   enableModulesTool,
   disableModulesTool,

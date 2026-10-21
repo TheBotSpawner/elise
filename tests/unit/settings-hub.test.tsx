@@ -2,6 +2,9 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { MemoryState } from "@/application/memory-service";
+import { ConfirmProvider } from "@/components/ui/confirm";
+import type { MemoryFact } from "@/core/memory/model";
 import { MemorySettings } from "@/features/settings/memory";
 import {
   SETTINGS_SECTIONS,
@@ -26,6 +29,7 @@ const actions = vi.hoisted(() => ({
   editMemoryAction: vi.fn(),
   forgetMemoryAction: vi.fn(),
   clearMemoryAction: vi.fn(),
+  setLearningAction: vi.fn(),
   setTheme: vi.fn(),
   setAccent: vi.fn(),
   updateProfile: vi.fn(),
@@ -41,6 +45,14 @@ vi.mock("@/features/voice/wake-engine", () => ({
     }
   },
 }));
+
+// jsdom's <dialog> lacks showModal/close.
+HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+  this.open = true;
+};
+HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+  this.open = false;
+};
 
 const es = getDictionary("es");
 const en = getDictionary("en");
@@ -220,31 +232,73 @@ describe("voice settings", () => {
 });
 
 describe("memory settings", () => {
-  const fact = {
+  const fact: MemoryFact = {
     id: "11111111-1111-4111-8111-111111111111",
     key: "trabajo.horario",
     value: "De 9 a 18",
-    confidence: "stated" as const,
+    category: "routine",
+    provenance: "user_explicit",
+    certainty: 1,
     sources: ["c1", "c2"],
-    status: "active" as const,
-    createdAt: "",
-    updatedAt: "",
-    lastConfirmedAt: "",
+    corroborations: 2,
+    status: "active",
+    observedAt: "2026-10-01T12:00:00.000Z",
+    createdAt: "2026-10-01T12:00:00.000Z",
+    updatedAt: "2026-10-02T12:00:00.000Z",
+    lastConfirmedAt: "2026-10-02T12:00:00.000Z",
+    learned: false,
   };
+  const guess: MemoryFact = {
+    ...fact,
+    id: "22222222-2222-4222-8222-222222222222",
+    key: "estudio.momento",
+    value: "Estudia de noche",
+    provenance: "inferred",
+    certainty: 0.7,
+    corroborations: 1,
+    learned: true,
+  };
+  const state = (over: Partial<MemoryState> = {}): MemoryState => ({
+    enabled: true,
+    learning: { on: false, since: null, available: true, unavailable: null },
+    facts: [fact],
+    profile: [],
+    spend: { usd: 0, cap: 0.5 },
+    upgrading: false,
+    ...over,
+  });
+  const page = (s: MemoryState, recent: string[] = []) =>
+    wrap(
+      <ConfirmProvider>
+        <MemorySettings state={s} conversations={["c1"]} recent={recent} />
+      </ConfirmProvider>,
+    );
 
-  it("a readable summary with provenance, editable and forgettable", async () => {
-    wrap(<MemorySettings enabled facts={[fact]} />);
+  it("a readable summary with provenance, a source link, editable and forgettable for good", async () => {
+    page(state({ facts: [fact, guess] }));
     expect(screen.getByText("De 9 a 18")).toBeInTheDocument();
     expect(screen.getByText("Horario")).toBeInTheDocument();
-    expect(screen.getByText("De 2 conversaciones")).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/Lo dijiste vos · confirmado el .* · 2 veces/)[0],
+    ).toBeInTheDocument();
+    expect(screen.getByText(/ELISE lo infirió · seguridad 70%/)).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Ver conversación" })[0]).toHaveAttribute(
+      "href",
+      "/chat/c1",
+    );
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Olvidar: Horario" }));
+    });
+    // Honest about what forgetting does — and doesn't — before doing it.
+    expect(screen.getByText(/siguen en tu Historial/)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Olvidar" }));
     });
     expect(actions.forgetMemoryAction).toHaveBeenCalledWith(fact.id);
   });
 
   it("the switch turns Memory off; what's saved stays", async () => {
-    wrap(<MemorySettings enabled facts={[fact]} />);
+    page(state());
     await act(async () => {
       fireEvent.click(screen.getByRole("switch", { name: "Usar memoria" }));
     });
@@ -253,8 +307,35 @@ describe("memory settings", () => {
     expect(screen.getByText("De 9 a 18")).toBeInTheDocument();
   });
 
+  it("learning from conversations is off until the person turns it on", async () => {
+    page(state());
+    const learn = screen.getByRole("switch", { name: "Aprender de mis conversaciones" });
+    expect(learn).toHaveAttribute("aria-checked", "false");
+    await act(async () => {
+      fireEvent.click(learn);
+    });
+    expect(actions.setLearningAction).toHaveBeenCalledWith(true);
+  });
+
+  it("without a known price (no spending cap possible), learning can't be turned on", () => {
+    page(
+      state({ learning: { on: false, since: null, available: false, unavailable: "unpriced" } }),
+    );
+    expect(screen.getByRole("switch", { name: "Aprender de mis conversaciones" })).toBeDisabled();
+    expect(screen.getByText(/falta configurar el precio del modelo/)).toBeInTheDocument();
+  });
+
+  it("shows what was learned recently and the profile", () => {
+    page(
+      state({ facts: [fact, guess], profile: [{ text: "Trabaja de 9 a 18.", facts: [fact.id] }] }),
+      [guess.id],
+    );
+    expect(screen.getByText("Aprendido recientemente")).toBeInTheDocument();
+    expect(screen.getByText("Trabaja de 9 a 18.")).toBeInTheDocument();
+  });
+
   it("empty state", () => {
-    wrap(<MemorySettings enabled facts={[]} />);
+    page(state({ facts: [] }));
     expect(screen.getByText("Todavía no hay nada guardado.")).toBeInTheDocument();
   });
 });

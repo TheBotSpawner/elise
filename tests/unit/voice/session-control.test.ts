@@ -45,6 +45,24 @@ describe("sessionCommand (ADR-102)", () => {
   ])("%s → not a show command (a real request)", (text) => expect(sessionCommand(text)).toBeNull());
 
   it.each([
+    ["ELISE, subí el volumen", "volume_up"],
+    ["Elise, subile un poco el volumen", "volume_up"],
+    ["más volumen", "volume_up"],
+    ["turn the volume up", "volume_up"],
+    ["ELISE, bajá el volumen", "volume_down"],
+    ["Bajale un poco el sonido, por favor", "volume_down"],
+    ["menos volumen", "volume_down"],
+  ])("%s → %s (ADR-106)", (text, command) => expect(sessionCommand(text)).toBe(command));
+
+  it.each([
+    "Subí el volumen de la tele del living",
+    "Bajá la música",
+    "Bajá el volumen de Spotify al 20%",
+  ])("%s → not the computer's volume (a device or the music)", (text) =>
+    expect(sessionCommand(text)).toBeNull(),
+  );
+
+  it.each([
     "Anotá la frase 'dejá de escuchar'",
     "¿Por qué dejás de escuchar cuando hablo?",
     "Mandale a Juan: basta de escuchar música fuerte",
