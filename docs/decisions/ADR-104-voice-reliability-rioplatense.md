@@ -87,3 +87,23 @@ The full investigation is in `docs/engineering/28-voice-quality-2026-10.md`.
   releases the microphone.
 - **Validation owed.** Beeps, cuts and latency are still to be measured on a real Windows machine
   with the test battery in the report.
+
+## Addendum (2026-10-21, afternoon): the dialogue model only for whispers
+
+With fixed lines already on the stable model and the server deployed, the owner still heard
+beeps in the middle of ordinary replies ("el índice de referencia del Merval…").
+
+Measured that afternoon:
+- The same reply sentences synthesized through the OpenAI fallback (`gpt-4o-mini-tts`, voice
+  `marin`) contain no tone and no click. The check uses a pure-tone detector (one dominant
+  frequency above 600 Hz, held at least 65 ms, voice harmonics excluded), and a beep injected
+  for testing was detected.
+- ElevenLabs couldn't be re-recorded: the API key "Elise API Key DEV" hit its own cap of
+  10,000 credits (`quota_exceeded`). Until it is raised, every line is spoken by the failover.
+
+**Decision:** the ElevenLabs dialogue model (`eleven_v3`/`eleven_v4_*`) now synthesizes only a
+quiet or whispered delivery, which the stable model can't do. Every other sentence uses
+`eleven_flash_v2_5` over HTTP, with `previous_text` for continuity. That is the same voice, with
+lower latency and no improvisation.
+
+**Still open:** the ElevenLabs path can't be measured until the key has credits.

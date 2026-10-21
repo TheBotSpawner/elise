@@ -178,10 +178,12 @@ describe("ElevenLabs adapter", () => {
     }
     vi.stubGlobal("WebSocket", FakeSocket);
     const p = new ElevenLabsSpeechOutput("sk-secret", "eleven_v4_turbo", voices, settings);
+    // ADR-104: only a whispered or quiet delivery uses the dialogue model.
     const out = await p.synthesize({
       text: "Hola [whispers] Leo, ¿cómo va tu día?",
       language: "es",
       voice: "elise",
+      delivery: "whisper",
     });
     expect(new Uint8Array(await new Response(out).arrayBuffer())).toEqual(
       new Uint8Array([5, 6, 7, 8]),
@@ -189,7 +191,11 @@ describe("ElevenLabs adapter", () => {
     expect(FakeSocket.last.url).toContain("text-to-dialogue/stream-input?model_id=eleven_v4_turbo");
     expect(sent).toEqual([
       { voices: ["voice-elise"], xi_api_key: "sk-secret", voice_settings: settings },
-      { inputs: [{ text: "Hola Leo, ¿cómo va tu día?", voice_id: "voice-elise" }] },
+      {
+        inputs: [
+          { text: `${DELIVERY_TAGS.whisper} Hola Leo, ¿cómo va tu día?`, voice_id: "voice-elise" },
+        ],
+      },
       { flush: true },
     ]);
     expect(FakeSocket.last.closed).toBe(true);
@@ -233,6 +239,24 @@ describe("ElevenLabs adapter", () => {
     ).rejects.toBeInstanceOf(AppError);
   });
 
+  it("ADR-104: an ordinary sentence never goes to the dialogue model (it beeped mid-sentence)", async () => {
+    const fetch = vi.fn(async () => new Response(stream([1, 2])));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("WebSocket", class {});
+    const p = new ElevenLabsSpeechOutput("k", "eleven_v4_turbo", voices, settings);
+    await p.synthesize({
+      text: "El índice de referencia del Merval cerró ayer en baja.",
+      language: "es",
+      voice: "elise",
+      previousText: "Te cuento cómo cerró el mercado.",
+    });
+    const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      model_id: "eleven_flash_v2_5",
+      previous_text: "Te cuento cómo cerró el mercado.",
+    });
+  });
+
   it("a line of a word or two never goes to a dialogue model: a stable model, same voice", async () => {
     const fetch = vi.fn(async () => new Response(stream([1, 2])));
     vi.stubGlobal("fetch", fetch);
@@ -272,6 +296,8 @@ describe("ElevenLabs adapter", () => {
       p
         .synthesize({ text, language: "es", voice: "elise", ...(delivery ? { delivery } : {}) })
         .then((s) => new Response(s).arrayBuffer());
+    const http = vi.fn(async () => new Response(stream([1, 2])));
+    vi.stubGlobal("fetch", http);
     await say("Sí, mañana tenés una reunión.", "whisper");
     await say("[shouts] Después [laughs] viene el almuerzo con Ana.", "whisper");
     await say("[whispering] Hola, te escucho bien.");
@@ -279,10 +305,14 @@ describe("ElevenLabs adapter", () => {
     expect(texts).toEqual([
       `${DELIVERY_TAGS.whisper} Sí, mañana tenés una reunión.`,
       `${DELIVERY_TAGS.whisper} Después viene el almuerzo con Ana.`,
-      // A tag the model wrote is stripped even when it asks for a whisper.
-      "Hola, te escucho bien.",
       `${DELIVERY_TAGS.quiet} Te hablo bajito ahora mismo.`,
     ]);
+    // A normal line goes to the stable model, with the model's own tags stripped (ADR-104).
+    const [, init] = http.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      text: "Hola, te escucho bien.",
+      model_id: "eleven_flash_v2_5",
+    });
     // Models without audio tags would read the tag aloud: they get playback gain only.
     expect(withDelivery("Hola.", "whisper", "eleven_flash_v2_5")).toBe("Hola.");
   });

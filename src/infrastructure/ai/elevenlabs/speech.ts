@@ -108,7 +108,13 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
     // A dialogue model (v3/v4) improvises on a line of a word or two ("Okay.", "Ahí va."):
     // stray sounds, a mechanical beep, that the acknowledgement cache then repeats. Those lines
     // go to a stable model with the same voice; whole sentences keep the dialogue model.
-    if (isDialogueModel(this.model) && (isShortLine(text) || request.fixedLine))
+    // ADR-104 (2026-10-21): it does so mid-sentence too — the owner heard beeps in ordinary
+    // replies ("el índice de referencia del Merval…"), while the same lines through another
+    // provider measured clean. The dialogue model now speaks only what only it can do: a
+    // whispered or quiet delivery. Everything else uses the stable model (HTTP, with the
+    // previous segment for continuous intonation).
+    const expressive = request.delivery === "quiet" || request.delivery === "whisper";
+    if (isDialogueModel(this.model) && (!expressive || isShortLine(text) || request.fixedLine))
       return this.http(text, voice, request, signal, STABLE_MODEL);
     return isDialogueModel(this.model)
       ? this.dialogue(
