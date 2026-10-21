@@ -95,6 +95,17 @@ export function useVoice({
             ).eliseDesktop;
             void desktop?.setPreferences?.({ wakeWord: false });
           },
+          // ADR-104: "ELISE, mostrate" — only where there is a window to bring up.
+          ...("eliseDesktop" in window
+            ? {
+                showApp: () =>
+                  void (
+                    window as { eliseDesktop?: { showApp?: (path?: string) => Promise<void> } }
+                  ).eliseDesktop
+                    ?.showApp?.()
+                    ?.catch(() => undefined),
+              }
+            : {}),
           warmAcknowledgements: (language, delivery) =>
             void fetch("/api/voice/speak/warm", {
               method: "POST",

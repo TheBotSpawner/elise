@@ -99,6 +99,27 @@ describe("speech formatter", () => {
     expect(numberWords(1_000_000_000, "es")).toBeNull();
   });
 
+  it("ADR-104: amounts with decimals are said in words, never as raw digits", () => {
+    expect(formatForSpeech("El saldo es de 1.573.655,09 pesos al 21 de octubre.", "es")).toBe(
+      "El saldo es de un millón quinientos setenta y tres mil seiscientos cincuenta y cinco pesos con nueve centavos al 21 de octubre.",
+    );
+    expect(formatForSpeech("Tenés $ 1.573.655,09 disponibles.", "es")).toBe(
+      "Tenés un millón quinientos setenta y tres mil seiscientos cincuenta y cinco con nueve centavos disponibles.",
+    );
+    expect(formatForSpeech("Cuesta US$ 25,50.", "es")).toBe(
+      "Cuesta veinticinco dólares con cincuenta centavos.",
+    );
+    expect(formatForSpeech("Cerró en 97.942,65 puntos, una baja del 0,30%.", "es")).toBe(
+      "Cerró en noventa y siete mil novecientos cuarenta y dos coma sesenta y cinco puntos, una baja del cero coma treinta por ciento.",
+    );
+    expect(formatForSpeech("Son 1.200,01 pesos.", "es")).toBe(
+      "Son mil doscientos pesos con un centavo.",
+    );
+    expect(formatForSpeech("It costs $25.50 today.", "en")).toMatch(/twenty-?five and fifty cents/);
+    // Times and plain integers keep working as before.
+    expect(formatForSpeech("A las 14:30 hay reunión.", "es")).toContain("dos y media");
+  });
+
   it("ADR-104: an opening “OK” is said the Rioplatense way; elsewhere it's left alone", () => {
     expect(formatForSpeech("OK, te lo reviso.", "es")).toBe("Dale, te lo reviso.");
     expect(formatForSpeech("Okay.", "es")).toBe("Dale.");

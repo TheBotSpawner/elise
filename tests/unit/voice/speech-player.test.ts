@@ -222,4 +222,21 @@ describe("speech player", () => {
     expect(stats.map((s) => s.gapMs)).toEqual([0, 0]);
     expect(stats[0]!.chars).toBe("Encontré la reunión.".length);
   });
+
+  it("ADR-104: an answer arriving while the filler still plays starts after it, never on top", async () => {
+    const p = new SpeechPlayer();
+    p.speak("Un segundo.", "es");
+    await flushAsync();
+    responses[0]!.push(new Uint8Array(48_000)); // 1 s of filler, all arrived
+    responses[0]!.push(null);
+    await flushAsync();
+    // The queue is empty, the filler is still playing — then the answer comes.
+    p.speak("El saldo de Mercado Pago es de un millón de pesos.", "es");
+    await flushAsync();
+    responses[1]!.push(new Uint8Array(48_000));
+    responses[1]!.push(null);
+    await flushAsync();
+    expect(started).toHaveLength(2);
+    expect(started[1]).toBeGreaterThanOrEqual(started[0]! + 1);
+  });
 });

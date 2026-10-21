@@ -199,6 +199,8 @@ export interface VoiceDeps {
    * Desktop's setting). The session itself ends either way.
    */
   disableWake?: () => void;
+  /** ADR-104: "ELISE, mostrate" — ELISE Desktop's window to the front. Absent on the web. */
+  showApp?: () => void;
 }
 
 interface SpokenTurn {
@@ -706,7 +708,15 @@ export class VoiceController {
   private sessionControl(text: string): boolean {
     const command = sessionCommand(text);
     if (!command) return false;
+    // On the web there is no window to bring up: the request goes to ELISE as usual.
+    if (command === "show" && !this.deps.showApp) return false;
     this.trace("session_command", { command });
+    if (command === "show") {
+      // The window comes up; the turn ends quietly (the person is now looking at ELISE).
+      this.deps.showApp!();
+      this.end();
+      return true;
+    }
     if (command === "disable_wake") {
       this.deps.disableWake?.();
       // The browser's wake phrase, for this page.

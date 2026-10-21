@@ -199,21 +199,64 @@ export function formatForSpeech(text: string, lang: Lang): string {
     if (!said) return m;
     return /^a las|^a la/i.test(m) ? `a ${said}` : said;
   });
-  // Amounts with a currency: "US$ 1.200", "€300", "$23.500".
+  // ADR-104: the decimal separator of the language ("1.573.655,09" in Spanish). Raw digits with
+  // dots and commas reached the voice and it stumbled (and once beeped) reading a balance.
+  const dec = lang === "es" ? "," : "\\.";
+  const cents = (frac: string | undefined) => {
+    const c = frac ? Number(frac.padEnd(2, "0")) : 0;
+    return c ? numberWords(c, lang) : null;
+  };
+  const withCents = (words: string, unit: string | null, frac: string | undefined) => {
+    const c = cents(frac);
+    const and = lang === "es" ? "con" : "and";
+    const centWord = lang === "es" ? (c === "uno" ? "centavo" : "centavos") : "cents";
+    const whole = unit ? `${words} ${unit}` : words;
+    return c ? `${whole} ${and} ${c === "uno" ? "un" : c} ${centWord}` : whole;
+  };
+  // Amounts with a currency: "US$ 1.200", "€300", "$23.500", "$ 1.573.655,09".
   t = t.replace(
-    /(US\$|USD|EUR|ARS|€|\$)\s?(\d{1,3}(?:[.,]\d{3})+|\d+)(?![.,]\d)/g,
-    (m, cur: string, num: string) => {
+    new RegExp(
+      `(US\\$|USD|EUR|ARS|€|\\$)\\s?(\\d{1,3}(?:[.,]\\d{3})+|\\d+)(?:${dec}(\\d{1,2}))?(?![.,]?\\d)`,
+      "g",
+    ),
+    (m, cur: string, num: string, frac: string | undefined) => {
       const n = parseGrouped(num, lang);
       const words = n !== null ? numberWords(n, lang) : null;
       if (!words) return m;
-      const unit = CURRENCY[cur]?.[lang];
       // A bare "$" is local currency: the number alone reads naturally ("veintitrés mil").
-      return unit ? `${words} ${unit}` : words;
+      return withCents(words, CURRENCY[cur]?.[lang] ?? null, frac);
+    },
+  );
+  // An amount written before its currency word: "1.573.655,09 pesos", "25,50 dólares".
+  t = t.replace(
+    new RegExp(
+      `(?<![\\d.,])(\\d{1,3}(?:[.,]\\d{3})+|\\d+)${dec}(\\d{1,2})(?!\\d)\\s+(pesos|d[oó]lares|euros|dollars)\\b`,
+      "gi",
+    ),
+    (m, num: string, frac: string, unit: string) => {
+      const n = parseGrouped(num, lang);
+      const words = n !== null ? numberWords(n, lang) : null;
+      return words ? withCents(words, unit, frac) : m;
     },
   );
   // Percentages: "12%" → "12 por ciento" (the TTS reads the integer itself).
   t = t.replace(/(\d+(?:[.,]\d+)?)\s?%/g, (_m, num: string) =>
     lang === "es" ? `${num} por ciento` : `${num} percent`,
+  );
+  // Any other decimal: "97.942,65 puntos" → "… coma sesenta y cinco" (digits after a zero are
+  // said one by one: "0,05" → "cero coma cero cinco").
+  t = t.replace(
+    new RegExp(`(?<![\\d.,])(\\d{1,3}(?:[.,]\\d{3})+|\\d+)${dec}(\\d{1,3})(?![.,]?\\d)`, "g"),
+    (m, num: string, frac: string) => {
+      const n = parseGrouped(num, lang);
+      const whole = n !== null ? numberWords(n, lang) : null;
+      if (!whole) return m;
+      const point = lang === "es" ? "coma" : "point";
+      const after = frac.startsWith("0")
+        ? [...frac].map((d) => numberWords(Number(d), lang)).join(" ")
+        : numberWords(Number(frac), lang);
+      return `${whole} ${point} ${after}`;
+    },
   );
   // Grouped integers on their own: "23.500 visitantes" → words (an exact count stays exact).
   t = t.replace(/(?<![\d.,])(\d{1,3}(?:[.,]\d{3})+)(?![.,]?\d)/g, (m, num: string) => {

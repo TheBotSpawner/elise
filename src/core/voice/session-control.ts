@@ -5,9 +5,10 @@
  *
  * The whole utterance must be the command (the wake word, "che", "por favor", "ya" aside):
  * "anotá la frase 'dejá de escuchar'" or "¿por qué dejás de escuchar?" are ordinary requests.
+ * ADR-104: "ELISE, mostrate" / "abrite" brings ELISE Desktop's window to the front ("show").
  */
 
-export type SessionCommand = "stop" | "disable_wake";
+export type SessionCommand = "stop" | "disable_wake" | "show";
 
 const fold = (s: string) =>
   s
@@ -39,6 +40,14 @@ const DISABLE = [
   /^(?:turn off|disable) (?:the )?(?:wake word|voice activation)$/,
 ];
 
+/** Bring the app to the front: about ELISE herself, never "mostrame mis tareas". */
+const SHOW = [
+  /^(?:mostrate|muestrate|abrite|aparece|aparecete|apareceme|veni|vente|veni para aca|traete)$/,
+  /^(?:abri|abrime|mostrame|traeme|pone|pasame) (?:la |tu )?(?:app|aplicacion|ventana|pantalla)(?: de elise)?$/,
+  /^(?:abri|abrir)$/,
+  /^(?:show yourself|show up|open up|come up|open the app|bring (?:yourself|the app) up)$/,
+];
+
 /** Folding drops accents, so the patterns above only need their unaccented forms to match. */
 export function sessionCommand(text: string): SessionCommand | null {
   let s = fold(text);
@@ -47,5 +56,6 @@ export function sessionCommand(text: string): SessionCommand | null {
   for (let i = 0; i < 3; i++) s = s.replace(AROUND, "").trim();
   if (DISABLE.some((r) => r.test(s))) return "disable_wake";
   if (STOP.some((r) => r.test(s))) return "stop";
+  if (SHOW.some((r) => r.test(s))) return "show";
   return null;
 }

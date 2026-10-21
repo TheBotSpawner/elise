@@ -212,8 +212,10 @@ export class SpeechPlayer {
     if (generation !== this.generation) return;
     this.working = false;
     this.said = "";
-    // The next reply starts a fresh schedule: its first segment is not a "gap".
-    this.nextTime = 0;
+    // The next reply starts a fresh schedule: its first segment is not a "gap". Only once the
+    // last audio has actually finished — the queue empties while it still plays, and resetting
+    // then made the next line (the answer) start on top of it (ADR-104).
+    if (!this.sources.size) this.nextTime = 0;
     this.idleWhenDone();
   }
 
@@ -328,6 +330,8 @@ export class SpeechPlayer {
     this.sources.add(source);
     source.onended = () => {
       this.sources.delete(source);
+      // Everything played and nothing is being fetched: the next reply's start is no "gap".
+      if (!this.sources.size && !this.working) this.nextTime = 0;
       this.idleWhenDone();
     };
     return gapMs;

@@ -227,6 +227,11 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       // "desactivá la activación por voz" also turns the setting off (Settings or the tray
       // turn it back on).
       const command = sessionCommand(remainder);
+      // ADR-104: "ELISE, mostrate" — the window to the front, and nothing else starts.
+      if (command === "show") {
+        void window.eliseDesktop?.showApp?.();
+        return finishHandOff();
+      }
       if (command) {
         console.debug("[wake] session command", { command });
         if (command === "disable_wake")

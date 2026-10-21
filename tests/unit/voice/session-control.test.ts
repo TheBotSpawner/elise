@@ -28,6 +28,21 @@ describe("sessionCommand (ADR-102)", () => {
   ])("%s → disable_wake", (text) => expect(sessionCommand(text)).toBe("disable_wake"));
 
   it.each([
+    "ELISE, mostrate",
+    "Elise, abrite.",
+    "Elis, aparecé por favor",
+    "Mostrame la app",
+    "Abrí ELISE",
+    "ELISE, vení",
+  ])("%s → show (ADR-104)", (text) => expect(sessionCommand(text)).toBe("show"));
+
+  it.each([
+    "Mostrame mis tareas",
+    "Abrí el correo de Juan",
+    "Mostrame la pantalla del calendario de mañana",
+  ])("%s → not a show command (a real request)", (text) => expect(sessionCommand(text)).toBeNull());
+
+  it.each([
     "Anotá la frase 'dejá de escuchar'",
     "¿Por qué dejás de escuchar cuando hablo?",
     "Mandale a Juan: basta de escuchar música fuerte",
