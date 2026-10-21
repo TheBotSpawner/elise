@@ -9,6 +9,7 @@ import type {
   AITurnRequest,
   ModelTier,
 } from "@/core/agents/ai-provider";
+import { CitationMarkerFilter } from "@/core/agents/citation-markers";
 import { AppError } from "@/core/errors";
 import { logger } from "@/infrastructure/observability/logger";
 import { recordUsage } from "@/infrastructure/observability/usage";
@@ -170,15 +171,19 @@ export class OpenAIProvider implements AIProvider {
     }
 
     let completed = false;
+    // Hosted-tool citation markers never leave the adapter (screen, voice, History).
+    const markers = new CitationMarkerFilter();
     try {
       for await (const event of stream) {
         switch (event.type) {
           case "response.output_item.added":
             onOutput();
             break;
-          case "response.output_text.delta":
-            yield { type: "text_delta", delta: event.delta };
+          case "response.output_text.delta": {
+            const delta = markers.push(event.delta);
+            if (delta) yield { type: "text_delta", delta };
             break;
+          }
           case "response.output_item.done":
             if (event.item.type === "function_call") {
               yield {
@@ -191,6 +196,8 @@ export class OpenAIProvider implements AIProvider {
             break;
           case "response.completed": {
             completed = true;
+            const rest = markers.flush();
+            if (rest) yield { type: "text_delta", delta: rest };
             const usage = event.response.usage;
             const cachedTokens = usage?.input_tokens_details?.cached_tokens ?? 0;
             const reasoningTokens = usage?.output_tokens_details?.reasoning_tokens ?? 0;

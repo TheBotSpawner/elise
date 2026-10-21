@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import type { ReactNode } from "react";
 import Markdown from "react-markdown";
 
+import { stripCitationMarkers } from "@/core/agents/citation-markers";
 import type { ToolDisplay } from "@/core/agents/tools";
 import { activityLabel } from "@/features/workspace/activity-labels";
 import { useI18n } from "@/lib/i18n/client";
@@ -186,7 +187,7 @@ function AssistantMessage({
                 ),
               }}
             >
-              {message.content}
+              {stripCitationMarkers(message.content)}
             </Markdown>
           </div>
         )}

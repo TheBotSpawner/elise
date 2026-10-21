@@ -1,3 +1,5 @@
+import { stripCitationMarkers } from "../agents/citation-markers";
+
 /**
  * What ELISE says aloud (ADR-014 §spoken vs screen): the same answer as on screen, without
  * the parts that only make sense to read — markdown, links, lists of ids, code. The Live
@@ -5,7 +7,7 @@
  */
 export function toSpeakable(markdown: string): string {
   return (
-    markdown
+    stripCitationMarkers(markdown)
       .replace(/```[\s\S]*?```/g, " ")
       .replace(/`([^`]*)`/g, "$1")
       .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
