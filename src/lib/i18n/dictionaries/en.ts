@@ -2987,7 +2987,7 @@ export const en = {
       learnHint:
         "ELISE keeps what's worth remembering from what you tell her — preferences, projects, routines — without asking each time.",
       learnInfo: [
-        "What it reads: what you write or say in conversations from the moment you turn it on. Never earlier conversations.",
+        "On by default. What it reads: what you write or say in conversations from when learning started. Never earlier conversations.",
         "When: a few minutes after each conversation, in the background.",
         "What it never keeps: passwords or codes, health, religion, politics, sexuality, finances, nor what ELISE says, quotes or examples.",
         "Each fact says where it came from. You can correct or forget it, and once forgotten it isn't learned again.",
@@ -2998,6 +2998,7 @@ export const en = {
         rollout: "Not available in this version of ELISE yet.",
         unpriced:
           "Not available: the model's price isn't configured, and without it there's no spending cap.",
+        upgrading: "Available once the memory upgrade is done.",
       },
       spend: (used: string, cap: string) => `This month: ${used} of ${cap}`,
       upgrading: "Memory is being upgraded: you can see it, but not change it until it's done.",

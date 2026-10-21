@@ -73,8 +73,13 @@ export function MemorySettings({
 
   const learnStatus = !state.learning.available
     ? m.learnUnavailable[state.learning.unavailable ?? "rollout"]
-    : learning && state.learning.since
-      ? `${m.learnSince(day(state.learning.since))} ${m.spend(usd(state.spend.usd), usd(state.spend.cap))}`
+    : learning
+      ? [
+          state.learning.since ? m.learnSince(day(state.learning.since)) : null,
+          m.spend(usd(state.spend.usd), usd(state.spend.cap)),
+        ]
+          .filter(Boolean)
+          .join(" ")
       : null;
 
   return (

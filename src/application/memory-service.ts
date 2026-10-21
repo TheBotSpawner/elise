@@ -14,6 +14,7 @@ import {
 import {
   activeFacts,
   editFact,
+  learningConsent,
   liveProfile,
   MAX_ACTIVE_FACTS,
   memoryKey,
@@ -53,7 +54,7 @@ export interface LearningSettings {
   since: string | null;
   /** Learning can run here: the rollout switch is on and the model's price is known. */
   available: boolean;
-  unavailable: "rollout" | "unpriced" | null;
+  unavailable: "rollout" | "unpriced" | "upgrading" | null;
 }
 
 export interface MemoryState {
@@ -388,12 +389,12 @@ async function preferences(db: Db, workspaceId: string, userId: string) {
   if (error) throw new AppError("INTERNAL_ERROR", "Could not load memory", { cause: error });
   const row = (key: string) => data.find((r) => r.key === key)?.value_json;
   const enabled = row(ENABLED);
-  const learning = row(LEARNING) as { on?: unknown; since?: unknown } | undefined;
+  const learning = learningConsent(row(LEARNING));
   return {
-    // On unless the person turned it off.
+    // On unless the person turned it off (both switches).
     enabled: typeof enabled === "boolean" ? enabled : true,
-    learningOn: learning?.on === true && typeof learning.since === "string",
-    since: typeof learning?.since === "string" ? learning.since : null,
+    learningOn: learning.on,
+    since: learning.since,
     legacy: row(LEGACY_FACTS),
   };
 }
@@ -410,8 +411,23 @@ export function learningAvailability(): Pick<LearningSettings, "available" | "un
 /** Consent and switches for one person, read with any client (background jobs included). */
 export async function learningState(db: Db, workspaceId: string, userId: string) {
   const p = await preferences(db, workspaceId, userId);
-  const a = learningAvailability();
-  return { on: p.enabled && p.learningOn && a.available, since: p.since };
+  const on = p.enabled && p.learningOn && learningAvailability().available;
+  if (!on || p.since) return { on, since: p.since };
+  // On by default and checked for the first time: learning starts now, never earlier.
+  const since = new Date().toISOString();
+  const { error } = await db.from("user_preferences").upsert(
+    {
+      workspace_id: workspaceId,
+      user_id: userId,
+      key: LEARNING,
+      value_json: { on: true, since, version: 1, default: true },
+      source: "system",
+    },
+    { onConflict: "workspace_id,user_id,key", ignoreDuplicates: true },
+  );
+  if (error) return { on: false, since: null };
+  const again = await preferences(db, workspaceId, userId);
+  return { on: again.learningOn, since: again.since };
 }
 
 async function writePref(auth: AuthContext, key: string, value: Json) {
@@ -521,7 +537,7 @@ export async function getMemory(auth: AuthContext): Promise<MemoryState> {
     if (!(error instanceof UpgradingError)) throw error;
     return {
       enabled: p.enabled,
-      learning: { ...learning, on: false, available: false, unavailable: "rollout" },
+      learning: { ...learning, on: false, available: false, unavailable: "upgrading" },
       facts: activeFacts(legacyFacts(p.legacy)),
       profile: [],
       spend: { usd: 0, cap },

@@ -60,6 +60,19 @@ export interface MemoryFact {
   learned: boolean;
 }
 
+/**
+ * Learning from conversations (ADR-107; on by default since 2026-10-21, owner's decision): on
+ * unless the person turned it off. `since` is when learning started for them — nothing before
+ * it is ever read — and is null until the first time it's checked, which then sets it to "now"
+ * (so turning it on by default never reaches back into older conversations).
+ */
+export function learningConsent(raw: unknown): { on: boolean; since: string | null } {
+  if (!raw || typeof raw !== "object") return { on: true, since: null };
+  const v = raw as { on?: unknown; since?: unknown };
+  if (v.on === false) return { on: false, since: null };
+  return { on: true, since: typeof v.since === "string" ? v.since : null };
+}
+
 /** Active facts a person can have; past it, ELISE learns nothing new until they review. */
 export const MAX_ACTIVE_FACTS = 200;
 const MAX_VALUE = 300;

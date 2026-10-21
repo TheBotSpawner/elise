@@ -17,6 +17,7 @@ import {
 } from "@/core/memory/extraction";
 import { learnFromInteraction, type LearningPorts } from "@/core/memory/learning";
 import {
+  learningConsent,
   liveProfile,
   remember,
   selectContextFacts,
@@ -357,6 +358,16 @@ describe("do-not-relearn", () => {
       { text: "Trabaja de 9 a 18.", facts: ["a"] },
     ];
     expect(liveProfile(lines, new Set(["a"]))).toEqual([lines[1]]);
+  });
+});
+
+// ── Consent: on by default, never retroactive ───────────────────────────────
+
+describe("learning consent", () => {
+  it("is on unless the person turned it off; a default has no start yet (set on first use)", () => {
+    expect(learningConsent(undefined)).toEqual({ on: true, since: null });
+    expect(learningConsent({ on: false, since: null })).toEqual({ on: false, since: null });
+    expect(learningConsent({ on: true, since: NOW })).toEqual({ on: true, since: NOW });
   });
 });
 

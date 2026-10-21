@@ -3019,7 +3019,7 @@ export const es: Dictionary = {
       learnHint:
         "ELISE guarda sola lo que conviene recordar de lo que le contás: preferencias, proyectos, rutinas. Sin preguntarte cada vez.",
       learnInfo: [
-        "Qué lee: lo que vos escribís o decís en conversaciones desde que lo activás. Nunca conversaciones anteriores.",
+        "Viene activado. Qué lee: lo que vos escribís o decís en conversaciones desde que empezó a aprender. Nunca conversaciones anteriores.",
         "Cuándo: unos minutos después de cada conversación, en segundo plano.",
         "Qué no guarda nunca: contraseñas o códigos, salud, religión, política, sexualidad, finanzas, ni lo que dice ELISE, citas o ejemplos.",
         "Cada dato dice de dónde salió. Lo podés corregir u olvidar, y si lo olvidás no lo vuelve a aprender.",
@@ -3030,6 +3030,7 @@ export const es: Dictionary = {
         rollout: "Todavía no está disponible en esta versión de ELISE.",
         unpriced:
           "No está disponible: falta configurar el precio del modelo, y sin eso no se puede poner un tope de gasto.",
+        upgrading: "Disponible cuando termine la actualización de la memoria.",
       },
       spend: (used: string, cap: string) => `Este mes: ${used} de ${cap}`,
       upgrading:

@@ -307,14 +307,15 @@ describe("memory settings", () => {
     expect(screen.getByText("De 9 a 18")).toBeInTheDocument();
   });
 
-  it("learning from conversations is off until the person turns it on", async () => {
-    page(state());
+  it("learning from conversations shows its spend and can be turned off (or back on)", async () => {
+    page(state({ learning: { on: true, since: null, available: true, unavailable: null } }));
+    expect(screen.getByText(/Este mes:/)).toBeInTheDocument();
     const learn = screen.getByRole("switch", { name: "Aprender de mis conversaciones" });
-    expect(learn).toHaveAttribute("aria-checked", "false");
+    expect(learn).toHaveAttribute("aria-checked", "true");
     await act(async () => {
       fireEvent.click(learn);
     });
-    expect(actions.setLearningAction).toHaveBeenCalledWith(true);
+    expect(actions.setLearningAction).toHaveBeenCalledWith(false);
   });
 
   it("without a known price (no spending cap possible), learning can't be turned on", () => {

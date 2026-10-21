@@ -25,7 +25,7 @@ Lo que se nota apenas se despliega, aunque nadie active el aprendizaje:
 - **Más superficies.** La memoria llega también a la voz directa (GPT-Live) y al Morning Brief.
 - **Herramientas al alcance.** "Acordate…", "olvidate…" y "¿cómo suelo…?" llegan a las herramientas de memoria sin pasar por `tools.more`.
 
-Con el aprendizaje activado (opt-in por persona en Configuración › Memoria):
+Con el aprendizaje activado (**encendido por defecto** desde el 2026-10-21, por tu decisión; cada persona puede apagarlo en Configuración › Memoria):
 
 - ELISE guarda sola preferencias, proyectos y rutinas de lo que decís, sin pedirte confirmación.
 - Lo aprendido aparece en "Aprendido recientemente".
@@ -40,7 +40,7 @@ Con el aprendizaje activado (opt-in por persona en Configuración › Memoria):
 
 | Hallazgo de la auditoría | Cambio | Estado |
 |---|---|---|
-| Sin captura automática | Extractor opt-in tras cada interacción (`core/memory/learning.ts`, `application/memory-learning.ts`) con compuerta determinística (`core/memory/extraction.ts`) | **Implementado.** Probado con corpus sintético; con modelo real, pendiente |
+| Sin captura automática | Extractor (encendido por defecto) tras cada interacción (`core/memory/learning.ts`, `application/memory-learning.ts`) con compuerta determinística (`core/memory/extraction.ts`) | **Implementado.** Probado con corpus sintético; con modelo real, pendiente |
 | Inferencias presentadas como dichas | `memoryLines` etiqueta origen, seguridad y fecha; el prompt nuevo trata la memoria como datos | **Corregido y probado** |
 | Inyección de hasta 60 datos | `selectContextFacts`: relevancia por rareza de palabras más preferencias fijas, con tope 12 + 6 | **Corregido y probado** (3 de 60) |
 | Olvidar dejaba versiones viejas | `forget` borra todas las filas de la clave, deja huellas HMAC y recorta el perfil | **Corregido y probado** (unitario + RLS) |
@@ -64,7 +64,7 @@ Conversación (chat, voz legacy, GPT-Live delegado, Desktop)
    ▼
 recall-index (Trigger.dev, o en proceso)
    ├─ Universal Recall (como antes)
-   └─ learnFromSession (solo con opt-in)
+   └─ learnFromSession (salvo que la persona lo haya apagado)
         consentimiento → claim de la interacción → turnos nuevos desde el consentimiento
         → lote (3 turnos tuyos o 10 min de silencio) → ¿precio conocido? → reserva de presupuesto
         → modelo de fondo propone candidatos (JSON estructurado) → ¿sigue activado?
@@ -159,7 +159,7 @@ Recuperación (sin costo de IA):
 ## 5. Contrato de privacidad
 
 - **Consentimiento.**
-  - El aprendizaje está apagado por defecto para todos, cuentas nuevas y existentes.
+  - El aprendizaje está **encendido por defecto** (decisión del 2026-10-21) para cuentas nuevas y existentes, salvo para quien lo apague. Sigue sin ser retroactivo: la primera vez que ELISE lo consulta para una persona, guarda `since = ahora`.
   - Activarlo guarda `since = ahora`; nunca se lee nada anterior. No hay backfill.
   - Apagarlo, desde Configuración o con "dejá de aprender de nuestras conversaciones", corta los trabajos en curso: cada ejecución vuelve a verificar el consentimiento antes de guardar. Lo ya aprendido queda.
   - "Recordá X" funciona siempre, sin necesidad de activar el aprendizaje.
@@ -253,7 +253,7 @@ Recuperación (sin costo de IA):
 
 | Superficie | Leer memoria | Aprender | Olvidar / corregir | Estado |
 |---|---|---|---|---|
-| Chat web | Datos relevantes + perfil | Sí, tras la conversación (opt-in) | Herramientas y Configuración | Implementado |
+| Chat web | Datos relevantes + perfil | Sí, tras la conversación (encendido por defecto) | Herramientas y Configuración | Implementado |
 | ELISE Desktop | Igual que la web (mismo servidor; acciones por RPC) | Sí | Igual | Implementado. Probado: empaquetado y smoke |
 | Voz legacy | Igual que el chat | Sí (los turnos de voz se indexan y aprenden igual) | Por voz, con las herramientas | Implementado |
 | GPT-Live: respuesta directa | Lo que dijiste + perfil, en las instrucciones de la sesión (se leen al abrirla, no por paquete de audio) | Sí (sus turnos se guardan) | Delegando | Implementado. La latencia agregada al abrir la sesión es una lectura de base de datos; sin medir |
@@ -315,5 +315,5 @@ Usá una cuenta de prueba con `MEMORY_LEARNING=on` y el precio configurado. Ante
 4. **Huellas:** las reformulaciones con otras palabras no se detectan (documentado).
 5. **Recall sin tocar al olvidar:** `history.search` puede seguir mostrando la conversación textual. Es honesto (se avisa), pero es una decisión de producto.
 6. **Consolidación diaria fija (06:30 UTC):** recorre hasta 200 personas por día, sin priorizar.
-7. **Perfil solo con aprendizaje activado:** quien solo usa "acordate…" no tiene perfil (decisión: no hay trabajo de fondo sin opt-in).
+7. **Perfil solo con aprendizaje activado:** quien lo apaga no tiene perfil. Además, el barrido de 15 minutos y la consolidación diaria solo ven a quien ya tiene la preferencia guardada, que se crea después de su primera conversación indexada.
 8. **Primer deploy:** si la migración se demora, la memoria queda en solo lectura (degradación prevista).

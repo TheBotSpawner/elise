@@ -37,9 +37,9 @@ A value is replaced only by an equal or stronger source, so an inference never o
 - A short profile is included.
 - The same `memoryForContext` contract serves chat, legacy voice and Desktop (one server), GPT-Live direct answers (stated facts and the profile only) and the Morning Brief.
 
-**Learning (opt-in, off by default).** Learning reuses the Recall pipeline: it runs after the `recall-index` job, and a 15-minute sweep catches conversations that went quiet.
+**Learning (on by default — owner decision, 2026-10-21; originally opt-in).** Learning reuses the Recall pipeline: it runs after the `recall-index` job, and a 15-minute sweep catches conversations that went quiet.
 
-- **Consent:** `memory.learning` holds `{on, since}`. Nothing before `since` is read, so there is no backfill.
+- **Consent:** `memory.learning` holds `{on, since}`. With no row, learning is on (`learningConsent`); the first check writes `since = now`, so turning it on by default never reads older conversations (no backfill). Turning it off is stored and respected by queued and running jobs.
 - **Run:** each run claims the interaction, then batches its new turns: at least 3 from the person, or 10 minutes of quiet.
 - **Proposal:** a background model proposes candidates as structured output.
 - **Gate (`validateCandidate`):** decides deterministically what may be kept. It rejects:
@@ -80,7 +80,7 @@ A value is replaced only by an equal or stronger source, so an inference never o
 
 ## Consequences
 
-- People who never opt in get the same explicit Memory as before, now relevance-limited and honestly labeled.
+- People who turn learning off get the same explicit Memory as before, now relevance-limited and honestly labeled.
 - Learning needs three settings in Vercel and Trigger.dev: `MEMORY_LEARNING=on`, a verified price for the background model, and migration 062 applied.
 - Limits:
   - Suppression catches the same key, the same value or a rewording with mostly the same words. Different words or a translation aren't caught.
