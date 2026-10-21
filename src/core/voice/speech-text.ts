@@ -9,6 +9,11 @@ export function toSpeakable(markdown: string): string {
       .replace(/```[\s\S]*?```/g, " ")
       .replace(/`([^`]*)`/g, "$1")
       .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+      // ADR-104: a link after the sentence ended (or alone, as the last streamed unit) is a
+      // source citation — "… del miércoles 21. [Cinco Días](…)" — never said aloud. A link
+      // inside a sentence keeps its words.
+      .replace(/^\s*(?:\(?\[[^\]]+\]\([^)]*\)\)?[\s,;·|-]*)+$/, " ")
+      .replace(/([.!?…])\s*(?:\(?\[[^\]]+\]\([^)]*\)\)?[\s,;·]*)+(?=\s|$)/g, "$1 ")
       .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
       .replace(/https?:\/\/\S+/g, " ")
       // Citation markers [1], [2] belong to the screen.

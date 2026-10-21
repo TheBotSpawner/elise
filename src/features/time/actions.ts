@@ -37,6 +37,18 @@ const call = z.discriminatedUnion("tool", [
     timer: z.uuid(),
   }),
   z.object({ tool: z.literal("addTime"), minutes: z.number().min(-60).max(60), timer: z.uuid() }),
+  // Mi ELISE → Tiempos starts them too (ADR-105); pomodoro settings come from the preferences.
+  z.object({
+    tool: z.literal("start"),
+    kind: z.enum(["timer", "pomodoro", "stopwatch"]),
+    minutes: z
+      .number()
+      .min(0)
+      .max(24 * 60)
+      .optional(),
+    seconds: z.number().min(0).max(3_600).optional(),
+    label: z.string().trim().min(1).max(80).optional(),
+  }),
 ]);
 
 export async function timeAction(

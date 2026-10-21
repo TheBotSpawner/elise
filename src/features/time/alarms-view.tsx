@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Pencil, Play, Plus, Square, Trash2, Upload, Monitor, Globe } from "lucide-react";
+import { Copy, Globe, Monitor, Play, Plus, Settings2, Square, Trash2, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -11,9 +11,11 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
   ALARM_LIMITS,
+  defaultDestinations,
   deliveryCheck,
   type Alarm,
   type AlarmDestination,
+  type DestinationStatus,
 } from "@/core/timers/alarms";
 import type { SurfacePayloads } from "@/core/workspace/registry";
 import { useI18n } from "@/lib/i18n/client";
@@ -27,6 +29,7 @@ import {
   loadAlarms,
   stopUsingThisBrowser,
   useAlarms,
+  type AlarmsState,
 } from "./alarms-client";
 
 type T = ReturnType<typeof useI18n>["t"]["time"]["alarms"];
@@ -80,122 +83,489 @@ function usePreview() {
   return { playing, toggle };
 }
 
+/** Where alarms ring when nobody says (ADR-105): never none while a device is known. */
+const defaultsOf = (s: AlarmsState) =>
+  defaultDestinations(s.prefs?.alarmDestinations ?? [], s.destinations);
+
+const same = (a: AlarmDestination, b: AlarmDestination) => a.kind === b.kind && a.id === b.id;
+
+/** A sound file the user picked, uploaded; its key, or null when it was refused. */
+async function uploadSound(f: File, a: T): Promise<string | null> {
+  const duration = await new Promise<number>((res) => {
+    const audio = new Audio(URL.createObjectURL(f));
+    audio.onloadedmetadata = () => res(Math.round(audio.duration * 1000) || 0);
+    audio.onerror = () => res(0);
+  });
+  const form = new FormData();
+  form.append("file", f);
+  form.append("name", f.name);
+  form.append("durationMs", String(duration));
+  const r = await fetch("/api/time/alarms", { method: "POST", body: form });
+  const d = (await r.json().catch(() => ({}))) as {
+    key?: string;
+    error?: { message?: string };
+  };
+  await loadAlarms();
+  if (!r.ok) {
+    toast.error(d.error?.message ?? "Error");
+    return null;
+  }
+  toast.success(a.uploaded);
+  return d.key ?? null;
+}
+
+function SoundFile({ onFile }: { onFile: (f: File) => void }) {
+  const a = useI18n().t.time.alarms;
+  const file = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={file}
+        type="file"
+        accept="audio/mpeg,audio/ogg,audio/wav,audio/mp4,audio/x-m4a,.mp3,.ogg,.wav,.m4a"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onFile(f);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        title={a.uploadHint}
+        onClick={() => file.current?.click()}
+        className="inline-flex items-center gap-1.5 self-start text-[12.5px] text-muted hover:text-accent-text"
+      >
+        <Upload className="size-3.5" aria-hidden />
+        {a.upload}
+      </button>
+    </>
+  );
+}
+
+const DeviceIcon = ({ d }: { d: Pick<DestinationStatus, "kind"> }) =>
+  d.kind === "desktop" ? (
+    <Monitor className="size-4 shrink-0" aria-hidden />
+  ) : (
+    <Globe className="size-4 shrink-0" aria-hidden />
+  );
+
 // ── The page (Mi ELISE → Tiempos) ────────────────────────────────────────────
 
+/**
+ * Alarms as a clock app shows them (ADR-105): the hour, what it's for, the days, a switch.
+ * Everything else — sound, snooze, devices — lives in the alarm; the defaults, in Ajustes.
+ */
 export function AlarmsPanel() {
   const { t, locale } = useI18n();
   const a = t.time.alarms;
   const s = useAlarms();
-  const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<Alarm> | null>(null);
-  const run = async (body: Record<string, unknown>) => {
+  const [settings, setSettings] = useState(false);
+  if (!s.loaded) return null;
+  const toggle = async (x: Alarm, enabled: boolean) => {
     try {
-      await alarmOp(body);
-      await loadAlarms();
+      await alarmOp({ op: "change", id: x.id, patch: { enabled } });
     } catch (e) {
       toast.error((e as Error).message);
     }
+    await loadAlarms();
   };
-  if (!s.loaded) return null;
-  const known = s.destinations;
   return (
-    <div className="flex flex-col gap-8">
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-[15px] font-medium">{a.title}</h2>
-          <Button size="sm" onClick={() => setEditing({})}>
-            <Plus className="size-4" aria-hidden />
-            {a.new}
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={() => setSettings(true)}>
+          <Settings2 aria-hidden />
+          {a.settings}
+        </Button>
+        <Button size="sm" onClick={() => setEditing({})}>
+          <Plus aria-hidden />
+          {a.new}
+        </Button>
+      </div>
+      {!s.destinations.length && <NoDevices />}
+      {s.alarms.length ? (
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {s.alarms.map((x) => {
+            const d = deliveryCheck(x.destinations, s.destinations);
+            const live =
+              x.state === "ringing" ? a.ringing : x.state === "snoozed" ? a.snoozed : null;
+            const next = x.enabled && !live ? nextLabel(x.nextFireAt, s.timezone, locale) : null;
+            const nowhere = x.enabled && !d.ready.length && !d.offline.length;
+            return (
+              <li
+                key={x.id}
+                className={cn(
+                  "flex items-center gap-4 rounded-2xl border bg-surface px-5 py-4 transition-colors",
+                  live ? "border-accent-line" : "border-border",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => setEditing(x)}
+                  aria-label={`${a.edit} ${x.time}`}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span
+                    className={cn(
+                      "block font-mono text-[40px] leading-none font-light tracking-tight tabular-nums",
+                      !x.enabled && "text-faint",
+                    )}
+                  >
+                    {x.time}
+                  </span>
+                  <span
+                    className={cn(
+                      "mt-2 block truncate text-[13px]",
+                      x.enabled ? "text-muted" : "text-faint",
+                    )}
+                  >
+                    {[x.label, x.state === "done" ? a.done : when(x, a, locale)]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                  {(live || nowhere || next) && (
+                    <span
+                      className={cn(
+                        "mt-0.5 block truncate text-[12px]",
+                        live ? "text-accent-text" : nowhere ? "text-approval-text" : "text-faint",
+                      )}
+                    >
+                      {live ?? (nowhere ? a.noDestination : next ? a.next(next) : "")}
+                    </span>
+                  )}
+                </button>
+                <Switch
+                  checked={x.enabled}
+                  onCheckedChange={(enabled) => void toggle(x, enabled)}
+                  aria-label={a.enabled}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border px-6 py-12 text-center">
+          <p className="font-mono text-[40px] leading-none font-light text-faint">--:--</p>
+          <p className="max-w-sm text-[14px] text-muted">{a.none}</p>
+        </div>
+      )}
+      {editing && <AlarmEditor initial={editing} onClose={() => setEditing(null)} />}
+      {settings && <AlarmSettings onClose={() => setSettings(false)} />}
+    </div>
+  );
+}
+
+/** No device can ring yet: the one step that fixes it. */
+function NoDevices() {
+  const a = useI18n().t.time.alarms;
+  const isDesktop = typeof window !== "undefined" && "eliseDesktop" in window;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-approval-line bg-approval-bg px-4 py-3">
+      <p className="text-[13.5px] text-approval-text">{a.noDevices}</p>
+      {!isDesktop && <UseThisBrowser />}
+    </div>
+  );
+}
+
+function UseThisBrowser() {
+  const a = useI18n().t.time.alarms;
+  return (
+    <Button
+      size="sm"
+      onClick={async () => {
+        await unlockAlarmAudio();
+        if ("Notification" in window && Notification.permission === "default")
+          await Notification.requestPermission().catch(() => undefined);
+        await chooseThisBrowser().catch((e: Error) => toast.error(e.message));
+      }}
+    >
+      <Globe aria-hidden />
+      {a.useThisBrowser}
+    </Button>
+  );
+}
+
+function Segmented<V extends string | boolean>({
+  value,
+  options,
+  onChange,
+}: {
+  value: V;
+  options: readonly (readonly [V, string])[];
+  onChange: (v: V) => void;
+}) {
+  return (
+    <div role="radiogroup" className="flex rounded-full border border-border bg-surface-2 p-1">
+      {options.map(([v, label]) => (
+        <button
+          key={String(v)}
+          type="button"
+          role="radio"
+          aria-checked={value === v}
+          onClick={() => onChange(v)}
+          className={cn(
+            "flex-1 rounded-full px-3 py-1.5 text-[13px] transition-colors",
+            value === v ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg",
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const SNOOZE_CHOICES = [5, 9, 10, 15, 20, 30] as const;
+
+function AlarmEditor({ initial, onClose }: { initial: Partial<Alarm>; onClose: () => void }) {
+  const { t } = useI18n();
+  const a = t.time.alarms;
+  const s = useAlarms();
+  const confirm = useConfirm();
+  const { playing, toggle } = usePreview();
+  const [form, setForm] = useState(() => ({
+    label: initial.label ?? "",
+    time: initial.time ?? "07:00",
+    repeat: (initial.weekdays?.length ?? 0) > 0,
+    // Tomorrow in the user's timezone (en-CA formats as YYYY-MM-DD).
+    // A one-off that already rang starts again from tomorrow.
+    date:
+      (initial.state === "done" ? null : initial.date) ??
+      new Intl.DateTimeFormat("en-CA", { timeZone: s.timezone }).format(Date.now() + 86_400_000),
+    weekdays: initial.weekdays?.length ? initial.weekdays : [1, 2, 3, 4, 5],
+    sound: initial.sound ?? "",
+    snoozeMinutes: initial.snoozeMinutes ?? ALARM_LIMITS.defaultSnooze,
+    // An alarm that had nowhere to ring gets the default device (ADR-105).
+    destinations: initial.destinations?.length ? initial.destinations : defaultsOf(s),
+  }));
+  const [saving, setSaving] = useState(false);
+  const defaultName = s.sounds.find((x) => x.key === s.prefs?.alarmSound)?.name ?? "Brisa";
+  const volume = s.prefs?.alarmVolume ?? 80;
+  const run = async (body: Record<string, unknown>, done?: string) => {
+    setSaving(true);
+    try {
+      await alarmOp(body);
+      await loadAlarms();
+      if (done) toast.success(done);
+      onClose();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const alarm = () => ({
+    label: form.label.trim() || null,
+    time: form.time,
+    date: form.repeat ? null : form.date,
+    weekdays: form.repeat ? form.weekdays : [],
+    sound: form.sound || null,
+    snoozeMinutes: form.snoozeMinutes,
+    destinations: form.destinations,
+  });
+  const has = (d: AlarmDestination) => form.destinations.some((x) => same(x, d));
+  return (
+    <Dialog open onClose={onClose} title={initial.id ? a.edit : a.new} busy={saving} size="form">
+      <form
+        className="flex flex-col gap-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(
+            initial.id
+              ? { op: "change", id: initial.id, patch: { ...alarm(), enabled: true } }
+              : { op: "create", alarm: alarm() },
+            a.saved,
+          );
+        }}
+      >
+        <input
+          type="time"
+          required
+          aria-label={a.time}
+          value={form.time}
+          onChange={(e) => setForm({ ...form, time: e.target.value })}
+          data-autofocus
+          className="mx-auto w-full max-w-[260px] rounded-2xl bg-surface-2 py-2 text-center font-mono text-[52px] leading-none font-light tabular-nums focus:ring-2 focus:ring-accent-line focus:outline-none"
+        />
+        <Input
+          maxLength={80}
+          aria-label={a.label}
+          placeholder={a.labelPlaceholder}
+          value={form.label}
+          onChange={(e) => setForm({ ...form, label: e.target.value })}
+        />
+        <div className="flex flex-col gap-3">
+          <Segmented
+            value={form.repeat}
+            options={[
+              [false, a.once],
+              [true, a.repeats],
+            ]}
+            onChange={(repeat) => setForm({ ...form, repeat })}
+          />
+          {form.repeat ? (
+            <div className="flex justify-between gap-1">
+              {a.days.map((d, i) => {
+                const on = form.weekdays.includes(i);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        weekdays: on
+                          ? form.weekdays.filter((x) => x !== i)
+                          : [...form.weekdays, i].sort(),
+                      })
+                    }
+                    className={cn(
+                      "size-10 rounded-full text-[12.5px] transition-colors",
+                      on ? "bg-accent text-[var(--on-accent)]" : "bg-surface-2 text-muted",
+                    )}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <Input
+              type="date"
+              required
+              aria-label={a.date}
+              value={form.date}
+              onChange={(e) => setForm({ ...form, date: e.target.value })}
+            />
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="alarm-sound">{a.soundFor}</Label>
+          <div className="flex items-center gap-2">
+            <Select
+              id="alarm-sound"
+              className="flex-1"
+              value={form.sound}
+              onChange={(e) => setForm({ ...form, sound: e.target.value })}
+            >
+              <option value="">{a.useDefault(defaultName)}</option>
+              {s.sounds.map((x) => (
+                <option key={x.key} value={x.key}>
+                  {x.name}
+                </option>
+              ))}
+            </Select>
+            <IconBtn
+              label={playing ? a.stopPreview : a.preview}
+              onClick={() => void toggle(form.sound || s.prefs?.alarmSound || "brisa", volume)}
+            >
+              {playing ? <Square className="size-4" /> : <Play className="size-4" />}
+            </IconBtn>
+          </div>
+          <SoundFile
+            onFile={async (f) => {
+              const key = await uploadSound(f, a);
+              if (key) setForm((x) => ({ ...x, sound: key }));
+            }}
+          />
+        </div>
+        <Label className="flex flex-col gap-1.5">
+          {a.snoozeFor}
+          <Select
+            value={form.snoozeMinutes}
+            onChange={(e) => setForm({ ...form, snoozeMinutes: Number(e.target.value) })}
+          >
+            {[...new Set([...SNOOZE_CHOICES, form.snoozeMinutes])]
+              .sort((x, y) => x - y)
+              .map((m) => (
+                <option key={m} value={m}>
+                  {a.minutes(m)}
+                </option>
+              ))}
+          </Select>
+        </Label>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-1.5 text-[13px]">{a.devices}</legend>
+          {s.destinations.length ? (
+            <div className="flex flex-wrap gap-2">
+              {s.destinations.map((d) => {
+                const on = has(d);
+                // Always at least one: the last one chosen can't be turned off (ADR-105).
+                const last = on && form.destinations.length === 1;
+                return (
+                  <button
+                    key={`${d.kind}:${d.id}`}
+                    type="button"
+                    aria-pressed={on}
+                    disabled={last}
+                    title={last ? a.atLeastOne : undefined}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        destinations: on
+                          ? form.destinations.filter((x) => !same(x, d))
+                          : [...form.destinations, { kind: d.kind, id: d.id }],
+                      })
+                    }
+                    className={cn(
+                      "flex items-center gap-2 rounded-full border px-3 py-1.5 text-[13px] transition-colors disabled:cursor-default",
+                      on
+                        ? "border-accent-line bg-accent-soft text-accent-text"
+                        : "border-border text-muted hover:text-fg",
+                    )}
+                  >
+                    <DeviceIcon d={d} />
+                    {d.name}
+                    {!d.online && <span className="text-[11.5px] text-faint">· {a.offline}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-[13px] text-approval-text">{a.noDevices}</p>
+          )}
+        </fieldset>
+        <div className="flex flex-wrap items-center gap-2" data-sheet-actions>
+          {initial.id && (
+            <>
+              <IconBtn
+                label={a.delete}
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: a.deleteConfirm,
+                      confirmLabel: a.delete,
+                      destructive: true,
+                    })
+                  )
+                    void run({ op: "delete", id: initial.id });
+                }}
+              >
+                <Trash2 className="size-4" />
+              </IconBtn>
+              <IconBtn
+                label={a.duplicate}
+                onClick={() => void run({ op: "create", alarm: alarm() }, a.saved)}
+              >
+                <Copy className="size-4" />
+              </IconBtn>
+            </>
+          )}
+          <span className="flex-1" />
+          <Button variant="secondary" onClick={onClose}>
+            {a.cancel}
+          </Button>
+          <Button
+            type="submit"
+            disabled={saving || (form.repeat && !form.weekdays.length) || !form.destinations.length}
+          >
+            {a.save}
           </Button>
         </div>
-        {!known.length && <p className="text-[13px] text-approval-text">{a.noDevices}</p>}
-        {s.alarms.length ? (
-          <ul className="flex flex-col divide-y divide-border rounded-2xl border border-border bg-surface">
-            {s.alarms.map((x) => {
-              const d = deliveryCheck(x.destinations, known);
-              const next = nextLabel(x.nextFireAt, s.timezone, locale);
-              return (
-                <li key={x.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-baseline gap-2">
-                      <span className={cn("font-mono text-2xl", !x.enabled && "text-faint")}>
-                        {x.time}
-                      </span>
-                      <span className="truncate text-[14px]">{x.label}</span>
-                    </p>
-                    <p className="text-[12.5px] text-muted">
-                      {when(x, a, locale)}
-                      {" · "}
-                      {x.state === "ringing"
-                        ? a.ringing
-                        : x.state === "snoozed"
-                          ? a.snoozed
-                          : !x.enabled
-                            ? a.off
-                            : x.state === "done"
-                              ? a.done
-                              : next
-                                ? a.next(next)
-                                : ""}
-                    </p>
-                    <p className="text-[12px] text-faint">
-                      {d.ready.map((r) => r.name).join(", ")}
-                      {!x.destinations.length && (
-                        <span className="text-approval-text">{a.noDestination}</span>
-                      )}
-                      {d.offline.length > 0 && (
-                        <span className="text-approval-text">
-                          {d.ready.length ? " · " : ""}
-                          {a.offlineNow(d.offline.map((o) => o.name).join(", "))}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Switch
-                      checked={x.enabled}
-                      onCheckedChange={(enabled) =>
-                        void run({ op: "change", id: x.id, patch: { enabled } })
-                      }
-                      aria-label={a.enabled}
-                    />
-                    <IconBtn label={a.edit} onClick={() => setEditing(x)}>
-                      <Pencil className="size-4" />
-                    </IconBtn>
-                    <IconBtn
-                      label={a.duplicate}
-                      onClick={() => setEditing({ ...x, id: undefined, date: x.date })}
-                    >
-                      <Copy className="size-4" />
-                    </IconBtn>
-                    <IconBtn
-                      label={a.delete}
-                      onClick={async () => {
-                        if (
-                          await confirm({
-                            title: a.deleteConfirm,
-                            confirmLabel: a.delete,
-                            destructive: true,
-                          })
-                        )
-                          void run({ op: "delete", id: x.id });
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                    </IconBtn>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p className="text-[14px] text-muted">{a.none}</p>
-        )}
-      </section>
-      <SoundsSection />
-      <DevicesSection />
-      {editing && <AlarmEditor initial={editing} onClose={() => setEditing(null)} />}
-    </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -214,403 +584,163 @@ function IconBtn({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="grid size-9 place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-fg"
+      className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-surface-2 hover:text-fg"
     >
       {children}
     </button>
   );
 }
 
-function AlarmEditor({ initial, onClose }: { initial: Partial<Alarm>; onClose: () => void }) {
-  const { t } = useI18n();
-  const a = t.time.alarms;
+/** The defaults, out of the way (ADR-105): where new alarms ring, their sound, your sounds. */
+function AlarmSettings({ onClose }: { onClose: () => void }) {
+  const a = useI18n().t.time.alarms;
   const s = useAlarms();
-  const [form, setForm] = useState(() => ({
-    label: initial.label ?? "",
-    time: initial.time ?? "07:00",
-    repeat: (initial.weekdays?.length ?? 0) > 0,
-    // Tomorrow in the user's timezone (en-CA formats as YYYY-MM-DD).
-    date:
-      initial.date ??
-      new Intl.DateTimeFormat("en-CA", { timeZone: s.timezone }).format(Date.now() + 86_400_000),
-    weekdays: initial.weekdays?.length ? initial.weekdays : [1, 2, 3, 4, 5],
-    sound: initial.sound ?? "",
-    snoozeMinutes: initial.snoozeMinutes ?? ALARM_LIMITS.defaultSnooze,
-    destinations: (initial.destinations ?? s.prefs?.alarmDestinations ?? []) as AlarmDestination[],
-  }));
-  const [saving, setSaving] = useState(false);
-  const defaultName = s.sounds.find((x) => x.key === s.prefs?.alarmSound)?.name ?? "Brisa";
-  const save = async () => {
-    setSaving(true);
-    const alarm = {
-      label: form.label.trim() || null,
-      time: form.time,
-      date: form.repeat ? null : form.date,
-      weekdays: form.repeat ? form.weekdays : [],
-      sound: form.sound || null,
-      snoozeMinutes: form.snoozeMinutes,
-      destinations: form.destinations,
-    };
-    try {
-      await alarmOp(
-        initial.id ? { op: "change", id: initial.id, patch: alarm } : { op: "create", alarm },
-      );
-      await loadAlarms();
-      toast.success(a.saved);
-      onClose();
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
+  const { playing, toggle } = usePreview();
+  const volume = s.prefs?.alarmVolume ?? 80;
+  const isDesktop = typeof window !== "undefined" && "eliseDesktop" in window;
+  const mine = isDesktop ? null : browserEndpoint();
+  const defaults = defaultsOf(s);
+  const uploads = s.sounds.filter((x) => x.kind === "upload");
+  const defaultSound = s.prefs?.alarmSound ?? "brisa";
+  const op = async (body: Record<string, unknown>) => {
+    const r = await alarmOp(body).catch((e: Error) => {
+      toast.error(e.message);
+      return null;
+    });
+    await loadAlarms();
+    return r;
   };
-  const has = (d: AlarmDestination) =>
-    form.destinations.some((x) => x.kind === d.kind && x.id === d.id);
   return (
-    <Dialog open onClose={onClose} title={initial.id ? a.edit : a.new} busy={saving} size="form">
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save();
-        }}
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <Label className="flex flex-col gap-1.5">
-            {a.time}
-            <Input
-              type="time"
-              required
-              value={form.time}
-              onChange={(e) => setForm({ ...form, time: e.target.value })}
-              data-autofocus
-            />
-          </Label>
-          <Label className="flex flex-col gap-1.5">
-            {a.label}
-            <Input
-              maxLength={80}
-              placeholder={a.labelPlaceholder}
-              value={form.label}
-              onChange={(e) => setForm({ ...form, label: e.target.value })}
-            />
-          </Label>
-        </div>
-        <div className="flex gap-2" role="radiogroup">
-          {([false, true] as const).map((r) => (
-            <button
-              key={String(r)}
-              type="button"
-              role="radio"
-              aria-checked={form.repeat === r}
-              onClick={() => setForm({ ...form, repeat: r })}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-[13px]",
-                form.repeat === r
-                  ? "border-accent-line bg-accent-soft text-accent-text"
-                  : "border-border",
-              )}
-            >
-              {r ? a.repeats : a.once}
-            </button>
-          ))}
-        </div>
-        {form.repeat ? (
-          <div className="flex flex-wrap gap-1.5">
-            {a.days.map((d, i) => {
-              const on = form.weekdays.includes(i);
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() =>
-                    setForm({
-                      ...form,
-                      weekdays: on
-                        ? form.weekdays.filter((x) => x !== i)
-                        : [...form.weekdays, i].sort(),
-                    })
-                  }
-                  className={cn(
-                    "size-10 rounded-full border text-[12.5px]",
-                    on
-                      ? "border-accent-line bg-accent-soft text-accent-text"
-                      : "border-border text-muted",
-                  )}
-                >
-                  {d}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <Label className="flex flex-col gap-1.5">
-            {a.date}
-            <Input
-              type="date"
-              required
-              value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
-            />
-          </Label>
-        )}
-        <div className="grid grid-cols-2 gap-3">
-          <Label className="flex flex-col gap-1.5">
-            {a.soundFor}
+    <Dialog open onClose={onClose} title={a.settings} size="form">
+      <div className="flex flex-col gap-7">
+        <section className="flex flex-col gap-2">
+          <h3 className="text-[14px] font-medium">{a.devices}</h3>
+          <p className="text-[12.5px] text-muted">
+            {s.destinations.length === 1 ? a.onlyDevice : a.devicesHint}
+          </p>
+          {s.destinations.length > 0 && (
+            <ul className="flex flex-col divide-y divide-border rounded-2xl border border-border">
+              {s.destinations.map((d) => {
+                const on = defaults.some((x) => same(x, d));
+                const last = on && defaults.length === 1;
+                return (
+                  <li key={`${d.kind}:${d.id}`} className="flex items-center gap-3 px-4 py-3">
+                    <span className="text-muted">
+                      <DeviceIcon d={d} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px]">
+                        {d.name}
+                        {d.kind === "browser" && d.id === mine && (
+                          <span className="text-faint"> · {a.thisBrowser}</span>
+                        )}
+                      </span>
+                      <span
+                        className={cn(
+                          "block text-[12px]",
+                          d.online ? "text-accent-text" : "text-faint",
+                        )}
+                      >
+                        {d.online ? a.online : a.offline}
+                      </span>
+                    </span>
+                    <Switch
+                      checked={on}
+                      disabled={last}
+                      title={last ? a.atLeastOne : undefined}
+                      aria-label={d.name}
+                      onCheckedChange={() =>
+                        void op({
+                          op: "defaultDestinations",
+                          destinations: on
+                            ? defaults.filter((x) => !same(x, d))
+                            : [...defaults, { kind: d.kind, id: d.id }],
+                        })
+                      }
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {!isDesktop &&
+            (mine ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="self-start"
+                onClick={() => void stopUsingThisBrowser()}
+              >
+                {a.stopUsingBrowser}
+              </Button>
+            ) : (
+              <div className="self-start">
+                <UseThisBrowser />
+              </div>
+            ))}
+          <p className="text-[12px] text-faint">{isDesktop ? a.desktopLimit : a.browserLimit}</p>
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h3 className="text-[14px] font-medium">{a.defaultSoundTitle}</h3>
+          <div className="flex items-center gap-2">
             <Select
-              value={form.sound}
-              onChange={(e) => setForm({ ...form, sound: e.target.value })}
+              aria-label={a.defaultSoundTitle}
+              className="flex-1"
+              value={defaultSound}
+              onChange={(e) => void op({ op: "defaultSound", sound: e.target.value })}
             >
-              <option value="">{a.useDefault(defaultName)}</option>
               {s.sounds.map((x) => (
                 <option key={x.key} value={x.key}>
                   {x.name}
                 </option>
               ))}
             </Select>
-          </Label>
-          <Label className="flex flex-col gap-1.5">
-            {a.snoozeMinutes}
-            <Input
-              type="number"
-              min={ALARM_LIMITS.minSnooze}
-              max={ALARM_LIMITS.maxSnooze}
-              value={form.snoozeMinutes}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  snoozeMinutes: Math.min(
-                    ALARM_LIMITS.maxSnooze,
-                    Math.max(ALARM_LIMITS.minSnooze, Number(e.target.value) || 9),
-                  ),
-                })
-              }
-            />
-          </Label>
-        </div>
-        <fieldset className="flex flex-col gap-1.5">
-          <legend className="mb-1 text-[13px]">{a.devices}</legend>
-          {s.destinations.length ? (
-            s.destinations.map((d) => (
-              <label key={`${d.kind}:${d.id}`} className="flex items-center gap-2 text-[14px]">
-                <input
-                  type="checkbox"
-                  checked={has(d)}
-                  onChange={() =>
-                    setForm({
-                      ...form,
-                      destinations: has(d)
-                        ? form.destinations.filter((x) => !(x.kind === d.kind && x.id === d.id))
-                        : [...form.destinations, { kind: d.kind, id: d.id }],
-                    })
-                  }
-                />
-                {d.kind === "desktop" ? (
-                  <Monitor className="size-4 text-muted" />
-                ) : (
-                  <Globe className="size-4 text-muted" />
-                )}
-                {d.name}
-                <span className={cn("text-[12px]", d.online ? "text-accent-text" : "text-faint")}>
-                  {d.online ? a.online : a.offline}
-                </span>
-              </label>
-            ))
-          ) : (
-            <p className="text-[13px] text-approval-text">{a.noDevices}</p>
+            <IconBtn
+              label={playing ? a.stopPreview : a.preview}
+              onClick={() => void toggle(defaultSound, volume)}
+            >
+              {playing ? <Square className="size-4" /> : <Play className="size-4" />}
+            </IconBtn>
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h3 className="text-[14px] font-medium">{a.yourSounds}</h3>
+          {uploads.length > 0 && (
+            <ul className="flex flex-col divide-y divide-border rounded-2xl border border-border">
+              {uploads.map((x) => (
+                <li key={x.key} className="flex items-center gap-2 px-2 py-1.5">
+                  <IconBtn
+                    label={playing === x.key ? a.stopPreview : a.preview}
+                    onClick={() => void toggle(x.key, volume)}
+                  >
+                    {playing === x.key ? (
+                      <Square className="size-4" />
+                    ) : (
+                      <Play className="size-4" />
+                    )}
+                  </IconBtn>
+                  <span className="min-w-0 flex-1 truncate text-[14px]">{x.name}</span>
+                  <IconBtn
+                    label={a.removeSound}
+                    onClick={async () => {
+                      const r = await op({ op: "deleteSound", id: x.key.slice("upload:".length) });
+                      const res = r as { alarmsChanged: number; wasDefault: boolean } | null;
+                      if (res) toast(a.soundRemoved(res.alarmsChanged, res.wasDefault));
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                  </IconBtn>
+                </li>
+              ))}
+            </ul>
           )}
-        </fieldset>
-        <div className="flex justify-end gap-2" data-sheet-actions>
-          <Button variant="secondary" onClick={onClose}>
-            {a.cancel}
-          </Button>
-          <Button type="submit" disabled={saving || (form.repeat && !form.weekdays.length)}>
-            {a.save}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
-
-function SoundsSection() {
-  const { t } = useI18n();
-  const a = t.time.alarms;
-  const s = useAlarms();
-  const { playing, toggle } = usePreview();
-  const file = useRef<HTMLInputElement>(null);
-  const volume = s.prefs?.alarmVolume ?? 80;
-  const upload = async (f: File) => {
-    const duration = await new Promise<number>((res) => {
-      const audio = new Audio(URL.createObjectURL(f));
-      audio.onloadedmetadata = () => res(Math.round(audio.duration * 1000) || 0);
-      audio.onerror = () => res(0);
-    });
-    const form = new FormData();
-    form.append("file", f);
-    form.append("name", f.name);
-    form.append("durationMs", String(duration));
-    const r = await fetch("/api/time/alarms", { method: "POST", body: form });
-    const d = (await r.json().catch(() => ({}))) as { error?: { message?: string } };
-    if (!r.ok) toast.error(d.error?.message ?? "Error");
-    else toast.success(a.uploaded);
-    await loadAlarms();
-  };
-  return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-[15px] font-medium">{a.sounds}</h2>
-      <ul className="flex flex-col divide-y divide-border rounded-2xl border border-border bg-surface">
-        {s.sounds.map((x) => {
-          const isDefault = s.prefs?.alarmSound === x.key;
-          return (
-            <li key={x.key} className="flex items-center gap-3 px-4 py-2.5">
-              <IconBtn
-                label={playing === x.key ? a.stopPreview : a.preview}
-                onClick={() => void toggle(x.key, volume)}
-              >
-                {playing === x.key ? <Square className="size-4" /> : <Play className="size-4" />}
-              </IconBtn>
-              <span className="min-w-0 flex-1 truncate text-[14px]">{x.name}</span>
-              {isDefault ? (
-                <span className="text-[12px] text-accent-text">{a.defaultSound}</span>
-              ) : (
-                <button
-                  type="button"
-                  className="text-[12.5px] text-muted hover:text-accent-text"
-                  onClick={async () => {
-                    await alarmOp({ op: "defaultSound", sound: x.key }).catch((e: Error) =>
-                      toast.error(e.message),
-                    );
-                    await loadAlarms();
-                  }}
-                >
-                  {a.setDefault}
-                </button>
-              )}
-              {x.kind === "upload" && (
-                <IconBtn
-                  label={a.removeSound}
-                  onClick={async () => {
-                    const r = await alarmOp<{ alarmsChanged: number; wasDefault: boolean }>({
-                      op: "deleteSound",
-                      id: x.key.slice("upload:".length),
-                    }).catch((e: Error) => {
-                      toast.error(e.message);
-                      return null;
-                    });
-                    if (r) toast(a.soundRemoved(r.alarmsChanged, r.wasDefault));
-                    await loadAlarms();
-                  }}
-                >
-                  <Trash2 className="size-4" />
-                </IconBtn>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          ref={file}
-          type="file"
-          accept="audio/mpeg,audio/ogg,audio/wav,audio/mp4,audio/x-m4a,.mp3,.ogg,.wav,.m4a"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) void upload(f);
-            e.target.value = "";
-          }}
-        />
-        <Button variant="secondary" size="sm" onClick={() => file.current?.click()}>
-          <Upload className="size-4" aria-hidden />
-          {a.upload}
-        </Button>
-        <span className="text-[12px] text-faint">{a.uploadHint}</span>
+          <SoundFile onFile={(f) => void uploadSound(f, a)} />
+          <p className="text-[12px] text-faint">{a.uploadHint}</p>
+        </section>
       </div>
-    </section>
-  );
-}
-
-function DevicesSection() {
-  const { t } = useI18n();
-  const a = t.time.alarms;
-  const s = useAlarms();
-  const isDesktop = typeof window !== "undefined" && "eliseDesktop" in window;
-  const mine = isDesktop ? null : browserEndpoint();
-  const defaults = s.prefs?.alarmDestinations ?? [];
-  const isDefault = (kind: string, id: string) =>
-    defaults.some((d) => d.kind === kind && d.id === id);
-  return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-[15px] font-medium">{a.devices}</h2>
-      {s.destinations.length > 0 && (
-        <ul className="flex flex-col divide-y divide-border rounded-2xl border border-border bg-surface">
-          {s.destinations.map((d) => (
-            <li key={`${d.kind}:${d.id}`} className="flex items-center gap-3 px-4 py-2.5">
-              {d.kind === "desktop" ? (
-                <Monitor className="size-4 text-muted" />
-              ) : (
-                <Globe className="size-4 text-muted" />
-              )}
-              <span className="min-w-0 flex-1 truncate text-[14px]">
-                {d.name}
-                {d.kind === "browser" && d.id === mine && (
-                  <span className="text-faint"> · {a.thisBrowser}</span>
-                )}
-              </span>
-              <span className={cn("text-[12px]", d.online ? "text-accent-text" : "text-faint")}>
-                {d.online ? a.online : a.offline}
-              </span>
-              <label className="flex items-center gap-1.5 text-[12.5px] text-muted">
-                <input
-                  type="checkbox"
-                  checked={isDefault(d.kind, d.id)}
-                  onChange={async () => {
-                    const next = isDefault(d.kind, d.id)
-                      ? defaults.filter((x) => !(x.kind === d.kind && x.id === d.id))
-                      : [...defaults, { kind: d.kind, id: d.id }];
-                    await alarmOp({ op: "defaultDestinations", destinations: next });
-                    await loadAlarms();
-                  }}
-                />
-                {a.defaultDevices}
-              </label>
-            </li>
-          ))}
-        </ul>
-      )}
-      {!isDesktop &&
-        (mine ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            className="self-start"
-            onClick={() => void stopUsingThisBrowser()}
-          >
-            {a.stopUsingBrowser}
-          </Button>
-        ) : (
-          <Button
-            size="sm"
-            className="self-start"
-            onClick={async () => {
-              await unlockAlarmAudio();
-              if ("Notification" in window && Notification.permission === "default")
-                await Notification.requestPermission().catch(() => undefined);
-              await chooseThisBrowser().catch((e: Error) => toast.error(e.message));
-            }}
-          >
-            <Globe className="size-4" aria-hidden />
-            {a.useThisBrowser}
-          </Button>
-        ))}
-      <ul className="flex flex-col gap-1 text-[12.5px] text-faint">
-        <li>{a.browserLimit}</li>
-        <li>{a.desktopLimit}</li>
-        <li>{a.future}</li>
-      </ul>
-    </section>
+    </Dialog>
   );
 }
 

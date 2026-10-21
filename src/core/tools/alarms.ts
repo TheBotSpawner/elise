@@ -4,6 +4,7 @@ import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { AppError } from "../errors";
 import { addDays, toLocalDateTime, todayIn } from "../time";
 import {
+  defaultDestinations,
   ALARM_LIMITS,
   ALARM_SOUNDS,
   deliveryCheck,
@@ -97,11 +98,7 @@ function resolveDestinations(
   known: DestinationStatus[],
   defaults: AlarmDestination[],
 ) {
-  if (!asked?.length)
-    return {
-      chosen: defaults.filter((d) => known.some((k) => k.kind === d.kind && k.id === d.id)),
-      missing: [],
-    };
+  if (!asked?.length) return { chosen: defaultDestinations(defaults, known), missing: [] };
   const chosen: AlarmDestination[] = [];
   const missing: string[] = [];
   for (const raw of asked) {

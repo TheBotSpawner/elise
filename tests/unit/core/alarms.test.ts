@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { toLocalDateTime } from "@/core/time";
 import {
+  defaultDestinations,
   deliveryCheck,
   dueDecision,
   localInstant,
   nextFire,
+  revivedDate,
   sniffAudio,
   soundOf,
   stillRinging,
@@ -86,6 +88,28 @@ describe("where an alarm rings", () => {
     expect(r.offline.map((x) => x.id)).toEqual(["d1"]);
     expect(r.unknown).toEqual([{ kind: "desktop", id: "gone" }]);
     expect(deliveryCheck([], known)).toEqual({ ready: [], offline: [], unknown: [] });
+  });
+
+  it("ADR-105: by default, the saved devices still known — else one, the Desktop app first", () => {
+    expect(defaultDestinations([{ kind: "browser", id: "b1" }], known)).toEqual([
+      { kind: "browser", id: "b1" },
+    ]);
+    expect(defaultDestinations([{ kind: "browser", id: "gone" }], known)).toEqual([
+      { kind: "desktop", id: "d1" },
+    ]);
+    expect(defaultDestinations([], [known[0]!])).toEqual([{ kind: "browser", id: "b1" }]);
+    expect(defaultDestinations([], [])).toEqual([]);
+  });
+});
+
+describe("a one-off turned back on (ADR-105)", () => {
+  const now = new Date("2026-10-21T15:00:00Z"); // 12:00 in Buenos Aires
+  it("rings the next time its hour comes; a future one keeps its date", () => {
+    const past = { time: "07:00", date: "2026-10-20", timezone: BA };
+    expect(revivedDate(past, now)).toBe("2026-10-22");
+    expect(revivedDate({ ...past, time: "18:00" }, now)).toBe("2026-10-21");
+    expect(revivedDate({ ...past, date: "2026-10-25" }, now)).toBe("2026-10-25");
+    expect(revivedDate({ ...past, date: null }, now)).toBeNull();
   });
 });
 

@@ -166,6 +166,12 @@ describe("alarm tools (ADR-100)", () => {
     expect(store.alarms[0]!.destinations).toEqual([{ kind: "desktop", id: DESKTOP.id }]);
   });
 
+  it("with no default saved, the only device rings it (ADR-105)", async () => {
+    const { store, call } = setup([DESKTOP]);
+    await call("time.setAlarm", { time: "07:00", day: "tomorrow" });
+    expect(store.alarms[0]!.destinations).toEqual([{ kind: "desktop", id: DESKTOP.id }]);
+  });
+
   it("turns off and deletes by label", async () => {
     const { store, call } = setup([DESKTOP]);
     await call("time.setAlarm", { time: "07:00", day: "tomorrow", label: "Facultad" });

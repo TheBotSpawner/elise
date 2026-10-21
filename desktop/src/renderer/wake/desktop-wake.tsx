@@ -6,6 +6,7 @@ import type { VoicePhase } from "@/core/voice/session";
 import { sessionCommand } from "@/core/voice/session-control";
 import { matchWake } from "@/core/voice/wake";
 import { asksToShow, WAKE_MODELS, type DetectorState } from "@/core/voice/wake-detector";
+import { musicStore } from "@/features/music/store";
 import {
   DeviceWakeContext,
   deviceMayListen,
@@ -14,8 +15,6 @@ import {
   requestDeviceWake,
   requestVoiceEnd,
 } from "@/features/voice/device-wake";
-
-import { musicStore } from "@/features/music/store";
 import { logSound } from "@/features/voice/sound-log";
 
 import { VoskWakeDetector, wav } from "./vosk-detector";

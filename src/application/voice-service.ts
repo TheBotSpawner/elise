@@ -7,7 +7,6 @@ import { previewText, type VoiceKey } from "@/core/voice/catalog";
 import type { VoiceDelivery } from "@/core/voice/delivery";
 import { VOICE_LIMITS, type VoiceLanguage } from "@/core/voice/providers";
 import { recognitionContext } from "@/core/voice/recognition";
-import { modelFor } from "@/infrastructure/ai/elevenlabs/speech";
 import { formatForSpeech } from "@/core/voice/speech-format";
 import { acknowledgements } from "@/core/voice/speech-plan";
 import { toSpeakable } from "@/core/voice/speech-text";
@@ -16,6 +15,7 @@ import {
   getSpeechInputProvider,
   getSpeechOutputProvider,
 } from "@/infrastructure/ai";
+import { modelFor } from "@/infrastructure/ai/elevenlabs/speech";
 import { logger } from "@/infrastructure/observability/logger";
 import { withUsageScope } from "@/infrastructure/observability/usage";
 import { rateLimit } from "@/infrastructure/rate-limit";

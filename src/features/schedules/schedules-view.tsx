@@ -203,10 +203,7 @@ export function SchedulesView({
         </section>
 
         <section className="flex flex-col gap-3 max-lg:border-t max-lg:border-border max-lg:pt-6">
-          <div className="flex flex-col gap-1">
-            <h2 className="type-label text-faint">{t.schedules.ideas}</h2>
-            <p className="text-[13px] text-muted">{t.schedules.ideasHint}</p>
-          </div>
+          <h2 className="type-label text-faint">{t.schedules.ideas}</h2>
           {/* Phones (ADR-066): a swipeable rail of compact ideas, not a long list of cards. */}
           <ul className="-mx-4 no-scrollbar flex snap-x gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0">
             {PRESETS.map((p) => {

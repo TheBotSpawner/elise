@@ -89,7 +89,7 @@ describe("Scheduled hub (ADR-037)", () => {
     expect(screen.getByRole("button", { name: "Nueva tarea programada" })).toBeInTheDocument();
     expect(screen.queryByText("Nuevo Morning Brief")).toBeNull();
     const yours = screen.getByText("Tus tareas programadas");
-    const ideas = screen.getByText("Ideas para ELISE");
+    const ideas = screen.getByText("Ideas para tus programados");
     expect(yours.compareDocumentPosition(ideas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // One primary action on the card; the rest in its ⋯ menu, delete last.
     expect(screen.getByRole("button", { name: "Ejecutar ahora" })).toBeInTheDocument();

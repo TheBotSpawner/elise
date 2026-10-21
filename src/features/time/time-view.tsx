@@ -64,7 +64,7 @@ function view(p: TimerPayload, now: Date) {
   };
 }
 
-async function act(input: Parameters<typeof timeAction>[0]) {
+export async function act(input: Parameters<typeof timeAction>[0]) {
   const r = await timeAction(input);
   if (!r.ok) return void toast.error(r.error.message);
   if (r.timer) timeStore.upsert(r.timer);

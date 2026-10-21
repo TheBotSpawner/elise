@@ -2,6 +2,7 @@ import "server-only";
 
 import { AppError } from "@/core/errors";
 import {
+  revivedDate,
   ALARM_LIMITS,
   armed,
   dueDecision,
@@ -64,7 +65,8 @@ export const toAlarm = (r: AlarmRow): Alarm => ({
   date: r.local_date,
   weekdays: [...r.weekdays].sort(),
   timezone: r.timezone,
-  enabled: r.enabled,
+  // ADR-105: a one-off that already rang is off (rows from before kept `enabled`).
+  enabled: r.enabled && r.state !== "done",
   sound: r.sound,
   snoozeMinutes: r.snooze_minutes,
   destinations: dests(r.destinations),
@@ -177,6 +179,8 @@ async function fire(
     .update({
       state: ring ? "ringing" : next ? "scheduled" : "done",
       next_fire_at: next?.toISOString() ?? null,
+      // ADR-105: a one-off rang its only time — it turns itself off.
+      ...(next ? {} : { enabled: false }),
       version: a.version + 1,
     })
     .eq("id", a.id)
@@ -329,6 +333,8 @@ export function alarmStore(auth: AuthContext, origin: "ai" | "user_ui" = "ai"): 
 
     async changeAlarm(a: Alarm, patch: AlarmPatch) {
       const merged = { ...a, ...patch };
+      // ADR-105: turning a past one-off back on means its hour, the next time it comes.
+      if (patch.enabled) merged.date = revivedDate(merged, new Date());
       if (merged.date && merged.weekdays.length)
         throw new AppError(
           "VALIDATION_ERROR",

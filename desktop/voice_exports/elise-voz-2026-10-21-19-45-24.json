@@ -1,0 +1,372 @@
+{
+  "note": "Seconds from the start of the recording. 'segment' = a spoken line (provider:model:source); 'chime:*'/'completion'/'alarm' = sounds ELISE synthesized.",
+  "events": [
+    {
+      "at": 0,
+      "kind": "chime:wake"
+    },
+    {
+      "at": 4.86,
+      "kind": "chime:wake"
+    },
+    {
+      "at": 12.8,
+      "kind": "chime:wake"
+    },
+    {
+      "at": 20.77,
+      "kind": "segment",
+      "detail": "elevenlabs:eleven_flash_v2_5:fixed | Un segundo."
+    },
+    {
+      "at": 26.01,
+      "kind": "segment",
+      "detail": "elevenlabs:eleven_flash_v2_5:fixed | Sigo con eso."
+    },
+    {
+      "at": 31.55,
+      "kind": "segment",
+      "detail": "elevenlabs:eleven_flash_v2_5:fixed | Ya tengo los datos, estoy armando la respuesta."
+    },
+    {
+      "at": 31.96,
+      "kind": "segment",
+      "detail": "elevenlabs:eleven_flash_v2_5:live | En auto, saliendo ahora desde donde estás, tardás unos 38 minutos y son 13,4 kilómetros."
+    },
+    {
+      "at": 34.05,
+      "kind": "segment",
+      "detail": "elevenlabs:eleven_flash_v2_5:live | Pedro Lozano 4418 queda en Villa Devoto; en transporte público, unos 35 minutos, y caminando, alrededor de una hora y 55."
+    }
+  ],
+  "clips": [
+    {
+      "at": 20.94,
+      "seconds": 0.4
+    },
+    {
+      "at": 21.34,
+      "seconds": 0.62
+    },
+    {
+      "at": 26.23,
+      "seconds": 0.43
+    },
+    {
+      "at": 26.66,
+      "seconds": 0.31
+    },
+    {
+      "at": 26.98,
+      "seconds": 0.28
+    },
+    {
+      "at": 27.26,
+      "seconds": 0.04
+    },
+    {
+      "at": 32.13,
+      "seconds": 0.47
+    },
+    {
+      "at": 32.6,
+      "seconds": 0.22
+    },
+    {
+      "at": 32.81,
+      "seconds": 0.25
+    },
+    {
+      "at": 33.05,
+      "seconds": 0.22
+    },
+    {
+      "at": 33.27,
+      "seconds": 0.22
+    },
+    {
+      "at": 33.49,
+      "seconds": 0.34
+    },
+    {
+      "at": 33.83,
+      "seconds": 0.23
+    },
+    {
+      "at": 34.06,
+      "seconds": 0.34
+    },
+    {
+      "at": 34.4,
+      "seconds": 0.18
+    },
+    {
+      "at": 34.58,
+      "seconds": 0.22
+    },
+    {
+      "at": 34.8,
+      "seconds": 0.21
+    },
+    {
+      "at": 35.01,
+      "seconds": 0.16
+    },
+    {
+      "at": 35.16,
+      "seconds": 0.23
+    },
+    {
+      "at": 35.4,
+      "seconds": 0.34
+    },
+    {
+      "at": 35.73,
+      "seconds": 0.35
+    },
+    {
+      "at": 36.08,
+      "seconds": 0.34
+    },
+    {
+      "at": 36.42,
+      "seconds": 0.16
+    },
+    {
+      "at": 36.58,
+      "seconds": 0.32
+    },
+    {
+      "at": 36.9,
+      "seconds": 0.2
+    },
+    {
+      "at": 37.1,
+      "seconds": 0.21
+    },
+    {
+      "at": 37.32,
+      "seconds": 0.22
+    },
+    {
+      "at": 37.54,
+      "seconds": 0.16
+    },
+    {
+      "at": 37.69,
+      "seconds": 0.24
+    },
+    {
+      "at": 37.93,
+      "seconds": 0.25
+    },
+    {
+      "at": 38.18,
+      "seconds": 0.25
+    },
+    {
+      "at": 38.43,
+      "seconds": 0.19
+    },
+    {
+      "at": 38.61,
+      "seconds": 0.34
+    },
+    {
+      "at": 38.96,
+      "seconds": 0.23
+    },
+    {
+      "at": 39.19,
+      "seconds": 0.34
+    },
+    {
+      "at": 39.53,
+      "seconds": 0.34
+    },
+    {
+      "at": 39.87,
+      "seconds": 0.28
+    },
+    {
+      "at": 40.15,
+      "seconds": 0.22
+    },
+    {
+      "at": 40.37,
+      "seconds": 0.18
+    },
+    {
+      "at": 40.55,
+      "seconds": 0.31
+    },
+    {
+      "at": 40.86,
+      "seconds": 0.24
+    },
+    {
+      "at": 41.11,
+      "seconds": 0.24
+    },
+    {
+      "at": 41.35,
+      "seconds": 0.19
+    },
+    {
+      "at": 41.54,
+      "seconds": 0.23
+    },
+    {
+      "at": 41.77,
+      "seconds": 0.34
+    },
+    {
+      "at": 42.12,
+      "seconds": 0.18
+    },
+    {
+      "at": 42.29,
+      "seconds": 0.23
+    },
+    {
+      "at": 42.52,
+      "seconds": 0.42
+    },
+    {
+      "at": 42.94,
+      "seconds": 0.34
+    },
+    {
+      "at": 43.28,
+      "seconds": 0.34
+    },
+    {
+      "at": 43.62,
+      "seconds": 0.22
+    },
+    {
+      "at": 43.84,
+      "seconds": 0.15
+    },
+    {
+      "at": 43.99,
+      "seconds": 0.31
+    },
+    {
+      "at": 44.3,
+      "seconds": 0.34
+    },
+    {
+      "at": 44.64,
+      "seconds": 0.17
+    },
+    {
+      "at": 44.81,
+      "seconds": 0.18
+    },
+    {
+      "at": 44.99,
+      "seconds": 0.34
+    },
+    {
+      "at": 45.33,
+      "seconds": 0.17
+    },
+    {
+      "at": 45.49,
+      "seconds": 0.16
+    },
+    {
+      "at": 45.65,
+      "seconds": 0.18
+    },
+    {
+      "at": 45.84,
+      "seconds": 0.17
+    },
+    {
+      "at": 46.01,
+      "seconds": 0.34
+    },
+    {
+      "at": 46.35,
+      "seconds": 0.22
+    },
+    {
+      "at": 46.57,
+      "seconds": 0.47
+    },
+    {
+      "at": 47.04,
+      "seconds": 0.27
+    },
+    {
+      "at": 47.31,
+      "seconds": 0.22
+    },
+    {
+      "at": 47.53,
+      "seconds": 0.19
+    },
+    {
+      "at": 47.72,
+      "seconds": 0.34
+    },
+    {
+      "at": 48.06,
+      "seconds": 0.34
+    },
+    {
+      "at": 48.4,
+      "seconds": 0.26
+    },
+    {
+      "at": 48.66,
+      "seconds": 0.21
+    },
+    {
+      "at": 48.87,
+      "seconds": 0.21
+    },
+    {
+      "at": 49.08,
+      "seconds": 0.25
+    },
+    {
+      "at": 49.33,
+      "seconds": 0.44
+    },
+    {
+      "at": 49.77,
+      "seconds": 0.25
+    },
+    {
+      "at": 50.02,
+      "seconds": 0.38
+    },
+    {
+      "at": 50.4,
+      "seconds": 0.38
+    },
+    {
+      "at": 50.79,
+      "seconds": 0.33
+    },
+    {
+      "at": 51.12,
+      "seconds": 0.36
+    },
+    {
+      "at": 51.48,
+      "seconds": 0.32
+    },
+    {
+      "at": 51.79,
+      "seconds": 0.36
+    },
+    {
+      "at": 52.15,
+      "seconds": 0.26
+    }
+  ]
+}

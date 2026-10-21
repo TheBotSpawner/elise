@@ -7,7 +7,7 @@ import { AppError } from "@/core/errors";
 import { openaiVoiceFor, previewText, resolveVoice } from "@/core/voice/catalog";
 import type { SpeechOutputProvider, SynthesisRequest } from "@/core/voice/providers";
 import { formatForSpeech, numberWords } from "@/core/voice/speech-format";
-import { SEGMENT, SentenceChunker } from "@/core/voice/speech-text";
+import { SEGMENT, SentenceChunker, toSpeakable } from "@/core/voice/speech-text";
 import {
   DELIVERY_TAGS,
   ElevenLabsSpeechOutput,
@@ -135,6 +135,22 @@ describe("speech formatter", () => {
       "Hace 22° y llueve un 40 por ciento.",
     );
     expect(formatForSpeech("La reunión es a las 14:30.", "es")).toContain("dos y media");
+  });
+
+  it("ADR-104: a source cited after the sentence is never read aloud; a link in a sentence is", () => {
+    expect(
+      toSpeakable(
+        "No pude confirmar el cierre del Merval de hoy, miércoles 21. [Cinco Días](https://cincodias.elpais.com/x)",
+      ),
+    ).toBe("No pude confirmar el cierre del Merval de hoy, miércoles 21.");
+    // The citation alone, as the last streamed unit.
+    expect(toSpeakable("[Cinco Días](https://cincodias.elpais.com/x)")).toBe("");
+    expect(toSpeakable("Cerró en baja. ([Infobae](https://a.b), [Ámbito](https://c.d))")).toBe(
+      "Cerró en baja.",
+    );
+    expect(toSpeakable("Leé [este informe](https://a.b) antes de la reunión.")).toBe(
+      "Leé este informe antes de la reunión.",
+    );
   });
 
   it("ADR-104: a long code (ticket, ID) is said digit by digit", () => {

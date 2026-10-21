@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown, Play, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -7,46 +8,57 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { AUTO_START, SOUNDS, type TimePreferences } from "@/core/timers/model";
+import type { TimerPayload } from "@/core/workspace/time";
 import { useI18n } from "@/lib/i18n/client";
+import { cn } from "@/lib/utils";
 
 import { saveTimePrefs } from "./actions";
 import { playChime } from "./sound";
 import { activeTimers, timeStore, useTime } from "./store";
-import { TimerSurfaceBody } from "./time-view";
+import { act, TimerSurfaceBody } from "./time-view";
 
 const MIN = 60_000;
 
-/** My Elise → Time (ADR-045): what's running, what finished today, and a few preferences. */
-export function TimeSettings() {
+const PRESETS = [1, 3, 5, 10, 15, 30, 60] as const;
+
+function TimerCard({ p }: { p: TimerPayload }) {
+  return (
+    <li className="flex flex-col gap-1 rounded-2xl border border-border bg-surface p-5">
+      {p.label && <p className="truncate text-[14px]">{p.label}</p>}
+      <TimerSurfaceBody p={p} size="medium" />
+    </li>
+  );
+}
+
+/**
+ * Mi ELISE → Tiempos → Temporizadores (ADR-045, ADR-105): start one in a tap (or set your own),
+ * the ones running as cards, and the pomodoro settings folded away.
+ */
+export function TimersPanel() {
   const t = useI18n().t.time;
   const s = useTime();
-  const active = activeTimers(s.timers);
-  const recent = s.timers.filter((x) => x.state === "completed").slice(0, 6);
+  const running = activeTimers(s.timers).filter((x) => x.kind !== "stopwatch");
+  const recent = s.timers
+    .filter((x) => x.state === "completed" && x.kind !== "stopwatch")
+    .slice(0, 5);
   return (
-    <div className="flex flex-col gap-8">
-      <section className="flex flex-col gap-3">
-        <h2 className="text-[15px] font-medium">{t.settings.active}</h2>
-        {active.length ? (
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {active.map((x) => (
-              <li key={x.id} className="rounded-2xl border border-border bg-surface p-4">
-                <p className="mb-2 truncate text-[14px] text-muted">{x.label ?? t[x.kind]}</p>
-                <TimerSurfaceBody p={x} size="small" />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[14px] text-muted">{t.settings.none}</p>
-        )}
-      </section>
+    <div className="flex flex-col gap-6">
+      <NewTimer pomodoro={s.prefs.pomodoro} />
+      {running.length > 0 && (
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {running.map((x) => (
+            <TimerCard key={x.id} p={x} />
+          ))}
+        </ul>
+      )}
       {recent.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-[15px] font-medium">{t.settings.recent}</h2>
-          <ul className="flex flex-col divide-y divide-border text-[14px]">
+        <section className="flex flex-col gap-1">
+          <h2 className="type-label text-faint">{t.settings.recent}</h2>
+          <ul className="flex flex-col divide-y divide-border text-[13.5px]">
             {recent.map((x) => (
-              <li key={x.id} className="flex justify-between py-2">
-                <span>{x.label ?? t[x.kind]}</span>
-                <span className="text-faint">
+              <li key={x.id} className="flex justify-between gap-3 py-2 text-muted">
+                <span className="truncate">{x.label ?? t[x.kind]}</span>
+                <span className="text-faint tabular-nums">
                   {x.completedAt
                     ? new Date(x.completedAt).toLocaleTimeString([], {
                         hour: "2-digit",
@@ -59,7 +71,137 @@ export function TimeSettings() {
           </ul>
         </section>
       )}
-      {s.loaded && <Preferences key={JSON.stringify(s.prefs)} initial={s.prefs} />}
+      {s.loaded && (
+        <details className="group rounded-2xl border border-border">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-3.5 text-[14px] [&::-webkit-details-marker]:hidden">
+            {t.settings.preferences}
+            <ChevronDown
+              className="size-4 text-muted transition-transform group-open:rotate-180"
+              aria-hidden
+            />
+          </summary>
+          <div className="border-t border-border px-5 py-4">
+            <Preferences key={JSON.stringify(s.prefs)} initial={s.prefs} />
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+type Start = Omit<Extract<Parameters<typeof act>[0], { tool: "start" }>, "tool">;
+
+const digits = (v: string, max: number) => String(Math.min(max, Number(v.replace(/\D/g, "")) || 0));
+
+function NewTimer({ pomodoro }: { pomodoro: TimePreferences["pomodoro"] }) {
+  const t = useI18n().t.time;
+  const n = t.settings.new;
+  const [time, setTime] = useState({ h: "0", m: "5", s: "0" });
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const start = async (input: Start) => {
+    setBusy(true);
+    await act({ tool: "start", ...input, ...(label.trim() ? { label: label.trim() } : {}) });
+    setBusy(false);
+    setLabel("");
+  };
+  const minutes = Number(time.h) * 60 + Number(time.m);
+  const seconds = Number(time.s);
+  const field = (key: "h" | "m" | "s", max: number, unit: string) => (
+    <label className="flex flex-col items-center gap-1">
+      <input
+        inputMode="numeric"
+        aria-label={unit}
+        value={time[key].padStart(2, "0")}
+        onFocus={(e) => e.target.select()}
+        onChange={(e) => setTime({ ...time, [key]: digits(e.target.value.slice(-2), max) })}
+        className="w-[2.6ch] rounded-xl bg-transparent text-center font-mono text-[56px] leading-none font-light tabular-nums focus:bg-surface-2 focus:outline-none"
+      />
+      <span className="text-[11px] tracking-[0.14em] text-faint uppercase">{unit}</span>
+    </label>
+  );
+  const colon = (
+    <span className="pt-1 font-mono text-[48px] leading-none font-light text-faint">:</span>
+  );
+  return (
+    <section className="flex flex-col items-center gap-5 rounded-2xl border border-border bg-surface px-5 py-6">
+      <div className="flex items-start gap-1">
+        {field("h", 23, n.hours)}
+        {colon}
+        {field("m", 59, n.minutes)}
+        {colon}
+        {field("s", 59, n.seconds)}
+      </div>
+      <div className="flex w-full max-w-md items-center gap-2">
+        <Input
+          maxLength={80}
+          aria-label={n.label}
+          placeholder={n.label}
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+        />
+        <Button
+          disabled={busy || (!minutes && !seconds)}
+          onClick={() => void start({ kind: "timer", minutes, seconds })}
+        >
+          <Play aria-hidden />
+          {n.start}
+        </Button>
+      </div>
+      <div className="flex flex-wrap justify-center gap-2">
+        {PRESETS.map((m) => (
+          <button
+            key={m}
+            type="button"
+            disabled={busy}
+            onClick={() => void start({ kind: "timer", minutes: m })}
+            className="rounded-full bg-surface-2 px-3.5 py-1.5 text-[13px] text-muted transition-colors hover:text-fg"
+          >
+            {m === 60 ? n.hour : n.min(m)}
+          </button>
+        ))}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void start({ kind: "pomodoro" })}
+          className="rounded-full border border-accent-line px-3.5 py-1.5 text-[13px] text-accent-text"
+        >
+          {n.pomodoro(Math.round(pomodoro.focusMs / MIN), Math.round(pomodoro.shortBreakMs / MIN))}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** Mi ELISE → Tiempos → Cronómetro (ADR-105): the running ones, large; one tap to start. */
+export function StopwatchPanel() {
+  const t = useI18n().t.time;
+  const s = useTime();
+  const running = activeTimers(s.timers).filter((x) => x.kind === "stopwatch");
+  const start = () => void act({ tool: "start", kind: "stopwatch" });
+  if (!running.length)
+    return (
+      <div className="flex flex-col items-center gap-6 rounded-2xl border border-border bg-surface px-5 py-14">
+        <p className="font-mono text-[56px] leading-none font-light text-faint tabular-nums">
+          00:00
+        </p>
+        <Button size="lg" onClick={start}>
+          <Play aria-hidden />
+          {t.settings.new.start}
+        </Button>
+      </div>
+    );
+  return (
+    <div className="flex flex-col gap-4">
+      <ul className={cn("grid gap-3", running.length > 1 && "sm:grid-cols-2")}>
+        {running.map((x) => (
+          <TimerCard key={x.id} p={x} />
+        ))}
+      </ul>
+      <Button variant="ghost" size="sm" className="self-start" onClick={start}>
+        <Plus aria-hidden />
+        {t.settings.new.another}
+      </Button>
     </div>
   );
 }
@@ -88,7 +230,6 @@ function Preferences({ initial }: { initial: TimePreferences }) {
   );
   return (
     <section className="flex max-w-xl flex-col gap-4">
-      <h2 className="text-[15px] font-medium">{t.preferences}</h2>
       <div className="grid gap-4 sm:grid-cols-2">
         <Label className="flex flex-col gap-1.5">
           {t.sound}

@@ -109,6 +109,19 @@ export function nextFire(
   return null;
 }
 
+/**
+ * ADR-105: a one-off that already passed, turned back on, rings the next time its hour comes
+ * (today or tomorrow) — its old date. Anything else keeps its date.
+ */
+export function revivedDate(
+  a: Pick<Alarm, "time" | "date" | "timezone">,
+  now: Date,
+): string | null {
+  if (!a.date || nextFire({ ...a, weekdays: [] }, now)) return a.date;
+  const at = nextFire({ ...a, date: null, weekdays: [0, 1, 2, 3, 4, 5, 6] }, now);
+  return at ? toLocalDateTime(at, a.timezone).slice(0, 10) : a.date;
+}
+
 /** What to do with an alarm whose `nextFireAt` has come, found at `now`. */
 export function dueDecision(nextFireAt: Date, now: Date): "early" | "ring" | "missed" {
   const late = now.getTime() - nextFireAt.getTime();
@@ -155,6 +168,25 @@ export function deliveryCheck(
     else (k.online ? ready : offline).push(k);
   }
   return { ready, offline, unknown };
+}
+
+/**
+ * ADR-105: where an alarm rings when nobody says — the saved defaults this person still has,
+ * else one device (the Desktop app first, then the device seen last). With any device known,
+ * never none: an alarm that rings nowhere is no alarm.
+ */
+export function defaultDestinations(
+  saved: readonly AlarmDestination[],
+  known: readonly DestinationStatus[],
+): AlarmDestination[] {
+  const kept = saved.filter((d) => known.some((k) => k.kind === d.kind && k.id === d.id));
+  if (kept.length || !known.length) return kept;
+  const best = [...known].sort(
+    (x, y) =>
+      Number(y.kind === "desktop") - Number(x.kind === "desktop") ||
+      Date.parse(y.lastSeenAt ?? "0") - Date.parse(x.lastSeenAt ?? "0"),
+  )[0]!;
+  return [{ kind: best.kind, id: best.id }];
 }
 
 // ── Sounds ───────────────────────────────────────────────────────────────────
