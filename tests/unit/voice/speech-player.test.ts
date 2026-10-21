@@ -105,6 +105,49 @@ describe("speech player", () => {
     expect(started).toHaveLength(0);
   });
 
+  it("ADR-104: a segment that fails before any audio is asked for once more, in order", async () => {
+    let failures = 1;
+    const errors: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        calls.push({ body: JSON.parse(init.body as string) });
+        if (failures-- > 0) return new Response("", { status: 500 });
+        const r = controlled();
+        responses.push(r);
+        return r.response;
+      }),
+    );
+    const p = new SpeechPlayer();
+    p.onError = () => errors.push(1);
+    p.speak("Tenés tres correos.", "es");
+    await flushAsync();
+    responses[0]!.push(new Uint8Array(4_800));
+    responses[0]!.push(null);
+    await flushAsync();
+    expect(calls.map((c) => c.body.text)).toEqual(["Tenés tres correos.", "Tenés tres correos."]);
+    expect(started).toHaveLength(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("a segment that fails twice is reported, never retried forever", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        calls.push({ body: JSON.parse(init.body as string) });
+        return new Response("", { status: 500 });
+      }),
+    );
+    const errors: number[] = [];
+    const p = new SpeechPlayer();
+    p.onError = () => errors.push(1);
+    p.speak("Tenés tres correos.", "es");
+    await flushAsync();
+    await flushAsync();
+    expect(calls).toHaveLength(2);
+    expect(errors).toEqual([1]);
+  });
+
   it("a progress line whose moment passed is never requested", async () => {
     const p = new SpeechPlayer();
     p.speak("Lo busco.", "es", { valid: () => false });

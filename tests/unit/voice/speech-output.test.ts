@@ -99,6 +99,14 @@ describe("speech formatter", () => {
     expect(numberWords(1_000_000_000, "es")).toBeNull();
   });
 
+  it("ADR-104: an opening “OK” is said the Rioplatense way; elsewhere it's left alone", () => {
+    expect(formatForSpeech("OK, te lo reviso.", "es")).toBe("Dale, te lo reviso.");
+    expect(formatForSpeech("Okay.", "es")).toBe("Dale.");
+    expect(formatForSpeech("Listo. Ok, ahora sí.", "es")).toBe("Listo. Dale, ahora sí.");
+    expect(formatForSpeech("Tenés el OK del banco.", "es")).toBe("Tenés el OK del banco.");
+    expect(formatForSpeech("OK, checking it.", "en")).toBe("OK, checking it.");
+  });
+
   it("what it doesn't recognise stays exactly as written", () => {
     expect(formatForSpeech("Versión 2.1.3 del 22/09.", "es")).toBe("Versión 2.1.3 del 22/09.");
   });
@@ -187,6 +195,42 @@ describe("ElevenLabs adapter", () => {
     expect(FakeSocket.last.closed).toBe(true);
     expect(isDialogueModel("eleven_v4_turbo")).toBe(true);
     expect(isDialogueModel("eleven_flash_v2_5")).toBe(false);
+  });
+
+  it("ADR-104: a fixed line (acknowledgement, progress) of any length uses the stable model", async () => {
+    const fetch = vi.fn(async () => new Response(stream([1, 2])));
+    vi.stubGlobal("fetch", fetch);
+    const p = new ElevenLabsSpeechOutput("k", "eleven_v4_turbo", voices, settings);
+    await p.synthesize({
+      text: "Estoy revisando los correos más recientes.",
+      language: "es",
+      voice: "elise",
+      fixedLine: true,
+    });
+    const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({ model_id: "eleven_flash_v2_5" });
+  });
+
+  it("ADR-104: a dialogue that ends with no audio fails (so the fallback speaks), never plays silence", async () => {
+    class SilentSocket {
+      onopen: (() => void) | null = null;
+      onmessage: ((e: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      constructor() {
+        queueMicrotask(() => this.onopen?.());
+      }
+      send(data: string) {
+        if (JSON.parse(data).flush)
+          queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ is_final: true }) }));
+      }
+      close() {}
+    }
+    vi.stubGlobal("WebSocket", SilentSocket);
+    const p = new ElevenLabsSpeechOutput("k", "eleven_v4_turbo", voices, settings);
+    await expect(
+      p.synthesize({ text: "Tenés tres correos de la facultad.", language: "es", voice: "elise" }),
+    ).rejects.toBeInstanceOf(AppError);
   });
 
   it("a line of a word or two never goes to a dialogue model: a stable model, same voice", async () => {

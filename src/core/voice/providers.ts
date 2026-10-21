@@ -48,6 +48,12 @@ export interface SynthesisRequest {
    * apply it in their own trusted syntax after sanitizing the text; absent means normal.
    */
   delivery?: VoiceDelivery;
+  /**
+   * ADR-104: a fixed utility line (acknowledgement, progress), synthesized once and replayed from
+   * cache. Providers with an expressive model that improvises (sounds, a "beep") use their stable
+   * one: a mistake there would repeat on every replay.
+   */
+  fixedLine?: boolean;
 }
 
 export interface SpeechOutputProvider {

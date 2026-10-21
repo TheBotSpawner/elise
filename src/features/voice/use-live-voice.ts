@@ -52,7 +52,10 @@ export function useLiveVoice({
       prefs.speak,
     );
     session.current = s;
-    const vis = () => s.visibility(document.visibilityState === "hidden");
+    // ADR-104: ELISE Desktop's hidden window (tray, minimized) keeps the conversation, as the
+    // legacy session does; a browser tab that goes hidden still sleeps.
+    const desktop = "eliseDesktop" in window;
+    const vis = () => !desktop && s.visibility(document.visibilityState === "hidden");
     document.addEventListener("visibilitychange", vis);
     let raf = 0;
     const loop = () => {

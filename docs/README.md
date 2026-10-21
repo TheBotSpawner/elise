@@ -43,6 +43,7 @@ These documents are the source of truth for product and architecture decisions. 
 | `25-slack-setup.md`                | Slack setup and app manifest (ADR-062) |
 | `26-elise-home-hub-dev.md`         | ELISE Home Hub development (ADR-079/080) |
 | `27-elise-desktop.md`              | ELISE Desktop: develop, release, operate (ADR-081) |
+| `28-voice-quality-2026-10.md`      | Voice quality and Desktop parity report (ADR-104) |
 
 ## roadmap/
 

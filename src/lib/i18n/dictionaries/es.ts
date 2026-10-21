@@ -2983,9 +2983,11 @@ export const es: Dictionary = {
     },
     voice: {
       continuous: "Conversación continua",
-      continuousHint: "Seguí hablando sin tocar el micrófono en cada turno.",
+      continuousHint:
+        "Seguí hablando sin tocar el micrófono en cada turno. Apagada (lo normal): ELISE escucha un pedido, te responde completo sin que el ruido la corte y vuelve a esperar «Elise».",
       continuousInfo: [
-        "Después de cada respuesta ELISE sigue escuchando, y queda en reposo tras unos segundos de silencio. Si una conversación queda en reposo, decí «Elise» para retomarla.",
+        "Después de cada respuesta ELISE sigue escuchando, y queda en reposo tras unos segundos de silencio. Si una conversación queda en reposo, decí «Elise» para retomarla. Mientras habla, hablarle encima la interrumpe.",
+        "Apagada, cada pedido es un solo turno: no sigue escuchando después de responder y nada del ambiente interrumpe la respuesta (tocá el micrófono o el Orb para cortarla).",
         "En la web funciona mientras ELISE está abierta y visible en esta pestaña: el navegador no escucha con la app cerrada ni con la pantalla bloqueada.",
         "La frase «Elise» se detecta en tu dispositivo; el audio llega a ELISE recién después de que la decís o tocás el micrófono.",
       ],

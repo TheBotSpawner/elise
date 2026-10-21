@@ -108,7 +108,7 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
     // A dialogue model (v3/v4) improvises on a line of a word or two ("Okay.", "Ahí va."):
     // stray sounds, a mechanical beep, that the acknowledgement cache then repeats. Those lines
     // go to a stable model with the same voice; whole sentences keep the dialogue model.
-    if (isDialogueModel(this.model) && isShortLine(text))
+    if (isDialogueModel(this.model) && (isShortLine(text) || request.fixedLine))
       return this.http(text, voice, request, signal, STABLE_MODEL);
     return isDialogueModel(this.model)
       ? this.dialogue(
@@ -230,10 +230,9 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
           controller?.enqueue(bytes);
         }
         if (msg.is_final || msg.is_final_audio_for_turn) {
-          if (!settled) {
-            settled = true;
-            resolve(stream);
-          }
+          // ADR-104: "done" with no audio at all is a failure (quota, a refused line), not an
+          // empty reply — rejecting lets the failover speak it instead of leaving silence.
+          if (!settled) return fail(failure(502));
           finish();
         }
       };

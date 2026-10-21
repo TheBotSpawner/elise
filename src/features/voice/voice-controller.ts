@@ -27,6 +27,8 @@ import {
   wantsInstantAck,
   progressLine,
   PROGRESS_AFTER_MS,
+  PROGRESS_MAX_PER_TURN,
+  PROGRESS_TTL_MS,
   stillSayable,
   type AckIntent,
   type SpeechCategory,
@@ -125,6 +127,13 @@ export type VoiceMarks = Partial<
     | "ackReady"
     | "ackTts"
     | "progressTts"
+    // ADR-104: how many progress lines, whether anything was heard, failed segments, the longest
+    // silence before audio, and which platform (1: ELISE Desktop).
+    | "progressLines"
+    | "audible"
+    | "speechFailures"
+    | "maxSilenceMs"
+    | "desktop"
     | "toolsDone"
     | "resultSpeech"
     | "audioStart"
@@ -219,7 +228,12 @@ interface SpokenTurn {
   intent: AckIntent | null;
   /** A tool of this turn failed: no more progress talk. */
   failed: boolean;
-  progressed: boolean;
+  /** ADR-104: progress lines said this turn (in order; never repeated). */
+  progressSaid: string[];
+  /** When ELISE last stopped making sound in this turn (or the request went out). */
+  quietSince: number;
+  /** The work running now (the latest tool's kind), for a truthful progress line. */
+  stage: AckIntent | null;
 }
 
 interface Snapshot {
@@ -241,7 +255,8 @@ const CONTINUATION_MS = 4_000;
 const TRANSCRIBE_TIMEOUT_MS = 25_000;
 
 /** Voice carries the synthesis; a long answer is spoken up to here, the rest is on screen. */
-export const SPOKEN_LIMIT = 420;
+/** ADR-104: room for a useful summary (four emails with sender and topic), not a monologue. */
+export const SPOKEN_LIMIT = 700;
 const REST_ON_SCREEN = {
   es: "El resto te lo dejo en pantalla.",
   en: "The rest is on screen.",
@@ -383,9 +398,15 @@ export class VoiceController {
     const p = this.deps.createPlayer();
     p.onStart = () => this.onAudioStart();
     p.onIdle = () => {
+      // ADR-104: silence is counted from here (the progress watch).
+      if (this.turn) this.turn.quietSince = this.now;
       if (this.turn?.textDone) this.complete();
     };
-    p.onError = () => this.act({ type: "speech_failed" });
+    p.onError = () => {
+      if (this.turn) this.turn.marks.speechFailures = (this.turn.marks.speechFailures ?? 0) + 1;
+      this.trace("speech_failed");
+      this.act({ type: "speech_failed" });
+    };
     p.onSegment = (seg) => {
       const turn = this.turn;
       this.trace("segment", { chars: seg.chars, gapMs: seg.gapMs, firstAudioMs: seg.firstAudioMs });
@@ -712,7 +733,9 @@ export class VoiceController {
       acked: false,
       intent: null,
       failed: false,
-      progressed: false,
+      progressSaid: [],
+      quietSince: this.now,
+      stage: null,
       text,
       open: !this.superseded,
     };
@@ -744,6 +767,10 @@ export class VoiceController {
       modality: "voice",
       voice: { durationMs, language, wake: this.state.wake },
     });
+    // ADR-104: from the request on, a long silence gets a truthful progress line.
+    const turn = this.turn;
+    turn.quietSince = this.now;
+    if (this.prefs.speak) this.later(PROGRESS_AFTER_MS, () => this.progress(turn));
   }
 
   // ── Delivery (ADR-049) ─────────────────────────────────────────────────────
@@ -817,9 +844,8 @@ export class VoiceController {
         turn.marks.runtimeStart ??= since();
         break;
       case "tool_started": {
-        // One progress line, only if the work itself is still running after a real wait
-        // (counted from when it started, not from an early acknowledgement).
-        if (!turn.speech.started) this.later(PROGRESS_AFTER_MS, () => this.progress(turn));
+        // The stage a later progress line names (ADR-104): the work really running now.
+        turn.stage = ackIntent((event as { name?: string }).name ?? "") ?? turn.stage;
         turn.marks.firstTool ??= since();
         turn.speech.started = true;
         turn.speech.running++;
@@ -887,25 +913,43 @@ export class VoiceController {
     this.say(turn, ack, "progress");
   }
 
-  /** The single progress update of a long turn — never after a result, a failure or the end. */
+  /**
+   * ADR-104, the progress watch: after PROGRESS_AFTER_MS without any sound in this turn, say what
+   * is really going on (the running tool's kind, or "putting the answer together" once every tool
+   * finished), up to PROGRESS_MAX_PER_TURN lines, never the same twice. Never after a result, a
+   * failure or the end; a line not yet playing when the result comes is dropped (`say`).
+   */
   private progress(turn: SpokenTurn) {
-    const line = turn.intent
-      ? progressLine(turn.intent, turn.language ?? this.prefs.language)
-      : null;
-    if (
+    const done =
       this.turn !== turn ||
-      !line ||
-      turn.progressed ||
       turn.failed ||
+      turn.textDone ||
+      turn.capped ||
       turn.speech.resultQueued ||
-      turn.speech.running === 0
-    ) {
-      this.trace("progress_skipped", { ms: Math.round(this.now - turn.t0) });
-      return;
-    }
-    turn.progressed = true;
-    this.trace("progress_emitted", { ms: Math.round(this.now - turn.t0) });
+      turn.progressSaid.length >= PROGRESS_MAX_PER_TURN;
+    if (done) return this.trace("progress_stopped", { ms: Math.round(this.now - turn.t0) });
+    // Speaking now (an acknowledgement, a line the model wrote): count from when it ends.
+    if (this.player?.speaking) return this.later(1_000, () => this.progress(turn));
+    const quiet = this.now - turn.quietSince;
+    if (quiet < PROGRESS_AFTER_MS)
+      return this.later(PROGRESS_AFTER_MS - quiet, () => this.progress(turn));
+    const lang = turn.language ?? this.prefs.language;
+    const composing = turn.speech.started && turn.speech.running === 0;
+    const line = progressLine(
+      composing ? "compose" : (turn.stage ?? turn.intent ?? "general"),
+      lang,
+      turn.progressSaid,
+    );
+    if (!line) return this.trace("progress_skipped", { ms: Math.round(this.now - turn.t0) });
+    turn.progressSaid.push(line);
+    turn.quietSince = this.now;
+    this.trace("progress_emitted", {
+      ms: Math.round(this.now - turn.t0),
+      n: turn.progressSaid.length,
+      composing,
+    });
     this.say(turn, line, "progress", true);
+    this.later(PROGRESS_AFTER_MS, () => this.progress(turn));
   }
 
   private later(ms: number, fn: () => void) {
@@ -922,7 +966,15 @@ export class VoiceController {
       turn.spoken += ` ${sentence}`;
       this.player.speak(sentence, turn.language, {
         valid: () => {
-          const ok = this.turn === turn && stillSayable(line, turn.speech, this.now);
+          // A progress line (ADR-104) may also play between tools and the answer; an
+          // acknowledgement only while its work runs.
+          const ok =
+            this.turn === turn &&
+            (isProgress
+              ? !turn.speech.resultQueued &&
+                !turn.textDone &&
+                this.now - line.createdAt <= PROGRESS_TTL_MS
+              : stillSayable(line, turn.speech, this.now));
           if (!ok && !dropped) {
             dropped = true;
             // Stale: the work finished, the result is coming, or a new turn began.
@@ -960,7 +1012,13 @@ export class VoiceController {
   private onAudioStart() {
     this.endTail();
     this.trace("tts_playback_started");
-    if (this.turn) this.turn.marks.audioStart ??= Math.round(this.now - this.turn.t0);
+    if (this.turn) {
+      const m = this.turn.marks;
+      m.audioStart ??= Math.round(this.now - this.turn.t0);
+      m.audible = 1;
+      // The silence the user sat through before this audio (ADR-104).
+      m.maxSilenceMs = Math.max(m.maxSilenceMs ?? 0, Math.round(this.now - this.turn.quietSince));
+    }
     this.act({ type: "speaking" });
     // Barge-in: the mic keeps listening while she speaks, the recorder already on.
     if (this.state.bargeIn && this.mic && this.state.phase === "speaking") {
@@ -975,6 +1033,9 @@ export class VoiceController {
     if (!turn) return;
     this.trace("tts_playback_ended");
     turn.marks.turnComplete = Math.round(this.now - turn.t0);
+    turn.marks.progressLines = turn.progressSaid.length;
+    // A spoken turn that never made a sound is a failure to report, not a success (ADR-104).
+    if (this.prefs.speak) turn.marks.audible ??= 0;
     this.turn = null;
     this.barge = null;
     this.deps.onTimings?.(turn.marks);
@@ -1135,7 +1196,9 @@ export class VoiceController {
       acked: true,
       intent: null,
       failed: false,
-      progressed: false,
+      progressSaid: [],
+      quietSince: this.now,
+      stage: null,
       text: "",
       open: true,
     };

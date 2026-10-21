@@ -112,31 +112,31 @@ type Bank = Record<AckIntent, { es: string[]; en: string[] }>;
  */
 const ACKS: Bank = {
   search_web: {
-    es: ["Lo busco.", "Ya lo busco.", "Voy a buscarlo.", "Déjame buscarlo."],
+    es: ["Lo busco.", "Ya lo busco.", "Voy a buscarlo.", "Dejame buscarlo."],
     en: ["Let me look it up.", "Looking it up.", "On it, searching.", "Let me check online."],
   },
   search_knowledge: {
-    es: ["Reviso el material.", "Lo busco en tus fuentes.", "Déjame revisar tus apuntes."],
+    es: ["Reviso el material.", "Lo busco en tus fuentes.", "Dejame revisar tus apuntes."],
     en: ["Checking your material.", "Looking through your sources.", "Let me check your notes."],
   },
   search_recall: {
-    es: ["Busco en nuestras conversaciones.", "Déjame recordar.", "Lo busco en lo que hablamos."],
+    es: ["Busco en nuestras conversaciones.", "Dejame recordar.", "Lo busco en lo que hablamos."],
     en: ["Searching our conversations.", "Let me recall that.", "Checking what we talked about."],
   },
   check_calendar: {
-    es: ["Reviso tu agenda.", "Ya miro el calendario.", "Déjame ver qué tenés."],
+    es: ["Reviso tu agenda.", "Ya miro el calendario.", "Dejame ver qué tenés."],
     en: ["Checking your calendar.", "Let me look at your schedule.", "Looking at your week."],
   },
   check_email: {
-    es: ["Reviso tus mails.", "Ya miro tu correo.", "Déjame revisar el correo."],
+    es: ["Reviso tus mails.", "Ya miro tu correo.", "Dejame revisar el correo."],
     en: ["Checking your email.", "Looking at your inbox.", "Let me check your mail."],
   },
   check_tasks: {
-    es: ["Reviso tus tareas.", "Ya miro tus pendientes.", "Déjame ver tus tareas."],
+    es: ["Reviso tus tareas.", "Ya miro tus pendientes.", "Dejame ver tus tareas."],
     en: ["Checking your tasks.", "Looking at your to-dos.", "Let me see your tasks."],
   },
   map_route: {
-    es: ["Calculo la ruta.", "Ya veo cómo llegar.", "Déjame ver el camino."],
+    es: ["Calculo la ruta.", "Ya veo cómo llegar.", "Dejame ver el camino."],
     en: ["Working out the route.", "Checking how to get there.", "Let me map it."],
   },
   find_places: {
@@ -177,7 +177,8 @@ const ACKS: Bank = {
   },
   // Never a promise of what she'll do (an action may still need approval): only "I heard you".
   instant: {
-    es: ["Un segundo.", "Okay.", "Dale, ya lo veo.", "Ahí va.", "Ya mismo."],
+    // Rioplatense, never the English "Okay." (ADR-104).
+    es: ["Un segundo.", "Dale.", "Dale, ya lo veo.", "Ahí va.", "Ya mismo."],
     en: ["One second.", "Okay.", "Sure, one moment.", "On it.", "Right away."],
   },
 };
@@ -237,31 +238,67 @@ export function predictIntent(text: string): AckIntent | null {
   return LOOKUPS.find(([re]) => re.test(t))?.[1] ?? null;
 }
 
-/** At most one progress line per turn, after a meaningful wait — not a talking spinner. */
+/**
+ * ADR-104: silence before a progress line — counted from the end of the last audio ELISE played
+ * (or from the request, when nothing played yet), never from when a tool started.
+ */
 export const PROGRESS_AFTER_MS = 3_500;
+/** A few truthful updates for genuinely long work, never a talking spinner. */
+export const PROGRESS_MAX_PER_TURN = 3;
 
-const PROGRESS: Partial<Bank> = {
-  search_web: { es: ["Sigo buscando."], en: ["Still searching."] },
+/**
+ * What is going on, by stage. Each line only states the work that is really running (the tool's
+ * capability), never a result; the second line of a stage is for a second long wait. "compose":
+ * every tool finished and the answer is being written.
+ */
+type ProgressStage = AckIntent | "compose";
+const PROGRESS: Partial<Record<ProgressStage, { es: string[]; en: string[] }>> = {
+  search_web: {
+    es: ["Sigo buscando.", "Todavía estoy buscando en la web."],
+    en: ["Still searching.", "Still searching the web."],
+  },
   search_knowledge: {
-    es: ["Sigo revisando tus documentos."],
-    en: ["Still going through your documents."],
+    es: ["Sigo revisando tus documentos.", "Todavía estoy leyendo tu material."],
+    en: ["Still going through your documents.", "Still reading your material."],
   },
   search_recall: {
     es: ["Sigo buscando en lo que hablamos."],
     en: ["Still searching our conversations."],
   },
-  check_calendar: { es: ["Sigo revisando tu agenda."], en: ["Still checking your calendar."] },
-  check_email: { es: ["Sigo revisando tus mails."], en: ["Still going through your email."] },
-  map_route: { es: ["Sigo con la ruta."], en: ["Still working out the route."] },
+  check_calendar: {
+    es: ["Sigo revisando tu agenda.", "Todavía estoy mirando tus eventos."],
+    en: ["Still checking your calendar.", "Still going through your events."],
+  },
+  check_email: {
+    es: ["Estoy revisando los correos más recientes.", "Sigo leyendo tus mails."],
+    en: ["Going through your latest emails.", "Still reading your email."],
+  },
+  map_route: {
+    es: ["Estoy calculando las opciones de recorrido.", "Sigo con la ruta."],
+    en: ["Working out the route options.", "Still on the route."],
+  },
   find_places: { es: ["Sigo buscando lugares."], en: ["Still looking for places."] },
   check_weather: { es: ["Sigo con el pronóstico."], en: ["Still checking the forecast."] },
   prepare_meeting: {
-    es: ["Estoy revisando los últimos correos y la reunión."],
-    en: ["Going through the latest emails and the meeting."],
+    es: ["Estoy revisando los últimos correos y la reunión.", "Sigo preparando la reunión."],
+    en: ["Going through the latest emails and the meeting.", "Still preparing the meeting."],
   },
-  plan: { es: ["Lo estoy armando."], en: ["Still putting it together."] },
-  analyze_data: { es: ["Lo estoy calculando."], en: ["Still working it out."] },
-  general: { es: ["Sigo con eso."], en: ["Still on it."] },
+  plan: {
+    es: ["Lo estoy armando.", "Sigo ordenando todo."],
+    en: ["Still putting it together.", "Still organizing it."],
+  },
+  analyze_data: {
+    es: ["Lo estoy calculando.", "Sigo con los números."],
+    en: ["Still working it out.", "Still on the numbers."],
+  },
+  general: {
+    es: ["Sigo con eso.", "Todavía estoy trabajando en eso."],
+    en: ["Still on it.", "Still working on it."],
+  },
+  compose: {
+    es: ["Ya tengo los datos, estoy armando la respuesta."],
+    en: ["Got it all, putting the answer together."],
+  },
 };
 
 /**
@@ -279,9 +316,17 @@ export function pickAcknowledgement(
   return [...bank].sort((a, b) => recent.lastIndexOf(a) - recent.lastIndexOf(b))[0]!;
 }
 
-/** The single progress line for long work of this kind (none for quick mutations). */
-export function progressLine(intent: AckIntent, locale: "es" | "en"): string | null {
-  return PROGRESS[intent]?.[locale][0] ?? null;
+/**
+ * The next progress line for this stage, in order, skipping what this turn already said; the
+ * general lines when the stage has none left. Null: nothing new and true to say.
+ */
+export function progressLine(
+  stage: ProgressStage,
+  locale: "es" | "en",
+  said: readonly string[] = [],
+): string | null {
+  const fresh = (s: ProgressStage) => PROGRESS[s]?.[locale].find((l) => !said.includes(l));
+  return fresh(stage) ?? (stage === "compose" ? null : fresh("general")) ?? null;
 }
 
 /**

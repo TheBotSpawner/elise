@@ -22,6 +22,7 @@ import {
   pickAcknowledgement,
   predictIntent,
   progressLine,
+  PROGRESS_MAX_PER_TURN,
   PROGRESS_AFTER_MS,
   PROGRESS_TTL_MS,
   stillSayable,
@@ -31,6 +32,7 @@ import { calibrateFloor, endVerdict, TurnDetector, VOICE_TURN } from "@/core/voi
 import { emptyWorkspace } from "@/core/workspace/model";
 import type { SpeakOptions } from "@/features/voice/speech-player";
 import {
+  SPOKEN_LIMIT,
   VoiceController,
   type MicPort,
   type PlayerPort,
@@ -973,14 +975,14 @@ describe("browser-pass regressions", () => {
     const { controller, player, say } = setup();
     await controller.start();
     await say();
-    for (let i = 0; i < 12; i++)
+    for (let i = 0; i < 20; i++)
       controller.onStream({
         type: "text",
         delta: `Esta es la frase número ${i} de una respuesta larga. `,
       });
     controller.onStream({ type: "finished", failed: false });
     expect(player.spoken.at(-1)).toBe("El resto te lo dejo en pantalla.");
-    expect(player.spoken.slice(0, -1).join(" ").length).toBeLessThanOrEqual(420);
+    expect(player.spoken.slice(0, -1).join(" ").length).toBeLessThanOrEqual(SPOKEN_LIMIT);
   });
 });
 
@@ -1221,17 +1223,58 @@ describe("acknowledgements: short, varied, honest", () => {
     expect(audible(player)).toEqual(["Tenés tres tareas."]);
   });
 
-  it("one progress line after a real wait while work runs — never two, never after the result", async () => {
+  it("progress after a real silence, counted from the end of the last audio (ADR-104)", async () => {
     const { controller, player, say, wait } = setup();
     await controller.start();
     await say();
     controller.onStream({ type: "tool_started", name: "meeting.prepare" });
-    wait(PROGRESS_AFTER_MS - 100);
     expect(player.spoken).toEqual(["Preparo la reunión."]);
-    wait(200);
-    expect(player.spoken).toEqual(["Preparo la reunión.", progressLine("prepare_meeting", "es")!]);
-    wait(PROGRESS_AFTER_MS * 3);
-    expect(player.spoken).toHaveLength(2);
+    // While the acknowledgement plays, nothing else is said…
+    wait(PROGRESS_AFTER_MS * 2);
+    expect(player.spoken).toHaveLength(1);
+    // …and the silence counts from when it ends.
+    player.finishPlaying();
+    wait(PROGRESS_AFTER_MS - 100);
+    expect(player.spoken).toHaveLength(1);
+    wait(1_200);
+    const first = progressLine("prepare_meeting", "es")!;
+    expect(player.spoken).toEqual(["Preparo la reunión.", first]);
+    // A second long wait gets a different, still truthful line; never the same one twice.
+    player.finishPlaying();
+    wait(PROGRESS_AFTER_MS + 1_100);
+    expect(player.spoken[2]).toBe(progressLine("prepare_meeting", "es", [first]));
+    // At most PROGRESS_MAX_PER_TURN, then quiet until the answer.
+    for (let i = 0; i < 6; i++) {
+      player.finishPlaying();
+      wait(PROGRESS_AFTER_MS + 1_100);
+    }
+    expect(player.spoken).toHaveLength(1 + PROGRESS_MAX_PER_TURN);
+    expect(new Set(player.spoken).size).toBe(player.spoken.length);
+  });
+
+  it("silence before any tool: the model is still deciding — a general line, not 10 s of nothing", async () => {
+    const { controller, player, say, wait } = setup({ prefs: { instantAck: false } });
+    await controller.start();
+    await say();
+    expect(player.spoken).toEqual([]);
+    wait(PROGRESS_AFTER_MS + 50);
+    expect(player.spoken).toEqual([progressLine("general", "es")]);
+  });
+
+  it("tools done, answer still being written: says so; a result cancels every pending line", async () => {
+    const { controller, player, say, wait } = setup({ prefs: { instantAck: false } });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "tool_started", name: "email.search" });
+    controller.onStream({ type: "tool_finished", outcome: { status: "succeeded" } });
+    player.finishPlaying();
+    wait(PROGRESS_AFTER_MS + 1_100);
+    expect(player.spoken.at(-1)).toBe(progressLine("compose", "es"));
+    controller.onStream({ type: "spoken", delta: "Tenés dos correos de la UTN. " });
+    const before = player.spoken.length;
+    player.finishPlaying();
+    wait(PROGRESS_AFTER_MS * 4);
+    expect(player.spoken).toHaveLength(before);
   });
 
   it("no progress once the result is coming, or after a failure", async () => {

@@ -161,7 +161,11 @@ export function useVoice({
   // Never listen in the background on the web (Desktop's background voice is the person's
   // choice, ADR-095); follow the network honestly.
   useEffect(() => {
-    const vis = () => !deviceWake && controller.visibility(document.visibilityState === "hidden");
+    // ADR-104: on ELISE Desktop a hidden window (tray, minimized) is never "the person left": a
+    // reply in progress is said in full, with or without the wake word on.
+    const desktop = "eliseDesktop" in window;
+    const vis = () =>
+      !deviceWake && !desktop && controller.visibility(document.visibilityState === "hidden");
     const on = () => controller.network(true);
     const off = () => controller.network(false);
     document.addEventListener("visibilitychange", vis);
@@ -273,7 +277,9 @@ async function transcribe(
   }
 }
 
-function reportTimings(marks: VoiceMarks) {
+function reportTimings(raw: VoiceMarks) {
+  // ADR-104: Web and Desktop measured side by side.
+  const marks: VoiceMarks = { ...raw, desktop: "eliseDesktop" in window ? 1 : 0 };
   let debug = process.env.NODE_ENV !== "production";
   try {
     debug ||= window.localStorage.getItem("elise.voiceDebug") === "1";

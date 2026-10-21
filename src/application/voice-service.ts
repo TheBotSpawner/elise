@@ -2,9 +2,11 @@ import "server-only";
 
 import { AppError } from "@/core/errors";
 import { BRAND_TERMS } from "@/core/lexicon";
+import { canonicalTimezone } from "@/core/time";
 import { previewText, type VoiceKey } from "@/core/voice/catalog";
 import type { VoiceDelivery } from "@/core/voice/delivery";
 import { VOICE_LIMITS, type VoiceLanguage } from "@/core/voice/providers";
+import { recognitionContext } from "@/core/voice/recognition";
 import { formatForSpeech } from "@/core/voice/speech-format";
 import { acknowledgements } from "@/core/voice/speech-plan";
 import { toSpeakable } from "@/core/voice/speech-text";
@@ -16,6 +18,7 @@ import {
 import { logger } from "@/infrastructure/observability/logger";
 import { withUsageScope } from "@/infrastructure/observability/usage";
 import { rateLimit } from "@/infrastructure/rate-limit";
+import { timezoneCountry } from "@/lib/timezones";
 
 import type { AuthContext } from "./auth-context";
 
@@ -36,6 +39,39 @@ function limit(auth: AuthContext, kind: keyof typeof LIMITS) {
     60_000,
     "Too many voice requests. Wait a moment and try again.",
   );
+}
+
+/**
+ * ADR-104: the names this user says most and a recognizer mishears — their Knowledge Spaces and
+ * Sections (subjects, clients) and Finance accounts. Names only, read under RLS, cached a few
+ * minutes per user so a turn never waits on it; any failure just means no extra hints.
+ */
+const TERMS_TTL_MS = 10 * 60_000;
+const termsCache = new Map<string, { at: number; terms: string[] }>();
+
+async function userTerms(auth: AuthContext): Promise<string[]> {
+  const key = `${auth.workspaceId}|${auth.userId}`;
+  const hit = termsCache.get(key);
+  if (hit && Date.now() - hit.at < TERMS_TTL_MS) return hit.terms;
+  const [spaces, accounts] = await Promise.all([
+    auth.db
+      .from("knowledge_spaces")
+      .select("name")
+      .eq("workspace_id", auth.workspaceId)
+      .is("archived_at", null)
+      .order("updated_at", { ascending: false })
+      .limit(24),
+    auth.db
+      .from("finance_accounts")
+      .select("name")
+      .eq("workspace_id", auth.workspaceId)
+      .is("archived_at", null)
+      .limit(12),
+  ]).catch(() => [null, null]);
+  const terms = [...(spaces?.data ?? []), ...(accounts?.data ?? [])].map((r) => r.name);
+  if (termsCache.size > 500) termsCache.clear(); // bounded: names only, per active user
+  termsCache.set(key, { at: Date.now(), terms });
+  return terms;
 }
 
 export type TranscribeStreamEvent =
@@ -80,7 +116,15 @@ export async function transcribeUtterance(
                 language,
                 // Recognition hints only (names), never instructions. ELISE's own names are
                 // easy to mishear ("mielist" for "Mi ELISE"); the resolver still checks after.
-                context: `${auth.profile.displayName ? `Speaker: ${auth.profile.displayName}. ` : ""}Assistant: ELISE. Names: ${BRAND_TERMS.join(", ")}.`,
+                // ADR-104: the user's variant (Rioplatense) and their own names (subjects,
+                // clients, accounts).
+                context: recognitionContext({
+                  locale: auth.profile.locale,
+                  country: timezoneCountry(canonicalTimezone(auth.profile.timezone)),
+                  displayName: auth.profile.displayName,
+                  brandTerms: BRAND_TERMS,
+                  userTerms: await userTerms(auth),
+                }),
               },
               AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
             )) {
@@ -158,6 +202,7 @@ export async function synthesizeSentence(
         ...(previous ? { previousText: formatForSpeech(previous, lang) } : {}),
         // Trusted, from the voice runtime (ADR-049): applied by the provider after sanitizing.
         ...(delivery !== "normal" ? { delivery } : {}),
+        ...(fixed ? { fixedLine: true } : {}),
       },
       AbortSignal.timeout(SPEAK_TIMEOUT_MS),
     ),
@@ -195,6 +240,7 @@ export async function warmAcknowledgements(
           language,
           voice: auth.profile.voice.voice,
           ...(delivery !== "normal" ? { delivery } : {}),
+          fixedLine: true,
         },
         AbortSignal.timeout(SPEAK_TIMEOUT_MS),
       ),
@@ -220,7 +266,9 @@ const ackAudio = new Map<string, Uint8Array>();
  * any of them never plays audio made for another (ADR-036, ADR-049: a whispered "Lo busco." is
  * never served for a normal one).
  */
-const ACK_CACHE_VERSION = 2;
+// 3 (ADR-104): fixed lines moved to the stable model; audio cached from the dialogue model
+// (which could carry an improvised beep) is never served again.
+const ACK_CACHE_VERSION = 3;
 export const ackKey = (
   provider: { id: string; model: string },
   voice: string,
@@ -280,6 +328,12 @@ export const VOICE_TIMINGS = [
   "deliveryConfidence",
   "deliveryExplicit",
   "deliveryAnalysisMs",
+  /** ADR-104: progress lines said, audible (1/0), failed segments, longest silence, Desktop (1/0). */
+  "progressLines",
+  "audible",
+  "speechFailures",
+  "maxSilenceMs",
+  "desktop",
 ] as const;
 
 /**

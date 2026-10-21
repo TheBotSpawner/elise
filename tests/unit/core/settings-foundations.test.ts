@@ -58,7 +58,11 @@ describe("voice preferences", () => {
     const v = voicePreferences(legacy, "elise");
     expect(v.wakePhrase).toBe(WAKE_PHRASE);
     expect(WAKE_PHRASE).toBe("elise");
-    expect(v).toMatchObject({ enabled: true, speak: true, bargeIn: true });
+    expect(v).toMatchObject({ enabled: true, speak: true });
+    // ADR-104: one turn at a time — her answer isn't cut by the room; continuous conversation
+    // brings speaking over her back.
+    expect(v.bargeIn).toBe(false);
+    expect(voicePreferences({ ...row, voice_continuous: true }, "elise").bargeIn).toBe(true);
     // "Elise" only wakes a resting session in continuous mode.
     expect(v.wakeEnabled).toBe(false);
     expect(voicePreferences({ ...row, voice_continuous: null }, "elise").continuous).toBe(false);

@@ -189,6 +189,10 @@ function clock(h: number, m: number, lang: Lang): string | null {
 
 export function formatForSpeech(text: string, lang: Lang): string {
   let t = toSpeakable(text);
+  // ADR-104: in Spanish, an "OK" interjection opening a sentence is said the Rioplatense way.
+  // Only there: "el OK del banco" or a product name is left alone. The screen keeps the text.
+  if (lang === "es") t = t.replace(/(^|[.!?¡¿]\s+)(?:ok|okay|okey)\b[,.!]?\s*/gi, "$1Dale, ");
+  t = t.replace(/Dale, ([.!?])/g, "Dale$1").replace(/Dale, $/, "Dale.");
   // Times: "a las 14:30" / "14:30 hs" → "a las dos y media de la tarde".
   t = t.replace(/\b(?:(?:a )?las |la )?(\d{1,2}):(\d{2})(?:\s?(?:hs|h|horas))?\b/gi, (m, h, mm) => {
     const said = clock(Number(h), Number(mm), lang);

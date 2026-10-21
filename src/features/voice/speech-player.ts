@@ -36,6 +36,8 @@ const STALL_MS = 8000;
 interface Item extends SpeakOptions {
   text: string;
   language: VoiceLanguage | null;
+  /** ADR-104: already asked for once and failed before any audio. */
+  retried?: boolean;
 }
 
 interface Flight {
@@ -43,6 +45,8 @@ interface Flight {
   controller: AbortController;
   requestedAt: number;
   response: Promise<Response>;
+  /** Some of its audio was scheduled (a retry would repeat it). */
+  started?: boolean;
 }
 
 export class SpeechPlayer {
@@ -180,9 +184,26 @@ export class SpeechPlayer {
       try {
         await this.play(flight, generation);
       } catch (error) {
-        // An interruption aborts quietly; a stalled or failed segment is reported and skipped.
-        if (this.stalled || !(error instanceof DOMException && error.name === "AbortError"))
-          this.onError?.();
+        // An interruption aborts quietly; a stalled or failed segment is retried once if none of
+        // it played (ADR-104: a voice reply must be heard), else reported and skipped.
+        const interrupted =
+          generation !== this.generation ||
+          (!this.stalled && error instanceof DOMException && error.name === "AbortError");
+        if (!interrupted) {
+          if (!flight.started && !flight.item.retried) {
+            // Order is kept: a next segment already requested goes back after the retry.
+            // (Set while this one played; TS narrowed it to null above.)
+            const next = this.ahead as Flight | null;
+            if (next) {
+              next.controller.abort();
+              this.flights.delete(next.controller);
+              this.queue.unshift(next.item);
+              this.ahead = null;
+            }
+            this.queue.unshift({ ...flight.item, retried: true });
+            this.said = "";
+          } else this.onError?.();
+        }
       } finally {
         this.flights.delete(flight.controller);
       }
@@ -247,6 +268,7 @@ export class SpeechPlayer {
       pending = [];
       pendingBytes = 0;
       const gap = this.schedule(bytes, rate);
+      flight.started = true;
       if (!started)
         this.onSegment?.({
           chars: item.text.length,

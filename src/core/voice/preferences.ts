@@ -4,8 +4,9 @@ import type { WakePhrase } from "./wake";
 /**
  * Voice preferences (ADR-068). The person chooses three things: continuous conversation, the
  * voice language and the voice. Everything else is a good default, not a setting:
- * - the microphone is always offered, replies to voice are spoken, speaking over ELISE
- *   interrupts her (barge-in) and quiet speech is matched (adaptive delivery, per device);
+ * - the microphone is always offered, replies to voice are spoken, quiet speech is matched
+ *   (adaptive delivery, per device), and speaking over ELISE interrupts her only in a continuous
+ *   conversation (ADR-104);
  * - the wake phrase is always "Elise". On the web it only wakes a voice session that is
  *   resting in a visible tab, and only while continuous conversation is on.
  * Older rows (custom phrase, toggles turned off) read safely into this model, with no migration.
@@ -33,7 +34,11 @@ export function voicePreferences(row: VoiceRow, voice: VoiceKey) {
     language: row.voice_language,
     voice,
     continuous,
-    bargeIn: true,
+    // ADR-104: one turn at a time (continuous off) means the microphone closes when the request
+    // is understood — her answer is never cut by the room, the TV or her own voice. Stopping her
+    // stays one tap (or the Orb) away. In a continuous conversation, speaking over her
+    // interrupts, as before.
+    bargeIn: continuous,
     wakeEnabled: continuous,
     wakePhrase: WAKE_PHRASE,
   };

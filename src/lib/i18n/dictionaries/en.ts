@@ -2950,9 +2950,11 @@ export const en = {
     },
     voice: {
       continuous: "Continuous conversation",
-      continuousHint: "Keep talking without tapping the microphone every turn.",
+      continuousHint:
+        "Keep talking without tapping the microphone every turn. Off (the default): ELISE hears one request, answers it in full without noise cutting her off, and goes back to waiting for “Elise”.",
       continuousInfo: [
-        "After each reply ELISE keeps listening, and rests after a few seconds of silence. When a conversation is resting, say “Elise” to pick it up again.",
+        "After each reply ELISE keeps listening, and rests after a few seconds of silence. When a conversation is resting, say “Elise” to pick it up again. While she speaks, talking over her interrupts her.",
+        "Off, each request is a single turn: she doesn't keep listening after answering, and nothing around you interrupts the answer (tap the microphone or the Orb to stop it).",
         "On the web this works while ELISE is open and visible in this tab: a browser doesn't listen with the app closed or the screen locked.",
         "“Elise” is detected on your device; audio reaches ELISE only after you say it or tap the microphone.",
       ],
