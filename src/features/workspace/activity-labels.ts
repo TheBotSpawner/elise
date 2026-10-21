@@ -46,3 +46,13 @@ export function activityLabel(t: Dictionary, tool: string, running: boolean): st
 
 /** Presentation tools arrange the workspace; they aren't sources worth listing. */
 export const isPresentationTool = (tool: string) => tool.startsWith("ui.");
+
+/**
+ * ADR-104: a step that failed while the rest of the work went on (a web page that didn't load,
+ * a source tried first) is ELISE's business, not the person's — it stays in the logs and the
+ * answer says what couldn't be done. Failures show only when nothing else worked or runs.
+ */
+export function visibleSteps<T extends { outcome?: { status: string } | null }>(steps: T[]): T[] {
+  const anyOk = steps.some((s) => !s.outcome || s.outcome.status !== "failed");
+  return anyOk ? steps.filter((s) => s.outcome?.status !== "failed") : steps;
+}

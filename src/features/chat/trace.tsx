@@ -12,7 +12,11 @@ import {
   PauseIcon,
   RunningIcon,
 } from "@/components/elise/icons";
-import { activityLabel, isPresentationTool } from "@/features/workspace/activity-labels";
+import {
+  activityLabel,
+  isPresentationTool,
+  visibleSteps,
+} from "@/features/workspace/activity-labels";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -29,7 +33,7 @@ function formatSeconds(ms: number | undefined): string {
  */
 export function ToolTrace({ tools: all, running }: { tools: ClientToolTrace[]; running: boolean }) {
   // Presentation steps arrange the workspace; the trace lists the work and its sources.
-  const tools = all.filter((s) => !isPresentationTool(s.name));
+  const tools = visibleSteps(all.filter((s) => !isPresentationTool(s.name)));
   const { t } = useI18n();
   const desktop = useIsDesktop();
   const [open, setOpen] = useState(running);

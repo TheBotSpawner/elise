@@ -26,7 +26,7 @@ import type { VoiceHandlers } from "@/features/voice/voice-controls";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-import { activityLabel, isPresentationTool } from "../activity-labels";
+import { activityLabel, isPresentationTool, visibleSteps } from "../activity-labels";
 import {
   deviceFor,
   resolveComposition,
@@ -535,8 +535,9 @@ function Trail({
   );
 }
 
-function ActivityRow({ steps }: { steps: ClientToolTrace[] }) {
+function ActivityRow({ steps: all }: { steps: ClientToolTrace[] }) {
   const { t } = useI18n();
+  const steps = visibleSteps(all);
   return (
     <ul
       role="status"

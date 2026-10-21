@@ -232,6 +232,26 @@ describe("a brief's Surfaces are chosen by relevance", () => {
     expect(news).toBeLessThan(items.find((i) => i.tool === "calendar.listEvents")!.priority);
   });
 
+  it("ADR-104: a long line never silences the parts after it (the weather is still said)", () => {
+    const { brief } = setup();
+    const long = "Tenés una agenda muy cargada hoy. ".repeat(40).trim();
+    const withWeather = {
+      ...brief,
+      narration: {
+        greeting: "Buen día.",
+        lines: { agenda: long, weather: "Hoy llovizna, entre 14 y 19 grados." },
+        closing: null,
+      },
+    } as MorningBrief;
+    const text = spokenBrief(
+      { ...withWeather, weather: withWeather.weather ?? ({ days: [], hours: [] } as never) },
+      "es",
+    );
+    expect(text).toContain("llovizna");
+    expect(text).not.toContain(long);
+    expect(text.length).toBeLessThanOrEqual(SPOKEN_BRIEF_LIMIT);
+  });
+
   it("the spoken synthesis is short, points to the screen, and never reads every item", () => {
     const { brief } = setup();
     const text = spokenBrief(brief, "es");

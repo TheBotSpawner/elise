@@ -291,8 +291,31 @@ export async function previewVoice(
     throw new AppError("VALIDATION_ERROR", "That voice isn't available", { recovery: "review" });
   limit(auth, "speak");
   const provider = getSpeechOutputProvider();
-  const stream = await provider.synthesize({ text: previewText(voice, language), language, voice });
-  return { stream, sampleRate: provider.format.sampleRate };
+  const text = previewText(voice, language);
+  // ADR-104: a fixed sample — the stable, fast model, and from memory after the first time
+  // (it took ~20 s through the dialogue model, which the page waits for in full).
+  const key = ackKey(provider, voice, language, `preview:${text}`);
+  const cached = ackAudio.get(key);
+  if (cached)
+    return {
+      stream: new ReadableStream({
+        start(c) {
+          c.enqueue(cached);
+          c.close();
+        },
+      }),
+      sampleRate: provider.format.sampleRate,
+    };
+  const stream = await provider.synthesize(
+    { text, language, voice, fixedLine: true },
+    AbortSignal.timeout(SPEAK_TIMEOUT_MS),
+  );
+  const [live, copy] = stream.tee();
+  void new Response(copy)
+    .arrayBuffer()
+    .then((b) => b.byteLength && ackAudio.set(key, new Uint8Array(b)))
+    .catch(() => undefined);
+  return { stream: live, sampleRate: provider.format.sampleRate };
 }
 
 /** Latency of one voice turn, in milliseconds from the moment the microphone opened. */

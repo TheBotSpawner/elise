@@ -209,8 +209,11 @@ export function focusSurface(
   };
 }
 
-/** Voice carries the synthesis: the greeting and what matters most, then the screen. */
-export const SPOKEN_BRIEF_LIMIT = 400;
+/**
+ * Voice carries the synthesis: the greeting and one line per part, then the screen. ADR-104:
+ * room for every part's line (the weather was being cut off behind a long agenda).
+ */
+export const SPOKEN_BRIEF_LIMIT = 900;
 
 /**
  * What ELISE says when the brief opens (§H): the narration's greeting and the most important
@@ -224,7 +227,9 @@ export function spokenBrief(brief: MorningBrief, locale: "es" | "en"): string {
   for (const line of lines) {
     if (!line) continue;
     const next = out ? `${out} ${line}` : line;
-    if (next.length + closing.length + 1 > SPOKEN_BRIEF_LIMIT) break;
+    // A line that doesn't fit is skipped, never the end: the shorter parts after it (the
+    // weather, a reply waiting) are still said.
+    if (next.length + closing.length + 1 > SPOKEN_BRIEF_LIMIT) continue;
     out = next;
   }
   if (/pantalla|screen/i.test(out)) return out;

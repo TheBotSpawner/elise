@@ -297,8 +297,11 @@ export class SpeechPlayer {
       }
       pending.push(chunk);
       pendingBytes += chunk.length;
-      // ~150 ms per buffer: smooth scheduling without delaying the start.
-      if (pendingBytes >= rate * 0.3) flush();
+      // ~150 ms per buffer while audio is already queued ahead. With nothing queued (a reply's
+      // start, or the schedule ran dry), ~400 ms first (ADR-104): one short wait instead of the
+      // stutter a slow chunk would cause mid-word. (Bytes: 2 per sample.)
+      const dry = this.nextTime <= this.ctx.currentTime + 0.05;
+      if (pendingBytes >= (dry ? rate * 0.8 : rate * 0.3)) flush();
     }
     flush();
   }
