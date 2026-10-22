@@ -53,6 +53,14 @@ const serverEnvSchema = z.object({
   WEB_SEARCH_PROVIDER: z.enum(["openai", "tavily"]).optional(),
   OPENAI_WEB_SEARCH_MODEL: z.string().min(1).default("gpt-4.1-mini"),
   TAVILY_API_KEY: z.string().min(1).optional(),
+  /**
+   * Mercado Libre's official API (ADR-112): off unless "true" AND the application is approved.
+   * The refresh token is ELISE's own application account's (never a user's), server-only.
+   */
+  MERCADOLIBRE_API_ENABLED: z.enum(["true", "false"]).default("false"),
+  MERCADOLIBRE_CLIENT_ID: z.string().min(1).optional(),
+  MERCADOLIBRE_CLIENT_SECRET: z.string().min(1).optional(),
+  MERCADOLIBRE_REFRESH_TOKEN: z.string().min(1).optional(),
   /** Location (ADR-023): server key restricted to Places (New), Routes and Geocoding. */
   GOOGLE_MAPS_SERVER_API_KEY: z.string().min(1).optional(),
   /** Weather (ADR-038): Open-Meteo commercial key; without it, the free non-commercial API. */

@@ -50,3 +50,36 @@ describe("brief news", () => {
     expect(items.some((i) => i.display.kind === "web_news")).toBe(false);
   });
 });
+
+describe("brief weather", () => {
+  it("a chosen weather block stays among the 8 visible Surfaces, ahead of news and routine mail", () => {
+    const brief = {
+      attention: { emails: [], tasks: [] },
+      waitingOnYou: { overdue: [] },
+      weather: { place: "Buenos Aires" },
+      news: [
+        {
+          topic: "IA",
+          headline: "IA 1",
+          publishedAt: "2026-10-18",
+          sources: [{ title: "IA 1", url: "https://n.example/1", domain: "n.example" }],
+        },
+      ],
+    } as unknown as MorningBrief;
+    const items = briefCanvas(brief, [
+      { block: "weather", tool: "weather.forecast", args: {}, display: { kind: "weather" } },
+      {
+        block: "news",
+        tool: "web.searchNews",
+        args: {},
+        display: { kind: "web_news", query: "IA", recency: "day", retrievedAt: "x", events: [] },
+      },
+    ] as never);
+    const weather = items.find((i) => i.display.kind === "weather")!;
+    const news = items.find((i) => i.display.kind === "web_news")!;
+    // Above news (55), routine mail (60–72) and key tasks (66); urgent ones (84+) still lead.
+    expect(weather.priority).toBeGreaterThan(72);
+    expect(weather.priority).toBeLessThan(84);
+    expect(weather.priority).toBeGreaterThan(news.priority);
+  });
+});

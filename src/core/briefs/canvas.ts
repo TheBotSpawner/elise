@@ -114,7 +114,9 @@ export function briefCanvas(brief: MorningBrief, reads: readonly BriefRead[]): B
         if (brief.goals?.length) add(r, d, 42);
         break;
       case "weather":
-        if (brief.weather) add(r, d, 52);
+        // A block the person chose and a compact one: it must survive the Canvas's 8-Surface
+        // cut (at 52 it was shelved behind several mail accounts and news).
+        if (brief.weather) add(r, d, 76);
         break;
       case "finance_summary":
         // The month to date is the finance Surface; the comparison reads only ground the words.

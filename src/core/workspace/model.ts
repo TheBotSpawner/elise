@@ -67,6 +67,8 @@ export const SURFACE_TYPES = [
   "economy",
   /** Supermarket prices (ADR-111): a product, a basket comparison, a history, a choice. */
   "shopping",
+  /** Products to buy (ADR-112): Mercado Libre's offers, verified or only linked. */
+  "product_offers",
   /** A spreadsheet from chat, analyzed by the Finance import pipeline (ADR-075). */
   "finance_import",
   /** "Cambiá tu personalidad" with no target (ADR-076): the five choices. */

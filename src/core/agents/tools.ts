@@ -528,6 +528,12 @@ export type ToolDisplay =
   /** Public economic data (ADR-094). */
   | { kind: "economy"; economy: SurfacePayloads["economy"]; title: string; key: string }
   | { kind: "shopping"; shopping: SurfacePayloads["shopping"]; title: string; key: string }
+  | {
+      kind: "product_offers";
+      offers: SurfacePayloads["product_offers"];
+      title: string;
+      key: string;
+    }
   /** A day's plan (ADR-098): validated by core/planning, never by the model. */
   | { kind: "day_plan"; plan: SurfacePayloads["day_plan"] }
   /** Alarms (ADR-100): computed by ELISE, with where each can really ring. */

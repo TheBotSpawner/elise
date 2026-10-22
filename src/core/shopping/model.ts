@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { MarketplaceApi, MarketplaceMode } from "./marketplace";
+
 /**
  * Shopping prices (ADR-111): public supermarket prices in Argentina, provider-independent. The
  * Core knows products (by barcode), chains, regions and prices with their date and how they were
@@ -680,6 +682,11 @@ export interface AlertView {
 /** What ELISE's shopping tools use (implemented in the application layer). */
 export interface ShoppingCapability {
   data: ShoppingData;
+  /** ADR-112: Mercado Libre's official API, when enabled and approved; null otherwise. */
+  marketplace: MarketplaceApi | null;
+  /** ADR-112: "solo / evitá Mercado Libre" kept for next time (null = the default, prefer). */
+  marketplaceMode(): Promise<MarketplaceMode | null>;
+  saveMarketplaceMode(mode: MarketplaceMode | null): Promise<void>;
   /** The person's saved shopping province (never inferred from a timezone). */
   region(): Promise<Region | null>;
   saveRegion(region: Region): Promise<void>;

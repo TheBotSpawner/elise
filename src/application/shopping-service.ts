@@ -17,9 +17,10 @@ import {
   type ShoppingData,
 } from "@/core/shopping/model";
 import { logger } from "@/infrastructure/observability/logger";
+import { mercadoLibreApi } from "@/infrastructure/shopping/mercadolibre";
 import { supabaseShoppingData } from "@/infrastructure/shopping/store";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
-import type { ShoppingPriceAlertRow } from "@/infrastructure/supabase/database.types";
+import type { Json, ShoppingPriceAlertRow } from "@/infrastructure/supabase/database.types";
 
 import type { AuthContext } from "./auth-context";
 
@@ -53,34 +54,52 @@ export function shoppingCapability(
   auth: AuthContext,
   data: ShoppingData = supabaseShoppingData(),
 ): ShoppingCapability {
+  /** One preference row for shopping (province, marketplace): each save merges, never wipes. */
+  const prefs = async (): Promise<Record<string, unknown>> => {
+    const { data: pref } = await db(auth)
+      .from("user_preferences")
+      .select("value_json")
+      .eq("workspace_id", auth.workspaceId)
+      .eq("user_id", auth.userId)
+      .eq("key", PREF_KEY)
+      .maybeSingle();
+    const v = pref?.value_json;
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  };
+  const savePrefs = async (patch: Record<string, unknown>) => {
+    const next = { ...(await prefs()), ...patch };
+    for (const k of Object.keys(next)) if (next[k] === null) delete next[k];
+    const { error } = await db(auth)
+      .from("user_preferences")
+      .upsert(
+        {
+          workspace_id: auth.workspaceId,
+          user_id: auth.userId,
+          key: PREF_KEY,
+          value_json: next as Json,
+          source: "user",
+        },
+        { onConflict: "workspace_id,user_id,key" },
+      );
+    if (error)
+      throw new AppError("INTERNAL_ERROR", "Could not save the preference", { cause: error });
+  };
   return {
     data,
     async region() {
-      const { data: pref } = await db(auth)
-        .from("user_preferences")
-        .select("value_json")
-        .eq("workspace_id", auth.workspaceId)
-        .eq("user_id", auth.userId)
-        .eq("key", PREF_KEY)
-        .maybeSingle();
-      const r = regionSchema.safeParse((pref?.value_json as { region?: unknown } | null)?.region);
+      const r = regionSchema.safeParse((await prefs()).region);
       return r.success ? r.data : null;
     },
     async saveRegion(region) {
-      const { error } = await db(auth)
-        .from("user_preferences")
-        .upsert(
-          {
-            workspace_id: auth.workspaceId,
-            user_id: auth.userId,
-            key: PREF_KEY,
-            value_json: { region: regionSchema.parse(region) },
-            source: "user",
-          },
-          { onConflict: "workspace_id,user_id,key" },
-        );
-      if (error)
-        throw new AppError("INTERNAL_ERROR", "Could not save the region", { cause: error });
+      await savePrefs({ region: regionSchema.parse(region) });
+    },
+    marketplace: mercadoLibreApi(),
+    async marketplaceMode() {
+      const m = (await prefs()).marketplace;
+      return m === "prefer" || m === "only" || m === "avoid" ? m : null;
+    },
+    async saveMarketplaceMode(mode) {
+      await savePrefs({ marketplace: mode });
     },
     async listLines(listId) {
       const { data: items, error } = await db(auth)

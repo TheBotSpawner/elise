@@ -128,6 +128,18 @@ describe("speech formatter", () => {
     expect(formatForSpeech("Cerró en 97.942,65 puntos, una baja del 0,30%.", "es")).toBe(
       "Cerró en noventa y siete mil novecientos cuarenta y dos coma sesenta y cinco puntos, una baja del cero coma treinta por ciento.",
     );
+    // Sources are for the screen, never read aloud, wherever the model puts them.
+    for (const cited of [
+      "Puede variar según la sucursal [Josimar](https://josimar.com.ar/a) · [La Banderita](https://lb.com.ar/b).",
+      "Puede variar según la sucursal ([Josimar](https://josimar.com.ar/a), [La Banderita](https://lb.com.ar/b)).",
+      "Puede variar según la sucursal. Fuentes: [Josimar](https://josimar.com.ar/a) · [La Banderita](https://lb.com.ar/b)",
+      "Puede variar según la sucursal. [Josimar](https://josimar.com.ar/a) · [La Banderita](https://lb.com.ar/b)",
+    ])
+      expect(formatForSpeech(cited, "es"), cited).toBe("Puede variar según la sucursal.");
+    // One link inside a sentence keeps its words.
+    expect(
+      formatForSpeech("Te dejé [la publicación](https://x.example/p) en pantalla.", "es"),
+    ).toBe("Te dejé la publicación en pantalla.");
     // Long decimals digit by digit; math symbols in words.
     expect(formatForSpeech("La raíz cuadrada de π es aproximadamente 1,77245.", "es")).toBe(
       "La raíz cuadrada de pi es aproximadamente uno coma siete siete dos cuatro cinco.",

@@ -31,6 +31,7 @@ import { KNOWLEDGE_TOOLS } from "@/core/tools/knowledge";
 import { KNOWLEDGE_ADMIN_TOOLS } from "@/core/tools/knowledge-admin";
 import { LIST_TOOLS } from "@/core/tools/lists";
 import { LOCATION_TOOLS } from "@/core/tools/location";
+import { MARKETPLACE_TOOLS } from "@/core/tools/marketplace";
 import { MARKET_TOOLS } from "@/core/tools/markets";
 import { MEETING_TOOLS } from "@/core/tools/meeting";
 import { METHOD_TOOLS } from "@/core/tools/methods";
@@ -147,6 +148,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...MARKET_TOOLS,
   ...ECONOMY_TOOLS,
   ...SHOPPING_TOOLS,
+  ...MARKETPLACE_TOOLS,
   ...HOME_TOOLS,
   ...CONTEXT_TOOLS,
   ...STUDY_TOOLS,

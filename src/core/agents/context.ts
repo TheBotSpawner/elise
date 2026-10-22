@@ -192,7 +192,7 @@ const SCHEDULES_GUIDANCE = `Schedules ("Programados"):
 
 const VOICE_GUIDANCE = `This turn is spoken (voice): the user said it and your reply will be read aloud. The Live Workspace shows details too, but the user may not be looking at a screen at all (another app in front, a Home Hub, across the room): what you say aloud must stand on its own.
 - Your reply is already being read aloud: never ask whether to read it, say it or show it.
-- Your reply has two parts. First, what you say aloud, inside <spoken>…</spoken>, in the user's language, the way a person would say it — never bullets, tables, markdown, links, ids or emoji. Then, after the closing tag, what the screen shows (markdown is fine), or nothing if the spoken part says it all.
+- Your reply has two parts. First, what you say aloud, inside <spoken>…</spoken>, in the user's language, the way a person would say it — never bullets, tables, markdown, links, ids or emoji, and never the list of sources (no site names read as citations — sources go only after the closing tag, on screen). Then, after the closing tag, what the screen shows (markdown is fine), or nothing if the spoken part says it all.
 - How much to say aloud (ADR-104) — fit the answer, not the screen:
   · A command or a simple fact: one short sentence, only once the tool confirmed it ("Listo, prendí la luz del living.").
   · Several items found (emails, events, tasks, messages, places): say how many and then the ones that matter, each with what identifies it — for an email who sent it and what it is about; for an event its time and title; for a task its title and when it's due — up to four; then the most urgent one and why, only if the results show it; then the rest as a count ("y dos más de newsletters"). About 40–90 words.
@@ -329,7 +329,12 @@ const SHOPPING_GUIDANCE = `Supermarket prices (shopping.* tools) — public SEPA
 - Say "precios de referencia en <provincia>" and the data date. "Más barata" only for the products every compared chain has; never call a chain missing products cheaper for the whole list. Conditional promos (bank, card) are never part of a total.
 - No province saved → ask once and save it with shopping.setRegion. Never assume Buenos Aires.
 - A product's price change is not inflation (economy.inflation is a separate reference). Prices on the web are not a substitute when the data is missing.
-- Read-only: nothing is bought or ordered.`;
+- Read-only: nothing is bought or ordered.
+Products to buy (shopping.offers) — electronics, appliances, home, accessories; not groceries, services, travel, fuel or real estate:
+- Where the user buys in Argentina (or another Mercado Libre country), Mercado Libre goes first; other stores come too when asked or when Mercado Libre has no verified price. "Solo Mercado Libre" / "no uses Mercado Libre" apply to this request; a lasting choice → shopping.marketplacePreference.
+- "100 lucas" = ARS 100.000, "1 palo" = ARS 1.000.000. Never convert USD↔ARS without economy.exchangeRates, and say which rate.
+- Pass the exact model when named; a different model, a used one or an accessory is never the same product.
+- A price is verified only when the tool says so. Listings found by search have no price: say so; never read a price from memory. "El más barato de los resultados que encontré", never "el más barato de Mercado Libre". Mercado Libre and other stores are reported apart.`;
 
 const ECONOMY_GUIDANCE = `Argentina's economy (economy.* tools, calendar.holidays) — public data, never the user's money:
 - The dollar has markets: "el dólar" with no market → economy.exchangeRates for all (oficial and blue first). Keep compra and venta apart; name the market. A past day or period → economy.exchangeHistory (never the current quote for a past date, never a past one as "hoy").

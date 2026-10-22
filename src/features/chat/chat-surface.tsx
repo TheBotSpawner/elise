@@ -371,6 +371,19 @@ export function ChatSurface({
       ? { who: "ELISE" as const, text: elise }
       : null;
 
+  // "Ver" Morning Brief from Home (?listen=1): the summary starts playing on arrival, once —
+  // the same as tapping "Escuchar el resumen". The mark leaves the URL so a reload doesn't replay.
+  const autoListened = useRef(false);
+  useEffect(() => {
+    if (autoListened.current || !narration || !voiceSession.narrate) return;
+    if (new URLSearchParams(window.location.search).get("listen") !== "1") return;
+    autoListened.current = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("listen");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search);
+    voiceSession.narrate(narration.text);
+  }, [narration, voiceSession]);
+
   const notices = (
     <>
       {narration && voiceSession.narrate && (
@@ -591,7 +604,7 @@ export function Ambient({ ambient }: { ambient: HomeAmbient }) {
               {t.brief.ready}
             </span>
             <Link
-              href={`/schedules/results/${brief.id}`}
+              href={`/schedules/results/${brief.id}?listen=1`}
               className="text-accent-text hover:underline"
             >
               {t.brief.view}

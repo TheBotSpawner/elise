@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { ProviderFactory, ToolRunEnv } from "@/core/agents/tools";
 import type { NativeList } from "@/core/capabilities/lists";
+import type { MarketplaceApi, MarketplaceMode } from "@/core/shopping/marketplace";
 import {
   fold,
   type AlertView,
@@ -13,6 +14,7 @@ import {
   type ShoppingCapability,
   type ShoppingData,
 } from "@/core/shopping/model";
+import type { WebCapability } from "@/core/web/model";
 import { decodeSnapshot, pricesOf, type Snapshot } from "@/infrastructure/shopping/snapshot";
 
 import { makeCtx, NATIVE_BINDING } from "./core-fakes";
@@ -87,14 +89,23 @@ export function shoppingEnv(
     region?: Region | null;
     lists?: NativeList[];
     links?: Map<string, { ean: string; quantity: number }>;
+    marketplace?: MarketplaceApi | null;
+    mode?: MarketplaceMode | null;
+    web?: Partial<WebCapability>;
+    invoke?: ToolRunEnv["invoke"];
+    timezone?: string;
   } = {},
 ) {
   let region = opts.region ?? null;
+  let mode = opts.mode ?? null;
   const links = opts.links ?? new Map<string, { ean: string; quantity: number }>();
   const alerts: AlertView[] = [];
   const lists = opts.lists ?? [];
   const shop: ShoppingCapability = {
     data,
+    marketplace: opts.marketplace ?? null,
+    marketplaceMode: async () => mode,
+    saveMarketplaceMode: async (m) => void (mode = m),
     region: async () => region,
     saveRegion: async (r) => void (region = r),
     listLines: async (listId) =>
@@ -137,12 +148,20 @@ export function shoppingEnv(
     find: async (ref: string) => lists.filter((l) => l.id === ref || fold(l.name) === fold(ref)),
   };
   const env: ToolRunEnv = {
-    ctx: makeCtx({ now: new Date("2026-10-22T15:00:00-03:00") }),
+    ctx: makeCtx({
+      now: new Date("2026-10-22T15:00:00-03:00"),
+      ...(opts.timezone ? { timezone: opts.timezone } : {}),
+    }),
+    ...(opts.invoke ? { invoke: opts.invoke } : {}),
     binding: NATIVE_BINDING,
     providers: {
       get: ((capability: string) =>
-        capability === "lists" ? listsProvider : shop) as ProviderFactory["get"],
+        capability === "lists"
+          ? listsProvider
+          : capability === "web_search"
+            ? opts.web
+            : shop) as ProviderFactory["get"],
     },
   };
-  return { env, shop, links, alerts, region: () => region };
+  return { env, shop, links, alerts, region: () => region, mode: () => mode };
 }

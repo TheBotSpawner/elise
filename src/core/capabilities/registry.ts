@@ -357,6 +357,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       linkItem: WRITE,
       setRegion: WRITE,
       alerts: WRITE,
+      offers: READ,
+      marketplacePreference: WRITE,
     },
   },
   // Context Profiles (ADR-016): an organizational layer over the user's data. Proposing,

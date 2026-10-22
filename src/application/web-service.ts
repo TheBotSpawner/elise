@@ -3,6 +3,7 @@ import "server-only";
 import { serverEnv } from "@/config/server-env";
 import { entitlementsFor } from "@/core/entitlements";
 import { AppError, toAppError } from "@/core/errors";
+import { isMarketplaceHost } from "@/core/shopping/marketplace";
 import {
   WEB_LIMITS,
   type WebCapability,
@@ -157,6 +158,17 @@ export function webCapability(auth: AuthContext, runId: string | null = null): W
         throw new AppError("VALIDATION_ERROR", `Blocked link: ${check.reason}`, {
           recovery: "review",
         });
+      // ADR-112: Mercado Libre's terms forbid robots and scraping (cl. 7.6): its pages are
+      // never read automatically. Its listings stay links; prices only from the official API.
+      if (isMarketplaceHost(check.url.toString()))
+        throw new AppError(
+          "PROVIDER_UNAVAILABLE",
+          "This site's terms don't allow automated reading",
+          {
+            recovery: "review",
+            details: { limitation: "blocked" },
+          },
+        );
       const key = `${auth.workspaceId}:p:${normalizeUrl(url)}`;
       const hit = cached<WebPage>(key);
       if (hit) return { ...hit, requestedUrl: url };

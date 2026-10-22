@@ -733,7 +733,9 @@ const discoverInput = z
       .trim()
       .min(3)
       .max(300)
-      .describe('What the user wants, in their words ("autos Corolla 2018 en Mercado Libre").'),
+      .describe(
+        'What the user wants, in their words ("autos Corolla 2018", "departamentos en Palermo").',
+      ),
     query: z.string().trim().min(2).max(200).describe("The search query for the items."),
     count: z.number().int().min(1).max(DISCOVERY_LIMITS.maxItems).default(8),
     domain: domain
@@ -748,6 +750,11 @@ const discoverInput = z
       .describe(
         'Constraints as words the items should contain: "2018", "automático", a neighbourhood.',
       ),
+    exclude: z
+      .array(z.string().trim().min(3).max(100))
+      .max(5)
+      .optional()
+      .describe("Domains to leave out (shown apart elsewhere, e.g. a marketplace)."),
     minPrice: z.number().positive().optional(),
     maxPrice: z.number().positive().optional(),
     currency: z
@@ -796,7 +803,7 @@ export const discoverTool: ToolDefinition = {
   capability: "web_search",
   operation: "discover",
   description:
-    '"Buscame publicaciones de…", "encontrame opciones de…", "mostrame departamentos / autos / cursos / productos…": finds several CONCRETE items (each with its own link, price and stated facts) — not a page about them. Searches, reads result and listing pages, follows item links, checks it has enough and continues within strict limits, and says exactly why when a site can\'t be read. Use web.search for a fact, web.research for a comparison of known options.',
+    '"Buscame publicaciones de…", "encontrame opciones de…", "mostrame departamentos / autos / cursos / productos…": finds several CONCRETE items (each with its own link, price and stated facts) — not a page about them. Searches, reads result and listing pages, follows item links, checks it has enough and continues within strict limits, and says exactly why when a site can\'t be read. Use web.search for a fact, web.research for a comparison of known options. Products to buy (electronics, appliances…) → shopping.offers (Mercado Libre first; never read Mercado Libre pages here).',
   input: discoverInput,
   async describe() {
     return { summary: "Find items on the web" };
@@ -891,7 +898,11 @@ export const discoverTool: ToolDefinition = {
           searchStep(env, query, "web", null, req.domain ? [req.domain] : undefined),
           deadline - Date.now(),
         ).catch(() => []);
-        const usable = results.filter((r) => !req.domain || onDomain(r.url, req.domain));
+        const usable = results.filter(
+          (r) =>
+            (!req.domain || onDomain(r.url, req.domain)) &&
+            !(q.exclude ?? []).some((d) => onDomain(r.url, d)),
+        );
         if (req.domain && !usable.length) limitations.set(req.domain, "not_found");
         sitePage ??= usable.find((r) => !looksLikeItemUrl(r.url))?.url ?? null;
         // Item pages the index knows: kept as items (title + link) in case reading them fails.

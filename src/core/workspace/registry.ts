@@ -292,6 +292,43 @@ export const marketPayload = z.object({
 });
 
 /**
+ * Products to buy (ADR-112): a marketplace's offers, each saying how much is verified. A price
+ * only from an authorized source (the official API); a search link is never a listing. Other
+ * stores show in their own web_collection Surface — never mixed into this ranking (terms).
+ */
+export const productOffersPayload = z.object({
+  query: text(300),
+  marketplace: z.object({
+    name: text(40),
+    site: text(4),
+    /** api: prices from the official API · search: listings a web search found (no prices). */
+    method: z.enum(["api", "search", "link"]),
+    searchUrl: href,
+    offers: z
+      .array(
+        z.object({
+          title: text(200),
+          url: href,
+          price: z.number().positive().nullable(),
+          currency: text(3).nullable(),
+          condition: z.enum(["new", "used"]).nullable(),
+          match: z.enum(["exact", "related", "accessory"]),
+          freeShipping: z.boolean().nullable(),
+          installments: text(80).nullable(),
+          seller: text(80).nullable(),
+          image: href.nullable(),
+          evidence: z.enum(["api", "search_result"]),
+          checkedAt: text(40),
+        }),
+      )
+      .max(8),
+  }),
+  maxPrice: z.number().positive().nullable(),
+  currency: text(3).nullable(),
+  notes: z.array(text(240)).max(5),
+});
+
+/**
  * Supermarket prices (ADR-111): every amount computed by ELISE from public SEPA data, in cents,
  * with its province, date and how it was aggregated. Never a store-level quote, never a ranking
  * the data doesn't support.
@@ -1121,6 +1158,7 @@ export const PAYLOADS = {
   market: marketPayload,
   economy: economyPayload,
   shopping: shoppingPayload,
+  product_offers: productOffersPayload,
   finance_import: financeImportPayload,
   personality: z.object({ current: z.enum(PERSONALITIES) }),
   home: homePayload,
@@ -1845,6 +1883,26 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
       ]
         .filter(Boolean)
         .join("; "),
+  },
+  // Products to buy (ADR-112): the marketplace's offers, verified or only linked.
+  product_offers: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 86,
+    actions: () => [expand],
+    describe: (p) =>
+      [
+        `${p.marketplace.name} (${p.marketplace.method}) · ${p.query}`,
+        ...p.marketplace.offers
+          .slice(0, 5)
+          .map((o) =>
+            [
+              o.title,
+              o.price !== null ? `${o.currency ?? ""} ${o.price}` : "no price",
+              o.match,
+            ].join(" · "),
+          ),
+      ].join("; "),
   },
   // Supermarket prices (ADR-111): a product's prices, a list's comparison, a history.
   shopping: {

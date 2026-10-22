@@ -978,6 +978,14 @@ export function surfacesFromOutcome(
           ref: null,
         }),
       );
+    case "product_offers":
+      return one(
+        draft("product_offers", d.key, d.offers, opts, {
+          title: d.title,
+          source: { capability: "shopping", label: d.offers.marketplace.name },
+          ref: null,
+        }),
+      );
     case "home":
       return one(
         draft("home", `home:${d.home.title}`, d.home, opts, {

@@ -16,6 +16,15 @@ export function toSpeakable(markdown: string): string {
       // inside a sentence keeps its words.
       .replace(/^\s*(?:\(?\[[^\]]+\]\([^)]*\)\)?[\s,;·|-]*)+$/, " ")
       .replace(/([.!?…])\s*(?:\(?\[[^\]]+\]\([^)]*\)\)?[\s,;·]*)+(?=\s|$)/g, "$1 ")
+      // A source list anywhere else is a citation too: "(fuentes: [A](…), [B](…))", "Fuentes:
+      // [A](…) · [B](…)", or two or more links closing a sentence ("…la sucursal [A](…) · [B](…).").
+      // One link inside a sentence keeps its words ("te dejé [la publicación](…)").
+      .replace(
+        /\s*\((?:\s*(?:fuentes?|sources?|seg[uú]n|v[ií]a)\s*:?)?\s*\[[^\]]+\]\([^)]*\)(?:\s*[,;·|y]\s*\[[^\]]+\]\([^)]*\))*\s*\)/gi,
+        "",
+      )
+      .replace(/\s*(?:fuentes?|sources?)\s*:\s*(?:\[[^\]]+\]\([^)]*\)[\s,;·|]*)+/gi, " ")
+      .replace(/\s+\[[^\]]+\]\([^)]*\)(?:\s*[,;·|]\s*\[[^\]]+\]\([^)]*\))+\s*(?=[.!?…]|$)/g, "")
       .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
       .replace(/https?:\/\/\S+/g, " ")
       // Citation markers [1], [2] belong to the screen.

@@ -699,6 +699,13 @@ export type ListRow = {
 };
 
 /** ADR-111 (migration 064): public SEPA catalog and per-person shopping links and alerts. */
+/** ADR-112 (migration 065): ELISE's own application credentials (service role only). */
+export type AppCredentialRow = {
+  provider: string;
+  secret_encrypted: string;
+  updated_at: Ts;
+};
+
 export type ShoppingProductRow = {
   ean: string;
   name: string;
@@ -2043,6 +2050,7 @@ export type Database = {
       goal_progress_events: Table<GoalProgressEventRow, "workspace_id" | "goal_id" | "source_type">;
       lists: Table<ListRow, "workspace_id" | "name">;
       list_items: Table<ListItemRow, "workspace_id" | "list_id" | "content" | "position">;
+      app_credentials: Table<AppCredentialRow, "provider" | "secret_encrypted">;
       shopping_products: Table<ShoppingProductRow, "ean" | "name" | "search" | "last_seen">;
       shopping_ingestions: Table<ShoppingIngestionRow, "dataset_date" | "source_file">;
       shopping_price_history: Table<
