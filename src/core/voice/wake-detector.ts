@@ -314,6 +314,11 @@ export interface WakeDetector {
      * the room is measured as it will be with the music lowered.
      */
     listenThrough?: () => boolean;
+    /**
+     * ADR-109: ELISE is answering. What the recognizer took as "the utterance" started with her
+     * own voice, so a word confirmed without a time is captured from just before it.
+     */
+    overReply?: () => boolean;
   }): Promise<void>;
   /** Releases the microphone at once (a pause, a lock, the setting off). */
   stop(): void;

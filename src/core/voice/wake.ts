@@ -39,6 +39,30 @@ export interface WakeMatch {
 }
 
 /**
+ * ADR-109: the name said over ELISE's own reply. The capture can begin with what's left of her
+ * voice (echo cancellation is never perfect), so the transcript may read "…de la noche. Elise,
+ * ¿va a llover?". The detector already heard the word open what the person said; here it is
+ * found anywhere and what follows it is the request. Only for interruptions — a normal wake
+ * still needs the name first (matchWake).
+ */
+export function findWake(text: string, phrase: WakePhrase): WakeMatch {
+  const words = [...text.normalize("NFC").matchAll(/[\p{L}\p{N}]+/gu)];
+  const names = FORMS[phrase].name;
+  // The last mention: anything of hers before it is echo; the person's request comes after.
+  for (let i = words.length - 1; i >= 0; i--) {
+    if (!names.includes(fold(words[i]![0]))) continue;
+    const w = words[i]!;
+    const rest = text
+      .normalize("NFC")
+      .slice(w.index! + w[0].length)
+      .replace(/^[\s,.:;!¡?¿-]+/, "")
+      .trim();
+    return { matched: true, remainder: rest };
+  }
+  return { matched: false, remainder: "" };
+}
+
+/**
  * The wake phrase must open the utterance (or be all of it): "Elise", "ok Elise, …",
  * "Hey Elise …". The name in the middle of a sentence ("le dije a Elise que…") never wakes.
  */

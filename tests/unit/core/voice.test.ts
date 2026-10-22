@@ -1778,6 +1778,16 @@ describe("the device's wake word while ELISE answers", () => {
     expect(got).toEqual(["pause", "interrupt"]);
   });
 
+  it("over her reply, the name may come after her own echo: what follows it is the request", async () => {
+    const { findWake, matchWake } = await import("@/core/voice/wake");
+    const heard =
+      "Con mayor probabilidad entre las seis y las diez de la noche. Elise, ¿va a llover mañana?";
+    expect(matchWake(heard, "elise").matched).toBe(false);
+    expect(findWake(heard, "elise")).toEqual({ matched: true, remainder: "va a llover mañana?" });
+    expect(findWake("Elis.", "elise")).toEqual({ matched: true, remainder: "" });
+    expect(findWake("seis y las diez de la noche", "elise").matched).toBe(false);
+  });
+
   it("does nothing when she isn't answering", async () => {
     const { controller, player } = setup();
     controller.pauseForDevice();

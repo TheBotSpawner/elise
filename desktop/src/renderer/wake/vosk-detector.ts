@@ -35,6 +35,8 @@ import { VoskWorker, type VoskRecognizer } from "./vosk-worker-client";
 const RATE = 16_000;
 const FRAME = 2048; // 128 ms
 const RING_FRAMES = 63; // ~8 s, in memory only
+/** Over ELISE's reply: a word confirmed without a time is captured from this far back (~1.4 s). */
+const OVER_REPLY_FRAMES = 11;
 /** Voiced frames beyond the word alone ("ELISE" ≈ 4 frames): something more was said. */
 const MORE_THAN_THE_WORD = 7;
 /**
@@ -302,7 +304,12 @@ export class VoskWakeDetector implements WakeDetector {
     const from =
       d.wordStart === null ? this.utteranceFrom : Math.max(0, (d.wordStart - 0.25) * RATE);
     const first = this.ring.findIndex((f) => f.start >= 0 && f.start + f.data.length > from);
-    this.pre = this.ring.slice(Math.max(0, first)).map((f) => f.data);
+    const pre = this.ring.slice(Math.max(0, first));
+    // ADR-109: over her reply, "the utterance" began with her own voice: only the moments just
+    // before the word.
+    this.pre = (
+      d.wordStart === null && opts.overReply?.() ? pre.slice(-OVER_REPLY_FRAMES) : pre
+    ).map((f) => f.data);
     this.post = [];
     this.end.reset();
     // The music is lowered as the word is heard: what follows is measured against that room.

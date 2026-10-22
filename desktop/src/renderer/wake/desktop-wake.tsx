@@ -4,7 +4,7 @@ import { voicePhaseOrb } from "@/components/elise/orb/orb-states";
 import type { WakeControl, WakeReport } from "@/core/platform/platform";
 import type { VoicePhase } from "@/core/voice/session";
 import { sessionCommand } from "@/core/voice/session-control";
-import { matchWake } from "@/core/voice/wake";
+import { findWake, matchWake } from "@/core/voice/wake";
 import { asksToShow, WAKE_MODELS, type DetectorState } from "@/core/voice/wake-detector";
 import { musicStore } from "@/features/music/store";
 import {
@@ -205,6 +205,8 @@ export function DesktopWake({ children }: { children: ReactNode }) {
           model: MODEL,
           // ADR-104: through ELISE's own music, without having to shout.
           listenThrough: () => Boolean(musicStore.get().payload?.playing),
+          // ADR-109: over her reply, the capture starts at the word, not at her own voice before it.
+          overReply: () => deviceMayInterrupt(phase),
           onState: (s) => {
             if (s === "no_microphone" || s === "mic_denied" || s === "model_failed") {
               retryAt = Date.now() + RETRY_MS;
@@ -273,7 +275,9 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       if (capture.speechAfter) {
         const text = await transcribe(wav(capture.audio, capture.sampleRate));
         if (text !== null) {
-          const m = matchWake(text, "elise");
+          // Over her reply, the capture may begin with her own voice: the name is found where
+          // it is (ADR-109); otherwise it must open what was said.
+          const m = interrupting ? findWake(text, "elise") : matchWake(text, "elise");
           console.debug("[wake] transcribed", {
             matched: m.matched,
             remainderChars: m.remainder.length,
