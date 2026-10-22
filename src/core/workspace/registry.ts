@@ -196,7 +196,16 @@ export const homePayload = z.object({
         deviceId: z.uuid(),
         name: text(120),
         room: text(80).nullable(),
-        type: z.enum(["light", "switch", "climate", "fan", "humidifier", "media_player", "sensor"]),
+        type: z.enum([
+          "light",
+          "switch",
+          "climate",
+          "fan",
+          "humidifier",
+          "media_player",
+          "sensor",
+          "ir_controller",
+        ]),
         status: z.enum([
           "state",
           "succeeded",

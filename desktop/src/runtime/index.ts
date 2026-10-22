@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { homeActionInputSchema } from "@/core/home/model";
 import {
+  irLearnRequestSchema,
   LOCAL_RUNTIME_PROTOCOL_VERSION,
   localHomeCommandSchema,
   type HomeHubLocalState,
@@ -206,6 +207,17 @@ const handlers: Record<string, (params: unknown) => unknown> = {
       .parse(params);
     await agent?.ignoreDiscovery(flowId, name);
     return true;
+  },
+  // ADR-110: infrared. Names are re-validated by the agent; the engine's token stays here.
+  homeIrLearn: (params) => {
+    const p = irLearnRequestSchema.parse(params);
+    if (!agent) return { ok: false, error: "offline" };
+    return agent.learnIr(p.providerKey, p.device, p.command);
+  },
+  homeAddBroadlink: (params) => {
+    const { host } = z.object({ host: z.string().max(253) }).parse(params);
+    if (!agent) return { kind: "aborted", reason: "home_not_running" };
+    return agent.addBroadlink(host);
   },
   execute: async (params) => {
     const c = localHomeCommandSchema.parse(params);

@@ -7,6 +7,7 @@ import {
   Lightbulb,
   Loader2,
   Plug,
+  Radio,
   RotateCw,
   Router,
   Speaker,
@@ -70,6 +71,7 @@ const KIND_ICONS: [RegExp, LucideIcon][] = [
   [/hue|lifx|yeelight|wiz|nanoleaf|tradfri|govee|light/, Lightbulb],
   [/shelly|tplink|kasa|tuya|meross|plug|switch|wemo/, Plug],
   [/huawei|router|upnp|igd|fritz|netgear|asus|unifi|mikrotik|tplink_omada/, Router],
+  [/broadlink/, Radio],
 ];
 const kindIcon = (kind: string) => KIND_ICONS.find(([re]) => re.test(kind))?.[1] ?? Wifi;
 
@@ -300,6 +302,7 @@ export function DeviceDiscovery({
           })}
         </ul>
       )}
+      <ManualBroadlink />
       {anyAdded && <p className="text-[13px] text-faint">{d.appearing}</p>}
       <div className="flex flex-wrap gap-2">
         <Button variant={anyAdded ? "primary" : "ghost"} onClick={onDone}>
@@ -517,5 +520,104 @@ function Scanning() {
         <p className="text-[12.5px] text-faint">{d.scanHint}</p>
       </div>
     </div>
+  );
+}
+
+/**
+ * ADR-110: a Broadlink the engine didn't find by itself (discovery blocked, another subnet):
+ * added by its address on the home network. The rest of its setup (unlock, name) is the same
+ * step form as a found device's.
+ */
+export function ManualBroadlink() {
+  const router = useRouter();
+  const { t } = useI18n();
+  const m = t.smartHome.ir.manual;
+  const runtime = useHomeRuntime();
+  const [host, setHost] = useState("");
+  const [status, setStatus] = useState<Status>({ kind: "idle" });
+  if (!runtime) return null;
+  const after = (step: DiscoveryStep) => {
+    if (step.kind === "added") {
+      const since = new Date(Date.now() - 15_000).toISOString();
+      for (const ms of [6_000, 23_000])
+        setTimeout(
+          () =>
+            void adoptNewDevicesAction(since).then(
+              (r) => r.ok && r.value.added && router.refresh(),
+            ),
+          ms,
+        );
+      return setStatus({ kind: "added" });
+    }
+    if (step.kind === "confirm" || step.kind === "form") return setStatus({ kind: "form", step });
+    setStatus({
+      kind: "message",
+      text: step.kind === "aborted" && step.reason === "invalid_host" ? m.invalid : m.failed,
+    });
+  };
+  const run = async (op: () => Promise<DiscoveryStep>) => {
+    setStatus({ kind: "busy" });
+    try {
+      after(await op());
+    } catch {
+      setStatus({ kind: "message", text: m.failed });
+    }
+  };
+  return (
+    <details className="rounded-2xl border border-border bg-surface px-3.5 py-3 text-[14px]">
+      <summary className="cursor-pointer text-muted">{m.title}</summary>
+      <div className="mt-3 flex flex-col gap-3">
+        {status.kind === "added" ? (
+          <p className="flex items-center gap-1.5 text-success">
+            <Check className="size-4" aria-hidden />
+            {m.added}
+          </p>
+        ) : status.kind === "form" ? (
+          <StepForm
+            name="Broadlink"
+            step={status.step}
+            onCancel={() => setStatus({ kind: "idle" })}
+            onSubmit={(answers) =>
+              void run(() => runtime.answerDiscovery(status.step.flowId, answers))
+            }
+          />
+        ) : (
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(() => runtime.addBroadlink(host));
+            }}
+          >
+            <p className="text-[13px] text-muted">{m.hint}</p>
+            <Label htmlFor="broadlink-host">{m.host}</Label>
+            <div className="flex gap-2">
+              <Input
+                id="broadlink-host"
+                value={host}
+                required
+                maxLength={253}
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="192.168.1.40"
+                onChange={(e) => setHost(e.target.value)}
+                className="h-10 flex-1"
+              />
+              <Button type="submit" size="sm" disabled={status.kind === "busy" || !host.trim()}>
+                {status.kind === "busy" ? (
+                  <Loader2 className="motion-safe:animate-spin" aria-hidden />
+                ) : null}
+                {m.add}
+              </Button>
+            </div>
+            {status.kind === "message" && (
+              <p role="alert" className="text-[13px] text-danger-text">
+                {status.text}
+              </p>
+            )}
+          </form>
+        )}
+      </div>
+    </details>
   );
 }

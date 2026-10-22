@@ -8,6 +8,7 @@ import { isCacheableSnapshot } from "@/core/platform/links";
 import {
   DESKTOP_BRIDGE_PROTOCOL_VERSION,
   LOCAL_RUNTIME_PROTOCOL_VERSION,
+  irLearnRequestSchema,
   localHomeCommandSchema,
   type DesktopInfo,
   type EliseConnectivity,
@@ -266,6 +267,17 @@ export function registerIpc(
       flow.extend({ name: z.string().max(80) }).parse(params),
       20_000,
     );
+  });
+  // ADR-110: learning a button and adding a Broadlink by address — the same owner-only rule.
+  handle(INVOKE.homeIrLearn, async (params: unknown) => {
+    const p = irLearnRequestSchema.parse(params);
+    if (!cloud.mayControlLocalHome()) return { ok: false, error: "not_allowed" };
+    return host.call("homeIrLearn", p, 60_000);
+  });
+  handle(INVOKE.homeAddBroadlink, async (params: unknown) => {
+    if (!cloud.mayControlLocalHome()) return { kind: "aborted", reason: "not_allowed" };
+    const p = z.object({ host: z.string().trim().min(1).max(253) }).parse(params);
+    return host.call("homeAddBroadlink", p, 70_000);
   });
   handle(INVOKE.homeExecute, async (command: unknown) => {
     const c = localHomeCommandSchema.parse(command);

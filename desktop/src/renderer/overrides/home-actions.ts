@@ -22,6 +22,8 @@ export const {
   deleteSceneAction,
   createPairingCodeAction,
   revokeHubAction,
+  createIrDeviceAction,
+  irCommandAction,
 } = cloud as typeof import("@/features/home/actions");
 
 const remote = cloud as typeof import("@/features/home/actions");

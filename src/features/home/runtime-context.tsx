@@ -3,7 +3,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 
 import type { DiscoveredDevice, DiscoveryStep } from "@/core/home/discovery";
-import type { HomeHubLocalState } from "@/core/platform/platform";
+import type { HomeHubLocalState, IrLearnResult } from "@/core/platform/platform";
 
 /**
  * The managed Home runtime on this computer (ADR-082), as Hogar sees it. Only ELISE Desktop
@@ -25,6 +25,10 @@ export interface HomeRuntimeControls {
     answers: Record<string, string | number | boolean>,
   ): Promise<DiscoveryStep>;
   ignoreDiscovery(flowId: string, name: string): Promise<boolean>;
+  /** ADR-110: a Broadlink by its address on the home network. */
+  addBroadlink(host: string): Promise<DiscoveryStep>;
+  /** ADR-110: one button of the person's remote, learned by one of the home's controllers. */
+  learnIr(controllerId: string, device: string, command: string): Promise<IrLearnResult>;
 }
 
 const HomeRuntimeContext = createContext<HomeRuntimeControls | null>(null);

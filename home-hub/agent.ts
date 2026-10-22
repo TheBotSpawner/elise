@@ -5,6 +5,7 @@ import {
   discoveredDevices,
   discoveryStep,
   isFlowId,
+  lanHost,
   stepAnswers,
   type DiscoveredDevice,
   type DiscoveryStep,
@@ -29,6 +30,9 @@ import {
 } from "../src/infrastructure/home/home-assistant";
 
 export const AGENT_VERSION = "0.1.0";
+
+/** Why a button couldn't be learned (ADR-110), in ELISE's terms. */
+export type IrLearnError = "bad_name" | "not_found" | "offline" | "busy" | "no_signal";
 const HEARTBEAT_MS = 20_000;
 const RESYNC_MS = 10 * 60_000;
 
@@ -53,6 +57,8 @@ export class HubAgent {
   private stopped = false;
   private connected = false;
   private registryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** ADR-110: one learning at a time per controller (it listens for a single button). */
+  private learning = new Set<string>();
 
   constructor(
     private readonly config: HubConfig & { hubToken: string },
@@ -163,6 +169,73 @@ export class HubAgent {
   async ignoreDiscovery(flowId: string, name: string) {
     if (!isFlowId(flowId)) return;
     await this.ha.ignoreFlow(flowId, name.slice(0, 80));
+  }
+
+  // ── Infrared (ADR-110), local only ────────────────────────────────────────────
+
+  /**
+   * "Agregar por IP": a Broadlink the engine didn't find by itself (another subnet, discovery
+   * blocked). Only a home-network address; the rest of the setup is the same as a found one.
+   */
+  async addBroadlink(host: string): Promise<DiscoveryStep> {
+    const address = lanHost(host);
+    if (!address) return { kind: "aborted", reason: "invalid_host" };
+    if (!this.connected) return { kind: "aborted", reason: "home_not_running" };
+    const first = (await this.ha.flowStart("broadlink")) as { flow_id?: unknown };
+    const flowId =
+      typeof first.flow_id === "string" && isFlowId(first.flow_id) ? first.flow_id : "";
+    const step = discoveryStep(first, flowId);
+    if (!flowId || step.kind !== "form" || !step.fields.some((f) => f.name === "host")) return step;
+    return this.answerDiscovery(flowId, { host: address });
+  }
+
+  /**
+   * Learns one button: the controller listens (up to 30 s) for the person to press it on their
+   * remote, and stores it under ELISE's names. Success only when the engine says it stored one;
+   * nothing ever reaches ELISE Cloud but the outcome.
+   */
+  async learnIr(
+    providerKey: string,
+    device: string,
+    command: string,
+  ): Promise<{ ok: true } | { ok: false; error: IrLearnError }> {
+    if (!/^elise_[0-9a-f]{12}$/.test(device) || !/^[a-z0-9_]{1,40}$/.test(command))
+      return { ok: false, error: "bad_name" };
+    const controller = this.devices.get(providerKey);
+    if (!controller || controller.type !== "ir_controller")
+      return { ok: false, error: "not_found" };
+    if (!this.connected) return { ok: false, error: "offline" };
+    if (this.learning.has(providerKey)) return { ok: false, error: "busy" };
+    const entity = controller.entityIds[0]!;
+    this.learning.add(providerKey);
+    try {
+      const now = (await this.ha.states()).find((s) => s.entity_id === entity);
+      if (!now || now.state === "unavailable") return { ok: false, error: "offline" };
+      // Off, it ignores learning silently: switching its listening on is part of "Aprender".
+      if (now.state === "off")
+        await this.ha.callService({
+          domain: "remote",
+          service: "turn_on",
+          target: { entity_id: entity },
+        });
+      await this.ha.callService(
+        {
+          domain: "remote",
+          service: "learn_command",
+          service_data: { device, command: [command], command_type: "ir", timeout: 30 },
+          target: { entity_id: entity },
+        },
+        45_000,
+      );
+      log("home_ir_learned");
+      return { ok: true };
+    } catch (e) {
+      const message = String((e as Error).message);
+      log("home_ir_learn_failed", { message: message.slice(0, 60) });
+      return { ok: false, error: message === "Not connected" ? "offline" : "no_signal" };
+    } finally {
+      this.learning.delete(providerKey);
+    }
   }
 
   /** Meaningful changes only: a device's primary entity, batched for a moment. */
@@ -306,6 +379,10 @@ export class HubAgent {
     const device = this.devices.get(c.target.providerKey);
     if (!device || device.entityIds[0] !== c.target.entityIds[0])
       return this.report(c.id, { status: "failed", error: "UNKNOWN_TARGET" });
+    // ADR-110: infrared codes go only to an infrared controller this hub reported, and alone.
+    const ir = c.actions.some((a) => a.type === "ir");
+    if (ir && (device.type !== "ir_controller" || !c.actions.every((a) => a.type === "ir")))
+      return this.report(c.id, { status: "failed", error: "UNKNOWN_TARGET" });
     if (!this.connected) return this.report(c.id, { status: "failed", error: "PROVIDER_OFFLINE" });
     const started = Date.now();
     await this.report(c.id, { status: "executing" });
@@ -317,7 +394,10 @@ export class HubAgent {
         return void this.sync().catch(() => undefined);
       }
       await this.run(device.entityIds, c.actions);
-      const fresh = (await this.ha.states()).find((s) => s.entity_id === device.entityIds[0]);
+      // Infrared can't be read back: the controller's own state says nothing about the TV.
+      const fresh = ir
+        ? undefined
+        : (await this.ha.states()).find((s) => s.entity_id === device.entityIds[0]);
       await this.report(c.id, {
         status: "succeeded",
         latencyMs: Date.now() - started,

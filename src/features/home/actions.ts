@@ -7,6 +7,7 @@ import { requireAuthContext } from "@/application/auth-context";
 import {
   adoptNewHomeDevices,
   createHomeRoom,
+  createIrDevice,
   createPairingCode,
   deleteHomeScene,
   executeHomeCommands,
@@ -15,6 +16,7 @@ import {
   saveHomeScene,
   removeHomeDevice,
   updateHomeDevice,
+  updateIrCommands,
 } from "@/application/home-service";
 import { AppError, toPublicError, type PublicError } from "@/core/errors";
 import {
@@ -118,4 +120,14 @@ export async function createPairingCodeAction() {
 
 export async function revokeHubAction(hubId: string) {
   return run(async () => revokeHomeHub(await requireAuthContext(), hubId));
+}
+
+/** ADR-110: a TV, air conditioner or fan controlled through one of the home's IR controllers. */
+export async function createIrDeviceAction(raw: unknown) {
+  return run(async () => createIrDevice(await requireAuthContext(), raw));
+}
+
+/** ADR-110: a learned button saved, confirmed ("Funcionó") or removed. */
+export async function irCommandAction(deviceId: string, raw: unknown) {
+  return run(async () => updateIrCommands(await requireAuthContext(), deviceId, raw));
 }

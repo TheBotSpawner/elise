@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { z } from "zod";
 
@@ -14,6 +14,9 @@ import {
   homeSetupState,
   homeStateSchema,
   hubStatus,
+  estimateIr,
+  irCommandSchema,
+  irDeviceName,
   validateAction,
   type HomeAction,
   type HomeCapability,
@@ -25,6 +28,7 @@ import {
   type HomeState,
   type HubCommand,
   type HubPresence,
+  type IrCapability,
 } from "@/core/home/model";
 import { logger } from "@/infrastructure/observability/logger";
 import { notMigrated } from "@/infrastructure/providers/elise-native/common";
@@ -72,6 +76,11 @@ const deviceOf = (r: HomeDeviceRow): HomeDevice => ({
   stateUpdatedAt: r.state_updated_at,
   favorite: r.favorite,
 });
+
+/** ADR-110: an infrared device's link to its controller and its learned buttons. */
+const irOf = (d: Pick<HomeDevice, "capabilities">) =>
+  d.capabilities.find((c): c is IrCapability => c.type === "ir");
+const IR_KEY = "ir:";
 
 const presenceOf = (h: HomeHubRow): HubPresence => ({
   lastSeenAt: h.last_seen_at,
@@ -141,6 +150,12 @@ export async function homeSnapshot(
   for (const r of [rooms, devices, groups, scenes]) check(r.error, "load the home");
   // ADR-103: only what the person added (before migration 060 the column is absent: all were).
   const rows = (devices.data ?? []).map((d) => ({ row: d, device: deviceOf(d) }));
+  // ADR-110: an infrared device answers only as well as its controller does.
+  const byId = new Map(rows.map((x) => [x.row.id, x.device]));
+  for (const x of rows) {
+    const ir = irOf(x.device);
+    if (ir) x.device.available = byId.get(ir.controllerId)?.available ?? false;
+  }
   const all = rows.filter((x) => x.row.added_at !== null);
   return {
     home,
@@ -400,9 +415,16 @@ export async function hubHeartbeat(hub: AuthedHub, raw: unknown) {
   check(error, "record the heartbeat");
 }
 
+/** A key the hub reports: never one of ELISE's own infrared devices (ADR-110). */
+const hubKey = z
+  .string()
+  .min(1)
+  .max(300)
+  .refine((k) => !k.startsWith(IR_KEY), "reserved key");
+
 const syncedDevice = z
   .object({
-    providerKey: z.string().min(1).max(300),
+    providerKey: hubKey,
     providerDeviceId: z.string().max(200).nullable(),
     entityIds: z.array(z.string().max(255)).min(1).max(30),
     name: z.string().trim().min(1).max(120),
@@ -512,7 +534,10 @@ export async function hubSync(hub: AuthedHub, raw: unknown) {
       });
   }
   const seen = new Set(input.devices.map((d) => d.providerKey));
-  const gone = (existing ?? []).filter((d) => !seen.has(d.provider_key)).map((d) => d.id);
+  // ELISE's infrared devices aren't the engine's: a sync never removes them (ADR-110).
+  const gone = (existing ?? [])
+    .filter((d) => !seen.has(d.provider_key) && !d.provider_key.startsWith(IR_KEY))
+    .map((d) => d.id);
   if (gone.length)
     await db
       .from("home_devices")
@@ -536,7 +561,7 @@ const statesInput = z
       .array(
         z
           .object({
-            providerKey: z.string().min(1).max(300),
+            providerKey: hubKey,
             state: homeStateSchema,
             available: z.boolean(),
             stateUpdatedAt: z.string().max(40).nullable(),
@@ -597,19 +622,46 @@ export async function hubClaimCommands(hub: AuthedHub, waitMs: number): Promise<
     if (claimed?.length) {
       const { data: devices } = await db
         .from("home_devices")
-        .select("id, provider_key, provider_entity_ids")
+        .select("id, provider_key, provider_entity_ids, capabilities")
         .in(
           "id",
           claimed.map((c) => c.device_id),
         )
         .eq("workspace_id", hub.workspaceId);
-      const dev = new Map((devices ?? []).map((d) => [d.id, d]));
+      // ADR-110: an infrared device's command goes to its controller, one of this hub's own.
+      const irs = new Map(
+        (devices ?? []).flatMap((d) => {
+          const caps = z.array(homeCapabilitySchema).catch([]).parse(d.capabilities);
+          const ir = irOf({ capabilities: caps });
+          return d.provider_key.startsWith(IR_KEY) && ir ? [[d.id, ir.controllerId] as const] : [];
+        }),
+      );
+      const { data: controllers } = irs.size
+        ? await db
+            .from("home_devices")
+            .select("id, provider_key, provider_entity_ids")
+            .in("id", [...new Set(irs.values())])
+            .eq("hub_id", hub.id)
+            .eq("workspace_id", hub.workspaceId)
+            .eq("device_type", "ir_controller")
+            .is("removed_at", null)
+        : { data: [] };
+      const dev = new Map((devices ?? []).map((d) => [d.id, d] as const));
+      const ctl = new Map((controllers ?? []).map((d) => [d.id, d] as const));
       return claimed
         .sort((a, b) => a.created_at.localeCompare(b.created_at))
         .flatMap((c) => {
-          const d = dev.get(c.device_id);
+          const controllerId = irs.get(c.device_id);
+          const d = controllerId ? ctl.get(controllerId) : dev.get(c.device_id);
           const actions = z.array(homeActionSchema).safeParse(c.actions);
-          if (!d || !actions.success) return [];
+          if (
+            !d ||
+            !actions.success ||
+            dev.get(c.device_id)?.provider_key.startsWith(IR_KEY) !== Boolean(controllerId)
+          )
+            return [];
+          // Learned codes only for an infrared device, and never for any other device.
+          if (Boolean(controllerId) !== actions.data.every((a) => a.type === "ir")) return [];
           return [
             {
               id: c.id,
@@ -739,7 +791,21 @@ export async function executeHomeCommands(
   }
   for (const c of toSend) {
     const row = done.find((d) => d.device_id === c.device.id);
-    const state = (row?.result as { state?: HomeState } | null)?.state;
+    let state = (row?.result as { state?: HomeState } | null)?.state;
+    // ADR-110: infrared sends without feedback; what it now is, is ELISE's estimate.
+    const ir = irOf(c.device);
+    if (ir && row?.status === "succeeded") {
+      const at = new Date().toISOString();
+      state = c.actions.reduce(
+        (st, a) => (a.type === "ir" ? estimateIr(st, ir, a, at) : st),
+        c.device.state,
+      );
+      await auth.db
+        .from("home_devices")
+        .update({ state: state as unknown as Json, state_updated_at: at })
+        .eq("id", c.device.id)
+        .eq("workspace_id", auth.workspaceId);
+    }
     outcomes.push({
       deviceId: c.device.id,
       name: c.device.name,
@@ -817,6 +883,22 @@ export async function adoptNewHomeDevices(auth: AuthContext, since: string) {
  */
 export async function removeHomeDevice(auth: AuthContext, deviceId: string) {
   const id = z.uuid().parse(deviceId);
+  // ADR-110: an infrared device is ELISE's alone: it leaves the list, its controller stays.
+  const { data: row } = await auth.db
+    .from("home_devices")
+    .select("provider_key")
+    .eq("id", id)
+    .eq("workspace_id", auth.workspaceId)
+    .maybeSingle();
+  if (row?.provider_key.startsWith(IR_KEY)) {
+    const { error } = await auth.db
+      .from("home_devices")
+      .update({ removed_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("workspace_id", auth.workspaceId);
+    check(error, "remove the device");
+    return { removed: true };
+  }
   const [outcome] = await executeHomeCommands(auth, [
     { deviceId: id, actions: [{ type: "remove" }] },
   ]).catch(() => []);
@@ -828,6 +910,113 @@ export async function removeHomeDevice(auth: AuthContext, deviceId: string) {
     .eq("workspace_id", auth.workspaceId);
   check(error, "remove the device");
   return { removed };
+}
+
+// ── Infrared (ADR-110) ───────────────────────────────────────────────────────
+
+const irDeviceInput = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    kind: z.enum(["tv", "ac", "fan", "other"]),
+    controllerId: z.uuid(),
+    roomId: z.uuid().nullable(),
+  })
+  .strict();
+
+const IR_TYPE = { tv: "media_player", ac: "climate", fan: "fan", other: "switch" } as const;
+
+/**
+ * A TV, air conditioner or fan controlled by infrared: ELISE's own device on one of the
+ * person's controllers. Its buttons come next, one by one (learned, then confirmed).
+ */
+export async function createIrDevice(auth: AuthContext, raw: unknown) {
+  const p = irDeviceInput.parse(raw);
+  const { data: controller, error: e1 } = await auth.db
+    .from("home_devices")
+    .select("id, home_id, hub_id, room_id")
+    .eq("id", p.controllerId)
+    .eq("workspace_id", auth.workspaceId)
+    .eq("device_type", "ir_controller")
+    .is("removed_at", null)
+    .maybeSingle();
+  check(e1, "find the controller");
+  if (!controller)
+    throw new AppError("NOT_FOUND", "That infrared controller isn't in your home", {
+      recovery: "review",
+    });
+  const id = randomUUID();
+  const ir: IrCapability = {
+    type: "ir",
+    controllerId: controller.id,
+    device: irDeviceName(id),
+    kind: p.kind,
+    commands: [],
+  };
+  const now = new Date().toISOString();
+  const { error } = await auth.db.from("home_devices").insert({
+    id,
+    workspace_id: auth.workspaceId,
+    home_id: controller.home_id,
+    hub_id: controller.hub_id,
+    provider_key: `${IR_KEY}${id}`,
+    name: p.name,
+    device_type: IR_TYPE[p.kind],
+    capabilities: [ir] as unknown as Json,
+    state: { estimated: true } as unknown as Json,
+    room_id: p.roomId ?? controller.room_id,
+    room_override: true,
+    added_at: now,
+    state_updated_at: now,
+  });
+  check(error, "create the device");
+  return { id, device: ir.device };
+}
+
+const irCommandInput = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("save"), command: irCommandSchema }).strict(),
+  z.object({ op: z.literal("verify"), key: z.string().max(40), worked: z.boolean() }).strict(),
+  z.object({ op: z.literal("delete"), key: z.string().max(40) }).strict(),
+]);
+
+/**
+ * A learned button saved (unconfirmed until "Funcionó"), confirmed, or dropped. Learning a
+ * button again replaces it: the controller stores it under the same name.
+ */
+export async function updateIrCommands(auth: AuthContext, deviceId: string, raw: unknown) {
+  const op = irCommandInput.parse(raw);
+  const id = z.uuid().parse(deviceId);
+  const { data: row, error: e1 } = await auth.db
+    .from("home_devices")
+    .select("capabilities")
+    .eq("id", id)
+    .eq("workspace_id", auth.workspaceId)
+    .like("provider_key", `${IR_KEY}%`)
+    .maybeSingle();
+  check(e1, "load the device");
+  const caps = z
+    .array(homeCapabilitySchema)
+    .catch([])
+    .parse(row?.capabilities ?? []);
+  const ir = irOf({ capabilities: caps });
+  if (!row || !ir) throw new AppError("NOT_FOUND", "That device isn't in your home");
+  let commands = ir.commands;
+  if (op.op === "save") {
+    if (!commands.some((c) => c.key === op.command.key) && commands.length >= 60)
+      throw new AppError("VALIDATION_ERROR", "This device has too many buttons", {
+        recovery: "review",
+      });
+    commands = [...commands.filter((c) => c.key !== op.command.key), op.command];
+  } else if (op.op === "verify")
+    commands = commands.map((c) => (c.key === op.key ? { ...c, verified: op.worked } : c));
+  else commands = commands.filter((c) => c.key !== op.key);
+  const next = caps.map((c) => (c.type === "ir" ? { ...ir, commands } : c));
+  const { error } = await auth.db
+    .from("home_devices")
+    .update({ capabilities: next as unknown as Json })
+    .eq("id", id)
+    .eq("workspace_id", auth.workspaceId);
+  check(error, "save the button");
+  return { commands };
 }
 
 export async function createHomeRoom(auth: AuthContext, name: string) {

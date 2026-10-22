@@ -189,6 +189,12 @@ function clock(h: number, m: number, lang: Lang): string | null {
 
 export function formatForSpeech(text: string, lang: Lang): string {
   let t = toSpeakable(text);
+  // Math symbols the voice can't say: "√π ≈ 1,77245" → "raíz cuadrada de pi, aproximadamente…".
+  const es = lang === "es";
+  t = t
+    .replace(/π/g, "pi")
+    .replace(/√\s?/g, es ? "raíz cuadrada de " : "square root of ")
+    .replace(/\s?≈\s?/g, es ? ", aproximadamente " : ", approximately ");
   // ADR-104: in Spanish, an "OK" interjection opening a sentence is said the Rioplatense way.
   // Only there: "el OK del banco" or a product name is left alone. The screen keeps the text.
   if (lang === "es") t = t.replace(/(^|[.!?¡¿]\s+)(?:ok|okay|okey)\b[,.!]?\s*/gi, "$1Dale, ");
@@ -264,18 +270,20 @@ export function formatForSpeech(text: string, lang: Lang): string {
   t = t.replace(/(\d+(?:[.,]\d+)?)\s?%/g, (_m, num: string) =>
     lang === "es" ? `${num} por ciento` : `${num} percent`,
   );
-  // Any other decimal: "97.942,65 puntos" → "… coma sesenta y cinco" (digits after a zero are
-  // said one by one: "0,05" → "cero coma cero cinco").
+  // Any other decimal: "97.942,65 puntos" → "… coma sesenta y cinco". Digits after a zero, and
+  // any longer tail, are said one by one: "0,05" → "cero coma cero cinco", "√π ≈ 1,77245" →
+  // "uno coma siete siete dos cuatro cinco" (left raw, the voice stumbled on it).
   t = t.replace(
-    new RegExp(`(?<![\\d.,])(\\d{1,3}(?:[.,]\\d{3})+|\\d+)${dec}(\\d{1,3})(?![.,]?\\d)`, "g"),
+    new RegExp(`(?<![\\d.,])(\\d{1,3}(?:[.,]\\d{3})+|\\d+)${dec}(\\d+)(?![.,]?\\d)`, "g"),
     (m, num: string, frac: string) => {
       const n = parseGrouped(num, lang);
       const whole = n !== null ? numberWords(n, lang) : null;
       if (!whole) return m;
       const point = lang === "es" ? "coma" : "point";
-      const after = frac.startsWith("0")
-        ? [...frac].map((d) => numberWords(Number(d), lang)).join(" ")
-        : numberWords(Number(frac), lang);
+      const after =
+        frac.startsWith("0") || frac.length > 2
+          ? [...frac].map((d) => numberWords(Number(d), lang)).join(" ")
+          : numberWords(Number(frac), lang);
       return `${whole} ${point} ${after}`;
     },
   );

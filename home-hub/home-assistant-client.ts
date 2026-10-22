@@ -104,7 +104,7 @@ export class HomeAssistantClient {
     else p.reject(new Error(msg.error?.code ?? "home_assistant_error"));
   }
 
-  private command<T>(payload: Record<string, unknown>): Promise<T> {
+  private command<T>(payload: Record<string, unknown>, timeoutMs = 15_000): Promise<T> {
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error("Not connected"));
     const id = ++this.seq;
@@ -113,7 +113,7 @@ export class HomeAssistantClient {
       ws.send(JSON.stringify({ id, ...payload }));
       setTimeout(() => {
         if (this.pending.delete(id)) reject(new Error("timeout"));
-      }, 15_000);
+      }, timeoutMs);
     });
   }
 
@@ -172,14 +172,18 @@ export class HomeAssistantClient {
     }
   }
 
-  callService = (c: HaServiceCall) =>
-    this.command({
-      type: "call_service",
-      domain: c.domain,
-      service: c.service,
-      service_data: c.service_data,
-      target: c.target,
-    });
+  /** A slow action (learning an infrared code waits for a button press) gets a longer wait. */
+  callService = (c: HaServiceCall, timeoutMs?: number) =>
+    this.command(
+      {
+        type: "call_service",
+        domain: c.domain,
+        service: c.service,
+        service_data: c.service_data,
+        target: c.target,
+      },
+      timeoutMs,
+    );
 
   // ── Adding devices (ADR-090) ──────────────────────────────────────────────────
   // The engine's pending setups for things it found on the network, as its own frontend reads
@@ -204,6 +208,21 @@ export class HomeAssistantClient {
     );
     if (r.status === 404) return { type: "abort", reason: "not_found" };
     if (!r.ok && r.status !== 400) throw new Error(`flow ${r.status}`);
+    return r.json();
+  }
+
+  /**
+   * ADR-110: a setup the person starts by hand ("agregar por IP"), for one fixed integration —
+   * never a handler that came from outside.
+   */
+  async flowStart(handler: "broadlink"): Promise<unknown> {
+    const r = await fetch(new URL("/api/config/config_entries/flow", this.baseUrl), {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ handler, show_advanced_options: false }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!r.ok) throw new Error(`flow ${r.status}`);
     return r.json();
   }
 

@@ -129,6 +129,10 @@ export const homeStatusTool: ToolDefinition = {
           available: d.available,
           updatedAt: d.stateUpdatedAt,
           can: d.capabilities.map((c) => c.type),
+          // ADR-110: infrared can't be read back; its state is what ELISE last sent.
+          ...(d.capabilities.some((c) => c.type === "ir")
+            ? { infrared: true, stateIsEstimated: true, buttons: canDo(d)[0] }
+            : {}),
         })),
         rooms: s.rooms.map((r) => r.name),
         modes: s.scenes.map((x) => x.name),
@@ -152,7 +156,7 @@ const actionsField = z
   .min(1)
   .max(6)
   .describe(
-    'What to change, in order. "prendé" → power true; "bajala al 20%" → brightness 20; "más tenue" → brightness -20 relative; "en verde" → color "verde"; "luz cálida" → color_temp "warm"; "poné el aire en 24" → temperature 24; "bajá el aire dos grados" → temperature -2 relative; "en frío" → hvac_mode "cool"; "subí el volumen" → volume +10 relative.',
+    'What to change, in order. "prendé" → power true; "bajala al 20%" → brightness 20; "más tenue" → brightness -20 relative; "en verde" → color "verde"; "luz cálida" → color_temp "warm"; "poné el aire en 24" → temperature 24; "bajá el aire dos grados" → temperature -2 relative; "en frío" → hvac_mode "cool"; "subí el volumen" → volume +10 relative; "poné mute en la tele" (an infrared device) → button "mute".',
   );
 
 const controlInput = z
@@ -229,6 +233,13 @@ export function canDo(d: HomeDevice): string[] {
         return [`input or app: ${c.sources.slice(0, 8).join(", ")}`];
       case "app":
         return ["open apps (YouTube, Netflix, Prime Video, Disney+, Max)"];
+      case "ir_blaster":
+        return [];
+      case "ir":
+        return [
+          `infrared buttons: ${c.commands.map((x) => x.label).join(", ")}`,
+          "volume only up/down",
+        ];
     }
   });
 }
@@ -265,7 +276,7 @@ export const homeControlTool: ToolDefinition = {
   capability: "home",
   operation: "control",
   description:
-    '"Prendé la luz del escritorio", "poné el aire a 24", "bajá la luz del living al 30%", "la luz en verde y tenue", "apagá todo el living", "subí el volumen de la tele", "abrí YouTube en la tele del dormitorio" (action app), "pausá la tele" (action media pause — pausing is never power off): change the user\'s own devices — one device, a room, a group or the whole home (broad commands touch lights, plugs, fans, media and humidifiers only; climate only if named). ELISE checks every value against the device.',
+    '"Prendé la luz del escritorio", "poné el aire a 24", "bajá la luz del living al 30%", "la luz en verde y tenue", "apagá todo el living", "subí el volumen de la tele", "abrí YouTube en la tele del dormitorio" (action app), "pausá la tele" (action media pause — pausing is never power off), "silenciá la tele" (infrared: button "mute"): change the user\'s own devices — one device, a room, a group or the whole home (broad commands touch lights, plugs, fans, media and humidifiers only; climate only if named). ELISE checks every value against the device. Infrared devices (a TV, air conditioner or fan through an infrared controller) have no feedback: their state is estimated, volume only goes up/down, an air conditioner only takes the settings learned from its remote, and a single toggle power button is never treated as "off".',
   input: controlInput,
   async describe(raw) {
     const q = controlInput.parse(raw);

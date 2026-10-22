@@ -90,6 +90,7 @@ const TYPE_WORDS: Record<HomeDeviceType, readonly string[]> = {
     "chromecast",
   ],
   sensor: ["sensor", "sensores", "temperatura", "humedad", "termometro"],
+  ir_controller: ["broadlink", "infrarrojo", "control infrarrojo", "emisor"],
 };
 
 export function typeFromWords(text: string): HomeDeviceType | null {

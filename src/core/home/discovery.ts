@@ -204,3 +204,20 @@ export function stepAnswers(
   }
   return out;
 }
+
+/**
+ * ADR-110: "agregar por IP" — only an address on the home's own network: a private IPv4
+ * (10/8, 172.16/12, 192.168/16) or a local host name. Never a URL, a port, a public address or
+ * the computer itself: the engine connects to it, so nothing else may get through here.
+ */
+export function lanHost(raw: string): string | null {
+  const s = raw.trim().toLowerCase();
+  const ip = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  if (ip) {
+    const [a, b, c, d] = ip.slice(1).map(Number) as [number, number, number, number];
+    if ([a, b, c, d].some((n) => n > 255) || d === 0 || d === 255) return null;
+    const lan = a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+    return lan ? `${a}.${b}.${c}.${d}` : null;
+  }
+  return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.local)?$/.test(s) && s !== "localhost" ? s : null;
+}

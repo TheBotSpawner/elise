@@ -128,6 +128,16 @@ describe("speech formatter", () => {
     expect(formatForSpeech("Cerró en 97.942,65 puntos, una baja del 0,30%.", "es")).toBe(
       "Cerró en noventa y siete mil novecientos cuarenta y dos coma sesenta y cinco puntos, una baja del cero coma treinta por ciento.",
     );
+    // Long decimals digit by digit; math symbols in words.
+    expect(formatForSpeech("La raíz cuadrada de π es aproximadamente 1,77245.", "es")).toBe(
+      "La raíz cuadrada de pi es aproximadamente uno coma siete siete dos cuatro cinco.",
+    );
+    expect(formatForSpeech("√π ≈ 1,772", "es")).toBe(
+      "raíz cuadrada de pi, aproximadamente uno coma siete siete dos",
+    );
+    expect(formatForSpeech("Pi is 3.14159.", "en")).toBe(
+      "Pi is three point one four one five nine.",
+    );
     expect(formatForSpeech("Son 1.200,01 pesos.", "es")).toBe(
       "Son mil doscientos pesos con un centavo.",
     );

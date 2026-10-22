@@ -1,4 +1,14 @@
-import { AirVent, Fan, Gauge, Lightbulb, Plug, Tv, Droplets, type LucideIcon } from "lucide-react";
+import {
+  AirVent,
+  Fan,
+  Gauge,
+  Lightbulb,
+  Plug,
+  Radio,
+  Tv,
+  Droplets,
+  type LucideIcon,
+} from "lucide-react";
 
 import type { HomeDeviceType } from "@/core/home/model";
 
@@ -10,6 +20,7 @@ const ICONS: Record<HomeDeviceType, LucideIcon> = {
   humidifier: Droplets,
   media_player: Tv,
   sensor: Gauge,
+  ir_controller: Radio,
 };
 
 export function DeviceIcon({ type, className }: { type: HomeDeviceType; className?: string }) {

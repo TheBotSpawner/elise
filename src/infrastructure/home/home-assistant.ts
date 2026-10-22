@@ -70,6 +70,7 @@ const CONTROL_PRIORITY = [
   "humidifier",
   "media_player",
   "switch",
+  "remote",
 ] as const;
 const SENSOR_DOMAINS = ["sensor", "binary_sensor"];
 /** Sensor classes worth showing (the rest are diagnostics: signal, battery of a lamp…). */
@@ -122,6 +123,7 @@ const FAN_SET_SPEED = 1;
 /** What an entity can do, in ELISE's capability terms. */
 export function capabilitiesOf(
   s: HaState,
+  platform?: string | null,
 ): { type: HomeDeviceType; capabilities: HomeCapability[] } | null {
   const a = s.attributes;
   const features = num(a.supported_features) ?? 0;
@@ -183,6 +185,12 @@ export function capabilitiesOf(
     case "sensor":
     case "binary_sensor":
       return usefulSensor(s) ? { type: "sensor", capabilities: [] } : null;
+    // ADR-110: a Broadlink's remote entity learns and sends infrared codes. Other remotes (an
+    // Android TV's) belong to their own device and aren't devices of their own.
+    case "remote":
+      return platform === "broadlink"
+        ? { type: "ir_controller", capabilities: [{ type: "ir_blaster" }] }
+        : null;
     default:
       return null;
   }
@@ -223,6 +231,8 @@ export function stateOf(s: HaState): HomeState {
         ...(str(a.fan_mode) ? { fanMode: str(a.fan_mode) } : {}),
         ...(num(a.current_humidity) !== undefined ? { humidity: num(a.current_humidity) } : {}),
       };
+    case "remote":
+      return {};
     case "media_player":
       return {
         on,
@@ -257,7 +267,7 @@ export function normalizeRegistry(
   const visible = states.filter((s) => {
     const e = entryOf.get(s.entity_id);
     if (e && (e.entity_category || e.hidden_by || e.disabled_by)) return false;
-    return capabilitiesOf(s) !== null;
+    return capabilitiesOf(s, e?.platform) !== null;
   });
   const groups = new Map<string, HaState[]>();
   for (const s of visible) {
@@ -271,7 +281,7 @@ export function normalizeRegistry(
       CONTROL_PRIORITY.map((d) => members.find((m) => domainOf(m.entity_id) === d)).find(Boolean) ??
       members[0]!;
     const entry = entryOf.get(primary.entity_id);
-    const kind = capabilitiesOf(primary)!;
+    const kind = capabilitiesOf(primary, entry?.platform)!;
     // Android TVs open apps by link (play_media "app"); other players take media there instead.
     if (
       entry?.platform === "androidtv_remote" &&
@@ -297,7 +307,7 @@ export function normalizeRegistry(
           )?.entity_id
         : undefined;
     const state =
-      kind.type === "sensor"
+      kind.type === "sensor" || (kind.type === "ir_controller" && sensors.length)
         ? {
             ...stateOf(primary),
             readings: sensors.slice(0, 6).map((m) => {
@@ -396,6 +406,9 @@ export function toServiceCalls(entityId: string, actions: readonly HomeAction[])
     target,
     ...(service_data ? { service_data } : {}),
   });
+  // ADR-110: a learned code only ever goes to an infrared controller (never folded into a light's).
+  if (domain !== "remote" && actions.some((a) => a.type === "ir"))
+    throw new Error("infrared needs a controller");
   if (domain === "light") {
     const off = actions.some((a) => a.type === "power" && !a.on);
     const data: Record<string, unknown> = {};
@@ -450,6 +463,13 @@ export function toServiceCalls(entityId: string, actions: readonly HomeAction[])
       case "app":
         calls.push(
           call("play_media", { media_content_type: "app", media_content_id: APP_LINKS[a.app] }),
+        );
+        break;
+      case "ir":
+        // ADR-110: a learned code, by the names ELISE stored it under (never a raw code).
+        if (domain !== "remote") throw new Error("infrared needs a controller");
+        calls.push(
+          call("send_command", { device: a.device, command: a.command, num_repeats: a.repeats }),
         );
         break;
       default:

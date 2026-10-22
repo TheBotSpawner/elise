@@ -24,6 +24,7 @@ import { PlatformProvider } from "@/lib/platform/platform";
 import { applyAppearance } from "@/lib/theme";
 
 import { DesktopStateProvider, usePageData, useSession } from "./data";
+import { localHome } from "./local-home";
 import { HogarRoute, HomeRoute, RoutePage } from "./pages";
 import { RouterProvider, useDesktopRouter } from "./router";
 import {
@@ -166,6 +167,13 @@ function LocalHomeRuntime({ children }: { children: ReactNode }) {
       openDiscovery: (id) => b.openHomeDiscovery(id),
       answerDiscovery: (id, answers) => b.answerHomeDiscovery(id, answers),
       ignoreDiscovery: (id, name) => b.ignoreHomeDiscovery(id, name),
+      addBroadlink: (host) => b.addBroadlink(host),
+      // The controller as this computer's engine knows it (never sent anywhere else).
+      learnIr: async (controllerId, device, command) => {
+        const target = localHome.device(controllerId);
+        if (!target) return { ok: false, error: "not_found" };
+        return b.learnIrCommand({ providerKey: target.providerKey, device, command });
+      },
     };
   }, [state]);
   return <HomeRuntimeProvider value={value}>{children}</HomeRuntimeProvider>;

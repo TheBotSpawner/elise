@@ -1520,7 +1520,15 @@ export type HomeDeviceRow = {
   aliases: string[];
   room_id: string | null;
   room_override: boolean;
-  device_type: "light" | "switch" | "climate" | "fan" | "humidifier" | "media_player" | "sensor";
+  device_type:
+    | "light"
+    | "switch"
+    | "climate"
+    | "fan"
+    | "humidifier"
+    | "media_player"
+    | "sensor"
+    | "ir_controller";
   capabilities: Json;
   state: Json;
   available: boolean;

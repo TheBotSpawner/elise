@@ -27,6 +27,8 @@ export const INVOKE = {
   homeDiscoveryOpen: "elise:home-discovery-open",
   homeDiscoveryAnswer: "elise:home-discovery-answer",
   homeDiscoveryIgnore: "elise:home-discovery-ignore",
+  homeIrLearn: "elise:home-ir-learn",
+  homeAddBroadlink: "elise:home-add-broadlink",
   cacheGet: "elise:cache-get",
   cacheSet: "elise:cache-set",
   diagnostics: "elise:diagnostics",

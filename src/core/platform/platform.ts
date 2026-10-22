@@ -176,6 +176,22 @@ export const localHomeCommandSchema = z.object({
 });
 export type LocalHomeCommand = z.infer<typeof localHomeCommandSchema>;
 
+export const irLearnRequestSchema = z
+  .object({
+    /** The controller, as the local runtime knows it. */
+    providerKey: z.string().min(1).max(300),
+    device: z.string().regex(/^elise_[0-9a-f]{12}$/),
+    command: z.string().regex(/^[a-z0-9_]{1,40}$/),
+  })
+  .strict();
+export type IrLearnRequest = z.infer<typeof irLearnRequestSchema>;
+export type IrLearnResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error: "bad_name" | "not_found" | "offline" | "busy" | "no_signal" | "not_allowed";
+    };
+
 export type LocalHomeResult =
   { ok: true; state: Record<string, unknown> | null } | { ok: false; error: string };
 
@@ -222,6 +238,13 @@ export interface EliseDesktopBridge {
     answers: Record<string, string | number | boolean>,
   ): Promise<DiscoveryStep>;
   ignoreHomeDiscovery(flowId: string, name: string): Promise<boolean>;
+  /**
+   * ADR-110: the controller listens for one button of the person's remote and stores it under
+   * ELISE's names (up to 30 s). Local only: the engine's token never leaves this computer.
+   */
+  learnIrCommand(request: IrLearnRequest): Promise<IrLearnResult>;
+  /** ADR-110: a Broadlink by its address on the home network, when it wasn't found. */
+  addBroadlink(host: string): Promise<DiscoveryStep>;
   cacheGet(key: string): Promise<CachedSnapshot | null>;
   cacheSet(key: string, value: unknown, sourceUpdatedAt?: string | null): Promise<void>;
   onNavigate(listener: (path: string) => void): () => void;

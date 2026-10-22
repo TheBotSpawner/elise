@@ -49,6 +49,8 @@ function runtime(over: Partial<HomeRuntimeControls> = {}): HomeRuntimeControls {
         : { kind: "added" as const, name: "Hue" },
     ),
     ignoreDiscovery: vi.fn(async () => true),
+    addBroadlink: vi.fn(async () => ({ kind: "aborted" as const, reason: "invalid_host" })),
+    learnIr: vi.fn(async () => ({ ok: true as const })),
     ...over,
   };
 }
@@ -118,5 +120,40 @@ describe("devices step", () => {
   it("on the web it says to open ELISE Desktop (the engine runs there)", () => {
     wrap(null);
     expect(screen.getByText(/abrí ELISE Desktop/)).toBeTruthy();
+  });
+
+  it("ADR-110: a Broadlink by IP — a public address is refused; a LAN one continues its setup", async () => {
+    const r = runtime({
+      addBroadlink: vi.fn(async (host: string) =>
+        host === "8.8.8.8"
+          ? { kind: "aborted" as const, reason: "invalid_host" }
+          : {
+              kind: "form" as const,
+              flowId: "abcdef0123456789",
+              title: null,
+              fields: [{ name: "name", type: "text" as const, required: true }],
+              errors: {},
+            },
+      ),
+    });
+    wrap(r);
+    const host = screen.getByLabelText("IP o nombre en tu red");
+    const submit = within(host.closest("form")!).getByRole("button", { name: "Agregar" });
+    fireEvent.change(host, { target: { value: "8.8.8.8" } });
+    await act(async () => fireEvent.click(submit));
+    expect(screen.getByRole("alert").textContent).toMatch(/dirección de tu red/);
+    fireEvent.change(screen.getByLabelText("IP o nombre en tu red"), {
+      target: { value: "192.168.1.40" },
+    });
+    await act(async () =>
+      fireEvent.click(
+        within(screen.getByLabelText("IP o nombre en tu red").closest("form")!).getByRole(
+          "button",
+          { name: "Agregar" },
+        ),
+      ),
+    );
+    expect(r.addBroadlink).toHaveBeenLastCalledWith("192.168.1.40");
+    expect(screen.getByLabelText("Nombre")).toBeTruthy();
   });
 });

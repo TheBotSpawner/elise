@@ -69,6 +69,11 @@ class Query implements PromiseLike<{ data: unknown; error: null }> {
     this.filters.push((r) => r[k] !== v);
     return this;
   }
+  /** Prefix patterns only ("ir:%"). */
+  like(k: string, pattern: string) {
+    this.filters.push((r) => String(r[k]).startsWith(pattern.replace(/%$/, "")));
+    return this;
+  }
   lt(k: string, v: unknown) {
     this.filters.push((r) => String(r[k] ?? "") < String(v));
     return this;

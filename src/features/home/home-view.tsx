@@ -8,6 +8,7 @@ import {
   Play,
   Plus,
   Radar,
+  Radio,
   RotateCw,
   Search,
   Sparkles,
@@ -31,6 +32,7 @@ import {
   COLORS,
   describeState,
   hvacLabel,
+  irReady,
   type HomeActionInput,
   type HomeCapability,
   type HomeCommandOutcome,
@@ -58,6 +60,7 @@ import { DeviceDiscovery, useDevicesStepDone } from "./device-discovery";
 import { DeviceIcon } from "./device-icon";
 import { FoundDevices } from "./found-devices";
 import { HomeSetup, type DesktopDownload } from "./home-setup";
+import { IrSetup } from "./ir-setup";
 import { useHomeRuntime } from "./runtime-context";
 
 const CARD = "rounded-2xl border border-border bg-surface";
@@ -175,6 +178,8 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
   const [open, setOpen] = useState<HomeDevice | null>(null);
   const [editing, setEditing] = useState<HomeScene | "new" | null>(null);
   const [adding, setAdding] = useState<"room" | "devices" | null>(null);
+  /** ADR-110: the infrared assistant (new device, or one device's buttons). */
+  const [ir, setIr] = useState<{ device?: HomeDevice; controllerId?: string } | null>(null);
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
   const hub = snapshot.hub!;
@@ -193,6 +198,7 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
   const roomName = (id: string | null) => snapshot.rooms.find((r) => r.id === id)?.name ?? null;
   const addItems: MenuAction[] = [
     { label: h.setup.discover.scan, icon: Wifi, onClick: () => setAdding("devices") },
+    { label: h.ir.add, icon: Radio, onClick: () => setIr({}) },
     { label: h.add.room, icon: DoorOpen, onClick: () => setAdding("room") },
     { label: h.add.mode, icon: Sparkles, onClick: () => setEditing("new"), disabled: !hasDevices },
   ];
@@ -359,6 +365,22 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
           rooms={snapshot.rooms}
           timezone={timezone}
           onClose={() => setOpen(null)}
+          onIr={(target) => {
+            setOpen(null);
+            setIr(target);
+          }}
+        />
+      )}
+      {ir && (
+        <IrSetup
+          snapshot={snapshot}
+          device={ir.device ?? null}
+          controllerId={ir.controllerId ?? null}
+          onClose={() => setIr(null)}
+          onScan={() => {
+            setIr(null);
+            setAdding("devices");
+          }}
         />
       )}
       {editing && (
@@ -559,6 +581,8 @@ function DeviceTile({
   const h = t.smartHome;
   const power = cap(d, "power") && d.available && !stale;
   const lit = Boolean(d.state.on) && d.available;
+  const irCap = cap(d, "ir");
+  const unfinished = irCap ? !irReady(irCap) : false;
   return (
     <div
       className={cn(
@@ -594,7 +618,9 @@ function DeviceTile({
             )}
           >
             {!d.available && <span aria-hidden>● </span>}
-            {[room, describeState(d, locale)].filter(Boolean).join(" · ")}
+            {[room, unfinished ? h.ir.incomplete : describeState(d, locale)]
+              .filter(Boolean)
+              .join(" · ")}
             {stale &&
               d.stateUpdatedAt &&
               ` · ${h.device.stale(relativeWhen(d.stateUpdatedAt, new Date(), locale, timezone))}`}
@@ -666,11 +692,14 @@ function DeviceSheet({
   rooms,
   timezone,
   onClose,
+  onIr,
 }: {
   device: HomeDevice;
   rooms: HomeSnapshot["rooms"];
   timezone: string;
   onClose: () => void;
+  /** ADR-110: this infrared device's buttons, or a new device on this controller. */
+  onIr: (target: { device?: HomeDevice; controllerId?: string }) => void;
 }) {
   const { t, locale } = useI18n();
   const h = t.smartHome;
@@ -716,7 +745,9 @@ function DeviceSheet({
     });
   };
   // Controls other than power go in their own card (power sits in the header).
-  const controls = d.capabilities.some((c) => c.type !== "power" && c.type !== "app");
+  const ir = cap(d, "ir");
+  const controls =
+    !ir && d.capabilities.some((c) => !["power", "app", "ir_blaster"].includes(c.type));
   return (
     <Dialog open onClose={onClose} title={d.name} busy={saving}>
       <div
@@ -753,8 +784,52 @@ function DeviceSheet({
           />
         )}
       </div>
-      {!live && d.type === "media_player" && (
+      {!live && d.type === "media_player" && !ir && (
         <p className="-mt-2 text-[13px] text-muted">{h.unavailableTv}</p>
+      )}
+      {ir && (
+        <section
+          className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4"
+          aria-label={x.controls}
+        >
+          {ir.commands.some((c) => c.verified) ? (
+            <div className="flex flex-wrap gap-2">
+              {ir.commands
+                .filter((c) => c.verified)
+                .map((c) => (
+                  <Button
+                    key={c.key}
+                    size="sm"
+                    variant="secondary"
+                    disabled={!live || command.pending}
+                    onClick={() => send([{ type: "button", value: c.key }])}
+                  >
+                    {c.label}
+                  </Button>
+                ))}
+            </div>
+          ) : (
+            <p className="text-[13.5px] text-muted">{h.ir.noButtons}</p>
+          )}
+          <p className="text-[12.5px] text-faint">{h.ir.estimated}</p>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="self-start"
+            onClick={() => onIr({ device: d })}
+          >
+            {h.ir.manage}
+          </Button>
+        </section>
+      )}
+      {d.type === "ir_controller" && (
+        <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface p-4">
+          <p className="min-w-0 flex-1 text-[13.5px] text-muted">{h.ir.controllerCta}</p>
+          <Button size="sm" onClick={() => onIr({ controllerId: d.id })}>
+            <Plus />
+            {h.ir.addHere}
+          </Button>
+        </section>
       )}
       <section
         className={cn(
@@ -1103,6 +1178,8 @@ type Draft = {
   temperature: string;
   humidity: string;
   volume: string;
+  /** ADR-110: an infrared device's learned button. */
+  button: string;
 };
 
 const toDraft = (a: HomeScene["actions"][number]): Draft => {
@@ -1116,6 +1193,7 @@ const toDraft = (a: HomeScene["actions"][number]): Draft => {
     temperature: get("temperature") !== undefined ? String(get("temperature")) : "",
     humidity: get("humidity") !== undefined ? String(get("humidity")) : "",
     volume: get("volume") !== undefined ? String(get("volume")) : "",
+    button: typeof get("button") === "string" ? String(get("button")) : "",
   };
 };
 
@@ -1128,6 +1206,7 @@ const fromDraft = (d: Draft): HomeScene["actions"][number] => ({
     ...(d.temperature ? [{ type: "temperature" as const, value: Number(d.temperature) }] : []),
     ...(d.humidity ? [{ type: "humidity" as const, value: Number(d.humidity) }] : []),
     ...(d.volume ? [{ type: "volume" as const, value: Number(d.volume) }] : []),
+    ...(d.button ? [{ type: "button" as const, value: d.button }] : []),
   ],
 });
 
@@ -1149,7 +1228,7 @@ function SceneEditor({
   const [name, setName] = useState(scene?.name ?? "");
   const [rows, setRows] = useState<Draft[]>(scene?.actions.map(toDraft) ?? []);
   const [pending, start] = useTransition();
-  const controllable = devices.filter((d) => d.type !== "sensor");
+  const controllable = devices.filter((d) => d.type !== "sensor" && d.type !== "ir_controller");
   const remaining = controllable.filter((d) => !rows.some((r) => r.deviceId === d.id));
   const byId = new Map(devices.map((d) => [d.id, d]));
   const set = (i: number, patch: Partial<Draft>) =>
@@ -1271,6 +1350,23 @@ function SceneEditor({
                       className="h-10"
                     />
                   )}
+                  {cap(d, "ir") && (
+                    <Select
+                      aria-label={`${d.name}: ${h.ir.learn}`}
+                      value={r.button}
+                      onChange={(e) => set(i, { button: e.target.value })}
+                      className="h-10"
+                    >
+                      <option value="">{x.keep}</option>
+                      {cap(d, "ir")!
+                        .commands.filter((c) => c.verified)
+                        .map((c) => (
+                          <option key={c.key} value={c.key}>
+                            {c.label}
+                          </option>
+                        ))}
+                    </Select>
+                  )}
                   {cap(d, "volume") && (
                     <Input
                       type="number"
@@ -1301,12 +1397,13 @@ function SceneEditor({
                         ...rows,
                         {
                           deviceId: d.id,
-                          power: "on",
+                          power: cap(d, "power") ? "on" : "",
                           brightness: "",
                           color: "",
                           temperature: "",
                           humidity: "",
                           volume: "",
+                          button: "",
                         },
                       ])
                     }

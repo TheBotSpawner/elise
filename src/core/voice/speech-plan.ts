@@ -172,13 +172,31 @@ const ACKS: Bank = {
     en: ["Sure, I'll prepare it.", "Getting it ready for you to confirm.", "Preparing that."],
   },
   general: {
-    es: ["Voy con eso.", "Lo veo.", "Ya lo miro.", "Sí, dame un momento."],
+    es: [
+      "Voy con eso.",
+      "Lo veo.",
+      "Ya lo miro.",
+      "Sí, dame un momento.",
+      "Bancame que lo reviso.",
+      "Aguantame que lo busco.",
+    ],
     en: ["On it.", "Let me see.", "Looking into it.", "One moment."],
   },
   // Never a promise of what she'll do (an action may still need approval): only "I heard you".
   instant: {
     // Rioplatense, never the English "Okay." (ADR-104).
-    es: ["Un segundo.", "Dale.", "Dale, ya lo veo.", "Ahí va.", "Ya mismo."],
+    es: [
+      "Dame un segundo.",
+      "Bancame un toque.",
+      "Dale.",
+      "Aguantame un segundito.",
+      "Ya te digo.",
+      "Dale, ya lo veo.",
+      "A ver, esperame.",
+      "Ahí va.",
+      "Bancame que lo miro.",
+      "Ya mismo.",
+    ],
     en: ["One second.", "Okay.", "Sure, one moment.", "On it.", "Right away."],
   },
 };
