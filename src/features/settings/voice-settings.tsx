@@ -14,6 +14,12 @@ import {
   interactionSoundsEnabled,
   setInteractionSoundsEnabled,
 } from "@/features/feedback/completion";
+import {
+  canCheckOutput,
+  checkOutput,
+  downloadOutputCheck,
+  type OutputCheck,
+} from "@/features/voice/output-check";
 import { downloadSoundLog } from "@/features/voice/sound-log";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
 import { WebSpeechWakeEngine } from "@/features/voice/wake-engine";
@@ -264,6 +270,75 @@ function SoundsCard() {
           {t.settings.voiceDiagnostics.download}
         </Button>
       </SettingRow>
+      <OutputCheckRow />
     </SettingsCard>
+  );
+}
+
+const noop = () => () => undefined;
+
+/**
+ * ADR-108 (Desktop): "Analizar lo que suena" — 60 s of what the computer plays, analyzed here,
+ * each beep attributed (ELISE's chime, its generated voice, added on the way out, or not ELISE).
+ */
+function OutputCheckRow() {
+  const { t } = useI18n();
+  const o = t.settings.voiceDiagnostics.output;
+  const available = useSyncExternalStore(noop, canCheckOutput, () => false);
+  const [elapsed, setElapsed] = useState<number | null>(null);
+  const [result, setResult] = useState<OutputCheck | null>(null);
+  const [withAudio, setWithAudio] = useState(false);
+  if (!available) return null;
+  return (
+    <SettingRow id="voice-output-check" label={o.title} hint={o.hint} stack>
+      <div className="flex flex-col items-end gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={elapsed !== null}
+          onClick={async () => {
+            setResult(null);
+            setElapsed(0);
+            try {
+              setResult(await checkOutput(60, (s) => setElapsed(Math.floor(s))));
+            } catch {
+              toast.error(o.failed);
+            } finally {
+              setElapsed(null);
+            }
+          }}
+        >
+          {elapsed !== null ? o.recording(60 - elapsed) : o.start}
+        </Button>
+        {result && (
+          <div className="flex w-full max-w-sm flex-col gap-1.5 text-left text-[12.5px]">
+            <p>{result.beeps.length ? o.found(result.beeps.length) : o.none}</p>
+            <ul className="flex flex-col gap-0.5 text-muted">
+              {result.beeps.slice(0, 12).map((b) => (
+                <li key={`${b.kind}-${b.at}`}>
+                  {o.at(b.at.toFixed(1))} · {o.kinds[b.kind]} · {o.origins[b.origin]}
+                </li>
+              ))}
+            </ul>
+            <label className="flex items-center gap-2 text-muted">
+              <input
+                type="checkbox"
+                checked={withAudio}
+                onChange={(e) => setWithAudio(e.target.checked)}
+              />
+              {o.includeAudio}
+            </label>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="self-start"
+              onClick={() => downloadOutputCheck(result, withAudio)}
+            >
+              {o.download}
+            </Button>
+          </div>
+        )}
+      </div>
+    </SettingRow>
   );
 }

@@ -62,6 +62,7 @@ const bridge: EliseDesktopBridge = {
   onAlarmFire: (l) => subscribe(EVENTS.alarmFire, l),
   showApp: (path) => invoke(INVOKE.showApp, path ?? null),
   adjustVolume: (direction) => invoke(INVOKE.adjustVolume, direction),
+  armOutputCapture: () => invoke(INVOKE.armOutputCapture),
 };
 
 contextBridge.exposeInMainWorld("eliseDesktop", Object.freeze(bridge));

@@ -8,6 +8,8 @@
 /** A recognized word with its time (seconds since the recognizer started). */
 export interface TimedWord {
   word: string;
+  /** The recognizer's confidence, 0–1 (ADR-108: weak finals don't wake). */
+  conf: number;
   start: number;
   end: number;
 }

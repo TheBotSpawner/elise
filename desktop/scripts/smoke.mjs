@@ -65,6 +65,29 @@ try {
     "protocol and capabilities reported",
   );
 
+  // ADR-108: ELISE's voice plays as one continuous stream (worklet at 24 kHz, under the app's
+  // own CSP), and the wake word reads the microphone without an audio context of its own.
+  const audio = await page.evaluate(async () => {
+    const ctx = new AudioContext({ sampleRate: 24000 });
+    let worklet = false;
+    try {
+      await ctx.audioWorklet.addModule("/audio/pcm-stream-worklet.js");
+      new AudioWorkletNode(ctx, "pcm-stream", {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+      });
+      worklet = true;
+    } catch {
+      worklet = false;
+    }
+    const rate = ctx.sampleRate;
+    await ctx.close();
+    return { worklet, rate, trackProcessor: "MediaStreamTrackProcessor" in window };
+  });
+  check(audio.worklet && audio.rate === 24000, "voice output stream loads (worklet, 24 kHz)");
+  check(audio.trackProcessor, "wake word capture without an extra audio context");
+
   // A second launch exits on its own (single instance).
   const second = spawn(exe, [], { env, stdio: "ignore" });
   const code = await Promise.race([

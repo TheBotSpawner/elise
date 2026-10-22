@@ -22,7 +22,7 @@ import { resetHome } from "./home";
 import { log, recentLogs } from "./log";
 import { APP_ORIGIN } from "./protocol";
 import type { RuntimeHost } from "./runtime-host";
-import { openExternalSafely } from "./security";
+import { armOutputCapture, openExternalSafely } from "./security";
 import { cacheGet, cacheSet, loadState, updateState } from "./store";
 import { checkForUpdates, installUpdate, updateState as currentUpdate } from "./updater";
 import { reportWake, setWakePaused, wakeControl, wakePreferenceChanged } from "./wake";
@@ -212,6 +212,7 @@ export function registerIpc(
         .parse(path ?? null) ?? undefined,
     ),
   );
+  handle(INVOKE.armOutputCapture, () => armOutputCapture());
   handle(INVOKE.adjustVolume, (direction: unknown) =>
     adjustSystemVolume(z.enum(["up", "down"]).parse(direction)),
   );

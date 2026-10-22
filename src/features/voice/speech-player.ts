@@ -2,6 +2,7 @@
 
 import { playbackGain, type VoiceDelivery } from "@/core/voice/delivery";
 import type { VoiceLanguage } from "@/core/voice/providers";
+import { StreamResampler } from "@/core/voice/resample";
 
 import { logAudio, logSound } from "./sound-log";
 
@@ -35,6 +36,17 @@ export interface SegmentStats {
 /** No audio for this long (first byte or between chunks): the segment is skipped. */
 const STALL_MS = 8000;
 
+/**
+ * ADR-108: speech plays as one continuous stream — an AudioWorklet fed with PCM — in a context
+ * at the voice's own rate (24 kHz), so the only rate conversion is the audio system's, on one
+ * continuous stream. Measured in ELISE Desktop's own Chromium: a buffer source per chunk
+ * (the previous design) clicked at chunk boundaries and sometimes rendered a whole chunk with
+ * ~3x the high-frequency energy — heard as a short electronic "beep" in the middle of a
+ * sentence. Where AudioWorklet isn't available, chunks are still scheduled as buffers.
+ */
+const STREAM_RATE = 24_000;
+const STREAM_WORKLET = "/audio/pcm-stream-worklet.js";
+
 interface Item extends SpeakOptions {
   text: string;
   language: VoiceLanguage | null;
@@ -67,6 +79,13 @@ export class SpeechPlayer {
   private working = false;
   private samples = new Float32Array(1024);
   private generation = 0;
+  /** The continuous output (ADR-108), once its module loaded; null: buffer scheduling. */
+  private output: AudioWorkletNode | null = null;
+  private streamReady: Promise<void>;
+  /** The stream is playing (between its first sample and "drained"). */
+  private streaming = false;
+  /** When what was pushed to the stream will have played (context time). */
+  private queuedUntil = 0;
   /**
    * Lines fetched ahead (the acknowledgement chosen at the pause, ADR-036), by language and
    * text. Used once and dropped: the server keeps the reusable copy, so a voice change never
@@ -80,12 +99,49 @@ export class SpeechPlayer {
 
   /** Create from a user gesture (tapping the microphone), so the browser allows playback. */
   constructor() {
-    this.ctx = new AudioContext();
+    const worklet = typeof AudioWorkletNode !== "undefined";
+    this.ctx = worklet ? openContext(STREAM_RATE) : new AudioContext();
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 1024;
     this.gain = this.ctx.createGain();
     this.gain.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
+    this.streamReady =
+      worklet && this.ctx.audioWorklet
+        ? this.ctx.audioWorklet
+            .addModule(STREAM_WORKLET)
+            .then(() => {
+              const node = new AudioWorkletNode(this.ctx, "pcm-stream", {
+                numberOfInputs: 0,
+                numberOfOutputs: 1,
+                outputChannelCount: [1],
+              });
+              node.port.onmessage = (e: MessageEvent<{ type: string }>) =>
+                this.onStream(e.data.type);
+              node.connect(this.gain);
+              this.output = node;
+            })
+            .catch(() => logSound("audio:context", "stream unavailable, buffers"))
+        : Promise.resolve();
+    // Diagnostics (ADR-108): the output's real rate and latency, and every state change.
+    void this.streamReady.then(() =>
+      logSound(
+        "audio:context",
+        `rate=${this.ctx.sampleRate} base=${Math.round((this.ctx.baseLatency ?? 0) * 1000)}ms ` +
+          `out=${Math.round((this.ctx.outputLatency ?? 0) * 1000)}ms path=${this.output ? "stream" : "buffers"}`,
+      ),
+    );
+    this.ctx.onstatechange = () => logSound("audio:state", this.ctx.state);
+  }
+
+  /** The continuous stream said something (ADR-108). */
+  private onStream(type: string) {
+    if (type !== "drained") return;
+    this.streaming = false;
+    // Ran dry while more of the reply is coming: a gap the listener heard (no click: faded).
+    if (this.working) logSound("audio:underrun");
+    else this.queuedUntil = 0;
+    this.idleWhenDone();
   }
 
   /** How ELISE speaks from now on: vocal delivery of the next requests, and playback gain. */
@@ -95,7 +151,12 @@ export class SpeechPlayer {
   }
 
   get speaking(): boolean {
-    return this.working || this.sources.size > 0;
+    return this.working || this.sources.size > 0 || this.streaming;
+  }
+
+  /** Seconds of audio already queued ahead of what is playing now. */
+  private ahead_s(): number {
+    return (this.output ? this.queuedUntil : this.nextTime) - this.ctx.currentTime;
   }
 
   speak(text: string, language: VoiceLanguage | null, options: SpeakOptions = {}) {
@@ -176,6 +237,7 @@ export class SpeechPlayer {
 
   private async drain(generation: number) {
     this.working = true;
+    await this.streamReady;
     await this.ctx.resume();
     for (;;) {
       if (generation !== this.generation) return;
@@ -218,6 +280,7 @@ export class SpeechPlayer {
     // last audio has actually finished — the queue empties while it still plays, and resetting
     // then made the next line (the answer) start on top of it (ADR-104).
     if (!this.sources.size) this.nextTime = 0;
+    if (!this.streaming) this.queuedUntil = 0;
     this.idleWhenDone();
   }
 
@@ -260,6 +323,11 @@ export class SpeechPlayer {
     let pending: Uint8Array[] = [];
     let pendingBytes = 0;
     let started = false;
+    // One converter per segment when its rate isn't the stream's (state carries across chunks).
+    const convert =
+      this.output && rate !== this.ctx.sampleRate
+        ? new StreamResampler(rate, this.ctx.sampleRate)
+        : null;
     const flush = () => {
       if (!pendingBytes || generation !== this.generation) return;
       // Checked again when the audio arrives: it may have gone stale while synthesizing.
@@ -275,7 +343,7 @@ export class SpeechPlayer {
       }
       pending = [];
       pendingBytes = 0;
-      const gap = this.schedule(bytes, rate);
+      const gap = this.schedule(bytes, rate, convert);
       flight.started = true;
       if (!started)
         this.onSegment?.({
@@ -308,15 +376,16 @@ export class SpeechPlayer {
       // ~150 ms per buffer while audio is already queued ahead. With nothing queued (a reply's
       // start, or the schedule ran dry), ~400 ms first (ADR-104): one short wait instead of the
       // stutter a slow chunk would cause mid-word. (Bytes: 2 per sample.)
-      const dry = this.nextTime <= this.ctx.currentTime + 0.05;
+      const dry = this.ahead_s() <= 0.05;
       if (pendingBytes >= (dry ? rate * 0.8 : rate * 0.3)) flush();
     }
     flush();
   }
 
   /** Schedules PCM right after what is already queued; returns the silence it had to leave. */
-  private schedule(bytes: Uint8Array, rate: number): number {
+  private schedule(bytes: Uint8Array, rate: number, convert: StreamResampler | null): number {
     const pcm = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+    if (this.output) return this.push(pcm, rate, convert);
     const buffer = this.ctx.createBuffer(1, pcm.length, rate);
     const channel = buffer.getChannelData(0);
     for (let i = 0; i < pcm.length; i++) channel[i] = pcm[i]! / 32768;
@@ -344,13 +413,33 @@ export class SpeechPlayer {
     return gapMs;
   }
 
+  /** ADR-108: appends PCM to the continuous stream; returns the silence it had to leave. */
+  private push(pcm: Int16Array, rate: number, convert: StreamResampler | null): number {
+    const raw = new Float32Array(pcm.length);
+    for (let i = 0; i < pcm.length; i++) raw[i] = pcm[i]! / 32768;
+    const samples = convert ? convert.push(raw) : raw;
+    const now = this.ctx.currentTime;
+    const gapMs =
+      this.queuedUntil > 0 && now > this.queuedUntil
+        ? Math.round((now - this.queuedUntil) * 1000)
+        : 0;
+    const startAt = Math.max(this.queuedUntil, now);
+    logAudio(pcm, rate, startAt - now);
+    if (!this.streaming && !this.sources.size) this.onStart?.();
+    this.streaming = true;
+    this.queuedUntil = startAt + samples.length / this.ctx.sampleRate;
+    this.output!.port.postMessage({ type: "push", samples }, [samples.buffer as ArrayBuffer]);
+    return gapMs;
+  }
+
   private idleWhenDone() {
-    if (!this.working && !this.sources.size && !this.queue.length) this.onIdle?.();
+    if (!this.working && !this.sources.size && !this.streaming && !this.queue.length)
+      this.onIdle?.();
   }
 
   /** The raw output RMS: what ELISE is putting into the speakers right now (barge-in). */
   rms(): number {
-    if (!this.sources.size) return 0;
+    if (!this.sources.size && !this.streaming) return 0;
     this.analyser.getFloatTimeDomainData(this.samples);
     let sum = 0;
     for (const v of this.samples) sum += v * v;
@@ -397,11 +486,25 @@ export class SpeechPlayer {
     }
     this.sources.clear();
     this.nextTime = 0;
+    // The stream fades out over 5 ms and drops what was queued (no click on a barge-in).
+    this.output?.port.postMessage({ type: "flush" });
+    this.streaming = false;
+    this.queuedUntil = 0;
     this.working = false;
   }
 
   close() {
     this.stop();
+    this.output?.disconnect();
     void this.ctx.close();
+  }
+}
+
+/** A context at the stream's rate; the device's own if this one can't be opened. */
+function openContext(rate: number): AudioContext {
+  try {
+    return new AudioContext({ sampleRate: rate });
+  } catch {
+    return new AudioContext();
   }
 }

@@ -60,3 +60,6 @@ supabase/.temp
 
 # ADR-095: the wake word model is downloaded and verified before packaging (never committed).
 desktop/assets/wake/*.tar.gz
+
+# Wake word evaluation audio (synthetic, regenerated locally)
+desktop/scripts/wake-eval/.clips/

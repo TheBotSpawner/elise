@@ -36,6 +36,7 @@ export const INVOKE = {
   voiceOrb: "elise:voice-orb",
   showApp: "elise:show-app",
   adjustVolume: "elise:adjust-volume",
+  armOutputCapture: "elise:arm-output-capture",
   alarmSchedule: "elise:alarm-schedule",
 } as const;
 

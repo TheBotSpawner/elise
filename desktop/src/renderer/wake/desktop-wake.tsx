@@ -35,11 +35,19 @@ const HANDOFF_MS = 6_000;
 
 const OFF: WakeControl = { enabled: false, paused: false, suspended: false, chime: true };
 
+/**
+ * One output for ELISE's own short sounds (ADR-108): a context per chime opened and closed an
+ * audio stream on the device each time, next to the voice. Created on first use, kept.
+ */
+let chimes: AudioContext | null = null;
+
 /** A short, quiet two-note sound: heard, not announced. */
 function tone(kind: "wake" | "error") {
   logSound(`chime:${kind}`);
   try {
-    const ctx = new AudioContext();
+    chimes ??= new AudioContext();
+    const ctx = chimes;
+    void ctx.resume().catch(() => undefined);
     const t = ctx.currentTime + 0.01;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, t);
@@ -54,8 +62,9 @@ function tone(kind: "wake" | "error") {
       o.connect(gain);
       o.start(t + i * 0.07);
       o.stop(t + 0.36);
+      o.onended = () => o.disconnect();
     });
-    setTimeout(() => void ctx.close().catch(() => undefined), 600);
+    setTimeout(() => gain.disconnect(), 600);
   } catch {
     // No audio output: nothing to play.
   }
@@ -148,6 +157,8 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     let retryAt = 0;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let disposed = false;
+    /** Whether this capture's chime already played (ADR-108). */
+    let chimed = false;
 
     const update = () => report(reportFor(controlRef.current, phase, detector.state, handingOff));
     const failed = () =>
@@ -182,8 +193,11 @@ export function DesktopWake({ children }: { children: ReactNode }) {
             }
             update();
           },
-          onDetected: () => {
-            if (controlRef.current.chime) tone("wake");
+          onDetected: (decision) => {
+            // ADR-108: a validated candidate chimes now; a guarded one (after false alarms, or
+            // with music) stays silent until the transcription confirms it was a call.
+            chimed = !decision.guarded;
+            if (chimed && controlRef.current.chime) tone("wake");
             // The page's Orb listens with the person from the word on (ADR-104).
             publishDeviceCapture("listening");
           },
@@ -228,11 +242,18 @@ export function DesktopWake({ children }: { children: ReactNode }) {
             remainderChars: m.remainder.length,
           });
           // The words didn't start with "ELISE" (someone said it mid-sentence, or it wasn't
-          // the word): no conversation starts.
-          if (!m.matched && text.trim()) return finishHandOff();
+          // the word): no conversation starts, and the next candidates need more evidence.
+          if (!m.matched && text.trim()) {
+            detector.outcome("rejected");
+            return finishHandOff();
+          }
           remainder = m.remainder;
         }
       }
+      // A real call: the guard lifts, and a guarded candidate chimes now.
+      detector.outcome("confirmed");
+      if (!chimed && controlRef.current.chime) tone("wake");
+      chimed = true;
       // ADR-102: "ELISE, dejá de escuchar" — nothing starts (and a session open ends);
       // "desactivá la activación por voz" also turns the setting off (Settings or the tray
       // turn it back on).

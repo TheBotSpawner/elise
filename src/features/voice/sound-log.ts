@@ -66,6 +66,20 @@ function wav(samples: Int16Array, rate: number): Blob {
   return new Blob([h.buffer, samples.buffer as ArrayBuffer], { type: "audio/wav" });
 }
 
+/**
+ * ADR-108: what ELISE played and logged since `from` (performance.now), for the output check —
+ * its chimes and every spoken clip with its own audio, on the same clock as a recording.
+ */
+export function soundLogSince(from: number) {
+  prune(performance.now());
+  return {
+    clips: clips
+      .filter((c) => c.at + (c.pcm.length / c.rate) * 1000 >= from)
+      .map((c) => ({ at: c.at, rate: c.rate, pcm: c.pcm })),
+    events: events.filter((e) => e.at >= from).map((e) => ({ ...e })),
+  };
+}
+
 /** The window as one WAV (clips mixed on their timeline) and a JSON log, timed from its start. */
 export function exportSoundLog(): { audio: Blob; log: Blob } | null {
   prune(performance.now());

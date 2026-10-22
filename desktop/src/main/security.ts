@@ -1,4 +1,4 @@
-import { app, session, shell, type WebContents } from "electron";
+import { app, desktopCapturer, session, shell, type WebContents } from "electron";
 
 import { cloudAppPath } from "@/core/platform/app-routes";
 import { isSafeExternalUrl } from "@/core/platform/links";
@@ -59,6 +59,18 @@ const YOUTUBE_EMBEDS = [
   "https://www.youtube.com/embed/*",
 ];
 
+/**
+ * ADR-108: the voice output check ("Analizar lo que suena") records what the computer plays —
+ * system audio only, never the screen — for 60 s, analyzed on the device. Allowed only within
+ * a few seconds after ELISE's own page asked for it through the bridge (the person's click);
+ * any other screen or audio capture request is refused.
+ */
+let outputCaptureUntil = 0;
+export function armOutputCapture() {
+  outputCaptureUntil = Date.now() + 10_000;
+}
+const outputCaptureArmed = () => Date.now() < outputCaptureUntil;
+
 export function hardenSessions() {
   const s = session.defaultSession;
   const referer = `${new URL(__ELISE_BUILD__.cloudUrl).origin}/`;
@@ -66,7 +78,10 @@ export function hardenSessions() {
     callback({ requestHeaders: { ...details.requestHeaders, Referer: referer } }),
   );
   s.setPermissionRequestHandler((wc, permission, callback, details) => {
-    const ok = ALLOWED_PERMISSIONS.has(permission) && isAppUrl(details.requestingUrl);
+    const ok =
+      (ALLOWED_PERMISSIONS.has(permission) ||
+        (permission === "display-capture" && outputCaptureArmed())) &&
+      isAppUrl(details.requestingUrl);
     if (!ok) log("desktop_permission_denied", { permission });
     callback(ok);
   });
@@ -76,6 +91,23 @@ export function hardenSessions() {
   s.setPermissionCheckHandler(
     (_wc, permission, origin) => ALLOWED_PERMISSIONS.has(permission) && isAppUrl(origin),
   );
+  s.setDisplayMediaRequestHandler((request, callback) => {
+    const ok = outputCaptureArmed() && isAppUrl(request.securityOrigin ?? request.frame?.url ?? "");
+    outputCaptureUntil = 0;
+    if (!ok) {
+      log("desktop_output_capture_denied");
+      return callback({});
+    }
+    // A screen source is required to carry the loopback audio; the page drops its video at once.
+    desktopCapturer
+      .getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } })
+      .then((sources) => {
+        if (!sources[0]) return callback({});
+        log("desktop_output_capture");
+        callback({ video: sources[0], audio: "loopback" });
+      })
+      .catch(() => callback({}));
+  });
 
   app.on("web-contents-created", (_e, contents: WebContents) => {
     contents.on("will-navigate", (event, url) => {

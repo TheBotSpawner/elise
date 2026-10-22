@@ -6,6 +6,8 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
  */
 const electron = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>(),
+  /** The default session's handlers, as hardenSessions installs them. */
+  session: {} as Record<string, unknown>,
 }));
 vi.mock("electron", () => ({
   app: {
@@ -26,7 +28,15 @@ vi.mock("electron", () => ({
   },
   net: { isOnline: () => true },
   shell: { openExternal: vi.fn() },
-  session: {},
+  session: {
+    defaultSession: {
+      webRequest: { onBeforeSendHeaders: () => undefined },
+      setPermissionRequestHandler: (fn: unknown) => (electron.session.request = fn),
+      setPermissionCheckHandler: (fn: unknown) => (electron.session.check = fn),
+      setDisplayMediaRequestHandler: (fn: unknown) => (electron.session.display = fn),
+    },
+  },
+  desktopCapturer: { getSources: async () => [{ id: "screen:0:0" }] },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
   autoUpdater: { on: vi.fn(), setFeedURL: vi.fn(), checkForUpdates: vi.fn() },
 }));
@@ -227,5 +237,53 @@ describe("the wake word's files", () => {
     await expect(
       call(INVOKE.wakePause, { senderFrame: { origin: "https://evil" } }, true),
     ).rejects.toThrow();
+  });
+});
+
+describe("voice output check capture (ADR-108)", () => {
+  type Display = (r: unknown, cb: (v: Record<string, unknown>) => void) => void;
+  type Request = (wc: unknown, p: string, cb: (ok: boolean) => void, d: unknown) => void;
+  const display = (origin: string) =>
+    new Promise<Record<string, unknown>>((resolve) =>
+      (electron.session.display as Display)(
+        { securityOrigin: origin, frame: { url: origin } },
+        resolve,
+      ),
+    );
+  const ask = (permission: string) =>
+    new Promise<boolean>((resolve) =>
+      (electron.session.request as Request)({}, permission, resolve, {
+        requestingUrl: "elise-app://app/settings/voice",
+      }),
+    );
+
+  it("refuses screen or system-audio capture unless ELISE's page armed it, and only once", async () => {
+    const { hardenSessions, armOutputCapture } = await import("../../../desktop/src/main/security");
+    hardenSessions();
+    expect(await display("elise-app://app/")).toEqual({});
+    armOutputCapture();
+    expect(await display("https://evil.example")).toEqual({});
+    armOutputCapture();
+    expect(await display("elise-app://app/")).toEqual({
+      video: { id: "screen:0:0" },
+      audio: "loopback",
+    });
+    expect(await display("elise-app://app/")).toEqual({});
+  });
+
+  it("display capture permission is granted only while armed", async () => {
+    const { hardenSessions, armOutputCapture } = await import("../../../desktop/src/main/security");
+    hardenSessions();
+    expect(await ask("display-capture")).toBe(false);
+    armOutputCapture();
+    expect(await ask("display-capture")).toBe(true);
+    expect(await ask("media")).toBe(true);
+  });
+
+  it("the bridge arms it only from ELISE's own page", async () => {
+    await expect(
+      call(INVOKE.armOutputCapture, { senderFrame: { origin: "https://evil" } }),
+    ).rejects.toThrow();
+    await expect(call(INVOKE.armOutputCapture, fromApp)).resolves.toBeUndefined();
   });
 });

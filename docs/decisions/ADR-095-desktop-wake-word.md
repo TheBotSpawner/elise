@@ -1,7 +1,7 @@
 # ADR-095: "ELISE" wake word on Desktop, in the background
 
 **Status:** Accepted (2026-10-19). Extends ADR-017 §7 (wake phrase) and ADR-081 (Desktop). §4's navigation to Inicio is
-superseded by ADR-096 (a wake on another page stays there).
+superseded by ADR-096 (a wake on another page stays there). Detection rules, capture path and chime timing revised by ADR-108.
 
 ## Context
 

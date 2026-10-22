@@ -1,3 +1,5 @@
+import type { WakeDecision } from "./wake-arbiter";
+
 /**
  * The local wake word detector (ADR-095): a contract any device can implement — ELISE Desktop
  * today, a Home Hub (Linux ARM) later — so the word, its model and the engine are data, not code
@@ -302,7 +304,8 @@ export interface WakeDetector {
   /** Opens the microphone and listens until stop(); fires once per detection. */
   start(opts: {
     model: WakeWordModel;
-    onDetected: () => void;
+    /** A candidate the arbiter accepted (ADR-108): its source, confidence and whether guarded. */
+    onDetected: (decision: Extract<WakeDecision, { accept: true }>) => void;
     onCaptured: (capture: WakeCapture) => void;
     onState: (state: DetectorState) => void;
     /**
@@ -322,6 +325,15 @@ export interface WakeDetector {
 }
 
 /**
+ * ADR-108: whether the recognizer should hear a frame — a quieter bar than "speech" (EndOfSpeech),
+ * so a voice from across the room reaches it. Before: 3× the room and at least -38 dBFS, which a
+ * normal voice at 3 m (and often at 1.5 m) didn't pass. Measured: tests/unit/voice/wake-eval.test.ts.
+ */
+export const WAKE_GATE = { ratio: 2, min: 0.0035 } as const;
+export const wakeGate = (rms: number, floor: number) =>
+  rms > Math.max(floor * WAKE_GATE.ratio, WAKE_GATE.min);
+
+/**
  * The end of what someone says after the word, from frame energies (RMS, 0..1): speech is well
  * above the room's floor; the utterance ends after `quietFrames` quiet frames in a row, or when
  * it runs too long. Pure: the detector feeds it, tests drive it.
@@ -339,6 +351,10 @@ export class EndOfSpeech {
   /** The room just got quieter by this factor (ELISE lowered her music): speech is relative. */
   scaleFloor(factor: number) {
     this.floor = Math.max(0.004, this.floor * factor);
+  }
+  /** The room's level as learned (diagnostics, the wake gate). */
+  get roomFloor() {
+    return this.floor;
   }
   /** Whether a frame sounds like speech in this room. */
   speech(rms: number) {

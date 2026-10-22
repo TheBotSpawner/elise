@@ -243,6 +243,8 @@ export interface EliseDesktopBridge {
   showApp(path?: string): Promise<void>;
   /** "ELISE, subí / bajá el volumen": the computer's own volume, a few points (ADR-106). */
   adjustVolume?(direction: "up" | "down"): Promise<boolean>;
+  /** ADR-108: allows the next system-audio capture (the voice output check), for a few seconds. */
+  armOutputCapture?(): Promise<void>;
 }
 
 export interface DesktopAlarmItem {

@@ -46,6 +46,7 @@ These documents are the source of truth for product and architecture decisions. 
 | `28-voice-quality-2026-10.md`      | Voice quality and Desktop parity report (ADR-104) |
 | `ELISE_Memory_Audit_vs_Honcho_Report.md` | Memory audit vs Honcho (2026-10, before ADR-107) |
 | `30-native-memory-implementation.md` | Native continuous memory: implementation report (ADR-107) |
+| `31-desktop-wake-and-audio.md` | Desktop wake word at a distance and speech beeps (ADR-108) |
 
 ## roadmap/
 
