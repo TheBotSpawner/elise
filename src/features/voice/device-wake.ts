@@ -106,3 +106,27 @@ export function useDeviceCapture(): DeviceCapture {
 /** Phases where the device may hold the microphone for the wake word. */
 export const deviceMayListen = (phase: VoicePhase) =>
   phase === "idle" || phase === "sleeping" || phase === "error" || phase === "offline";
+
+/**
+ * ADR-109: phases where ELISE is answering and "ELISE" may cut in — the device listens for the
+ * word over her (echo cancellation keeps her own voice out of what it hears).
+ */
+export const deviceMayInterrupt = (phase: VoicePhase) =>
+  phase === "thinking" || phase === "executing" || phase === "speaking";
+
+/**
+ * ADR-109: the device heard "ELISE" while she answered. "pause": freeze the reply now, while it
+ * finds out whether it was a call; "resume": it wasn't (or the request didn't need the reply to
+ * stop); "interrupt": it was — the reply ends and the device's words open the next turn.
+ */
+export type VoiceControl = "pause" | "resume" | "interrupt";
+const controlListeners = new Set<(c: VoiceControl) => void>();
+
+export function requestVoiceControl(c: VoiceControl) {
+  for (const l of controlListeners) l(c);
+}
+
+export function onVoiceControl(listener: (c: VoiceControl) => void): () => void {
+  controlListeners.add(listener);
+  return () => void controlListeners.delete(listener);
+}

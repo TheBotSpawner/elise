@@ -282,6 +282,14 @@ class FakePlayer implements PlayerPort {
   chime() {
     this.chimes++;
   }
+  paused = 0;
+  resumed = 0;
+  pause() {
+    this.paused++;
+  }
+  resume() {
+    this.resumed++;
+  }
   prepared: string[] = [];
   prepare(text: string) {
     this.prepared.push(text);
@@ -1714,6 +1722,69 @@ describe("adaptive delivery never changes voice halfway through a reply (ADR-049
     player.finishPlaying();
     await hear(DELIVERY.holdMs - 1_000, 0.002);
     expect(controller.state.delivery).toBe("whisper");
+  });
+});
+
+/** ADR-109: "ELISE" said over her reply pauses it, then resumes it or cuts it for a new turn. */
+describe("the device's wake word while ELISE answers", () => {
+  async function answering() {
+    const t = setup({ transcripts: ["¿Cómo viene mi día?"] });
+    await t.controller.start();
+    await t.say();
+    t.controller.onStream({ type: "text", delta: "Tenés tres reuniones hoy. " });
+    expect(t.controller.state.phase).toBe("speaking");
+    return t;
+  }
+
+  it("pauses her voice at once, and a false alarm lets the reply go on where it stopped", async () => {
+    const { controller, player, sent } = await answering();
+    controller.pauseForDevice();
+    expect(player.paused).toBe(1);
+    expect(player.stopped).toBe(0);
+    controller.resumeAfterDevice();
+    expect(player.resumed).toBe(1);
+    expect(controller.state.phase).toBe("speaking");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("a real call ends the reply and what was said after 'ELISE' is the next turn", async () => {
+    const { controller, player, sent, hear } = await answering();
+    controller.pauseForDevice();
+    controller.interruptForDevice();
+    expect(player.stopped).toBeGreaterThan(0);
+    expect(player.resumed).toBe(1); // the output isn't left frozen for the next reply
+    expect(controller.state.phase).toBe("sleeping");
+    await controller.deviceWake("mejor decime el clima");
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    await settle();
+    expect(sent.map((s) => s.text)).toEqual(["¿Cómo viene mi día?", "mejor decime el clima"]);
+  });
+
+  it("the device listens over her only while she answers, and its requests reach the session", async () => {
+    const { deviceMayInterrupt, deviceMayListen, onVoiceControl, requestVoiceControl } =
+      await import("@/features/voice/device-wake");
+    expect(["thinking", "executing", "speaking"].every((p) => deviceMayInterrupt(p as never))).toBe(
+      true,
+    );
+    expect(deviceMayInterrupt("listening")).toBe(false);
+    expect(deviceMayInterrupt("waiting_approval")).toBe(false);
+    expect(deviceMayListen("speaking")).toBe(false);
+    const got: string[] = [];
+    const off = onVoiceControl((c) => got.push(c));
+    requestVoiceControl("pause");
+    requestVoiceControl("interrupt");
+    off();
+    requestVoiceControl("resume");
+    expect(got).toEqual(["pause", "interrupt"]);
+  });
+
+  it("does nothing when she isn't answering", async () => {
+    const { controller, player } = setup();
+    controller.pauseForDevice();
+    controller.interruptForDevice();
+    expect(player.paused).toBe(0);
+    expect(player.stopped).toBe(0);
+    expect(controller.state.phase).toBe("idle");
   });
 });
 

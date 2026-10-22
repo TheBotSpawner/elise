@@ -77,6 +77,9 @@ export interface PlayerPort {
   rms(): number;
   level(): number;
   chime?(): void;
+  /** ADR-109: freezes what is playing (and what's queued) where it is; resume continues. */
+  pause?(): void;
+  resume?(): void;
   /**
    * Fetches a line's audio ahead without playing it: the acknowledgement chosen from the
    * provisional transcript is ready by the time the turn ends (ADR-036). Preparation only.
@@ -1250,6 +1253,56 @@ export class VoiceController {
     this.barge = null;
     this.act({ type: "interrupt" });
     this.listen();
+  }
+
+  /** ADR-109: the device is checking whether "ELISE" was said to her. */
+  private devicePaused = false;
+
+  /**
+   * ADR-109: "ELISE" heard while she answers — her voice stops at once (frozen, not cut) while
+   * the device transcribes what was said. The turn keeps arriving meanwhile.
+   */
+  pauseForDevice() {
+    const phase = this.state.phase;
+    if (phase !== "speaking" && phase !== "thinking" && phase !== "executing") return;
+    if (this.devicePaused) return;
+    this.devicePaused = true;
+    this.player?.pause?.();
+    this.trace("device_pause", { phase });
+  }
+
+  /** It wasn't a call (or it was "bajá el volumen"): the reply continues where it stopped. */
+  resumeAfterDevice() {
+    if (!this.devicePaused) return;
+    this.devicePaused = false;
+    this.player?.resume?.();
+    this.trace("device_resume");
+  }
+
+  /**
+   * It was a call: the reply ends here (what was said stays on screen) and the session rests, so
+   * the device's words — already captured from "ELISE" on — open the next turn right away.
+   */
+  interruptForDevice() {
+    const paused = this.devicePaused;
+    this.devicePaused = false;
+    const phase = this.state.phase;
+    if (phase !== "speaking" && phase !== "thinking" && phase !== "executing") {
+      if (paused) this.player?.resume?.();
+      return;
+    }
+    this.player?.stop();
+    if (paused) this.player?.resume?.();
+    if (this.turn)
+      this.deps.onTimings?.({
+        ...this.turn.marks,
+        audioStopped: Math.round(this.now - this.turn.t0),
+        turnComplete: Math.round(this.now - this.turn.t0),
+      });
+    this.superseded = Boolean(this.turn && !this.turn.textDone);
+    this.trace("device_interrupt", { phase });
+    this.act({ type: "sleep", reason: "inactivity" });
+    this.afterSleep();
   }
 
   /** Tap while listening: that's all I wanted to say. */

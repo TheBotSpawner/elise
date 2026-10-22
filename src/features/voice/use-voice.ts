@@ -11,6 +11,7 @@ import { useI18n } from "@/lib/i18n/client";
 import {
   onDeviceWake,
   pageHasWake,
+  onVoiceControl,
   onVoiceEnd,
   publishVoicePhase,
   useDeviceWake,
@@ -167,6 +168,20 @@ export function useVoice({
   }, [controller, deviceWake, deviceWakeFallback]);
   useEffect(
     () => (deviceWake ? onVoiceEnd(() => controller.end()) : undefined),
+    [controller, deviceWake],
+  );
+  // ADR-109: "ELISE" said over her reply pauses it, then resumes it or cuts it for a new turn.
+  useEffect(
+    () =>
+      deviceWake
+        ? onVoiceControl((c) =>
+            c === "pause"
+              ? controller.pauseForDevice()
+              : c === "resume"
+                ? controller.resumeAfterDevice()
+                : controller.interruptForDevice(),
+          )
+        : undefined,
     [controller, deviceWake],
   );
   // A wake word's turn goes out at once: its acknowledgements must be ready before it.

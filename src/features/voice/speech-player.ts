@@ -467,6 +467,20 @@ export class SpeechPlayer {
     osc.stop(t + 0.2);
   }
 
+  /**
+   * ADR-109: freezes the output where it is — what plays and what's queued — while the device
+   * checks whether "ELISE" was said to her; resume() continues exactly there.
+   */
+  pause() {
+    void this.ctx.suspend().catch(() => undefined);
+    logSound("audio:paused");
+  }
+
+  resume() {
+    void this.ctx.resume().catch(() => undefined);
+    logSound("audio:resumed");
+  }
+
   /** Stops speaking now (interruption); whatever was generated stays on screen. */
   stop() {
     // A new generation: chunks of anything requested before are never scheduled.

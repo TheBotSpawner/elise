@@ -160,6 +160,15 @@ La pausa después de "ELISE" ayuda (habilita el resultado final), pero no es obl
 | Desktop empaquetado + smoke | 8/8, incluidos "voice output stream loads (worklet, 24 kHz)" y "wake word capture without an extra audio context" |
 | Instalador (Squirrel) | No generado (lo hacés al publicar) |
 
+## 6b. Interrumpir con "ELISE" ([ADR-109](../decisions/ADR-109-wake-word-interrupts-reply.md))
+
+- **Mientras ELISE piensa o habla,** el detector sigue escuchando. Al oír "ELISE", su voz se pausa al instante.
+- **Pedido nuevo:** la respuesta se corta y el pedido arranca, sin perder lo que dijiste después del nombre.
+- **"Basta":** termina la conversación.
+- **"Bajá el volumen" o "mostrate":** se ejecuta y la respuesta sigue.
+- **Falsa alarma:** la respuesta sigue donde estaba.
+- **Si ELISE acaba de decir su propio nombre,** se ignora: nunca se interrumpe sola.
+
 ## 7. Pruebas manuales pendientes (en tu computadora, con la beta.27)
 
 1. **Pitidos:** pedí 3 respuestas largas por voz (por ejemplo una ruta o un resumen de noticias), en parlantes y en auriculares. Si escuchás algo, usá "Analizar lo que suena" y mandame el informe.
@@ -169,6 +178,7 @@ La pausa después de "ELISE" ayuda (habilita el resultado final), pero no es obl
 5. **Reunión:** dejá ELISE escuchando durante una reunión real de 30 min y contá los sonidos de activación. Lo esperado es 0 o muy pocos, y ninguna conversación iniciada.
 6. **Dispositivos:** conectá y desconectá auriculares Bluetooth o USB con ELISE en reposo. Debe seguir respondiendo a "ELISE" con el dispositivo nuevo.
 7. **Suspender y reanudar,** e **inicio con Windows,** con la app minimizada en la bandeja.
+8. **Interrumpir:** mientras ELISE responde por los parlantes, decí "ELISE, mejor decime el clima". Tiene que callarse enseguida y contestar lo nuevo. Probá también "ELISE, bajá el volumen" a mitad de respuesta: tiene que bajar el volumen y seguir hablando.
 
 ## 8. Build
 

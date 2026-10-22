@@ -9,13 +9,15 @@ import { asksToShow, WAKE_MODELS, type DetectorState } from "@/core/voice/wake-d
 import { musicStore } from "@/features/music/store";
 import {
   DeviceWakeContext,
+  deviceMayInterrupt,
   deviceMayListen,
   onVoicePhase,
   publishDeviceCapture,
   requestDeviceWake,
+  requestVoiceControl,
   requestVoiceEnd,
 } from "@/features/voice/device-wake";
-import { logSound } from "@/features/voice/sound-log";
+import { logSound, soundLogSince } from "@/features/voice/sound-log";
 
 import { VoskWakeDetector, wav } from "./vosk-detector";
 
@@ -32,6 +34,14 @@ const MODEL = WAKE_MODELS[0]!;
 const RETRY_MS = 30_000;
 /** After a hand-off, the session takes the microphone; if it doesn't, listen again. */
 const HANDOFF_MS = 6_000;
+/** ADR-109: ELISE said her own name this recently — "ELISE" heard now is her voice, not a call. */
+const OWN_NAME_MS = 6_000;
+
+/** Whether ELISE's own recent lines contain her name (her echo must never cut her off). */
+const saidOwnName = () =>
+  soundLogSince(performance.now() - OWN_NAME_MS).events.some(
+    (e) => e.kind === "segment" && /\belis/i.test(e.detail ?? ""),
+  );
 
 const OFF: WakeControl = { enabled: false, paused: false, suspended: false, chime: true };
 
@@ -159,6 +169,15 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     let disposed = false;
     /** Whether this capture's chime already played (ADR-108). */
     let chimed = false;
+    /** ADR-109: this capture began over ELISE's reply (paused until it's settled). */
+    let interrupting = false;
+    /** ADR-109: this capture is her own voice saying her name: dropped. */
+    let ignoring = false;
+    /** The paused reply continues (it wasn't a call, or the request didn't need it to stop). */
+    const resumeReply = () => {
+      if (interrupting) requestVoiceControl("resume");
+      interrupting = false;
+    };
 
     const update = () => report(reportFor(controlRef.current, phase, detector.state, handingOff));
     const failed = () =>
@@ -174,8 +193,9 @@ export function DesktopWake({ children }: { children: ReactNode }) {
         if (detector.state !== "stopped" && !failed()) detector.stop();
         return update();
       }
-      // A conversation has the floor: the word isn't listened for, the microphone stays open.
-      if (!deviceMayListen(phase) || handingOff) {
+      // A conversation has the floor: the word isn't listened for (the microphone stays open) —
+      // except while ELISE answers, when "ELISE" may cut in (ADR-109).
+      if ((!deviceMayListen(phase) && !deviceMayInterrupt(phase)) || handingOff) {
         detector.hold();
         return update();
       }
@@ -194,6 +214,15 @@ export function DesktopWake({ children }: { children: ReactNode }) {
             update();
           },
           onDetected: (decision) => {
+            // ADR-109: over her own reply — unless she just said her own name (her echo) — her
+            // voice freezes at once while the words are checked.
+            interrupting = deviceMayInterrupt(phase);
+            if (interrupting && saidOwnName()) {
+              logSound("wake:candidate", "own name in her reply, ignored");
+              ignoring = true;
+              return;
+            }
+            if (interrupting) requestVoiceControl("pause");
             // ADR-108: a validated candidate chimes now; a guarded one (after false alarms, or
             // with music) stays silent until the transcription confirms it was a call.
             chimed = !decision.guarded;
@@ -208,6 +237,9 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     };
 
     const finishHandOff = () => {
+      // Whatever didn't settle it (offline, a failed transcription, a dropped capture): the
+      // reply that was paused for it goes on.
+      resumeReply();
       publishDeviceCapture(null);
       handingOff = false;
       if (handoffTimer) clearTimeout(handoffTimer);
@@ -218,6 +250,11 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     async function handOff(
       capture: Parameters<Parameters<VoskWakeDetector["start"]>[0]["onCaptured"]>[0],
     ) {
+      if (ignoring) {
+        ignoring = false;
+        interrupting = false;
+        return sync();
+      }
       // The session takes the conversation: stop listening for the word (the mic stays open).
       handingOff = true;
       publishDeviceCapture("thinking");
@@ -258,12 +295,13 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       // "desactivá la activación por voz" also turns the setting off (Settings or the tray
       // turn it back on).
       const command = sessionCommand(remainder);
-      // ADR-104: "ELISE, mostrate" — the window to the front, and nothing else starts.
+      // ADR-104: "ELISE, mostrate" — the window to the front, and nothing else starts (a reply
+      // that was paused for it goes on: finishHandOff resumes it).
       if (command === "show") {
         void window.eliseDesktop?.showApp?.();
         return finishHandOff();
       }
-      // ADR-106: "ELISE, bajá el volumen" — the computer's volume, and nothing else starts.
+      // ADR-106: "ELISE, bajá el volumen" — the computer's volume; a paused reply goes on.
       if (command === "volume_up" || command === "volume_down") {
         void window.eliseDesktop
           ?.adjustVolume?.(command === "volume_up" ? "up" : "down")
@@ -272,11 +310,17 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       }
       if (command) {
         console.debug("[wake] session command", { command });
+        // "ELISE, basta": the reply that was paused stops for good.
+        if (interrupting) requestVoiceControl("interrupt");
+        interrupting = false;
         if (command === "disable_wake")
           void window.eliseDesktop?.setPreferences?.({ wakeWord: false }).catch(() => undefined);
         requestVoiceEnd();
         return finishHandOff();
       }
+      // ADR-109: a new request over her reply — that reply ends, this one starts.
+      if (interrupting) requestVoiceControl("interrupt");
+      interrupting = false;
       // Only an explicit "abrí ELISE" / "mostrame esto en pantalla" shows the window.
       if (asksToShow(remainder)) void window.eliseDesktop?.showApp?.("/");
       // Inicio's session takes it, or on any other page the floating Orb's: the page stays.
@@ -297,7 +341,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
           )
           .catch(() => undefined);
       // The session took over (or ended): the hand-off is done.
-      if (handingOff && !deviceMayListen(p)) {
+      if (handingOff && !interrupting && !deviceMayListen(p)) {
         handingOff = false;
         if (handoffTimer) clearTimeout(handoffTimer);
       }
