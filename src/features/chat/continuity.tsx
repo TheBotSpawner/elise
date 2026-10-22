@@ -2,7 +2,7 @@
 
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { ComposeIcon } from "@/components/elise/icons";
 import type { ThreadRef } from "@/core/interaction";
@@ -36,14 +36,15 @@ export function hasUnsentDraft() {
  */
 export function useStartNewChat() {
   const router = useRouter();
-  return () => {
+  // Stable: chat's send depends on it.
+  return useCallback(() => {
     forgetThread();
     draftAttachments.clear();
     composerDraft.text = "";
     // A distinct URL remounts Home even when it is already showing (the ?new mark is dropped on
     // arrival).
     router.push(`/?new=${Date.now().toString(36)}`);
-  };
+  }, [router]);
 }
 
 /**

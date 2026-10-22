@@ -66,6 +66,7 @@ import type { ElisePersonality } from "../personality";
 import type { CapabilityBinding, ProviderKey } from "../providers/types";
 import type { RecallReader, RecallResult } from "../recall/model";
 import type { ScheduleInput } from "../schedules/schedule";
+import type { ShoppingCapability } from "../shopping/model";
 import type { ShortcutStore } from "../shortcuts/model";
 import type { MethodStore } from "../skills/model";
 import type { StructuredAnalysis } from "../structured/analysis";
@@ -164,6 +165,8 @@ export interface CapabilityProviders {
   markets: MarketsPort;
   /** Public economic data: dollar, inflation, holidays, deposit rates (ADR-094). */
   economy: EconomyCapability;
+  /** Public supermarket prices and the person's links and alerts (ADR-111). */
+  shopping: ShoppingCapability;
   /** ELISE Home: devices, rooms and modes through the person's hub (ADR-079). */
   home: HomePort;
   /** Context Profiles and people: the organizational layer (ADR-016). */
@@ -524,6 +527,7 @@ export type ToolDisplay =
   | { kind: "market"; market: SurfacePayloads["market"] }
   /** Public economic data (ADR-094). */
   | { kind: "economy"; economy: SurfacePayloads["economy"]; title: string; key: string }
+  | { kind: "shopping"; shopping: SurfacePayloads["shopping"]; title: string; key: string }
   /** A day's plan (ADR-098): validated by core/planning, never by the model. */
   | { kind: "day_plan"; plan: SurfacePayloads["day_plan"] }
   /** Alarms (ADR-100): computed by ELISE, with where each can really ring. */

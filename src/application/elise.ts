@@ -39,6 +39,7 @@ import { NOTE_TOOLS } from "@/core/tools/notes";
 import { PLANNING_TOOLS } from "@/core/tools/planning";
 import { SCHEDULE_TOOLS } from "@/core/tools/schedules";
 import { SETTINGS_TOOLS } from "@/core/tools/settings";
+import { SHOPPING_TOOLS } from "@/core/tools/shopping";
 import { SHORTCUT_TOOLS } from "@/core/tools/shortcuts";
 import { STRUCTURED_TOOLS } from "@/core/tools/structured";
 import { STUDY_TOOLS } from "@/core/tools/study";
@@ -114,6 +115,7 @@ import { methodStore } from "./methods-service";
 import { syncNoteToKnowledge } from "./notes-knowledge";
 import { catchUpRecall } from "./recall-service";
 import { settingsStore } from "./settings-service";
+import { shoppingCapability } from "./shopping-service";
 import { shortcutStore } from "./shortcuts-service";
 import { startStructuredBulk } from "./structured-bulk";
 import { studyStore } from "./study-service";
@@ -144,6 +146,7 @@ export const toolRegistry = new ToolRegistry().register(
   ...WEATHER_TOOLS,
   ...MARKET_TOOLS,
   ...ECONOMY_TOOLS,
+  ...SHOPPING_TOOLS,
   ...HOME_TOOLS,
   ...CONTEXT_TOOLS,
   ...STUDY_TOOLS,
@@ -503,6 +506,10 @@ function providerFactory(
     // Public economic data: server-provided, shared across workspaces (ADR-094).
     economy() {
       return economyCapability();
+    },
+    // Public supermarket prices plus the person's links and alerts, under RLS (ADR-111).
+    shopping() {
+      return shoppingCapability(auth);
     },
     // Context Profiles (ADR-016): this workspace's organizational layer, through RLS. Task
     // lists come from every connected provider, read through the executor like any read.

@@ -969,6 +969,15 @@ export function surfacesFromOutcome(
           ref: null,
         }),
       );
+    case "shopping":
+      // One Surface per question (a product, a list's comparison): asking again updates it.
+      return one(
+        draft("shopping", d.key, d.shopping, opts, {
+          title: d.title,
+          source: { capability: "shopping", label: "SEPA" },
+          ref: null,
+        }),
+      );
     case "home":
       return one(
         draft("home", `home:${d.home.title}`, d.home, opts, {

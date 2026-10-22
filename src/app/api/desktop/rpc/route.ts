@@ -16,6 +16,7 @@ import * as methods from "@/features/methods/actions";
 import * as modules from "@/features/modules/actions";
 import * as music from "@/features/music/actions";
 import * as native from "@/features/native/actions";
+import * as shopping from "@/features/native/shopping-actions";
 import * as onboarding from "@/features/onboarding/actions";
 import * as schedules from "@/features/schedules/actions";
 import * as settings from "@/features/settings/actions";
@@ -50,6 +51,7 @@ const RPC_MODULES: Record<string, Record<string, unknown>> = {
   "features/modules/actions": modules,
   "features/music/actions": music,
   "features/native/actions": native,
+  "features/native/shopping-actions": shopping,
   "features/onboarding/actions": onboarding,
   "features/schedules/actions": schedules,
   "features/settings/actions": settings,

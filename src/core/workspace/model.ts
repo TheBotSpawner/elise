@@ -65,6 +65,8 @@ export const SURFACE_TYPES = [
   "market",
   /** Public economic data (ADR-094): dollar rates, inflation, holidays, deposit rates. */
   "economy",
+  /** Supermarket prices (ADR-111): a product, a basket comparison, a history, a choice. */
+  "shopping",
   /** A spreadsheet from chat, analyzed by the Finance import pipeline (ADR-075). */
   "finance_import",
   /** "Cambiá tu personalidad" with no target (ADR-076): the five choices. */

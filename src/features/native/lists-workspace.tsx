@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils";
 
 import { nativeActionAction, reorderListAction, reorderListsAction } from "./actions";
 import { ImportPanel } from "./import-panel";
+import { ShoppingCompare } from "./shopping-compare";
 
 /**
  * My Elise → Lists (ADR-051): checklists as columns side by side, scrolled horizontally. Lists
@@ -538,6 +539,7 @@ function Column({
   const [editing, setEditing] = useState<"name" | "description" | "icon" | null>(null);
   const [value, setValue] = useState("");
   const [menu, setMenu] = useState(false);
+  const [comparing, setComparing] = useState(false);
   const [over, setOver] = useState(false);
   const manual = (list.itemSort ?? "manual") === "manual";
 
@@ -700,6 +702,12 @@ function Column({
           >
             <MoreHorizontal className="size-4" aria-hidden />
           </button>
+          {comparing && (
+            <ShoppingCompare
+              list={{ id: list.id, name: list.name }}
+              onClose={() => setComparing(false)}
+            />
+          )}
           {menu && (
             <ListMenu
               list={list}
@@ -716,6 +724,7 @@ function Column({
                 )
               }
               onDuplicate={() => act("lists.duplicate", { list: list.id })}
+              onCompare={() => setComparing(true)}
               onClearDone={() => {
                 if (window.confirm(w.clearDoneConfirm(done.length, list.name)))
                   act(
@@ -889,6 +898,7 @@ function ListMenu({
   onEdit,
   onSort,
   onDuplicate,
+  onCompare,
   onClearDone,
   onMove,
   onDelete,
@@ -901,6 +911,8 @@ function ListMenu({
   onEdit: (what: "name" | "description" | "icon") => void;
   onSort: (sort: ListItemSort) => void;
   onDuplicate: () => void;
+  /** ADR-111: this list's prices at the supermarkets (any list; it's read-only). */
+  onCompare: () => void;
   onClearDone: () => void;
   onMove: (delta: number) => void;
   onDelete: () => void;
@@ -966,6 +978,7 @@ function ListMenu({
       {item(w.moveLeft, () => onMove(-1), { disabled: index <= 0 })}
       {item(w.moveRight, () => onMove(1), { disabled: index >= count - 1 })}
       {item(w.duplicate, onDuplicate)}
+      {item(t.shopping.compare, onCompare, { disabled: !list.items.some((i) => !i.checked) })}
       {item(w.clearDone, onClearDone, { disabled: doneCount === 0 })}
       <div className="my-1 border-t border-border" />
       {item(w.deleteList, onDelete, { danger: true })}

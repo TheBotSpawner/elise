@@ -4,13 +4,14 @@ import { Volume2 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { VoicePreferences } from "@/application/auth-context";
 import { useOrbPresence } from "@/components/elise/orb/orb-presence";
 import { resolveOrbState, voicePhaseOrb, type OrbState } from "@/components/elise/orb/orb-states";
 import { threadUrl, type ThreadRef } from "@/core/interaction";
 import { clipText } from "@/core/text";
+import { asksNewConversation } from "@/core/voice/session-control";
 import { WORKSPACE_LIMITS, type WorkspaceState } from "@/core/workspace/model";
 import { ContextIndicator, type ContextOption } from "@/features/contexts/context-indicator";
 import { SpaceGlyph } from "@/features/knowledge/appearance";
@@ -29,7 +30,7 @@ import { forgetThread, homeArrival, readActiveThread, rememberThread } from "@/l
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-import { NewChatButton } from "./continuity";
+import { NewChatButton, useStartNewChat } from "./continuity";
 import { usePublishHomeNotices } from "./home-notices";
 import type { ChatMessage } from "./types";
 import { useEliseChat } from "./use-elise-chat";
@@ -113,7 +114,7 @@ export function ChatSurface({
   const online = useOnline();
   const {
     messages,
-    send,
+    send: sendTurn,
     stop,
     busy,
     orbState: chatOrbState,
@@ -132,6 +133,13 @@ export function ChatSurface({
     spaceId: space?.id,
     workspace: initialWorkspace,
   });
+  // "ELISE, iniciá una nueva conversación" (typed or spoken): a fresh chat, before the agent.
+  const startNewChat = useStartNewChat();
+  const send = useCallback(
+    (text: string, options?: Parameters<typeof sendTurn>[1]) =>
+      asksNewConversation(text) ? Promise.resolve(startNewChat()) : sendTurn(text, options),
+    [sendTurn, startNewChat],
+  );
   // The tab's active interaction (ADR-032): an opened one becomes it; a bare Home visit in a
   // tab that has one opens it again (the pre-paint script kept the fresh Home hidden).
   const router = useRouter();

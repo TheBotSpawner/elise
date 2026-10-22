@@ -23,6 +23,7 @@ export type CapabilityKey =
   | "markets"
   /** Public economic data (ADR-094): dollar rates, inflation, holidays, deposit rates. */
   | "economy"
+  | "shopping"
   | "contexts"
   | "study"
   | "shortcuts"

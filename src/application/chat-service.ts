@@ -15,6 +15,7 @@ import {
 import { methodNote, recentMethodId, runElise, toolNotes } from "@/core/agents/runtime";
 import {
   ECONOMY_SIGNAL,
+  SHOPPING_SIGNAL,
   explicitEmail,
   HOLIDAY_WORDS,
   HOME_SIGNAL,
@@ -555,6 +556,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     markets,
     home: HOME_SIGNAL.test(input.message),
     economy: ECONOMY_SIGNAL.test(input.message) || HOLIDAY_WORDS.test(input.message),
+    shopping: SHOPPING_SIGNAL.test(input.message),
     location: location ? { here: Boolean(here) } : null,
     activeContext: activeProfile ? describeActiveContext(activeProfile) : null,
     contexts: contexts.profiles

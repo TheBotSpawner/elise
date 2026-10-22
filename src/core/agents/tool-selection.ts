@@ -58,6 +58,12 @@ export const HOLIDAY_WORDS =
  */
 export const ECONOMY_SIGNAL =
   /(?<!\p{L})(d[oó]lar\p{L}*|blue|mep|ccl|contado con liqui\p{L}*|mayorista|cotizaci[oó]n\p{L}*|tipo de cambio|inflaci[oó]n|ipc|(sub|aument)\p{L}* (de )?(los )?precios|precios (sub|aument)\p{L}*|acumulad\p{L}*|interanual|plazos? fijos?|tasas?|tna|tea|riesgo pa[ií]s|uva|cer|le gan[eé] a la inflaci[oó]n|exchange rate|inflation)(?!\p{L})/iu;
+/**
+ * Supermarket prices (ADR-111): the súper, chains, a list's prices, groceries by name. "¿Cuánto
+ * aumentó la leche?" also brings economy (inflation stays a separate reference).
+ */
+export const SHOPPING_SIGNAL =
+  /(?<!\p{L})(s[uú]per|supermercados?|hiper\p{L}*|almac[eé]n|changuito|lista (de|del) (las )?(compras|s[uú]per)|mis compras|comprame|m[aá]s barat\p{L}*|d[oó]nde (me )?conviene|d[oó]nde (la |lo |las |los )?consigo|conviene comprar|compar[aá]\p{L}* (mi |la )?lista|precios? (de|del|en) (la |el |los |las )?(s[uú]per|leche|yerba|aceite|az[uú]car|harina|fideos|arroz|caf[eé]|pan|carne|pollo|huevos?|gaseosa|agua|cerveza|vino|detergente|lavandina|papel)|por (litro|kilo)|c[oó]digo de barras|coto|carrefour|jumbo|changomas|la an[oó]nima|cooperativa obrera|toledo|comod[ií]n|baje de \$|leche|yerba|aceite|az[uú]car|harina|fideos|arroz|grocer\p{L}*|supermarket)(?!\p{L})/iu;
 export const MARKET_SIGNAL = {
   test: (m: string) => MARKET_WORDS.test(m) || TICKER.test(m) || FOLLOWING.test(m),
 };
@@ -117,6 +123,8 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   ["markets", MARKET_SIGNAL],
   // Argentina's economy (ADR-094): dollar, inflation, deposit rates — public data, never Finance.
   ["economy", ECONOMY_SIGNAL],
+  // Supermarket prices (ADR-111): public SEPA data for the person's lists and groceries.
+  ["shopping", SHOPPING_SIGNAL],
   // ELISE Home (ADR-079): devices, rooms, modes, on/off — never a Finance or Knowledge question.
   ["home", HOME_SIGNAL],
   [
@@ -170,6 +178,7 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   weather: "weather",
   market: "markets",
   economy: "economy",
+  shopping: "shopping",
   home: "home",
   music: "music",
   timer: "time",

@@ -292,6 +292,125 @@ export const marketPayload = z.object({
 });
 
 /**
+ * Supermarket prices (ADR-111): every amount computed by ELISE from public SEPA data, in cents,
+ * with its province, date and how it was aggregated. Never a store-level quote, never a ranking
+ * the data doesn't support.
+ */
+const cents = z.number().int().min(0).max(5_000_000_000);
+const shoppingChainPrice = z.object({
+  id: text(20),
+  name: text(120),
+  listCents: cents,
+  minCents: cents,
+  branches: z.number().int().min(1).max(10_000),
+  perUnit: z.object({ cents, per: z.enum(["kg", "L", "u"]) }).nullable(),
+  promoCents: cents.nullable(),
+  promoLabel: text(120).nullable(),
+  conditionalLabel: text(120).nullable(),
+  quoteDate: text(10),
+});
+const shoppingProduct = z.object({
+  ean: text(14),
+  name: text(200),
+  brand: text(80).nullable(),
+  size: text(20).nullable(),
+});
+export const shoppingPayload = z.object({
+  mode: z.enum(["product", "basket", "history", "resolution", "alerts"]),
+  region: text(8),
+  regionName: text(60),
+  product: shoppingProduct.nullable(),
+  chains: z.array(shoppingChainPrice).max(40),
+  basket: z
+    .object({
+      listId: z.uuid().nullable(),
+      listName: text(120).nullable(),
+      requested: z.number().int().min(0).max(100),
+      commonLines: z.number().int().min(0).max(100),
+      chains: z
+        .array(
+          z.object({
+            id: text(20),
+            name: text(120),
+            covered: z.number().int().min(0).max(100),
+            availableCents: cents,
+            commonCents: cents,
+            full: z.boolean(),
+          }),
+        )
+        .max(30),
+      cheapestCommon: z
+        .object({ chainId: text(20), savingsCents: cents, vsChainId: text(20) })
+        .nullable(),
+      lines: z
+        .array(
+          z.object({
+            label: text(500),
+            product: shoppingProduct.nullable(),
+            quantity: z.number().int().min(1).max(99),
+            status: z.enum(["priced", "unresolved", "no_price"]),
+            common: z.boolean(),
+            cheapestChainId: text(20).nullable(),
+            prices: z
+              .array(z.object({ chainId: text(20), unitCents: cents, lineCents: cents }))
+              .max(30),
+          }),
+        )
+        .max(100),
+    })
+    .nullable(),
+  history: z
+    .object({
+      series: z
+        .array(
+          z.object({
+            chain: text(120),
+            points: z
+              .array(z.object({ date: text(10), cents: cents.nullable(), observed: z.boolean() }))
+              .max(400),
+          }),
+        )
+        .max(8),
+      change: z
+        .object({
+          chain: text(120),
+          from: z.object({ date: text(10), cents }),
+          to: z.object({ date: text(10), cents }),
+          percent: z.number().finite(),
+        })
+        .nullable(),
+    })
+    .nullable(),
+  candidates: z
+    .array(
+      shoppingProduct.extend({
+        forLine: text(500).nullable(),
+        extraVariant: z.array(text(40)).max(6),
+        fromCents: cents.nullable(),
+      }),
+    )
+    .max(15),
+  alerts: z
+    .array(
+      z.object({
+        product: text(200),
+        thresholdCents: cents,
+        region: text(60),
+        state: z.enum(["armed", "triggered"]),
+        lastBestCents: cents.nullable(),
+        lastBestChain: text(120).nullable(),
+        lastQuoteDate: text(10).nullable(),
+        lastCheck: text(20).nullable(),
+      }),
+    )
+    .max(20),
+  /** The data's own day (YYYY-MM-DD) and its source, always shown. */
+  date: text(10).nullable(),
+  source: z.object({ name: text(80), url: href }),
+  notes: z.array(text(240)).max(6),
+});
+
+/**
  * Public economic data as Surfaces show it (ADR-094): every number from the provider or code,
  * every figure dated, and its source to cite. Rows are typed by mode, never free HTML.
  */
@@ -1001,6 +1120,7 @@ export const PAYLOADS = {
   answer: answerPayload,
   market: marketPayload,
   economy: economyPayload,
+  shopping: shoppingPayload,
   finance_import: financeImportPayload,
   personality: z.object({ current: z.enum(PERSONALITIES) }),
   home: homePayload,
@@ -1725,6 +1845,34 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
       ]
         .filter(Boolean)
         .join("; "),
+  },
+  // Supermarket prices (ADR-111): a product's prices, a list's comparison, a history.
+  shopping: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 86,
+    actions: () => [expand],
+    describe: (p) => {
+      const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+      const head = `${p.mode} · ${p.regionName}${p.date ? ` · ${p.date}` : ""}`;
+      if (p.basket)
+        return [
+          head,
+          `${p.basket.commonLines}/${p.basket.requested} lines in every chain`,
+          ...p.basket.chains.map(
+            (c) =>
+              `${c.name}: common ${money(c.commonCents)}, ${c.covered} lines${c.full ? " (full)" : ""}`,
+          ),
+        ].join("; ");
+      if (p.product)
+        return [
+          `${head} · ${p.product.name}`,
+          ...p.chains.slice(0, 8).map((c) => `${c.name} ${money(c.listCents)}`),
+        ].join("; ");
+      if (p.candidates.length)
+        return `${head} · options: ${p.candidates.map((c) => c.name).join(" | ")}`;
+      return head;
+    },
   },
   // Public economic data (ADR-094): the figure is the answer to "¿a cuánto está el dólar?".
   economy: {

@@ -24,6 +24,7 @@ import {
   Telescope,
   TrendingUp,
   Landmark,
+  ShoppingCart,
   FileSpreadsheet,
   House,
   Compass,
@@ -78,6 +79,7 @@ import { WeatherView } from "./canvas/weather";
 import { DayPlanBody, useDayLabel } from "./day-plan-view";
 import { EconomyBody } from "./economy-view";
 import { MarketBody } from "./market-view";
+import { ShoppingBody } from "./shopping-view";
 import { FinanceImportCard } from "../finance/chat-import-card";
 import { HomeResultBody } from "../home/home-result";
 import { PersonalityPicker } from "../settings/personality-picker";
@@ -138,6 +140,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   answer: Sparkles,
   market: TrendingUp,
   economy: Landmark,
+  shopping: ShoppingCart,
   finance_import: FileSpreadsheet,
   personality: Sparkles,
   home: House,
@@ -1081,6 +1084,8 @@ export function SurfaceBody({
       return <MarketBody p={p} timezone={timezone} />;
     case "economy":
       return <EconomyBody p={p} timezone={timezone} />;
+    case "shopping":
+      return <ShoppingBody p={p} large={large} />;
     case "finance_import":
       return <FinanceImportCard p={p} />;
     case "personality":

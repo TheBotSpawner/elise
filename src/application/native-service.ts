@@ -42,7 +42,7 @@ import { listSpaces } from "./knowledge-service";
 const today = (auth: AuthContext) => todayIn(auth.profile.timezone);
 
 /** Only native capability tools can be called from My Elise screens. */
-const NATIVE_TOOL = /^(habits|goals|lists|notes)\.[a-zA-Z]+$/;
+const NATIVE_TOOL = /^(habits|goals|lists|notes|shopping)\.[a-zA-Z]+$/;
 
 export async function nativeAction(
   auth: AuthContext,

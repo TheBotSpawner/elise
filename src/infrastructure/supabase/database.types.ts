@@ -698,6 +698,70 @@ export type ListRow = {
   item_sort?: "manual" | "alpha" | "recent";
 };
 
+/** ADR-111 (migration 064): public SEPA catalog and per-person shopping links and alerts. */
+export type ShoppingProductRow = {
+  ean: string;
+  name: string;
+  brand: string | null;
+  size_amount: number | null;
+  size_unit: "g" | "ml" | "u" | null;
+  search: string;
+  last_seen: string;
+  updated_at: Ts;
+};
+
+export type ShoppingIngestionRow = {
+  id: string;
+  dataset_date: string;
+  source_file: string;
+  status: "running" | "succeeded" | "failed";
+  started_at: Ts;
+  finished_at: Ts | null;
+  stats: Json;
+  error: string | null;
+};
+
+export type ShoppingPriceHistoryRow = {
+  ean: string;
+  region: string;
+  chain_id: string;
+  chain_name: string;
+  observed_on: string;
+  list_cents: number;
+};
+
+export type ListItemProductRow = {
+  list_item_id: string;
+  workspace_id: string;
+  ean: string;
+  quantity: number;
+  match_method: "barcode" | "confirmed";
+  created_by_user_id: string | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
+export type ShoppingPriceAlertRow = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  ean: string;
+  product_name: string;
+  region: string;
+  threshold_cents: number;
+  chains: string[] | null;
+  status: "active" | "paused";
+  state: "armed" | "triggered";
+  last_check: "hold" | "fire" | "rearm" | "stale" | "no_data" | null;
+  last_checked_at: Ts | null;
+  last_best_cents: number | null;
+  last_best_chain: string | null;
+  last_quote_date: string | null;
+  triggered_at: Ts | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
 export type ListItemRow = {
   id: string;
   workspace_id: string;
@@ -1979,6 +2043,20 @@ export type Database = {
       goal_progress_events: Table<GoalProgressEventRow, "workspace_id" | "goal_id" | "source_type">;
       lists: Table<ListRow, "workspace_id" | "name">;
       list_items: Table<ListItemRow, "workspace_id" | "list_id" | "content" | "position">;
+      shopping_products: Table<ShoppingProductRow, "ean" | "name" | "search" | "last_seen">;
+      shopping_ingestions: Table<ShoppingIngestionRow, "dataset_date" | "source_file">;
+      shopping_price_history: Table<
+        ShoppingPriceHistoryRow,
+        "ean" | "region" | "chain_id" | "chain_name" | "observed_on" | "list_cents"
+      >;
+      list_item_products: Table<
+        ListItemProductRow,
+        "list_item_id" | "workspace_id" | "ean" | "match_method"
+      >;
+      shopping_price_alerts: Table<
+        ShoppingPriceAlertRow,
+        "workspace_id" | "user_id" | "ean" | "product_name" | "region" | "threshold_cents"
+      >;
       notes: Table<NoteRow, "workspace_id" | "title">;
       knowledge_spaces: Table<KnowledgeSpaceRow, "workspace_id" | "name">;
       knowledge_sources: Table<

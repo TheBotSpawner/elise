@@ -1894,3 +1894,24 @@ describe("instant acknowledgement", () => {
     expect(player.spoken).toHaveLength(1);
   });
 });
+
+describe("asking for a new conversation", () => {
+  it("the whole message asks for it; a question about it doesn't", async () => {
+    const { asksNewConversation } = await import("@/core/voice/session-control");
+    for (const yes of [
+      "ELISE, iniciá una nueva conversación",
+      "Elise inicia una nueva conversacion",
+      "empecemos de cero",
+      "abrí un chat nuevo",
+      "nueva conversación",
+      "start a new conversation",
+    ])
+      expect(asksNewConversation(yes), yes).toBe(true);
+    for (const no of [
+      "¿cómo inicio una nueva conversación con mi jefe?",
+      "anotá: nueva conversación con Pedro",
+      "iniciá una nueva conversación con Juan por WhatsApp",
+    ])
+      expect(asksNewConversation(no), no).toBe(false);
+  });
+});

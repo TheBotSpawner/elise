@@ -48,6 +48,7 @@ These documents are the source of truth for product and architecture decisions. 
 | `30-native-memory-implementation.md` | Native continuous memory: implementation report (ADR-107) |
 | `31-desktop-wake-and-audio.md` | Desktop wake word at a distance, speech beeps, interrupting with "ELISE" (ADR-108/109) |
 | `32-broadlink-ir.md` | Broadlink infrared: controllers, learning buttons, TV/AC control, testing without hardware, first-day guide (ADR-110) |
+| `33-supermarket-prices.md` | Supermarket prices from SEPA: providers assessed, ingestion, honest basket math, costs, manual steps (ADR-111) |
 
 ## roadmap/
 

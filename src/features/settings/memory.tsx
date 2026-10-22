@@ -343,12 +343,14 @@ function FactRow({
         </p>
       </div>
       {!readOnly && (
-        <div className="flex shrink-0 gap-0.5 md:opacity-0 md:transition-opacity md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+        // Always visible (it was hover-only and went unnoticed): forgetting one fact is a
+        // first-class action, not a hidden one.
+        <div className="flex shrink-0 gap-0.5">
           <button
             type="button"
             aria-label={`${m.edit}: ${label(fact.key)}`}
             onClick={() => setEditing(true)}
-            className="grid size-10 place-items-center rounded-full text-muted hover:bg-active hover:text-fg md:size-8"
+            className="grid size-10 place-items-center rounded-full text-faint hover:bg-active hover:text-fg md:size-8"
           >
             <Pencil className="size-3.5" aria-hidden />
           </button>
@@ -372,7 +374,7 @@ function FactRow({
                 else toast(m.forgotten);
               });
             }}
-            className="grid size-10 place-items-center rounded-full text-muted hover:bg-active hover:text-danger-text md:size-8"
+            className="grid size-10 place-items-center rounded-full text-faint hover:bg-active hover:text-danger-text md:size-8"
           >
             <Trash2 className="size-3.5" aria-hidden />
           </button>

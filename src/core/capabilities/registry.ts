@@ -343,6 +343,22 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       holidays: READ,
     },
   },
+  // Public supermarket prices (ADR-111): SEPA data ELISE ingests itself; no user connection.
+  // Linking a list item, saving the province or an alert only touch the person's own data.
+  shopping: {
+    key: "shopping",
+    status: "available",
+    internal: true,
+    operations: {
+      findProduct: READ,
+      productPrices: READ,
+      compare: READ,
+      history: READ,
+      linkItem: WRITE,
+      setRegion: WRITE,
+      alerts: WRITE,
+    },
+  },
   // Context Profiles (ADR-016): an organizational layer over the user's data. Proposing,
   // activating and briefing only read (each source under its own permissions); creating or
   // changing a profile is an audited write; archiving asks when ELISE proposes it.

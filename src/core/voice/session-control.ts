@@ -80,3 +80,23 @@ export function sessionCommand(text: string): SessionCommand | null {
   if (VOLUME_DOWN.some((r) => r.test(s))) return "volume_down";
   return null;
 }
+
+/**
+ * "ELISE, iniciá una nueva conversación", "empecemos de cero", "abrí un chat nuevo": the whole
+ * message asks for a fresh conversation. Decided before the agent (typed or spoken), like the
+ * commands above; "¿cómo inicio una nueva conversación?" is a question, not this.
+ */
+const NEW_CHAT = [
+  /^(?:inicia|iniciemos|empeza|empecemos|arranca|arranquemos|abri|abrime|crea|comenza|comencemos|nueva|otra|quiero (?:una|un|empezar una|arrancar una)) ?(?:una |un |otra |otro )?(?:nueva |nuevo )?(?:conversacion|charla|chat)(?: nueva| nuevo| desde cero| de cero| en limpio)?$/,
+  /^(?:empecemos|empeza|arranquemos|arranca|comencemos|empezamos) (?:de|desde) cero$/,
+  /^(?:nueva conversacion|nuevo chat|chat nuevo|conversacion nueva)$/,
+  /^(?:start|begin|open) (?:a )?(?:new|fresh) (?:conversation|chat)$/,
+  /^(?:new (?:conversation|chat)|let s start over|start over)$/,
+];
+
+export function asksNewConversation(text: string): boolean {
+  let s = fold(text);
+  if (!s || s.length > 80) return false;
+  for (let i = 0; i < 3; i++) s = s.replace(AROUND, "").trim();
+  return NEW_CHAT.some((r) => r.test(s));
+}

@@ -96,6 +96,8 @@ export interface ContextInput {
   home?: boolean;
   /** The message is about Argentina's economy or holidays (ADR-094). */
   economy?: boolean;
+  /** The message is about supermarket prices or a shopping list's prices (ADR-111). */
+  shopping?: boolean;
   /**
    * Maps (ADR-023): configured (`here`: the user shared their position this session), null when
    * no Maps key is configured, undefined when unknown.
@@ -320,6 +322,15 @@ const MUSIC_GUIDANCE = `Music (the user's own player — music.* tools; controls
 /**
  * Argentina's economy (ADR-094): public figures from structured sources, dated and cited.
  */
+/** Supermarket prices (ADR-111): public SEPA data, honest about what it can and can't say. */
+const SHOPPING_GUIDANCE = `Supermarket prices (shopping.* tools) — public SEPA data, reference prices by province:
+- Products are real catalog items with a barcode. Words → shopping.findProduct gives options; the user picks (never choose for them, never treat a different variant or size as the same product). A barcode is exact.
+- "Comparame mi lista" → shopping.compare with the list. Lines without a product are shown with options: ask which, then shopping.linkItem (only with their choice) and compare again.
+- Say "precios de referencia en <provincia>" and the data date. "Más barata" only for the products every compared chain has; never call a chain missing products cheaper for the whole list. Conditional promos (bank, card) are never part of a total.
+- No province saved → ask once and save it with shopping.setRegion. Never assume Buenos Aires.
+- A product's price change is not inflation (economy.inflation is a separate reference). Prices on the web are not a substitute when the data is missing.
+- Read-only: nothing is bought or ordered.`;
+
 const ECONOMY_GUIDANCE = `Argentina's economy (economy.* tools, calendar.holidays) — public data, never the user's money:
 - The dollar has markets: "el dólar" with no market → economy.exchangeRates for all (oficial and blue first). Keep compra and venta apart; name the market. A past day or period → economy.exchangeHistory (never the current quote for a past date, never a past one as "hoy").
 - Inflation is published monthly for the month before: "la inflación de septiembre fue 1,9%", never "la inflación de hoy". Accumulated periods, year-to-date and "¿le gané a la inflación?" → economy.inflation (ELISE compounds; never add months up yourself).
@@ -578,6 +589,7 @@ ${input.knowledgeMap
   if (input.markets) sections.push(MARKETS_GUIDANCE);
   if (input.home) sections.push(HOME_GUIDANCE);
   if (input.economy) sections.push(ECONOMY_GUIDANCE);
+  if (input.shopping) sections.push(SHOPPING_GUIDANCE);
   if (input.web) sections.push(WEB_GUIDANCE);
   if (input.location === null)
     sections.push(
