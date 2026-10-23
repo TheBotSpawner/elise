@@ -26,7 +26,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertPublishable, manifestWith, withdrawn } from "./release-policy.mjs";
@@ -48,6 +48,38 @@ const MANIFEST = "desktop-releases.json";
 const work = mkdtempSync(join(tmpdir(), "elise-release-"));
 
 const gh = (...a) => execFileSync("gh", [...a, "--repo", repo], { encoding: "utf8" });
+/**
+ * One file to a release: skipped when the same name and size is already there (a re-run never
+ * re-sends ~200 MB), otherwise uploaded with a few retries — GitHub cuts long uploads now and
+ * then (HTTP 408). Files go one by one: "--clobber" on several at once deletes the old copies
+ * first and leaves the release without them if the upload then fails.
+ */
+async function upload(releaseTag, file) {
+  const name = basename(file);
+  const size = statSync(file).size;
+  const assets = tryGh("release", "view", releaseTag, "--json", "assets");
+  const have = assets
+    ? JSON.parse(assets).assets.find((a) => a.name === name && a.state === "uploaded")
+    : null;
+  // Only the big, versioned binaries are skipped: RELEASES and the manifest change content
+  // without necessarily changing size, so they're always sent.
+  if (have?.size === size && size > 1_000_000) return step(`already up: ${name}`);
+  for (let i = 1; ; i++) {
+    try {
+      gh("release", "upload", releaseTag, file, "--clobber");
+      return step(`uploaded ${name}`);
+    } catch (err) {
+      if (i >= 4) throw err;
+      step(
+        `upload of ${name} failed (${String(err.stderr ?? err.message)
+          .trim()
+          .slice(0, 120)}); retrying`,
+      );
+      await new Promise((r) => setTimeout(r, 5000 * i));
+    }
+  }
+}
+
 const tryGh = (...a) => {
   try {
     return gh(...a);
@@ -100,11 +132,11 @@ function ensureChannelRelease() {
     );
 }
 
-function uploadManifest(manifest) {
+async function uploadManifest(manifest) {
   const file = join(work, MANIFEST);
   writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
   step(`publish ${MANIFEST} → ${downloadUrl(channelTag, MANIFEST)}`);
-  if (!dry) gh("release", "upload", channelTag, file, "--clobber");
+  if (!dry) await upload(channelTag, file);
 }
 
 if (!["beta", "stable"].includes(channel)) throw new Error("--channel beta|stable");
@@ -121,9 +153,9 @@ if (withdrawVersion) {
     const rel = join(work, "RELEASES");
     writeFileSync(rel, await fetchBytes(downloadUrl(`desktop-v${back.version}`, "RELEASES")));
     step(`updater feed → ${back.version}`);
-    if (!dry) gh("release", "upload", channelTag, rel, "--clobber");
+    if (!dry) await upload(channelTag, rel);
   }
-  uploadManifest(manifest);
+  await uploadManifest(manifest);
   console.log(`Withdrew ${withdrawVersion}; ${channel} now offers ${back?.version ?? "nothing"}.`);
   process.exit(0);
 }
@@ -187,7 +219,8 @@ if (!tryGh("release", "view", tag)) {
 }
 step(`upload ${installerName}, ${nupkg}, RELEASES to ${tag}`);
 if (!dry)
-  gh("release", "upload", tag, installer, join(make, nupkg), join(make, "RELEASES"), "--clobber");
+  for (const file of [installer, join(make, nupkg), join(make, "RELEASES")])
+    await upload(tag, file);
 if (draft) {
   step(`publish ${tag}`);
   if (!dry) gh("release", "edit", tag, "--draft=false");
@@ -208,8 +241,8 @@ if (!dry) {
 ensureChannelRelease();
 step(`update feed ${channelTag}: ${nupkg}, then RELEASES`);
 if (!dry) {
-  gh("release", "upload", channelTag, join(make, nupkg), "--clobber");
-  gh("release", "upload", channelTag, join(make, "RELEASES"), "--clobber");
+  await upload(channelTag, join(make, nupkg));
+  await upload(channelTag, join(make, "RELEASES"));
 }
 
 // 4. LAST: the manifest ELISE Web reads.
@@ -227,7 +260,7 @@ const manifest = manifestWith(await currentManifest(), {
   minimumSupportedBridgeProtocol: 1,
   releaseNotesUrl: `https://github.com/${repo}/releases/tag/${tag}`,
 });
-uploadManifest(manifest);
+await uploadManifest(manifest);
 console.log(
   `\n${dry ? "DRY RUN, nothing published. Would publish" : "Published"} ${version} on ${channel}.\nInstaller: ${installerUrl}\nManifest:  ${downloadUrl(channelTag, MANIFEST)}`,
 );
