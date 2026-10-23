@@ -4769,8 +4769,8 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
       defaultName: { tv: "TV", ac: "Aire", fan: "Ventilador", other: "Equipo" },
       name: "Nombre",
       quick:
-        "Todavía no hay perfiles verificados para configurar tu modelo de una vez, así que ELISE aprende los botones de tu control remoto. Lleva uno o dos minutos.",
-      create: "Crear y aprender botones",
+        "Después elegís la marca y ELISE prueba los perfiles publicados para ese equipo: sin apuntar el control y sin enseñarle botones.",
+      create: "Siguiente: elegir la marca",
       next: "Siguiente",
       back: "Atrás",
       done: "Listo",

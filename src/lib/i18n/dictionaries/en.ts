@@ -4730,8 +4730,8 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       defaultName: { tv: "TV", ac: "AC", fan: "Fan", other: "Device" },
       name: "Name",
       quick:
-        "There are no verified profiles to set up your model in one go yet, so ELISE learns the buttons from your remote. It takes a minute or two.",
-      create: "Create and learn buttons",
+        "Next you pick the brand and ELISE tries the published profiles for it: no pointing your remote, no teaching buttons.",
+      create: "Next: pick the brand",
       next: "Next",
       back: "Back",
       done: "Done",

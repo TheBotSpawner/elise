@@ -205,9 +205,12 @@ export function IrProfileStep({
           <Button variant="ghost" onClick={onSkip}>
             {x.skip}
           </Button>
-          <Button variant="secondary" onClick={onLearn}>
-            {x.learn}
-          </Button>
+          {/* Learning is the last resort: only when no published profile exists or none worked. */}
+          {(phase.kind === "none" || (results !== null && !results.length)) && (
+            <Button variant="secondary" onClick={onLearn}>
+              {x.learn}
+            </Button>
+          )}
         </div>
       )}
     </div>
