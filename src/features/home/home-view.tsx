@@ -749,8 +749,12 @@ function DeviceSheet({
   };
   // Controls other than power go in their own card (power sits in the header).
   const ir = cap(d, "ir");
+  // ADR-118: a Smart Life remote: Tuya's keys and ranges, nothing to learn or manage here.
+  const tuya = cap(d, "tuya_ir");
+  const acModes = tuya?.kind === "ac" ? (tuya.ac?.modes ?? []) : [];
+  const acMode = acModes.find((m) => m.mode === s.hvacMode) ?? acModes[0];
   const controls =
-    !ir && d.capabilities.some((c) => !["power", "app", "ir_blaster"].includes(c.type));
+    !ir && !tuya && d.capabilities.some((c) => !["power", "app", "ir_blaster"].includes(c.type));
   return (
     <Dialog open onClose={onClose} title={d.name} busy={saving}>
       <div
@@ -823,6 +827,79 @@ function DeviceSheet({
           >
             {h.ir.manage}
           </Button>
+        </section>
+      )}
+      {tuya && (
+        <section
+          className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4"
+          aria-label={x.controls}
+        >
+          {acMode && (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {[true, false].map((on) => (
+                  <Button
+                    key={String(on)}
+                    size="sm"
+                    variant="secondary"
+                    disabled={!live || command.pending}
+                    onClick={() => send([{ type: "power", value: on }])}
+                  >
+                    {on ? h.tuya.on : h.tuya.off}
+                  </Button>
+                ))}
+              </div>
+              {acModes.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                  {acModes.map((m) => (
+                    <Button
+                      key={m.mode}
+                      size="sm"
+                      variant={m.mode === s.hvacMode ? "primary" : "secondary"}
+                      disabled={!live || command.pending}
+                      onClick={() => send([{ type: "hvac_mode", value: m.mode }])}
+                    >
+                      {hvacLabel(m.mode, locale)}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              {acMode.temps.length > 0 && (
+                <Select
+                  aria-label={x.temperature}
+                  value={String(s.targetTemperature ?? "")}
+                  disabled={!live || command.pending}
+                  onChange={(e) => send([{ type: "temperature", value: Number(e.target.value) }])}
+                  className="h-10 self-start"
+                >
+                  <option value="" disabled>
+                    {x.temperature}
+                  </option>
+                  {acMode.temps.map((v) => (
+                    <option key={v} value={v}>
+                      {v} °C
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </>
+          )}
+          {!acMode && (
+            <div className="flex flex-wrap gap-2">
+              {tuya.keys.map((k) => (
+                <Button
+                  key={k.key}
+                  size="sm"
+                  variant="secondary"
+                  disabled={!live || command.pending}
+                  onClick={() => send([{ type: "button", value: k.key }])}
+                >
+                  {k.label}
+                </Button>
+              ))}
+            </div>
+          )}
+          <p className="text-[12.5px] text-faint">{h.ir.estimated}</p>
         </section>
       )}
       {d.type === "ir_controller" && (

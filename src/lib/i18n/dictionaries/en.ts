@@ -4498,6 +4498,34 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
         stillLooking: "still looking",
         irTitle: "TV, AC or fan by infrared",
         irHint: "Through your Broadlink: pick the brand and we test it.",
+        tuya: {
+          title: "Connect Tuya / Smart Life",
+          hint: "Your Smart Life remotes (TV, AC…), ready without setting them up again.",
+          connect: "Connect",
+          loading: "Looking in Smart Life…",
+          notConfigured: "Smart Life isn't available in ELISE yet.",
+          notLinked:
+            "Connecting your Smart Life account from ELISE isn't enabled yet: it needs Tuya's official authorization for apps like ELISE. We'll never ask for your Smart Life password.",
+          noHubs: "Your Smart Life account has no infrared remotes.",
+          offline: "offline",
+          hubFailed: "We couldn't read its remotes. Try again in a while.",
+          noRemotes: "No remotes set up in Smart Life.",
+          kinds: { tv: "TV", ac: "AC", fan: "Fan", other: "Remote" },
+          inHome: "In your home",
+          sameAs: (name: string) => `Looks like you already have it as “${name}”: not duplicated.`,
+          addAnyway: "Add anyway",
+          addAll: (n: number) => (n === 1 ? "Add 1 remote" : `Add ${n} remotes`),
+          skipped: (n: number) =>
+            n === 1 ? "1 remote couldn't be added." : `${n} remotes couldn't be added.`,
+          test: "Test",
+          testConfirm: (what: string, name: string) =>
+            `ELISE will send “${what}” to ${name}. Go ahead?`,
+          testWhat: { power: "Turn on", mute: "Mute", power_toggle: "Power", power_on: "Turn on" },
+          send: "Send",
+          sending: "Sending…",
+          cancel: "Cancel",
+          sent: "Sent. If the device didn't react, check the remote works in Smart Life.",
+        },
         locked:
           "It is locked in the BroadLink app: unlock it there (device settings → “Lock device”: off) and tap Add again.",
         irAdded:
@@ -4663,6 +4691,7 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
     turnOn: "Turn on",
     turnOff: "Turn off",
     toggle: (name: string) => `Turn ${name} on or off`,
+    tuya: { on: "Turn on", off: "Turn off" },
     ir: {
       profile: {
         noImport:

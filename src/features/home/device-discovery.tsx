@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { adoptNewDevicesAction } from "./actions";
 import { FoundDevices } from "./found-devices";
 import { useHomeRuntime } from "./runtime-context";
+import { TuyaConnect } from "./tuya-connect";
 
 const DONE_KEY = "elise.home.devicesStep";
 const doneListeners = new Set<() => void>();
@@ -201,6 +202,8 @@ export function DeviceDiscovery({
     return (
       <div className="flex flex-col gap-3">
         <p className="max-w-xl text-[15px] text-muted">{d.onlyDesktop}</p>
+        {/* ADR-118: Smart Life goes through Tuya's cloud: it works from the web too. */}
+        <TuyaConnect />
         <Button variant="ghost" className="self-start" onClick={onDone}>
           {d.later}
         </Button>
@@ -328,6 +331,7 @@ export function DeviceDiscovery({
             </Button>
           </div>
         )}
+      <TuyaConnect />
       <ManualBroadlink />
       {anyAdded && <p className="text-[13px] text-faint">{d.appearing}</p>}
       <div className="flex flex-wrap gap-2">

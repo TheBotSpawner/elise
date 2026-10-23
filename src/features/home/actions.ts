@@ -20,6 +20,7 @@ import {
   updateHomeDevice,
   updateIrCommands,
 } from "@/application/home-service";
+import { tuyaImport, tuyaLink, tuyaOverview } from "@/application/tuya-home-service";
 import { AppError, toPublicError, type PublicError } from "@/core/errors";
 import {
   homeActionInputSchema,
@@ -145,4 +146,24 @@ export async function applyIrProfileAction(deviceId: string, code: number) {
 /** ADR-110: a learned button saved, confirmed ("Funcionó") or removed. */
 export async function irCommandAction(deviceId: string, raw: unknown) {
   return run(async () => updateIrCommands(await requireAuthContext(), deviceId, raw));
+}
+
+/**
+ * ADR-118: Smart Life (Tuya). Whether it's available to this account and, when linked, its
+ * infrared hubs with the remotes already set up in Smart Life.
+ */
+export async function tuyaOverviewAction(load: boolean) {
+  return run(async () => {
+    const auth = await requireAuthContext();
+    const link = tuyaLink(auth);
+    return {
+      link,
+      ...(load && link.state === "linked" ? await tuyaOverview(auth) : { hubs: [] }),
+    };
+  });
+}
+
+/** ADR-118: the chosen Smart Life remotes become ready devices in the home. */
+export async function tuyaImportAction(raw: unknown) {
+  return run(async () => tuyaImport(await requireAuthContext(), raw));
 }

@@ -55,6 +55,21 @@ export const irCommandSchema = z
   })
   .strict();
 
+/** ADR-118: Tuya's ids (device and remote): letters, digits and underscores. */
+const TUYA_ID = z.string().regex(/^[A-Za-z0-9_-]{4,64}$/);
+/** Tuya's air conditioner modes and fan speeds, in their order (0, 1, 2…). */
+export const TUYA_AC_MODES = ["cool", "heat", "auto", "fan_only", "dry"] as const;
+export const TUYA_AC_FANS = ["auto", "low", "medium", "high"] as const;
+/** One Tuya remote key, with the meaning ELISE gives it (`key`) and Tuya's own (`tuya`). */
+export const tuyaKeySchema = z
+  .object({
+    key: z.string().regex(/^[a-z0-9_]{1,40}$/),
+    label: z.string().trim().min(1).max(40),
+    tuya: z.string().min(1).max(60),
+    keyId: z.number().int().min(0).optional(),
+  })
+  .strict();
+
 /** What a device can do, in ELISE's terms (never a provider service name). */
 export const homeCapabilitySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("power") }),
@@ -104,6 +119,39 @@ export const homeCapabilitySchema = z.discriminatedUnion("type", [
           code: z.number().int().min(1).max(99_999),
           manufacturer: z.string().max(60),
           models: z.string().max(200),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+  /**
+   * ADR-118: a remote the person already set up in Smart Life (Tuya), on one of their Tuya
+   * infrared hubs. Sent through Tuya's cloud, not the home's hub: its keys are Tuya's.
+   */
+  z
+    .object({
+      type: z.literal("tuya_ir"),
+      infraredId: TUYA_ID,
+      remoteId: TUYA_ID,
+      /** Tuya's infrared category (2 TV, 5 air conditioner, 8 fan, 999 learned…). */
+      categoryId: z.number().int().min(1).max(999),
+      remoteIndex: z.number().int().min(0).optional(),
+      kind: z.enum(["tv", "ac", "fan", "other"]),
+      keys: z.array(tuyaKeySchema).max(80),
+      /** An air conditioner's ranges, as Tuya reports them (mode → temperatures, fan speeds). */
+      ac: z
+        .object({
+          modes: z
+            .array(
+              z
+                .object({
+                  mode: z.enum(TUYA_AC_MODES),
+                  temps: z.array(z.number().int().min(10).max(35)).max(30),
+                  fans: z.array(z.enum(TUYA_AC_FANS)).max(4),
+                })
+                .strict(),
+            )
+            .max(5),
         })
         .strict()
         .optional(),
@@ -243,6 +291,16 @@ export type HomeAction =
   | { type: "app"; app: HomeApp }
   /** ADR-110: one learned infrared code, sent by the device's controller. */
   | { type: "ir"; device: string; command: string; repeats: number; code?: string }
+  /** ADR-118: one key of a Smart Life remote, through Tuya's cloud (`command`: ELISE's key). */
+  | { type: "tuya_key"; command: string; tuya: string; keyId?: number; repeats: number }
+  /** ADR-118: an air conditioner's whole state, through Tuya's cloud. */
+  | {
+      type: "tuya_ac";
+      power: boolean;
+      mode?: (typeof TUYA_AC_MODES)[number];
+      temp?: number;
+      fan?: (typeof TUYA_AC_FANS)[number];
+    }
   /** Takes the device out of the home (the person's "Quitar"); never chosen by the model. */
   | { type: "remove" };
 
@@ -291,6 +349,20 @@ export const homeActionSchema: z.ZodType<HomeAction> = z.discriminatedUnion("typ
     repeats: z.number().int().min(1).max(10),
     /** ADR-117: a profile's code, sent as is (otherwise the code learned under `command`). */
     code: IR_CODE.optional(),
+  }),
+  z.object({
+    type: z.literal("tuya_key"),
+    command: z.string().regex(/^[a-z0-9_]{1,40}$/),
+    tuya: z.string().min(1).max(60),
+    keyId: z.number().int().min(0).optional(),
+    repeats: z.number().int().min(1).max(10),
+  }),
+  z.object({
+    type: z.literal("tuya_ac"),
+    power: z.boolean(),
+    mode: z.enum(TUYA_AC_MODES).optional(),
+    temp: z.number().int().min(10).max(35).optional(),
+    fan: z.enum(TUYA_AC_FANS).optional(),
   }),
   z.object({ type: z.literal("remove") }),
 ]);
@@ -384,7 +456,9 @@ export function validateAction(
 ): HomeValidation {
   const s = device.state;
   const ir = has(device, "ir");
-  if (ir) return validateIr(device, ir, input);
+  if (ir) return validateIr(device, ir.commands, input, irSend(ir));
+  const tuya = has(device, "tuya_ir");
+  if (tuya) return validateTuya(device, tuya, input);
   switch (input.type) {
     case "power": {
       if (!has(device, "power")) return unsupported(device, "power");
@@ -600,9 +674,9 @@ export function describeState(d: HomeDevice, locale: "es" | "en"): string {
     parts.push(es ? `${s.currentTemperature} °C actual` : `${s.currentTemperature} °C now`);
   // ADR-110: infrared can't be read back — what ELISE last sent, said as such.
   if (s.estimated && parts.length) parts.push(es ? "estimado" : "estimated");
-  const ir = has(d, "ir");
-  if (ir && !parts.length && s.lastSent) {
-    const label = ir.commands.find((c) => c.key === s.lastSent!.command)?.label;
+  const buttons = has(d, "ir")?.commands ?? has(d, "tuya_ir")?.keys;
+  if (buttons && !parts.length && s.lastSent) {
+    const label = buttons.find((c) => c.key === s.lastSent!.command)?.label;
     if (label) return es ? `Último botón: ${label}` : `Last button: ${label}`;
   }
   return parts.join(" · ") || "—";
@@ -652,7 +726,16 @@ export function applyAction(state: HomeState, a: HomeAction): HomeState {
       return { ...state, source: a.source };
     case "app":
       return { ...state, on: true };
+    case "tuya_ac":
+      return {
+        ...state,
+        on: a.power,
+        ...(a.mode ? { hvacMode: a.mode } : {}),
+        ...(a.temp !== undefined ? { targetTemperature: a.temp } : {}),
+        ...(a.fan ? { fanMode: a.fan } : {}),
+      };
     case "ir":
+    case "tuya_key":
     case "remove":
       return state;
   }
@@ -846,20 +929,28 @@ export const irReady = (ir: IrCapability) => ir.commands.some((c) => c.verified)
  * a state it can't produce: a single power button that toggles is not "off", volume moves only
  * by steps, and an air conditioner takes only the settings the person captured from its remote.
  */
+type IrSend = (command: string, repeats: number) => HomeAction;
+
+const irSend =
+  (ir: IrCapability): IrSend =>
+  (command, repeats) => {
+    const code = ir.commands.find((c) => c.key === command)?.code;
+    return { type: "ir", device: ir.device, command, repeats, ...(code ? { code } : {}) };
+  };
+
 function validateIr(
   d: Pick<HomeDevice, "name" | "state">,
-  ir: IrCapability,
+  commands: readonly IrCommand[],
   input: HomeActionInput,
+  toAction: IrSend,
 ): HomeValidation {
   const s = d.state;
+  const ir = { commands };
   const find = (key: string) => ir.commands.find((c) => c.key === key);
-  const send = (command: string, repeats = 1): HomeValidation => {
-    const code = ir.commands.find((c) => c.key === command)?.code;
-    return {
-      ok: true,
-      action: { type: "ir", device: ir.device, command, repeats, ...(code ? { code } : {}) },
-    };
-  };
+  const send = (command: string, repeats = 1): HomeValidation => ({
+    ok: true,
+    action: toAction(command, repeats),
+  });
   const presets = ir.commands.filter((c) => c.preset);
   const named = (list: readonly IrCommand[]) => list.map((c) => c.label).join(", ") || "none";
   const no = (message: string): HomeValidation => ({ ok: false, code: "unsupported", message });
@@ -974,5 +1065,112 @@ export function estimateIr(
     if (preset.temperature !== undefined) next.targetTemperature = preset.temperature;
     if (preset.fanMode) next.fanMode = preset.fanMode;
   }
+  return next;
+}
+
+// ── Smart Life remotes through Tuya's cloud (ADR-118) ────────────────────────
+
+export type TuyaIrCapability = Extract<HomeCapability, { type: "tuya_ir" }>;
+export type TuyaAcMode = (typeof TUYA_AC_MODES)[number];
+export type TuyaAcFan = (typeof TUYA_AC_FANS)[number];
+
+const FAN_WORDS: Record<string, TuyaAcFan> = {
+  auto: "auto",
+  automatico: "auto",
+  low: "low",
+  baja: "low",
+  bajo: "low",
+  medium: "medium",
+  media: "medium",
+  medio: "medium",
+  high: "high",
+  alta: "high",
+  alto: "high",
+};
+
+/**
+ * A Smart Life remote: its keys behave like learned infrared buttons (no feedback, a single power
+ * key toggles). An air conditioner takes any mode, temperature and fan speed Tuya lists for it,
+ * sent as one whole state — never a value outside those ranges.
+ */
+function validateTuya(
+  d: Pick<HomeDevice, "name" | "state">,
+  t: TuyaIrCapability,
+  input: HomeActionInput,
+): HomeValidation {
+  const s = d.state;
+  const commands: IrCommand[] = t.keys.map((k) => ({ key: k.key, label: k.label, verified: true }));
+  const keySend: IrSend = (command, repeats) => {
+    const k = t.keys.find((x) => x.key === command)!;
+    return {
+      type: "tuya_key",
+      command,
+      tuya: k.tuya,
+      ...(k.keyId !== undefined ? { keyId: k.keyId } : {}),
+      repeats,
+    };
+  };
+  const ac = t.kind === "ac" ? t.ac : undefined;
+  if (!ac?.modes.length) return validateIr(d, commands, input, keySend);
+  const ok = (a: Omit<Extract<HomeAction, { type: "tuya_ac" }>, "type">): HomeValidation => ({
+    ok: true,
+    action: { type: "tuya_ac", ...a },
+  });
+  const known = ac.modes.find((m) => m.mode === s.hvacMode);
+  const list = (xs: readonly (string | number)[]) => xs.join(", ");
+  switch (input.type) {
+    case "power": {
+      const on = powerOf(input.value);
+      if (on === null) return bad("power is on or off");
+      return ok({ power: on });
+    }
+    case "hvac_mode": {
+      const want = fold(String(input.value));
+      const mode = (HVAC_WORDS[want] ?? want) as TuyaAcMode | "off";
+      if (mode === "off") return ok({ power: false });
+      const m = ac.modes.find((x) => x.mode === mode);
+      if (!m) return bad(`${d.name} modes: ${list(ac.modes.map((x) => x.mode))}`);
+      const temp =
+        s.targetTemperature !== undefined && m.temps.includes(s.targetTemperature)
+          ? s.targetTemperature
+          : undefined;
+      return ok({ power: true, mode: m.mode, ...(temp !== undefined ? { temp } : {}) });
+    }
+    case "temperature": {
+      const v = num(input.value);
+      if (!Number.isFinite(v)) return bad("temperature needs a number");
+      const target = input.relative ? (s.targetTemperature ?? NaN) + v : v;
+      if (!Number.isFinite(target))
+        return bad(`${d.name}'s current temperature is unknown: ask for an exact one`);
+      const temps = known ? known.temps : [...new Set(ac.modes.flatMap((m) => m.temps))];
+      if (!temps.includes(target))
+        return range(
+          `${d.name} takes ${temps.length ? `${Math.min(...temps)}–${Math.max(...temps)} °C` : "no temperature"}${known ? ` in ${known.mode}` : ""}`,
+        );
+      return ok({ power: true, ...(known ? { mode: known.mode } : {}), temp: target });
+    }
+    case "fan_mode": {
+      const fan = FAN_WORDS[fold(String(input.value))];
+      const fans = known ? known.fans : [...new Set(ac.modes.flatMap((m) => m.fans))];
+      if (!fan || !fans.includes(fan)) return bad(`${d.name} fan speeds: ${list(fans)}`);
+      return ok({ power: true, ...(known ? { mode: known.mode } : {}), fan });
+    }
+    default:
+      return validateIr(d, commands, input, keySend);
+  }
+}
+
+/** What a Smart Life remote's device is believed to be after ELISE sent this (no reading). */
+export function estimateTuya(
+  state: HomeState,
+  action: Extract<HomeAction, { type: "tuya_key" | "tuya_ac" }>,
+  at: string,
+): HomeState {
+  if (action.type === "tuya_ac")
+    return { ...applyAction(state, action), estimated: true, lastSent: { command: "ac", at } };
+  const next: HomeState = { ...state, estimated: true, lastSent: { command: action.command, at } };
+  if (action.command === "power_on") next.on = true;
+  else if (action.command === "power_off") next.on = false;
+  else if (action.command === "power_toggle") delete next.on;
   return next;
 }

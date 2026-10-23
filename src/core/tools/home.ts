@@ -130,7 +130,7 @@ export const homeStatusTool: ToolDefinition = {
           updatedAt: d.stateUpdatedAt,
           can: d.capabilities.map((c) => c.type),
           // ADR-110: infrared can't be read back; its state is what ELISE last sent.
-          ...(d.capabilities.some((c) => c.type === "ir")
+          ...(d.capabilities.some((c) => c.type === "ir" || c.type === "tuya_ir")
             ? { infrared: true, stateIsEstimated: true, buttons: canDo(d)[0] }
             : {}),
         })),
@@ -240,6 +240,13 @@ export function canDo(d: HomeDevice): string[] {
           `infrared buttons: ${c.commands.map((x) => x.label).join(", ")}`,
           "volume only up/down",
         ];
+      case "tuya_ir":
+        return c.kind === "ac" && c.ac?.modes.length
+          ? [
+              `climate: ${c.ac.modes.map((m) => `${m.mode} ${Math.min(...m.temps)}–${Math.max(...m.temps)} °C`).join(", ")}`,
+              "turn on/off",
+            ]
+          : [`buttons: ${c.keys.map((x) => x.label).join(", ")}`, "volume only up/down"];
     }
   });
 }

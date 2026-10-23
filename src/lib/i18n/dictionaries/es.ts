@@ -4534,6 +4534,39 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
         stillLooking: "seguimos buscando",
         irTitle: "TV, aire o ventilador por infrarrojo",
         irHint: "Con tu Broadlink: elegís la marca y lo probamos.",
+        tuya: {
+          title: "Conectar Tuya / Smart Life",
+          hint: "Tus controles de Smart Life (tele, aire…), listos sin volver a configurarlos.",
+          connect: "Conectar",
+          loading: "Buscando en Smart Life…",
+          notConfigured: "Smart Life todavía no está disponible en ELISE.",
+          notLinked:
+            "Conectar tu cuenta de Smart Life desde ELISE todavía no está habilitado: necesita la autorización oficial de Tuya para apps como ELISE. Nunca te vamos a pedir tu contraseña de Smart Life.",
+          noHubs: "Tu cuenta de Smart Life no tiene controles infrarrojos.",
+          offline: "sin conexión",
+          hubFailed: "No pudimos leer sus controles. Probá de nuevo en un rato.",
+          noRemotes: "Sin controles configurados en Smart Life.",
+          kinds: { tv: "Tele", ac: "Aire", fan: "Ventilador", other: "Control" },
+          inHome: "En tu casa",
+          sameAs: (name: string) => `Parece que ya lo tenés como “${name}”: no lo duplicamos.`,
+          addAnyway: "Agregar igual",
+          addAll: (n: number) => (n === 1 ? "Agregar 1 control" : `Agregar ${n} controles`),
+          skipped: (n: number) =>
+            n === 1 ? "1 control no se pudo agregar." : `${n} controles no se pudieron agregar.`,
+          test: "Probar",
+          testConfirm: (what: string, name: string) =>
+            `ELISE va a enviar “${what}” a ${name}. ¿Seguimos?`,
+          testWhat: {
+            power: "Encender",
+            mute: "Silenciar",
+            power_toggle: "Encendido",
+            power_on: "Encender",
+          },
+          send: "Enviar",
+          sending: "Enviando…",
+          cancel: "Cancelar",
+          sent: "Enviado. Si el equipo no reaccionó, revisá en Smart Life que el control funcione.",
+        },
         locked:
           "Está bloqueado en la app BroadLink: desbloquealo ahí (ajustes del dispositivo → “Bloquear dispositivo”: no) y tocá Agregar de nuevo.",
         irAdded:
@@ -4702,6 +4735,7 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
     turnOn: "Encender",
     turnOff: "Apagar",
     toggle: (name: string) => `Encender o apagar ${name}`,
+    tuya: { on: "Encender", off: "Apagar" },
     ir: {
       profile: {
         noImport:

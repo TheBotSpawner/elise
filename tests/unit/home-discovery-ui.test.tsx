@@ -11,6 +11,13 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/features/home/actions", () => ({
   adoptNewDevicesAction: vi.fn(async () => ({ ok: true, value: { added: 0 } })),
   updateDeviceAction: vi.fn(async () => ({ ok: true, value: null })),
+  // ADR-118: Smart Life is off on this server: its entry doesn't show.
+  tuyaOverviewAction: vi.fn(async () => ({
+    ok: true,
+    value: { link: { state: "off" }, hubs: [] },
+  })),
+  tuyaImportAction: vi.fn(),
+  controlDeviceAction: vi.fn(),
 }));
 
 /**

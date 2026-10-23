@@ -17,6 +17,7 @@ import { ContextIndicator, type ContextOption } from "@/features/contexts/contex
 import { SpaceGlyph } from "@/features/knowledge/appearance";
 import { duckMusic, musicDucks, receiveMusic } from "@/features/music/controller";
 import { useMusic } from "@/features/music/music-view";
+import { hushAlarms } from "@/features/time/alarm-sound";
 import { receiveTimers } from "@/features/time/time-view";
 import { useDeviceCapture, useDeviceWake } from "@/features/voice/device-wake";
 import { useLiveVoice } from "@/features/voice/use-live-voice";
@@ -221,6 +222,8 @@ export function ChatSurface({
   const ducked = musicDucks(voiceSession.state.phase) || deviceCapture !== null;
   const delivery = voiceSession.state.delivery;
   useEffect(() => void duckMusic(ducked, delivery), [ducked, delivery]);
+  // A ringing alarm goes quiet the same way, so "ELISE, apagá la alarma" is heard to the end.
+  useEffect(() => hushAlarms(ducked), [ducked]);
   // Music starting or stopping changes the room: voice re-measures it (never heard as speech).
   const musicPlaying = Boolean(useMusic().payload?.playing);
   const ambientRef = useRef(voiceSession.ambientChanged);

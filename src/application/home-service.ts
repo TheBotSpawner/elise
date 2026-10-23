@@ -31,6 +31,7 @@ import {
   type HubPresence,
   type IrCapability,
 } from "@/core/home/model";
+import { TUYA_KEY_PREFIX } from "@/core/home/tuya";
 import { profileFile, profileIndex } from "@/infrastructure/home/ir-profiles";
 import { logger } from "@/infrastructure/observability/logger";
 import { notMigrated } from "@/infrastructure/providers/elise-native/common";
@@ -38,6 +39,7 @@ import { createAdminClient } from "@/infrastructure/supabase/admin";
 import type { HomeDeviceRow, HomeHubRow, Json } from "@/infrastructure/supabase/database.types";
 
 import type { AuthContext } from "./auth-context";
+import { executeTuyaCommands, isTuyaDevice } from "./tuya-home-service";
 
 /**
  * ELISE Home (ADR-079). Two sides:
@@ -83,6 +85,9 @@ const deviceOf = (r: HomeDeviceRow): HomeDevice => ({
 const irOf = (d: Pick<HomeDevice, "capabilities">) =>
   d.capabilities.find((c): c is IrCapability => c.type === "ir");
 const IR_KEY = "ir:";
+/** Devices ELISE created (infrared, Smart Life remotes): the engine never reports or removes them. */
+const elisesOwn = (providerKey: string) =>
+  providerKey.startsWith(IR_KEY) || providerKey.startsWith(TUYA_KEY_PREFIX);
 
 const presenceOf = (h: HomeHubRow): HubPresence => ({
   lastSeenAt: h.last_seen_at,
@@ -536,9 +541,7 @@ export async function hubSync(hub: AuthedHub, raw: unknown) {
   }
   const seen = new Set(input.devices.map((d) => d.providerKey));
   // ELISE's infrared devices aren't the engine's: a sync never removes them (ADR-110).
-  const engineOwned = (existing ?? []).filter(
-    (d) => !d.removed_at && !d.provider_key.startsWith(IR_KEY),
-  );
+  const engineOwned = (existing ?? []).filter((d) => !d.removed_at && !elisesOwn(d.provider_key));
   // An empty report from a hub that has devices is an engine still starting (it answers before
   // its integrations load), not the person removing everything: nothing is removed for it.
   const emptyGlitch = input.devices.length === 0 && engineOwned.length > 0;
@@ -547,7 +550,7 @@ export async function hubSync(hub: AuthedHub, raw: unknown) {
   const gone = emptyGlitch
     ? []
     : (existing ?? [])
-        .filter((d) => !seen.has(d.provider_key) && !d.provider_key.startsWith(IR_KEY))
+        .filter((d) => !seen.has(d.provider_key) && !elisesOwn(d.provider_key))
         .map((d) => d.id);
   if (gone.length)
     await db
@@ -752,17 +755,22 @@ export async function executeHomeCommands(
   const byId = new Map(snap.devices.map((d) => [d.id, d]));
   const outcomes: HomeCommandOutcome[] = [];
   const toSend: { device: HomeDevice; actions: HomeAction[] }[] = [];
+  // ADR-118: Smart Life remotes go through Tuya's cloud, whether the hub is online or not.
+  const viaTuya: { device: HomeDevice; actions: HomeAction[] }[] = [];
   for (const c of commands) {
     const device = byId.get(c.deviceId);
     if (!device)
       throw new AppError("NOT_FOUND", "That device isn't in your home", { recovery: "review" });
-    if (!hub || hub.status === "offline")
+    if (isTuyaDevice(device))
+      viaTuya.push({ device, actions: c.actions.map((a) => homeActionSchema.parse(a)) });
+    else if (!hub || hub.status === "offline")
       outcomes.push({ deviceId: device.id, name: device.name, status: "offline" });
     // Removing works on a device that doesn't answer (a TV that's off): the engine does it.
     else if (!device.available && !c.actions.every((a) => a.type === "remove"))
       outcomes.push({ deviceId: device.id, name: device.name, status: "unavailable" });
     else toSend.push({ device, actions: c.actions.map((a) => homeActionSchema.parse(a)) });
   }
+  if (viaTuya.length) outcomes.push(...(await executeTuyaCommands(auth, viaTuya)));
   if (!toSend.length || !hub || !snap.home) return outcomes;
   const expiresAt = new Date(Date.now() + HOME_COMMAND_TTL_MS).toISOString();
   const { data: rows, error } = await auth.db
@@ -894,14 +902,15 @@ export async function adoptNewHomeDevices(auth: AuthContext, since: string) {
  */
 export async function removeHomeDevice(auth: AuthContext, deviceId: string) {
   const id = z.uuid().parse(deviceId);
-  // ADR-110: an infrared device is ELISE's alone: it leaves the list, its controller stays.
+  // ADR-110/118: an infrared device or a Smart Life remote is ELISE's alone: it leaves the list
+  // (its controller, and the remote in Smart Life, stay).
   const { data: row } = await auth.db
     .from("home_devices")
     .select("provider_key")
     .eq("id", id)
     .eq("workspace_id", auth.workspaceId)
     .maybeSingle();
-  if (row?.provider_key.startsWith(IR_KEY)) {
+  if (row && elisesOwn(row.provider_key)) {
     const { error } = await auth.db
       .from("home_devices")
       .update({ removed_at: new Date().toISOString() })

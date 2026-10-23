@@ -26,6 +26,19 @@ export async function unlockAlarmAudio() {
 
 export const audioReady = () => context()?.state === "running";
 
+/**
+ * A ringing alarm goes quiet while ELISE listens or speaks, and comes back if it wasn't turned
+ * off: "ELISE, apagá la alarma" has to be heard over it (the microphone otherwise only hears the
+ * alarm and never the end of the sentence). Driven by the same voice phases that lower music.
+ */
+let hushed = false;
+const hushListeners = new Set<() => void>();
+export function hushAlarms(on: boolean) {
+  if (hushed === on) return;
+  hushed = on;
+  hushListeners.forEach((f) => f());
+}
+
 function cycle(c: AudioContext, key: keyof typeof ALARM_SOUNDS, volume: number, at: number) {
   logSound(`alarm:${key}`);
   const s = ALARM_SOUNDS[key];
@@ -82,8 +95,12 @@ export async function ring(sound: string, volume: number, loop: boolean): Promis
     if (!url || stopped) return { playing: false, stop };
     const audio = new Audio(url);
     audio.loop = loop;
-    audio.volume = Math.max(0, Math.min(1, volume / 100));
+    const level = Math.max(0, Math.min(1, volume / 100));
+    const apply = () => (audio.volume = hushed ? 0 : level);
+    apply();
+    hushListeners.add(apply);
     cleanups.push(() => {
+      hushListeners.delete(apply);
       audio.pause();
       audio.src = "";
     });
@@ -97,11 +114,11 @@ export async function ring(sound: string, volume: number, loop: boolean): Promis
   const key = isBundledSound(sound) ? sound : "brisa";
   const c = context();
   if (!c || c.state !== "running") return { playing: false, stop };
-  cycle(c, key, volume, c.currentTime + 0.03);
+  if (!hushed) cycle(c, key, volume, c.currentTime + 0.03);
   if (loop) {
     const every = ALARM_SOUNDS[key].every * 1000;
     const id = window.setInterval(
-      () => !stopped && cycle(c, key, volume, c.currentTime + 0.03),
+      () => !stopped && !hushed && cycle(c, key, volume, c.currentTime + 0.03),
       every,
     );
     cleanups.push(() => window.clearInterval(id));
