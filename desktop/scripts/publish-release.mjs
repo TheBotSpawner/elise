@@ -60,8 +60,9 @@ const sha256 = (file) => createHash("sha256").update(readFileSync(file)).digest(
 const downloadUrl = (tag, name) =>
   `https://github.com/${repo}/releases/download/${tag}/${encodeURIComponent(name)}`;
 
-// GitHub's CDN sometimes resets a large download midway: retry before failing the release.
-async function fetchBytes(url, attempts = 4) {
+// GitHub's CDN sometimes resets a large download midway, and a ~200 MB asset just uploaded can
+// answer 404 for a minute or more: retry (about 2 minutes in all) before failing the release.
+async function fetchBytes(url, attempts = 8) {
   for (let i = 1; ; i++) {
     try {
       const res = await fetch(url, { redirect: "follow", cache: "no-store" });
@@ -164,14 +165,18 @@ copyFileSync(join(make, setup), installer);
 const sum = sha256(installer);
 const size = statSync(installer).size;
 
-// 1. The versioned, immutable release.
+// 1. The versioned, immutable release — created as a draft: a draft has no tag yet, so the
+// tag-triggered workflow can't start before the installer is up (it then sees it and skips).
+let draft = false;
 if (!tryGh("release", "view", tag)) {
-  step(`create release ${tag}`);
+  step(`create release ${tag} (draft until its files are up)`);
+  draft = true;
   if (!dry)
     gh(
       "release",
       "create",
       tag,
+      "--draft",
       "--title",
       `ELISE Desktop ${version}`,
       "--notes",
@@ -183,6 +188,10 @@ if (!tryGh("release", "view", tag)) {
 step(`upload ${installerName}, ${nupkg}, RELEASES to ${tag}`);
 if (!dry)
   gh("release", "upload", tag, installer, join(make, nupkg), join(make, "RELEASES"), "--clobber");
+if (draft) {
+  step(`publish ${tag}`);
+  if (!dry) gh("release", "edit", tag, "--draft=false");
+}
 
 // 2. Downloadable, and the same bytes.
 const installerUrl = downloadUrl(tag, installerName);

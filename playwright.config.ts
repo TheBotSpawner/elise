@@ -42,9 +42,10 @@ export default defineConfig({
   ],
   webServer: {
     command: `npm run start -- --port ${PORT}`,
-    url: `http://localhost:${PORT}/api/health`,
-    // 503 (no database) still means the server is up for the public checks.
-    ignoreHTTPSErrors: true,
+    // Ready when the port accepts connections. Waiting on /api/health never finished in CI: with
+    // no database configured it answers 503, which Playwright doesn't count as "up" (it only
+    // accepts 2xx, 3xx and 400–403). The public checks assert the health response themselves.
+    port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

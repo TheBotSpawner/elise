@@ -33,11 +33,16 @@ test("anonymous visitors are sent to sign in", async ({ page }) => {
 
 test("the sign-in page fits the screen and works with the keyboard", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByRole("button").first()).toBeVisible();
+  // Without a Supabase project (CI without secrets) the page explains the setup instead of
+  // offering sign-in: that notice must show and fit too.
+  const configured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  if (!configured) await expect(page.getByRole("status")).toContainText("Supabase");
+  else await expect(page.getByRole("button").first()).toBeVisible();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(1);
+  if (!configured) return;
   // Tab reaches an interactive control (no keyboard trap on load).
   await page.keyboard.press("Tab");
   const tag = await page.evaluate(() => document.activeElement?.tagName);
