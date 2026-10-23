@@ -12,7 +12,13 @@ import {
   type Place,
   type PlaceSearch,
   type Route,
+  type TransitItinerary,
+  type TransitLeg,
+  type TransitMode,
+  type TransitRide,
+  type TransitWalk,
   type TravelMode,
+  vehicleOf,
   type Waypoint,
 } from "@/core/location/model";
 
@@ -247,6 +253,127 @@ function directionsUrl(
 }
 
 /** Departure times in the past are rejected by the API: those mean "now". */
+const ROUTE_FIELDS =
+  "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.warnings,routes.legs.startLocation,routes.legs.endLocation";
+/** Exactly the step fields an itinerary needs (never "*"). */
+const TRANSIT_FIELDS =
+  "routes.legs.steps.travelMode,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.transitDetails";
+
+const TRANSIT_MODE: Record<TransitMode, string> = {
+  bus: "BUS",
+  subway: "SUBWAY",
+  train: "TRAIN",
+  light_rail: "LIGHT_RAIL",
+};
+
+type RawLatLng = { latLng?: { latitude?: number; longitude?: number } };
+interface RawStep {
+  travelMode?: string;
+  distanceMeters?: number;
+  staticDuration?: string;
+  transitDetails?: {
+    headsign?: string;
+    stopCount?: number;
+    stopDetails?: {
+      departureStop?: { name?: string; location?: RawLatLng };
+      arrivalStop?: { name?: string; location?: RawLatLng };
+      departureTime?: string;
+      arrivalTime?: string;
+    };
+    transitLine?: {
+      name?: string;
+      nameShort?: string;
+      color?: string;
+      textColor?: string;
+      agencies?: { name?: string }[];
+      vehicle?: { type?: string; name?: { text?: string } };
+    };
+  };
+}
+interface RawRoute {
+  distanceMeters?: number;
+  duration?: string;
+  polyline?: { encodedPolyline?: string };
+  warnings?: string[];
+  legs?: { startLocation?: RawLatLng; endLocation?: RawLatLng; steps?: RawStep[] }[];
+}
+
+const text = (v: unknown, max = 120) =>
+  typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+const isoOrNull = (v: unknown) =>
+  typeof v === "string" && Number.isFinite(Date.parse(v)) ? new Date(v).toISOString() : null;
+const hexColor = (v: unknown) =>
+  typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null;
+
+/**
+ * ADR-113: one provider route → an itinerary, exactly as given. Walking steps in a row become
+ * one walk; each transit step becomes a ride with its line, direction, stops and scheduled times.
+ * A missing field stays null — never filled in. Null when the route has no steps at all.
+ */
+export function transitItinerary(route: RawRoute): TransitItinerary | null {
+  const steps = (route.legs ?? []).flatMap((l) => l.steps ?? []);
+  const total = seconds(route.duration);
+  if (!steps.length || total == null) return null;
+  const legs: TransitLeg[] = [];
+  for (const s of steps) {
+    const d = s.transitDetails;
+    if (s.travelMode === "TRANSIT" && d) {
+      const line = d.transitLine;
+      const short = text(line?.nameShort, 40);
+      const name = text(line?.name, 120);
+      legs.push({
+        kind: "transit",
+        vehicle: vehicleOf(line?.vehicle?.type),
+        vehicleName: text(line?.vehicle?.name?.text, 40),
+        line: short ?? name,
+        lineName: short && name && name !== short ? name : null,
+        color: hexColor(line?.color),
+        textColor: hexColor(line?.textColor),
+        agency: text(line?.agencies?.[0]?.name, 80),
+        headsign: text(d.headsign, 120),
+        board: {
+          name: text(d.stopDetails?.departureStop?.name),
+          location: point(d.stopDetails?.departureStop?.location),
+        },
+        alight: {
+          name: text(d.stopDetails?.arrivalStop?.name),
+          location: point(d.stopDetails?.arrivalStop?.location),
+        },
+        departAt: isoOrNull(d.stopDetails?.departureTime),
+        arriveAt: isoOrNull(d.stopDetails?.arrivalTime),
+        stops: typeof d.stopCount === "number" && d.stopCount >= 0 ? d.stopCount : null,
+        durationSeconds: seconds(s.staticDuration) ?? null,
+        distanceMeters: typeof s.distanceMeters === "number" ? s.distanceMeters : null,
+      });
+      continue;
+    }
+    const sec = seconds(s.staticDuration) ?? 0;
+    const meters = s.distanceMeters ?? 0;
+    const last = legs.at(-1);
+    if (last?.kind === "walk") {
+      last.durationSeconds += sec;
+      last.distanceMeters += meters;
+    } else legs.push({ kind: "walk", durationSeconds: sec, distanceMeters: meters });
+  }
+  const rides = legs.filter((l): l is TransitRide => l.kind === "transit");
+  const walks = legs.filter((l): l is TransitWalk => l.kind === "walk");
+  const before = legs[0]?.kind === "walk" ? legs[0].durationSeconds : 0;
+  const after = legs.at(-1)?.kind === "walk" ? (legs.at(-1) as TransitWalk).durationSeconds : 0;
+  const first = rides[0]?.departAt;
+  const lastArrive = rides.at(-1)?.arriveAt;
+  return {
+    durationSeconds: total,
+    distanceMeters: route.distanceMeters ?? 0,
+    departAt: first ? new Date(Date.parse(first) - before * 1000).toISOString() : null,
+    arriveAt: lastArrive ? new Date(Date.parse(lastArrive) + after * 1000).toISOString() : null,
+    walkMeters: walks.reduce((s, w) => s + w.distanceMeters, 0),
+    walkSeconds: walks.reduce((s, w) => s + w.durationSeconds, 0),
+    transfers: Math.max(0, rides.length - 1),
+    legs,
+    polyline: route.polyline?.encodedPolyline ?? null,
+  };
+}
+
 const future = (iso: string | null) =>
   iso && Date.parse(iso) > Date.now() + 60_000 ? new Date(iso).toISOString() : undefined;
 
@@ -501,36 +628,53 @@ export class GoogleMapsLocation implements LocationProvider {
     r: Parameters<LocationProvider["route"]>[0],
     signal?: AbortSignal,
   ): Promise<Route | null> {
-    const departure = future(r.departAt);
+    const transit = r.mode === "transit";
+    // ADR-113: transit can be planned to arrive by a time; never both times (API rule).
+    const arrival = transit ? future(r.arriveBy ?? null) : undefined;
+    const departure = arrival ? undefined : future(r.departAt);
     const body = {
       origin: waypoint(r.origin),
       destination: waypoint(r.destination),
       // Transit routes can't have stops (API rule).
-      ...(r.stops.length && r.mode !== "transit" ? { intermediates: r.stops.map(waypoint) } : {}),
+      ...(r.stops.length && !transit ? { intermediates: r.stops.map(waypoint) } : {}),
       travelMode: MODE[r.mode],
       ...(r.mode === "drive" ? { routingPreference: "TRAFFIC_AWARE" } : {}),
       ...(departure ? { departureTime: departure } : {}),
-      languageCode: r.language,
+      ...(arrival ? { arrivalTime: arrival } : {}),
+      ...(transit
+        ? {
+            // Alternatives let ELISE pick by transfers or walking, not only by time.
+            computeAlternativeRoutes: true,
+            ...(r.transitModes?.length || r.transitPreference
+              ? {
+                  transitPreferences: {
+                    ...(r.transitModes?.length
+                      ? { allowedTravelModes: r.transitModes.map((m) => TRANSIT_MODE[m]) }
+                      : {}),
+                    ...(r.transitPreference
+                      ? {
+                          routingPreference:
+                            r.transitPreference === "less_walking"
+                              ? "LESS_WALKING"
+                              : "FEWER_TRANSFERS",
+                        }
+                      : {}),
+                  },
+                }
+              : {}),
+          }
+        : {}),
+      languageCode: r.language === "es" ? "es-419" : r.language,
     };
-    const data = await this.call<{
-      routes?: {
-        distanceMeters?: number;
-        duration?: string;
-        polyline?: { encodedPolyline?: string };
-        warnings?: string[];
-        legs?: {
-          startLocation?: { latLng?: { latitude?: number; longitude?: number } };
-          endLocation?: { latLng?: { latitude?: number; longitude?: number } };
-        }[];
-      }[];
-    }>(
+    const data = await this.call<{ routes?: RawRoute[] }>(
       "routes",
       `${ROUTES}/directions/v2:computeRoutes`,
       {
         method: "POST",
         body,
-        fields:
-          "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.warnings,routes.legs.startLocation,routes.legs.endLocation",
+        // Transit asks for its steps (lines, stops, times): without them only the total time
+        // reached ELISE — the original "tardás 30 minutos" without a line.
+        fields: transit ? `${ROUTE_FIELDS},${TRANSIT_FIELDS}` : ROUTE_FIELDS,
       },
       signal,
     );
@@ -538,7 +682,14 @@ export class GoogleMapsLocation implements LocationProvider {
     const duration = seconds(best?.duration);
     if (!best || duration == null) return null;
     const legs = best.legs ?? [];
+    const itineraries = transit
+      ? (data.routes ?? []).flatMap((x) => {
+          const it = transitItinerary(x);
+          return it ? [it] : [];
+        })
+      : [];
     return {
+      ...(transit ? { itineraries } : {}),
       mode: r.mode,
       distanceMeters: best.distanceMeters ?? 0,
       durationSeconds: duration,

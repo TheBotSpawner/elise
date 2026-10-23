@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { isSafeHref, type Surface } from "./model";
-import { TRAVEL_MODES } from "../location/model";
+import { TRANSIT_VEHICLES, TRAVEL_MODES } from "../location/model";
 
 /**
  * Location Surfaces (ADR-023): a map of places, a route or a travel-time comparison, and one
@@ -30,6 +30,43 @@ export const mapPlace = z
     openNow: z.boolean().nullable(),
     distanceMeters: z.number().int().min(0).nullable(),
     mapsUrl: https.nullable(),
+  })
+  .strict();
+
+const hex = z.string().regex(/^#[0-9a-f]{6}$/);
+const ride = z
+  .object({
+    kind: z.literal("transit"),
+    vehicle: z.enum(TRANSIT_VEHICLES),
+    vehicleName: text(40).nullable(),
+    line: text(40).nullable(),
+    lineName: text(120).nullable(),
+    color: hex.nullable(),
+    textColor: hex.nullable(),
+    agency: text(80).nullable(),
+    headsign: text(120).nullable(),
+    board: text(120).nullable(),
+    alight: text(120).nullable(),
+    departAt: text(40).nullable(),
+    arriveAt: text(40).nullable(),
+    stops: z.number().int().min(0).max(500).nullable(),
+  })
+  .strict();
+const walk = z
+  .object({
+    kind: z.literal("walk"),
+    durationSeconds: z.number().int().min(0),
+    distanceMeters: z.number().int().min(0),
+  })
+  .strict();
+const itinerary = z
+  .object({
+    durationSeconds: z.number().int().min(0),
+    departAt: text(40).nullable(),
+    arriveAt: text(40).nullable(),
+    walkMeters: z.number().int().min(0),
+    transfers: z.number().int().min(0).max(20),
+    legs: z.array(z.discriminatedUnion("kind", [ride, walk])).max(12),
   })
   .strict();
 
@@ -62,6 +99,8 @@ const route = z
       )
       .max(3)
       .default([]),
+    /** ADR-113: transit itineraries exactly as the provider gave them (best first). */
+    itineraries: z.array(itinerary).max(3).default([]),
   })
   .strict();
 

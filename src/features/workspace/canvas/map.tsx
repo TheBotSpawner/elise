@@ -416,6 +416,7 @@ function RouteView({ route, size }: { route: NonNullable<MapPayload["route"]>; s
           })}
         </ul>
       )}
+      {route.itineraries.length > 0 && <Itineraries list={route.itineraries} />}
       {(line || pins.length > 0) && (
         <MapCanvas
           pins={pins}
@@ -432,6 +433,85 @@ function RouteView({ route, size }: { route: NonNullable<MapPayload["route"]>; s
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+type Itinerary = NonNullable<MapPayload["route"]>["itineraries"][number];
+
+/**
+ * ADR-113: public transport, step by step — the line (with its own colour when the provider
+ * gives it), direction, where to board and get off, stops and walks. Exactly what ELISE says.
+ */
+function Itineraries({ list }: { list: Itinerary[] }) {
+  const { t } = useI18n();
+  const x = t.location.transit;
+  const f = useFormat();
+  return (
+    <div className="flex flex-col gap-3">
+      {list.map((it, i) => (
+        <section
+          key={i}
+          aria-label={x.option(i + 1)}
+          className={cn(
+            "flex flex-col gap-2 rounded-xl border px-3 py-2.5",
+            i === 0 ? "border-accent-line" : "border-[var(--line)]",
+          )}
+        >
+          <p className="flex flex-wrap gap-x-2 text-[12px] text-muted">
+            {list.length > 1 && <span className="text-fg">{x.option(i + 1)}</span>}
+            <span>{f.duration(it.durationSeconds)}</span>
+            <span>{x.transfers(it.transfers)}</span>
+            <span>{x.walking(f.distance(it.walkMeters))}</span>
+            {it.departAt && <span>{x.leave(f.time(it.departAt))}</span>}
+          </p>
+          <ol className="flex flex-col gap-1.5">
+            {it.legs.map((l, j) =>
+              l.kind === "walk" ? (
+                <li key={j} className="flex items-center gap-2 text-[12.5px] text-muted">
+                  <Footprints className="size-3.5 shrink-0" aria-hidden />
+                  {x.walk(f.duration(l.durationSeconds), f.distance(l.distanceMeters))}
+                </li>
+              ) : (
+                <li key={j} className="flex gap-2 text-[13px]">
+                  <span
+                    className="mt-0.5 inline-flex h-6 min-w-9 shrink-0 items-center justify-center rounded-md px-1.5 font-mono text-[12px] font-semibold"
+                    style={{
+                      background: l.color ?? "var(--accent-soft)",
+                      color: l.textColor ?? "var(--accent-text)",
+                    }}
+                    aria-label={`${x.vehicles[l.vehicle]} ${l.line ?? ""}`}
+                  >
+                    {l.line ?? "?"}
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-fg">
+                      {l.vehicle === "bus" || l.vehicle === "subway" || !l.vehicleName
+                        ? x.vehicles[l.vehicle]
+                        : l.vehicleName}{" "}
+                      {l.line ?? x.noLine}
+                      {l.headsign && <span className="text-muted"> · {x.towards(l.headsign)}</span>}
+                    </span>
+                    {l.board && (
+                      <span className="text-[12px] text-muted">
+                        {x.board(l.board, l.departAt ? f.time(l.departAt) : null)}
+                      </span>
+                    )}
+                    {l.alight && (
+                      <span className="text-[12px] text-muted">
+                        {x.alight(l.alight, l.arriveAt ? f.time(l.arriveAt) : null)}
+                        {l.stops != null && ` · ${x.stops(l.stops)}`}
+                      </span>
+                    )}
+                    {l.agency && <span className="text-[11px] text-faint">{l.agency}</span>}
+                  </span>
+                </li>
+              ),
+            )}
+          </ol>
+        </section>
+      ))}
+      <p className="text-[11px] text-faint">{x.scheduled}</p>
     </div>
   );
 }

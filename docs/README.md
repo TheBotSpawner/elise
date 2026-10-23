@@ -50,6 +50,7 @@ These documents are the source of truth for product and architecture decisions. 
 | `32-broadlink-ir.md` | Broadlink infrared: controllers, learning buttons, TV/AC control, testing without hardware, first-day guide (ADR-110) |
 | `33-supermarket-prices.md` | Supermarket prices from SEPA: providers assessed, ingestion, honest basket math, costs, manual steps (ADR-111) |
 | `34-mercadolibre-shopping.md` | Mercado Libre first for products to buy: official API feasibility, web-search fallback, honest offers, setup (ADR-112) |
+| `35-transit-routes.md` | Public transport with lines: Routes API transit details, itineraries, voice and card, live checks (ADR-113) |
 
 ## roadmap/
 

@@ -70,7 +70,7 @@ export const MARKET_SIGNAL = {
 
 /** A message about places or travel (the browser also refreshes the device location for it). */
 export const LOCATION_SIGNAL =
-  /\b(tard[oa]\w*|ruta|c[oó]mo llego|d[oó]nde (queda|est[aá])|cerca|near\w*|mapa|maps?|direcci[oó]n|address|km|kil[oó]metros?|viaje|llegar|desde .+ hasta|caf[eé]s?|restaurant\w*|farmacias?|routes?|how long|drive|walk\w*|en auto|caminando|colectivo|subte|tr[aá]nsito|por ac[aá]|around here|d[oó]nde estoy|where am i)\b/i;
+  /\b(tard[oa]\w*|ruta|c[oó]mo llego|d[oó]nde (queda|est[aá])|cerca|near\w*|mapa|maps?|direcci[oó]n|address|km|kil[oó]metros?|viaje|llegar|desde .+ hasta|caf[eé]s?|restaurant\w*|farmacias?|routes?|how long|drive|walk\w*|en auto|caminando|colectivo|subte|bondi|micro|tren|trenes|l[ií]nea|combinaci[oó]n|transbordo|parada|estaci[oó]n|ramal|me (tomo|bajo)|qu[eé] me tomo|transporte p[uú]blico|tr[aá]nsito|por ac[aá]|around here|d[oó]nde estoy|where am i)\b/i;
 
 /** Weather "here" questions: the browser refreshes the device position for them too. */
 export const WEATHER_HERE_SIGNAL =

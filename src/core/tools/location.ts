@@ -8,6 +8,11 @@ import {
   distanceMeters,
   LOCATION_LIMITS,
   TRAVEL_MODES,
+  TRANSIT_MODES,
+  describeItinerary,
+  distinctItineraries,
+  meetsModes,
+  type TransitItinerary,
   type LatLng,
   type LocationCapability,
   type Place,
@@ -546,11 +551,71 @@ const routeInput = z
       .enum(TRAVEL_MODES)
       .optional()
       .describe(
-        "Only when the user named one. Omitted: driving, transit and walking are compared.",
+        'Only when the user named one. "Qué colectivo/bondi/subte/tren/línea me tomo", "en transporte público", "qué combinación hago" → transit. Omitted: driving, transit and walking are compared.',
       ),
     departAt,
+    arriveBy: z
+      .string()
+      .trim()
+      .max(40)
+      .optional()
+      .describe(
+        'Transit: "tengo que llegar a las 14:15" → arrive by this local date-time (YYYY-MM-DDTHH:MM). Never with departAt.',
+      ),
+    transitModes: z
+      .array(z.enum(TRANSIT_MODES))
+      .max(4)
+      .optional()
+      .describe(
+        'Transit: "en colectivo/bondi" → ["bus"], "en subte" → ["subway"], "en tren" → ["train"]. Omit for any.',
+      ),
+    onlyTransitModes: z
+      .boolean()
+      .optional()
+      .describe(
+        '"Solo colectivo", "sin subte": itineraries with other vehicles don\'t count as an answer.',
+      ),
+    transitPreference: z
+      .enum(["less_walking", "fewer_transfers"])
+      .optional()
+      .describe(
+        '"Sin caminar mucho" → less_walking · "sin combinación", "lo más directo" → fewer_transfers.',
+      ),
   })
   .strict();
+
+/** An itinerary for the map Surface: the same rides and walks the model was told about. */
+const itineraryView = (it: TransitItinerary) => ({
+  durationSeconds: Math.round(it.durationSeconds),
+  departAt: it.departAt,
+  arriveAt: it.arriveAt,
+  walkMeters: Math.round(it.walkMeters),
+  transfers: it.transfers,
+  legs: it.legs.slice(0, 12).map((l) =>
+    l.kind === "walk"
+      ? {
+          kind: "walk" as const,
+          durationSeconds: Math.round(l.durationSeconds),
+          distanceMeters: Math.round(l.distanceMeters),
+        }
+      : {
+          kind: "transit" as const,
+          vehicle: l.vehicle,
+          vehicleName: l.vehicleName ? clip(l.vehicleName, 40) : null,
+          line: l.line ? clip(l.line, 40) : null,
+          lineName: l.lineName ? clip(l.lineName, 120) : null,
+          color: l.color,
+          textColor: l.textColor,
+          agency: l.agency ? clip(l.agency, 80) : null,
+          headsign: l.headsign ? clip(l.headsign, 120) : null,
+          board: l.board.name ? clip(l.board.name, 120) : null,
+          alight: l.alight.name ? clip(l.alight.name, 120) : null,
+          departAt: l.departAt,
+          arriveAt: l.arriveAt,
+          stops: l.stops,
+        },
+  ),
+});
 
 /** No mode named: the useful answer is a short comparison, not a question. */
 const COMPARED: readonly TravelMode[] = ["drive", "transit", "walk"];
@@ -560,7 +625,7 @@ export const getRouteTool: ToolDefinition = {
   capability: "location",
   operation: "getRoute",
   description:
-    "Route between places: travel time, distance and arrival time, drawn on a map. For the next meeting, read its location from the calendar first. Not turn-by-turn navigation.",
+    'Route between places: travel time, distance and arrival time, drawn on a map — and for public transport ("¿qué colectivo me tomo?", "¿cómo llego en subte?", "¿qué combinación hago?") the exact lines, direction, where to board and get off, transfers and walks. For the next meeting, read its location from the calendar first. Not turn-by-turn navigation.',
   input: routeInput,
   async describe() {
     return { summary: "Plan a route" };
@@ -614,7 +679,10 @@ export const getRouteTool: ToolDefinition = {
             ? toR.ranked.slice(0, 2).map((x) => [null, x])
             : [[null, null]];
     const departAtIso = departure(env, r.departAt);
-    const modes = r.mode ? [r.mode] : COMPARED;
+    // ADR-113: "llegar a las 14:15" plans backwards from the arrival (transit only).
+    const arriveByIso = r.arriveBy ? departure(env, r.arriveBy) : null;
+    const transitAsked = Boolean(r.arriveBy || r.transitModes?.length || r.transitPreference);
+    const modes = r.mode ? [r.mode] : transitAsked ? (["transit"] as TravelMode[]) : COMPARED;
     const routeFor = (pair: [Ranked | null, Ranked | null]) =>
       Promise.allSettled(
         modes.map((mode) =>
@@ -623,8 +691,15 @@ export const getRouteTool: ToolDefinition = {
             destination: pair[1] ? { placeId: pair[1].place.id } : destination!,
             stops,
             mode,
-            departAt: departAtIso,
+            departAt: arriveByIso ? null : departAtIso,
             language: env.ctx.locale,
+            ...(mode === "transit"
+              ? {
+                  arriveBy: arriveByIso,
+                  transitModes: r.transitModes ?? [],
+                  transitPreference: r.transitPreference ?? null,
+                }
+              : {}),
           }),
         ),
       );
@@ -673,8 +748,45 @@ export const getRouteTool: ToolDefinition = {
       durationSeconds: Math.round(x.durationSeconds),
       distanceMeters: Math.round(x.distanceMeters),
     }));
-    const leave = departAtIso ? new Date(departAtIso) : env.ctx.now;
-    const arrival = new Date(leave.getTime() + route.durationSeconds * 1000);
+    // ADR-113: the provider's itineraries, the ones that honour "solo colectivo" first. An
+    // itinerary using another vehicle is never presented as meeting that restriction.
+    const all = distinctItineraries(route.itineraries ?? []);
+    const strict = Boolean(r.onlyTransitModes && r.transitModes?.length);
+    const fitting = strict ? all.filter((it) => meetsModes(it, r.transitModes!)) : all;
+    const itineraries = (fitting.length ? fitting : all).slice(0, 3);
+    const best = itineraries[0] ?? null;
+    const leave = best?.departAt
+      ? new Date(best.departAt)
+      : departAtIso
+        ? new Date(departAtIso)
+        : env.ctx.now;
+    const arrival = best?.arriveAt
+      ? new Date(best.arriveAt)
+      : arriveByIso && !departAtIso
+        ? new Date(arriveByIso)
+        : new Date(leave.getTime() + route.durationSeconds * 1000);
+    const transitOut =
+      route.mode === "transit"
+        ? itineraries.length
+          ? {
+              itineraries: itineraries.map((it, i) => ({
+                option: i + 1,
+                minutes: minutes(it.durationSeconds),
+                transfers: it.transfers,
+                walkMinutes: minutes(it.walkSeconds),
+                ...(it.departAt
+                  ? { leaveAt: toLocalDateTime(new Date(it.departAt), env.ctx.timezone) }
+                  : {}),
+                ...(it.arriveAt
+                  ? { arriveAt: toLocalDateTime(new Date(it.arriveAt), env.ctx.timezone) }
+                  : {}),
+                ...(strict && !meetsModes(it, r.transitModes!) ? { usesOtherVehicles: true } : {}),
+                steps: describeItinerary(it, env.ctx.timezone, env.ctx.locale),
+              })),
+              ...(strict && !fitting.length ? { noneOnlyWith: r.transitModes } : {}),
+            }
+          : { itineraries: [], stepsMissing: true }
+        : null;
     const fromHere = from.trim().toLowerCase() === HERE;
     const shown = await workspaceNames(env, [from, r.to]);
     const names = { from: clip(shown(from), 200), to: clip(shown(r.to), 200) };
@@ -685,14 +797,19 @@ export const getRouteTool: ToolDefinition = {
         ...(r.departAt ? {} : { assumed: "leaving now" }),
         ...(alternatives.length
           ? {
-              otherModes: alternatives.map((a) => ({
+              otherModes: found.slice(1).map((a) => ({
                 mode: a.mode,
                 minutes: minutes(a.durationSeconds),
+                // ADR-113: transit as an option still says which lines.
+                ...(a.mode === "transit" && a.itineraries?.[0]
+                  ? { via: describeItinerary(a.itineraries[0], env.ctx.timezone, env.ctx.locale) }
+                  : {}),
               })),
             }
           : {}),
-        minutes: minutes(route.durationSeconds),
+        minutes: minutes(best?.durationSeconds ?? route.durationSeconds),
         km: Math.round(route.distanceMeters / 100) / 10,
+        ...(transitOut ?? {}),
         leaveAt: toLocalDateTime(leave, env.ctx.timezone),
         arriveAt: toLocalDateTime(arrival, env.ctx.timezone),
         ...(route.warnings.length ? { warnings: route.warnings } : {}),
@@ -702,6 +819,11 @@ export const getRouteTool: ToolDefinition = {
         ...(fromHere ? { from: "the user's current location" } : {}),
         ...(taken.length ? { resolved: taken } : {}),
         instructions:
+          (transitOut
+            ? transitOut.itineraries.length
+              ? `Public transport: say WHICH line(s) to take (exactly as in steps), the direction when steps give it ("hacia …"), where to board and where to get off, each transfer and the walks, then the total time${r.arriveBy ? " and when to leave" : ""}. Option 1 first; mention another option only if it is clearly different (fewer transfers, less walking). In voice too — never only the total time or "te lo dejé en pantalla". Times are timetable estimates, not live arrivals: if asked when a bus comes, say there's no live data. Never add a line, stop or branch that isn't in steps; if a direction isn't given, don't invent it.${"noneOnlyWith" in transitOut ? " No itinerary uses only the vehicle the user asked for: say so plainly and offer the ones shown (they use other vehicles)." : ""} `
+              : "The provider returned the transit time but no lines or stops for this trip: say the total time and that the line details aren't available for it — never name a line from memory. "
+            : "") +
           (taken.some((t) => t.assumed)
             ? "An address was taken as the match nearest to the context (resolved, assumed): name it briefly so the user can correct it. "
             : taken.length
@@ -733,6 +855,7 @@ export const getRouteTool: ToolDefinition = {
             fromHere,
             mapsUrl: route.mapsUrl,
             alternatives,
+            itineraries: itineraries.map((it) => itineraryView(it)),
           },
           comparison: null,
         },

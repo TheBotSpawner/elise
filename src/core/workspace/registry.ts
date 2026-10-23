@@ -1978,8 +1978,24 @@ const km = (m: number) => `${(m / 1000).toFixed(1)} km`;
 /** Numbered, so "the second one" and "that café" resolve to a place id. */
 function describeMap(p: MapPayload): string {
   if (p.mode === "locate") return "Waiting for the user to share their location";
-  if (p.route)
-    return `${p.route.mode} route ${q(p.route.from)} → ${q(p.route.to)}: ${minutes(p.route.durationSeconds)}, ${km(p.route.distanceMeters)}`;
+  if (p.route) {
+    const head = `${p.route.mode} route ${q(p.route.from)} → ${q(p.route.to)}: ${minutes(p.route.durationSeconds)}, ${km(p.route.distanceMeters)}`;
+    // ADR-113: follow-ups ("¿dónde lo tomo?", "¿y la otra?") answer from the same lines.
+    const it = p.route.itineraries;
+    if (!it?.length) return head;
+    return `${head}. ${it
+      .map(
+        (x, i) =>
+          `Option ${i + 1} (${minutes(x.durationSeconds)}, ${x.transfers} transfers, ${x.walkMeters} m walking): ${x.legs
+            .map((l) =>
+              l.kind === "walk"
+                ? `walk ${minutes(l.durationSeconds)}`
+                : `${l.vehicleName ?? l.vehicle} ${l.line ?? "?"}${l.headsign ? ` towards ${q(l.headsign)}` : ""}${l.board ? ` from ${q(l.board)}` : ""}${l.alight ? ` to ${q(l.alight)}` : ""}${l.stops != null ? ` (${l.stops} stops)` : ""}`,
+            )
+            .join(" → ")}`,
+      )
+      .join("; ")}`;
+  }
   if (p.comparison)
     return `${p.comparison.mode} times: ${p.comparison.rows
       .map(

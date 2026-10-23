@@ -62,6 +62,191 @@ export interface Route {
   end: LatLng | null;
   /** The same trip on the provider's own map; never carries a raw user position. */
   mapsUrl: string | null;
+  /**
+   * ADR-113: transit only — the provider's itineraries (best first, then its alternatives),
+   * with every line, stop and walk it returned. Absent for other modes.
+   */
+  itineraries?: TransitItinerary[];
+}
+
+// ── Public transport (ADR-113) ───────────────────────────────────────────────
+
+/** What a vehicle is, in ELISE's words (the provider's own type is kept for the rest). */
+export const TRANSIT_VEHICLES = ["bus", "subway", "train", "tram", "ferry", "other"] as const;
+export type TransitVehicle = (typeof TRANSIT_VEHICLES)[number];
+
+/** Modes a person can ask for ("solo colectivo", "en subte", "en tren"). */
+export const TRANSIT_MODES = ["bus", "subway", "train", "light_rail"] as const;
+export type TransitMode = (typeof TRANSIT_MODES)[number];
+
+export interface TransitStop {
+  name: string | null;
+  location: LatLng | null;
+}
+
+/** One ride: exactly what the provider said — a missing field stays missing. */
+export interface TransitRide {
+  kind: "transit";
+  vehicle: TransitVehicle;
+  /** The provider's own name for the vehicle ("Colectivo", "Subte", "Tren"). */
+  vehicleName: string | null;
+  /** The line as people say it: its short name ("152", "B", "Mitre") or else its name. */
+  line: string | null;
+  /** The line's full name, when it differs from `line`. */
+  lineName: string | null;
+  color: string | null;
+  textColor: string | null;
+  agency: string | null;
+  /** Direction shown on the vehicle; not a guaranteed branch ("ramal"). */
+  headsign: string | null;
+  board: TransitStop;
+  alight: TransitStop;
+  /** Scheduled (timetable) times, ISO — never live arrivals. */
+  departAt: string | null;
+  arriveAt: string | null;
+  stops: number | null;
+  durationSeconds: number | null;
+  distanceMeters: number | null;
+}
+
+export interface TransitWalk {
+  kind: "walk";
+  durationSeconds: number;
+  distanceMeters: number;
+}
+
+export type TransitLeg = TransitRide | TransitWalk;
+
+export interface TransitItinerary {
+  durationSeconds: number;
+  distanceMeters: number;
+  departAt: string | null;
+  arriveAt: string | null;
+  walkMeters: number;
+  walkSeconds: number;
+  /** Changes between rides (rides − 1). */
+  transfers: number;
+  legs: TransitLeg[];
+  polyline: string | null;
+}
+
+const VEHICLE: Record<string, TransitVehicle> = {
+  BUS: "bus",
+  INTERCITY_BUS: "bus",
+  TROLLEYBUS: "bus",
+  SHARE_TAXI: "bus",
+  SUBWAY: "subway",
+  METRO_RAIL: "subway",
+  HEAVY_RAIL: "train",
+  COMMUTER_TRAIN: "train",
+  HIGH_SPEED_TRAIN: "train",
+  LONG_DISTANCE_TRAIN: "train",
+  RAIL: "train",
+  MONORAIL: "train",
+  TRAM: "tram",
+  LIGHT_RAIL: "tram",
+  CABLE_CAR: "tram",
+  FUNICULAR: "tram",
+  GONDOLA_LIFT: "tram",
+  FERRY: "ferry",
+};
+export const vehicleOf = (providerType: string | null | undefined): TransitVehicle =>
+  (providerType && VEHICLE[providerType]) || "other";
+
+/**
+ * The provider repeats one trip at later departures (the same subte every 5 minutes): one per
+ * distinct sequence of lines and stops, the earliest, keeps the alternatives meaningful.
+ */
+export function distinctItineraries(list: readonly TransitItinerary[]): TransitItinerary[] {
+  const seen = new Set<string>();
+  return list.filter((it) => {
+    const key = it.legs
+      .map((l) =>
+        l.kind === "walk" ? "walk" : `${l.vehicle}:${l.line}:${l.board.name}:${l.alight.name}`,
+      )
+      .join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * What people call a vehicle: in Spanish a bus is a "colectivo" and a metro the "subte" (the
+ * provider says "Autobús" / "Subterráneo"); other kinds keep the provider's own name.
+ */
+export function vehicleWord(
+  l: Pick<TransitRide, "vehicle" | "vehicleName">,
+  locale: "es" | "en",
+): string {
+  if (l.vehicle === "bus" || l.vehicle === "subway" || !l.vehicleName)
+    return VEHICLE_WORDS[l.vehicle][locale].replace(/^./, (c) => c.toUpperCase());
+  return l.vehicleName;
+}
+
+/** The rides of an itinerary are all of the asked kinds ("solo colectivo" with no subte). */
+export function meetsModes(it: TransitItinerary, modes: readonly TransitMode[]): boolean {
+  if (!modes.length) return true;
+  const ok = new Set<TransitVehicle>(
+    modes.map((m) =>
+      m === "light_rail" ? "tram" : m === "subway" ? "subway" : m === "train" ? "train" : "bus",
+    ),
+  );
+  return it.legs.every((l) => l.kind === "walk" || ok.has(l.vehicle));
+}
+
+const VEHICLE_WORDS: Record<TransitVehicle, { es: string; en: string }> = {
+  bus: { es: "colectivo", en: "bus" },
+  subway: { es: "subte", en: "subway" },
+  train: { es: "tren", en: "train" },
+  tram: { es: "tranvía", en: "tram" },
+  ferry: { es: "ferry", en: "ferry" },
+  other: { es: "transporte", en: "transit" },
+};
+
+const clockIn = (iso: string | null, timezone: string) =>
+  iso
+    ? new Intl.DateTimeFormat("es-AR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+        timeZone: timezone,
+      }).format(new Date(iso))
+    : null;
+
+/**
+ * An itinerary as lines the model reads (and can say): every ride with its line, direction,
+ * where to board and get off, scheduled times and stops; every walk with its minutes. Nothing
+ * is shortened away — this is what the answer is made of.
+ */
+export function describeItinerary(
+  it: TransitItinerary,
+  timezone: string,
+  locale: "es" | "en",
+): string[] {
+  const es = locale === "es";
+  const min = (s: number) => Math.max(1, Math.round(s / 60));
+  return it.legs.map((l) => {
+    if (l.kind === "walk")
+      return es
+        ? `Caminar ${min(l.durationSeconds)} min (${Math.round(l.distanceMeters)} m)`
+        : `Walk ${min(l.durationSeconds)} min (${Math.round(l.distanceMeters)} m)`;
+    const what = vehicleWord(l, locale);
+    const parts = [
+      `${what} ${l.line ?? (es ? "(línea sin nombre en los datos)" : "(line not named in the data)")}`,
+      // A route's long name ("Boulogne - Plaza Miserere") is noise for a bus; a train's name is
+      // its line, already said.
+      l.headsign ? (es ? `hacia "${l.headsign}"` : `towards "${l.headsign}"`) : null,
+      l.board.name
+        ? `${es ? "subir en" : "board at"} ${l.board.name}${l.departAt ? ` ${clockIn(l.departAt, timezone)}` : ""}`
+        : null,
+      l.alight.name
+        ? `${es ? "bajar en" : "get off at"} ${l.alight.name}${l.arriveAt ? ` ${clockIn(l.arriveAt, timezone)}` : ""}`
+        : null,
+      l.stops !== null ? (es ? `${l.stops} paradas` : `${l.stops} stops`) : null,
+    ];
+    return parts.filter(Boolean).join(", ");
+  });
 }
 
 export interface MatrixCell {
@@ -141,6 +326,11 @@ export interface LocationProvider {
       mode: TravelMode;
       departAt: string | null;
       language: "es" | "en";
+      /** ADR-113, transit: arrive by this time (ISO) instead of leaving at departAt. */
+      arriveBy?: string | null;
+      /** Preferred kinds of vehicle (a preference for the provider, not a filter). */
+      transitModes?: TransitMode[];
+      transitPreference?: "less_walking" | "fewer_transfers" | null;
     },
     signal?: AbortSignal,
   ): Promise<Route | null>;
