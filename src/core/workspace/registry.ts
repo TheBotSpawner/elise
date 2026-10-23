@@ -296,18 +296,6 @@ export const marketPayload = z.object({
  * only from an authorized source (the official API); a search link is never a listing. Other
  * stores show in their own web_collection Surface — never mixed into this ranking (terms).
  */
-const priceReference = z.object({
-  title: text(200),
-  merchant: text(80),
-  price: z.number().positive(),
-  currency: text(3),
-  url: href.nullable(),
-  image: href.nullable(),
-  match: z.enum(["exact", "related", "accessory"]),
-  condition: z.enum(["new", "used"]).nullable(),
-  checkedAt: text(40),
-});
-
 export const productOffersPayload = z.object({
   query: text(300),
   marketplace: z.object({
@@ -330,8 +318,6 @@ export const productOffersPayload = z.object({
           seller: text(80).nullable(),
           image: href.nullable(),
           evidence: z.enum(["api", "search_result"]),
-          /** ADR-116: where its price came from (absent on older Surfaces). */
-          priceSource: z.enum(["api", "google_shopping"]).optional(),
           checkedAt: text(40),
         }),
       )
@@ -342,16 +328,6 @@ export const productOffersPayload = z.object({
   notes: z.array(text(240)).max(5),
   /** The exact model asked for; without one, nothing is flagged as "not the model". */
   model: text(60).nullable().optional(),
-  /**
-   * ADR-116: Google Shopping prices that couldn't be tied to a listing above — Mercado Libre's
-   * (reference, store named by the index) and other stores', each in its own section.
-   */
-  references: z
-    .object({
-      marketplace: z.array(priceReference).max(5),
-      others: z.array(priceReference).max(5),
-    })
-    .optional(),
 });
 
 /**

@@ -4,16 +4,13 @@ import { ExternalLink, Package, Search } from "lucide-react";
 
 import type { SurfacePayloads } from "@/core/workspace/registry";
 import { useI18n } from "@/lib/i18n/client";
-import { cn } from "@/lib/utils";
 
 type Offers = SurfacePayloads["product_offers"];
-type Reference = NonNullable<Offers["references"]>["others"][number];
 
 /**
- * Products to buy (ADR-112, ADR-116): Mercado Libre's listings first, a price only where a
- * source proved it for THAT listing (official API, or Google Shopping linking it) with where and
- * when it was checked. Prices that couldn't be tied to a listing are references, in their own
- * sections — never inside a Mercado Libre card.
+ * Products to buy (ADR-112, ADR-116): Mercado Libre's listings first, a price only where the
+ * official API gave it for THAT listing, with when it was checked; otherwise the link and a
+ * single line saying the price wasn't verified.
  */
 export function ProductOffersBody({ p }: { p: Offers }) {
   const { t, locale } = useI18n();
@@ -26,7 +23,6 @@ export function ProductOffersBody({ p }: { p: Offers }) {
   const when = (iso: string) =>
     new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
   const unpriced = m.offers.filter((o) => o.price === null).length;
-  const refs = p.references;
 
   return (
     <div className="flex flex-col gap-3">
@@ -51,9 +47,7 @@ export function ProductOffersBody({ p }: { p: Offers }) {
                       {money(o.price, o.currency)}
                     </span>
                     <span className="text-[11.5px] text-faint">
-                      {o.priceSource === "google_shopping"
-                        ? x.viaShopping(when(o.checkedAt))
-                        : x.viaOfficial(when(o.checkedAt))}
+                      {x.viaOfficial(when(o.checkedAt))}
                     </span>
                   </span>
                 )}
@@ -84,26 +78,6 @@ export function ProductOffersBody({ p }: { p: Offers }) {
         <Search className="size-3.5" aria-hidden />
         {x.searchOn}
       </a>
-
-      {refs?.marketplace.length ? (
-        <ReferenceList
-          title={x.marketplaceRefs}
-          hint={x.marketplaceRefsHint}
-          items={refs.marketplace}
-          money={money}
-          model={p.model ?? null}
-        />
-      ) : null}
-      {refs?.others.length ? (
-        <ReferenceList
-          title={x.otherStores}
-          hint={x.refsWhen(when(refs.others[0]!.checkedAt))}
-          items={refs.others}
-          money={money}
-          model={p.model ?? null}
-          showStore
-        />
-      ) : null}
 
       {p.notes.map((n) => (
         <p key={n} className="text-[12.5px] text-muted">
@@ -170,60 +144,5 @@ function OpenLink({ href, label }: { href: string; label: string }) {
       {label}
       <ExternalLink className="size-3.5" aria-hidden />
     </a>
-  );
-}
-
-function ReferenceList({
-  title,
-  hint,
-  items,
-  money,
-  model,
-  showStore = false,
-}: {
-  title: string;
-  hint: string;
-  items: Reference[];
-  money: (n: number, currency: string | null) => string;
-  model: string | null;
-  showStore?: boolean;
-}) {
-  const { t } = useI18n();
-  return (
-    <section className="flex flex-col gap-2 border-t border-border pt-3">
-      <div className="flex flex-col">
-        <span className="type-label text-faint">{title}</span>
-        <span className="text-[11.5px] text-faint">{hint}</span>
-      </div>
-      <ul className="flex flex-col gap-1.5">
-        {items.map((r, i) => (
-          <li key={`${r.title}-${i}`} className="flex items-center gap-3">
-            {r.image && <Thumb src={r.image} />}
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-[13.5px]">{r.title}</span>
-              <span className={cn("text-[12px] text-muted")}>
-                {showStore && <span className="text-fg2">{r.merchant} · </span>}
-                {model && r.match !== "exact" && (
-                  <span className="text-approval-text">{t.offers.related} · </span>
-                )}
-                {r.condition === "used" && `${t.offers.used} · `}
-              </span>
-            </span>
-            <span className="shrink-0 text-[14px] font-semibold">{money(r.price, r.currency)}</span>
-            {r.url && (
-              <a
-                href={r.url}
-                target="_blank"
-                rel="noreferrer noopener"
-                aria-label={`${t.offers.openStore}: ${r.title}`}
-                className="shrink-0 text-accent-text hover:opacity-80"
-              >
-                <ExternalLink className="size-3.5" aria-hidden />
-              </a>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }

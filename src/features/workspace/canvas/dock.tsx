@@ -263,7 +263,8 @@ export function Dock({
               <MicOff className="size-4" aria-hidden />
             </button>
           )}
-          {busy && (
+          {/* With voice, the mic button is the one stop (listening and answer); this is typing's. */}
+          {busy && !voice && (
             <button
               type="button"
               onClick={onStop}
@@ -291,7 +292,13 @@ export function Dock({
               {t.voice.delivery[voice.state.delivery]}
             </span>
           )}
-          {voice && <MicButton state={voice.state} handlers={voice.handlers} />}
+          {voice && (
+            <MicButton
+              state={voice.state}
+              handlers={voice.handlers}
+              onStopTurn={busy ? onStop : undefined}
+            />
+          )}
           {!voice && !typingMode && (
             <span className="grid size-11 place-items-center text-faint">
               <Mic className="size-[18px]" aria-hidden />
@@ -308,14 +315,15 @@ export function Dock({
               <X className="size-4" aria-hidden />
             </button>
           )}
-          {transcript && !mobile && (
+          {/* In the bar on every screen (on phones a row under it was cut off by the screen's edge). */}
+          {transcript && (
             <button
               type="button"
               aria-label={transcript.open ? t.canvas.closeTranscript : t.canvas.openTranscript}
               aria-expanded={transcript.open}
               onClick={transcript.onToggle}
               className={cn(
-                "flex h-10 items-center gap-2 rounded-full border px-3 text-[12.5px] text-fg2",
+                "flex h-10 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[12.5px] text-fg2 sm:gap-2 sm:px-3",
                 transcript.open ? "border-accent-line bg-accent-soft" : "border-border",
               )}
             >
@@ -325,17 +333,6 @@ export function Dock({
           )}
         </span>
       </motion.form>
-      {transcript && mobile && (
-        <button
-          type="button"
-          onClick={transcript.onToggle}
-          aria-expanded={transcript.open}
-          className="pointer-events-auto -mt-1 flex h-7 items-center gap-1.5 rounded-full px-3 font-mono text-[10.5px] tracking-[0.12em] text-muted uppercase"
-        >
-          <ListCollapse className="size-3.5" aria-hidden />
-          {t.canvas.transcript} · {transcript.count}
-        </button>
-      )}
     </div>
   );
 }

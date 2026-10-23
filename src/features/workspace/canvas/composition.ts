@@ -307,16 +307,21 @@ function brief(list: Surface[], input: CanvasInput): Composition {
   const take = (s: Surface, zone: Zone, size: VisualSize) =>
     slots.push(slot(s.id, zone, size, tierOf(s, input, false)));
 
+  // What this turn presented is all shown (a Morning Brief's chosen parts, ADR-041): only
+  // earlier turns' Surfaces go to the shelf when there's no room.
+  const fresh = others.filter((s) => s.turn === input.state.turn).length;
   if (device === "mobile") {
-    for (const s of others.slice(0, 2)) take(s, "stack", "medium");
-    shelf.push(...others.slice(2).map((s) => s.id));
+    const room = Math.max(2, fresh);
+    for (const s of others.slice(0, room)) take(s, "stack", "medium");
+    shelf.push(...others.slice(room).map((s) => s.id));
     return { ...empty("brief"), slots, shelf, primaryId: lead.id };
   }
 
   const wide = device === "wide";
   // How many Surfaces the two columns hold together (the lead aside), and the compact rail.
-  const caps =
+  const base =
     device === "tablet" ? { total: 4, rail: 0 } : { total: wide ? 7 : 6, rail: wide ? 3 : 2 };
+  const caps = { ...base, total: Math.max(base.total, fresh) };
   // The brief summary of an orchestration reads right under its lead (meeting → brief).
   const summary = device === "tablet" ? undefined : others.find((s) => s.type === "summary");
   const main: Surface[] = summary ? [summary] : [];
@@ -359,7 +364,9 @@ function spatial(list: Surface[], input: CanvasInput): Composition {
   const slots: Slot[] = [];
   const quiet = list.length > 4 ? list.at(-1)! : null;
   const around = list.filter((s) => s !== quiet);
-  const perSide = 3;
+  // This turn's Surfaces are all shown (see brief); earlier ones may go to the shelf.
+  const fresh = around.filter((s) => s.turn === input.state.turn).length;
+  const perSide = Math.max(3, Math.ceil(fresh / 2));
   // The lead opens the left side; the rest go to the shorter side (ADR-067); a full side passes
   // to the other; both full → the shelf.
   const left = { items: [around[0]!], height: estimateHeight(around[0]!) + GAP };

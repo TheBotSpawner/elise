@@ -29,12 +29,22 @@ export interface VoiceHandlers {
  * sleeping session), end my turn, interrupt ELISE, or unmute. Never opens the microphone
  * without this tap — or the on-device wake phrase the user turned on.
  */
-export function MicButton({ state, handlers }: { state: VoiceState; handlers: VoiceHandlers }) {
+export function MicButton({
+  state,
+  handlers,
+  onStopTurn,
+}: {
+  state: VoiceState;
+  handlers: VoiceHandlers;
+  /** A turn is running: this one button also stops it (one pause for listening and answer). */
+  onStopTurn?: () => void;
+}) {
   const { t } = useI18n();
   const { phase } = state;
   const hearing = isHearing(state);
-  const replying = isReplying(state);
-  const startable = phase === "idle" || phase === "error" || phase === "sleeping";
+  const replying = isReplying(state) || (Boolean(onStopTurn) && !hearing && phase !== "muted");
+  // While a turn runs, the button stops it rather than starting a new one.
+  const startable = !onStopTurn && (phase === "idle" || phase === "error" || phase === "sleeping");
   const label = startable
     ? t.voice.start
     : hearing
@@ -51,7 +61,10 @@ export function MicButton({ state, handlers }: { state: VoiceState; handlers: Vo
       : phase === "muted"
         ? handlers.toggleMute
         : replying
-          ? handlers.interrupt
+          ? () => {
+              handlers.interrupt();
+              onStopTurn?.();
+            }
           : undefined;
   return (
     <button

@@ -4383,17 +4383,11 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
     searchOn: "Buscar en Mercado Libre",
     noPrice: "Precio en la publicación",
     checked: (when: string) => `Verificado ${when}`,
-    viaShopping: (when: string) => `Precio consultado en Google Shopping · ${when}`,
     viaOfficial: (when: string) => `Precio oficial de Mercado Libre · ${when}`,
     unpriced: (n: number) =>
       n === 1
         ? "1 publicación sin precio verificado: el precio está en la publicación."
         : `${n} publicaciones sin precio verificado: el precio está en cada publicación.`,
-    marketplaceRefs: "Precio de referencia · Google Shopping · tienda: Mercado Libre",
-    marketplaceRefsHint: "No está vinculado a una publicación de arriba: puede ser otra.",
-    otherStores: "Otras tiendas · Google Shopping",
-    refsWhen: (when: string) => `Consultado ${when}. Puede haber cambiado.`,
-    openStore: "Ver oferta",
     freeShipping: "Envío gratis (según Mercado Libre)",
     shippingUnknown: "Envío sin confirmar",
     used: "Usado",

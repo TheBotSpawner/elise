@@ -330,6 +330,7 @@ export async function gatherBrief(
     data: {
       now: ctx.now,
       timezone: ctx.timezone,
+      blocks: config.blocks,
       locale: ctx.locale,
       events: events?.kind === "event_list" ? events.events : undefined,
       email:

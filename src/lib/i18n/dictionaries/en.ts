@@ -4349,17 +4349,11 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
     open: "View listing",
     searchOn: "Search on Mercado Libre",
     noPrice: "Price on the listing",
-    viaShopping: (when: string) => `Price checked on Google Shopping · ${when}`,
     viaOfficial: (when: string) => `Official Mercado Libre price · ${when}`,
     unpriced: (n: number) =>
       n === 1
         ? "1 listing without a verified price: the price is on the listing."
         : `${n} listings without a verified price: the price is on each listing.`,
-    marketplaceRefs: "Reference price · Google Shopping · store: Mercado Libre",
-    marketplaceRefsHint: "Not tied to a listing above: it may be another one.",
-    otherStores: "Other stores · Google Shopping",
-    refsWhen: (when: string) => `Checked ${when}. It may have changed.`,
-    openStore: "See offer",
     checked: (when: string) => `Checked ${when}`,
     freeShipping: "Free shipping (per Mercado Libre)",
     shippingUnknown: "Shipping not confirmed",

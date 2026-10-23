@@ -194,3 +194,39 @@ describe("narration", () => {
     ).toBeNull();
   });
 });
+
+describe("what the person chose is always in the brief", () => {
+  it("chosen parts with nothing new still get their segment and line", () => {
+    const b = brief({
+      tasks: [],
+      habits: [],
+      goals: [],
+      blocks: ["tasks", "habits", "goals", "email"],
+    });
+    expect(briefTopics(b)).toEqual(expect.arrayContaining(["tasks", "habits", "goals", "inbox"]));
+    const x = briefExperience(b, "es");
+    const say = (id: string) => x.segments.find((s) => s.id === id)?.say;
+    expect(say("tasks")).toMatch(/al día/);
+    expect(say("inbox")).toMatch(/Nada urgente/);
+  });
+
+  it("habits: which need attention today and how the week goes overall", () => {
+    const h = (name: string, done: number, goal: number, atRisk: boolean): HabitProgress =>
+      ({
+        name,
+        frequency: "daily",
+        unit: null,
+        today: { scheduled: true, met: false },
+        week: { done, goal, remaining: goal - done, atRisk, days: [] },
+        streak: { count: 0, unit: "días" },
+      }) as unknown as HabitProgress;
+    const b = brief({
+      blocks: ["habits"],
+      habits: [h("Leer", 0, 3, true), h("Workout", 2, 3, false)],
+    });
+    expect(b.habitsWeek).toEqual({ total: 2, onTrack: 1, done: 2, goal: 6 });
+    const line = briefExperience(b, "es").segments.find((s) => s.id === "habits")?.say;
+    expect(line).toMatch(/en riesgo/);
+    expect(line).toMatch(/Vas 2 de 6 esta semana/);
+  });
+});

@@ -184,6 +184,10 @@ function fallbackLine(topic: BriefTopic, b: MorningBrief, locale: Locale): strin
     case "tasks": {
       const due = b.attention.tasks.length;
       const overdue = b.waitingOnYou.overdue.length;
+      if (!due && !overdue)
+        return es
+          ? "Tareas al día: nada para hoy ni vencido."
+          : "Tasks are clear: nothing due or overdue.";
       const parts = es
         ? [
             due ? plural(due, "tarea para hoy", "tareas para hoy") : "",
@@ -193,7 +197,8 @@ function fallbackLine(topic: BriefTopic, b: MorningBrief, locale: Locale): strin
       return `${es ? "Tenés" : "You have"} ${parts.filter(Boolean).join(es ? " y " : " and ")}.`;
     }
     case "weather": {
-      const d = b.weather!.days[0];
+      if (!b.weather) return es ? "No pude traer el pronóstico." : "I couldn't get the forecast.";
+      const d = b.weather.days[0];
       if (!d) return null;
       const rain = d.precipitationProbability ?? 0;
       return es
@@ -203,6 +208,8 @@ function fallbackLine(topic: BriefTopic, b: MorningBrief, locale: Locale): strin
     case "inbox": {
       const replies = b.waitingOnYou.replies.length;
       const mails = b.attention.emails.length;
+      if (!replies && !mails)
+        return es ? "Nada urgente en el correo." : "Nothing urgent in your email.";
       return es
         ? [
             mails ? `${plural(mails, "mail importante", "mails importantes")}` : "",
@@ -224,14 +231,27 @@ function fallbackLine(topic: BriefTopic, b: MorningBrief, locale: Locale): strin
             .concat(".");
     }
     case "habits": {
-      const risk = b.habits!.filter((h) => h.atRisk).length;
-      return risk
-        ? es
-          ? `${plural(risk, "hábito está", "hábitos están")} en riesgo esta semana.`
-          : `${plural(risk, "habit is", "habits are")} at risk this week.`
-        : es
-          ? "Tus hábitos de hoy te esperan."
-          : "Your habits for today are waiting.";
+      const risk = (b.habits ?? []).filter((h) => h.atRisk).length;
+      const w = b.habitsWeek;
+      const week =
+        w && w.goal
+          ? es
+            ? ` Vas ${w.done} de ${w.goal} esta semana.`
+            : ` ${w.done} of ${w.goal} done this week.`
+          : "";
+      return (
+        (risk
+          ? es
+            ? `${plural(risk, "hábito está", "hábitos están")} en riesgo esta semana.`
+            : `${plural(risk, "habit is", "habits are")} at risk this week.`
+          : es
+            ? (b.habits ?? []).length
+              ? "Tus hábitos de hoy te esperan."
+              : "Tus hábitos vienen al día."
+            : (b.habits ?? []).length
+              ? "Your habits for today are waiting."
+              : "Your habits are on track.") + week
+      );
     }
     case "goals":
       return es ? "Así vienen tus objetivos." : "Here's where your goals stand.";
@@ -247,12 +267,15 @@ function fallbackLine(topic: BriefTopic, b: MorningBrief, locale: Locale): strin
         : `The biggest move among what you follow: ${top.symbol} (${signed}).`;
     }
     case "news":
+      if (!b.news?.length)
+        return es ? "Sin novedades de tus temas hoy." : "No news on your topics today.";
       return es
-        ? `${plural(b.news!.length, "novedad", "novedades")} de tus temas.`
+        ? `${plural(b.news.length, "novedad", "novedades")} de tus temas.`
         : `${plural(b.news!.length, "update", "updates")} on your topics.`;
     case "slack": {
-      const n = b.slack!.channels.reduce((sum, c) => sum + c.messages.length, 0);
-      const where = b.slack!.channels.filter((c) => c.messages.length).map((c) => c.channel);
+      if (!b.slack) return es ? "Nada nuevo en Slack." : "Nothing new on Slack.";
+      const n = b.slack.channels.reduce((sum, c) => sum + c.messages.length, 0);
+      const where = b.slack.channels.filter((c) => c.messages.length).map((c) => c.channel);
       return es
         ? `${plural(n, "mensaje", "mensajes")} en ${where.join(", ")}.`
         : `${plural(n, "message", "messages")} in ${where.join(", ")}.`;
@@ -283,7 +306,7 @@ function blocksFor(topic: BriefTopic, b: MorningBrief): ExperienceBlock[] {
     case "tasks":
       return [{ kind: "tasks", due: b.attention.tasks, overdue: b.waitingOnYou.overdue }];
     case "weather":
-      return [{ kind: "weather", weather: b.weather! }];
+      return b.weather ? [{ kind: "weather", weather: b.weather }] : [];
     case "inbox":
       return [
         ...(b.attention.emails.length
@@ -303,24 +326,24 @@ function blocksFor(topic: BriefTopic, b: MorningBrief): ExperienceBlock[] {
     case "habits":
       return b.charts?.habits
         ? [{ kind: "chart", spec: b.charts.habits }]
-        : [{ kind: "habits", habits: b.habits! }];
+        : [{ kind: "habits", habits: b.habits ?? [] }];
     case "goals":
       return b.charts?.goals
         ? [{ kind: "chart", spec: b.charts.goals }]
-        : [{ kind: "goals", goals: b.goals! }];
+        : [{ kind: "goals", goals: b.goals ?? [] }];
     case "finance":
       return [
         ...(b.charts?.finance ?? []).map((spec) => ({ kind: "chart" as const, spec })),
-        { kind: "finance", finance: b.finance! },
+        ...(b.finance ? [{ kind: "finance" as const, finance: b.finance }] : []),
       ];
     case "news":
-      return [{ kind: "news", news: b.news! }];
+      return b.news?.length ? [{ kind: "news", news: b.news }] : [];
     case "markets":
-      return [{ kind: "markets", markets: b.markets! }];
+      return b.markets ? [{ kind: "markets", markets: b.markets }] : [];
     case "knowledge":
       return [{ kind: "knowledge", knowledge: b.knowledge! }];
     case "slack":
-      return [{ kind: "slack", slack: b.slack! }];
+      return b.slack ? [{ kind: "slack", slack: b.slack }] : [];
   }
 }
 
@@ -337,14 +360,15 @@ export function briefExperience(brief: MorningBrief, locale: Locale): ScheduledE
     (locale === "es" ? "Buen día. Esto es lo que tenés." : "Good morning. Here's your day.");
   const segments: ExperienceSegment[] = [{ id: "intro", label: null, say: greeting, blocks: [] }];
   for (const topic of briefTopics(brief)) {
-    const blocks = blocksFor(topic, brief);
-    if (!blocks.length) continue;
-    segments.push({
-      id: topic,
-      label: labels[topic],
-      say: n?.lines[topic] ?? fallbackLine(topic, brief, locale),
-      blocks,
-    });
+    const say = n?.lines[topic] ?? fallbackLine(topic, brief, locale);
+    let blocks = blocksFor(topic, brief);
+    // A part the person chose stays, even with no card: it says its state ("al día").
+    if (!blocks.length) {
+      const own = fallbackLine(topic, brief, locale);
+      if (!own) continue;
+      blocks = [{ kind: "text", markdown: own }];
+    }
+    segments.push({ id: topic, label: labels[topic], say, blocks });
   }
   if (n?.closing) segments.push({ id: "closing", label: null, say: n.closing, blocks: [] });
   const issues = briefIssues(brief.warnings);

@@ -61,14 +61,8 @@ const serverEnvSchema = z.object({
   MERCADOLIBRE_CLIENT_ID: z.string().min(1).optional(),
   MERCADOLIBRE_CLIENT_SECRET: z.string().min(1).optional(),
   MERCADOLIBRE_REFRESH_TOKEN: z.string().min(1).optional(),
-  /**
-   * Prices from Google Shopping through SerpApi (ADR-116): off unless "true" AND a key is set.
-   * Thumbnails only with SHOPPING_GOOGLE_SHOPPING_IMAGES=true (their licence is the stores').
-   */
-  SHOPPING_GOOGLE_SHOPPING_ENABLED: z.enum(["true", "false"]).default("false"),
-  SHOPPING_GOOGLE_SHOPPING_IMAGES: z.enum(["true", "false"]).default("false"),
-  SHOPPING_GOOGLE_SHOPPING_MONTHLY_LIMIT: z.coerce.number().int().min(0).default(200),
-  SERPAPI_API_KEY: z.string().min(1).optional(),
+  /** The redirect URI registered in Mercado Libre Developers, exactly (ADR-116). */
+  MERCADOLIBRE_REDIRECT_URI: z.string().url().startsWith("https://").optional(),
   /** Location (ADR-023): server key restricted to Places (New), Routes and Geocoding. */
   GOOGLE_MAPS_SERVER_API_KEY: z.string().min(1).optional(),
   /** Weather (ADR-038): Open-Meteo commercial key; without it, the free non-commercial API. */

@@ -276,8 +276,6 @@ export interface Offer {
   seller: string | null;
   image: string | null;
   evidence: OfferEvidence;
-  /** Where the price came from: the official API, or Google Shopping linking this exact listing. */
-  priceSource?: "api" | "google_shopping";
   checkedAt: string;
 }
 
@@ -322,8 +320,33 @@ export function dedupeOffers(offers: readonly Offer[]): Offer[] {
   });
 }
 
-/** The official API, when ELISE has an approved application (infrastructure). */
+/**
+ * A Mercado Libre listing's identity from its URL: classic item (/MLA-123…), catalog product
+ * (/p/MLA123) or user product (/up/MLAU123). Different kinds are never equal: a catalog
+ * product's price is not one listing's price.
+ */
+export function listingKey(url: string): string | null {
+  let path: string;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    return null;
+  }
+  const product = /\/p\/(M[A-Z]{2}\d{6,})/.exec(path);
+  if (product) return `p:${product[1]}`;
+  const user = /\/up\/(M[A-Z]{2}U\d{6,})/.exec(path);
+  if (user) return `up:${user[1]}`;
+  const item = LISTING_ID.exec(path);
+  return item && !item[0].includes("U") ? `item:${item[0].replace("-", "")}` : null;
+}
+
+/** The official API, when ELISE's application account is connected (infrastructure). */
 export interface MarketplaceApi {
   /** Catalog products for words, with their current best offer when the API gives one. */
   search(site: MarketplaceSite, query: string, limit: number): Promise<Offer[]>;
+  /**
+   * Exact listings by identity (`listingKey`): each one's own data and current price when the
+   * API gives it. Never matched by title. Throws on 401/403/429 (the caller degrades).
+   */
+  listings(site: MarketplaceSite, keys: readonly string[]): Promise<Map<string, Offer>>;
 }

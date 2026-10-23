@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import type { MarketplaceApi, MarketplaceMode } from "./marketplace";
-import type { PriceIndex } from "./price-reference";
 
 /**
  * Shopping prices (ADR-111): public supermarket prices in Argentina, provider-independent. The
@@ -685,8 +684,6 @@ export interface ShoppingCapability {
   data: ShoppingData;
   /** ADR-112: Mercado Libre's official API, when enabled and approved; null otherwise. */
   marketplace: MarketplaceApi | null;
-  /** ADR-116: Google Shopping prices (SerpApi), when enabled with a key; null otherwise. */
-  priceIndex: PriceIndex | null;
   /** ADR-112: "solo / evitá Mercado Libre" kept for next time (null = the default, prefer). */
   marketplaceMode(): Promise<MarketplaceMode | null>;
   saveMarketplaceMode(mode: MarketplaceMode | null): Promise<void>;

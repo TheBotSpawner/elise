@@ -5,6 +5,7 @@ import {
   buyingCountry,
   dedupeOffers,
   isMarketplaceHost,
+  listingKey,
   MARKETPLACE_SITES,
   marketplaceSearchUrl,
   matchOffer,
@@ -285,6 +286,7 @@ describe("shopping.offers", () => {
           url: "https://articulo.mercadolibre.com.ar/MLA-2",
         }),
       ]),
+      listings: vi.fn(async () => new Map()),
     };
     const t = setup({ marketplace: api });
     const r = await offersTool.run(
@@ -302,7 +304,7 @@ describe("shopping.offers", () => {
       ["Samsung Galaxy A55 5G 256GB", "exact"],
       ["Samsung Galaxy A35 128GB", "related"],
     ]);
-    expect(t.search).not.toHaveBeenCalled();
+    // The web search found no listing, so the catalog search answered.
     expect(t.invoke).not.toHaveBeenCalled();
   });
 
@@ -311,6 +313,7 @@ describe("shopping.offers", () => {
       search: async () => [
         offer({ price: 48000, currency: "ARS", evidence: "api", match: "exact" }),
       ],
+      listings: async () => new Map(),
     };
     const t = setup({ marketplace: api });
     const r = await offersTool.run(
@@ -328,7 +331,10 @@ describe("shopping.offers", () => {
   });
 
   it("case 4: 'no uses Mercado Libre' → not consulted, no Mercado Libre card", async () => {
-    const api: MarketplaceApi = { search: vi.fn(async () => []) };
+    const api: MarketplaceApi = {
+      search: vi.fn(async () => []),
+      listings: vi.fn(async () => new Map()),
+    };
     const t = setup({ marketplace: api });
     const r = await offersTool.run(
       {
@@ -348,16 +354,18 @@ describe("shopping.offers", () => {
     const api: MarketplaceApi = {
       search: async () => {
         throw new AppError("PROVIDER_UNAVAILABLE", "Mercado Libre refused ELISE's access", {
-          details: { providerStatus: 403 },
+          details: { providerStatus: 403, endpoint: "/products/search" },
         });
       },
+      listings: async () => new Map(),
     };
     const t = setup({ marketplace: api }, [result(ITEM, "Broadlink RM4 Mini")]);
     const r = await offersTool.run({ request: "RM4 mini", query: "Broadlink RM4 Mini" }, t.env);
     const p = productOffersPayload.parse(shown(r));
     expect(p.marketplace.method).toBe("search");
     expect(p.marketplace.offers.every((o) => o.price === null)).toBe(true);
-    expect(p.notes[0]).toMatch(/no respondió/);
+    expect(p.notes[0]).toMatch(/no autorizó/);
+    expect(String(out(r).officialApi)).toMatch(/HTTP 403 on \/products\/search/);
   });
 
   it("case 6/7: nothing found → only a labeled search link (never a product); an API price says when it was checked", async () => {
@@ -416,5 +424,75 @@ describe("shopping.offers", () => {
     );
     expect(t.search).toHaveBeenCalled();
     expect(t.mode()).toBe("avoid");
+  });
+});
+
+describe("official prices by exact listing (ADR-116)", () => {
+  const RM4C = "https://articulo.mercadolibre.com.ar/MLA-1528226212-broadlink-rm4c-mini-_JM";
+
+  it("listing identity: item, catalog product and user product are never equal", () => {
+    expect(listingKey(RM4C)).toBe("item:MLA1528226212");
+    expect(listingKey("https://www.mercadolibre.com.ar/x/p/MLA1528226212")).toBe("p:MLA1528226212");
+    expect(listingKey("https://www.mercadolibre.com.ar/x/up/MLAU187474134")).toBe(
+      "up:MLAU187474134",
+    );
+  });
+
+  it("RM4 Mini and RM4C Mini are different models", () => {
+    expect(matchOffer("RM4 Mini", "Broadlink RM4C Mini")).toBe("related");
+    expect(matchOffer("RM4C Mini", "Broadlink Rm4 Mini")).toBe("related");
+    expect(matchOffer("RM4 Mini", "Broadlink RM-4 mini")).toBe("exact");
+    expect(matchOffer("Galaxy A55 256GB", "Samsung Galaxy A55 5G 256 GB")).toBe("exact");
+  });
+
+  it("official catalog first: each listing with its own price, exact model first; no web search", async () => {
+    const other = "https://articulo.mercadolibre.com.ar/MLA-2222222222";
+    const search = vi.fn(async () => [
+      offer({
+        title: "Broadlink RM4 Mini",
+        url: other,
+        price: 30000,
+        currency: "ARS",
+        evidence: "api",
+      }),
+      offer({
+        title: "Control Remoto BroadLink Rm4c Mini",
+        url: RM4C,
+        price: 369999.99,
+        currency: "ARS",
+        evidence: "api",
+        image: "https://http2.mlstatic.com/D_1.jpg",
+      }),
+    ]);
+    const t = setup({ marketplace: { search, listings: async () => new Map() } }, [
+      result(RM4C, "Broadlink RM4C Mini | MercadoLibre"),
+    ]);
+    const r = await offersTool.run(
+      {
+        request: "Buscame un Broadlink RM4C Mini",
+        query: "Broadlink RM4C Mini",
+        model: "RM4C Mini",
+      },
+      t.env,
+    );
+    expect(t.search).not.toHaveBeenCalled();
+    const p = productOffersPayload.parse(shown(r));
+    expect(p.marketplace.method).toBe("api");
+    // The RM4 is cheaper but another model: the exact one leads.
+    expect(p.marketplace.offers.map((o) => [o.match, o.price])).toEqual([
+      ["exact", 369999.99],
+      ["related", 30000],
+    ]);
+  });
+
+  it("a pasted listing link is checked exactly, nothing searched instead", async () => {
+    const listings = vi.fn(async () => new Map());
+    const t = setup({ marketplace: { search: async () => [], listings } }, []);
+    await offersTool.run(
+      { request: "¿Cuánto sale esto?", query: "este producto", url: `${RM4C}?tracking=x` },
+      t.env,
+    );
+    expect(t.search).not.toHaveBeenCalled();
+    expect(listings).toHaveBeenCalledWith(AR, ["item:MLA1528226212"]);
   });
 });

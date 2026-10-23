@@ -105,13 +105,19 @@ export function briefCanvas(brief: MorningBrief, reads: readonly BriefRead[]): B
       case "task_list": {
         const tasks = d.tasks.filter((t) => keyTasks.has(t.id));
         if (tasks.length) add(r, { ...d, tasks }, brief.waitingOnYou.overdue.length >= 3 ? 78 : 66);
+        // Chosen, nothing due: the open tasks still show (a chosen part is always on screen).
+        else if (d.tasks.length) add(r, { ...d, tasks: d.tasks.slice(0, 8) }, 58);
         break;
       }
       case "habits":
-        if (brief.habits?.length) add(r, d, 45);
+        // A block the person chose: it must survive the Canvas's cut (at 45 it was shelved
+        // behind mail accounts, news and finance). Leads higher when something needs attention.
+        if (brief.habits?.length || brief.habitsWeek?.total)
+          add(r, d, brief.habits?.length ? 74 : 56);
         break;
       case "goals":
-        if (brief.goals?.length) add(r, d, 42);
+        // A chosen part: always on screen, higher when a goal needs attention.
+        if (d.goals.length) add(r, d, brief.goals?.length ? 70 : 56);
         break;
       case "weather":
         // A block the person chose and a compact one: it must survive the Canvas's 8-Surface
@@ -120,7 +126,7 @@ export function briefCanvas(brief: MorningBrief, reads: readonly BriefRead[]): B
         break;
       case "finance_summary":
         // The month to date is the finance Surface; the comparison reads only ground the words.
-        if (r.args.period === "this_month" && brief.finance?.month.length) add(r, d, 40);
+        if (r.args.period === "this_month" && brief.finance) add(r, d, 60);
         break;
       case "web_news":
         // One "Noticias" Surface for all topics, added below from the brief's own selection.

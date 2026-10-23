@@ -8,6 +8,7 @@ import {
   dedupeOffers,
   isMarketplaceCountry,
   LISTING_ID,
+  listingKey,
   MARKETPLACE_SITES,
   marketplaceSearchUrl,
   matchOffer,
@@ -19,12 +20,6 @@ import {
   type Offer,
 } from "../shopping/marketplace";
 import type { ShoppingCapability } from "../shopping/model";
-import {
-  attachPrices,
-  parseShoppingResults,
-  rankReferences,
-  type PriceReference,
-} from "../shopping/price-reference";
 import type { WebCapability } from "../web/model";
 import type { SurfacePayloads } from "../workspace/registry";
 
@@ -86,6 +81,14 @@ const offersInput = z
       .regex(/^[A-Za-z]{2}$/)
       .optional()
       .describe("ISO country they buy in, only if they said it now."),
+    url: z
+      .string()
+      .trim()
+      .max(600)
+      .optional()
+      .describe(
+        'A Mercado Libre listing link the user gave ("¿cuánto sale esto? https://…mercadolibre…"): that exact listing is checked.',
+      ),
   })
   .strict();
 
@@ -116,22 +119,30 @@ export const offersTool: ToolDefinition = {
     const now = env.ctx.now.toISOString();
     let method: Payload["marketplace"]["method"] = "link";
     let offers: Offer[] = [];
-    let degraded: string | null = null;
-    let refs: PriceReference[] = [];
-    let marketplaceRefs: PriceReference[] = [];
-    let otherRefs: PriceReference[] = [];
+    let refused: { status: number | null; endpoint: string | null } | null = null;
 
     if (site && mode !== "avoid") {
+      const pasted = q.url ? safeMarketplaceUrl(q.url, site) : null;
+      const pastedKey = pasted ? listingKey(pasted) : null;
+      // 1) The official catalog: listings of the matching products with their official price.
       if (s.marketplace) {
         try {
-          offers = await s.marketplace.search(site, searchWords(q.query), 8);
-          method = "api";
+          if (pasted && pastedKey) {
+            // The listing they gave: exactly that one, nothing searched instead.
+            const official = await s.marketplace.listings(site, [pastedKey]);
+            offers = [official.get(pastedKey) ?? listingStub(pasted, pastedTitle(pastedKey), now)];
+          } else offers = await s.marketplace.search(site, searchWords(q.query), 8);
+          if (offers.some((o) => o.evidence === "api")) method = "api";
         } catch (e) {
-          // 401/403/429 or down: degrade to what can be shown honestly, never invent.
-          degraded = toAppError(e).message;
+          // 401/403/429 or down: what can be shown honestly stays, nothing is invented.
+          const d = toAppError(e).details as
+            { providerStatus?: number; endpoint?: string } | undefined;
+          refused = { status: d?.providerStatus ?? null, endpoint: d?.endpoint ?? null };
+          if (pasted && pastedKey) offers = [listingStub(pasted, pastedTitle(pastedKey), now)];
         }
-      }
-      if (method !== "api") {
+      } else if (pasted && pastedKey) offers = [listingStub(pasted, pastedTitle(pastedKey), now)];
+      // 2) Without official results: listings a web search found (links only, never read).
+      if (!offers.length) {
         const found = await web(env)
           .search({
             query: `${searchWords(q.query)}${q.condition === "used" ? " usado" : ""}`,
@@ -149,56 +160,22 @@ export const offersTool: ToolDefinition = {
             return [];
           return [
             {
-              source: "mercadolibre",
-              externalId: null,
-              title: r.title.replace(/\s*\|\s*Mercado ?Libre.*$/i, "").slice(0, 200),
-              url,
-              price: null,
-              currency: null,
+              ...listingStub(url, r.title.replace(/\s*\|\s*Mercado ?Libre.*$/i, ""), now),
               condition: conditionOf(r.title),
-              match: "related",
-              freeShipping: null,
-              installments: null,
-              seller: null,
-              image: null,
-              evidence: "search_result",
-              checkedAt: now,
             },
           ];
         });
-        method = offers.length ? "search" : "link";
       }
-      offers = dedupeOffers(
-        offers.map((o) => ({ ...o, match: matchOffer(q.model ?? null, o.title) })),
-      );
-      // ADR-116: Google Shopping prices — on a listing only when they link to that listing.
-      if (s.priceIndex) {
-        try {
-          refs = parseShoppingResults(await s.priceIndex.search(searchWords(q.query), site), {
-            model: q.model ?? null,
-            site,
-            now: env.ctx.now,
-            images: s.priceIndex.images,
-          }).filter(
-            (r) =>
-              !(maxPrice && currency === r.currency && r.price > maxPrice) &&
-              !(q.condition && r.condition && r.condition !== q.condition),
-          );
-          const a = attachPrices(offers, refs);
-          offers = a.offers;
-          marketplaceRefs = rankReferences(a.marketplaceRefs).slice(0, 3);
-          otherRefs = mode === "only" ? [] : rankReferences(a.otherRefs).slice(0, 5);
-        } catch {
-          notes.push("Google Shopping no respondió: no hay precios de referencia esta vez.");
-        }
-      }
-      offers = rankOffers(offers, { condition: q.condition ?? null, maxPrice, currency }).slice(
-        0,
-        5,
-      );
-      if (degraded)
+      if (method !== "api") method = offers.length ? "search" : "link";
+      offers = rankOffers(
+        dedupeOffers(offers.map((o) => ({ ...o, match: matchOffer(q.model ?? null, o.title) }))),
+        { condition: q.condition ?? null, maxPrice, currency },
+      ).slice(0, 5);
+      if (refused)
         notes.push(
-          "La API de Mercado Libre no respondió: muestro publicaciones encontradas por búsqueda, sin precios.",
+          refused.status === 401 || refused.status === 403
+            ? "Mercado Libre no autorizó a ELISE a consultar estas publicaciones: muestro los enlaces, sin precio."
+            : "La API de Mercado Libre no respondió: muestro los enlaces, sin precio.",
         );
     }
 
@@ -206,7 +183,6 @@ export const offersTool: ToolDefinition = {
     // gave no verified price — always as their own Surface (web.discover), never merged.
     const wantStores =
       mode !== "only" &&
-      !otherRefs.length &&
       (q.compareStores || mode === "avoid" || !site || !offers.some((o) => o.price !== null));
     let stores: { title: string; price?: string; url: string }[] = [];
     if (wantStores && env.invoke) {
@@ -250,7 +226,6 @@ export const offersTool: ToolDefinition = {
                 seller: o.seller,
                 image: o.image,
                 evidence: o.evidence,
-                ...(o.priceSource ? { priceSource: o.priceSource } : {}),
                 checkedAt: o.checkedAt,
               })),
             },
@@ -258,14 +233,6 @@ export const offersTool: ToolDefinition = {
             currency,
             notes,
             model: q.model ?? null,
-            ...(marketplaceRefs.length || otherRefs.length
-              ? {
-                  references: {
-                    marketplace: marketplaceRefs.map(refView),
-                    others: otherRefs.map(refView),
-                  },
-                }
-              : {}),
           }
         : null;
 
@@ -291,50 +258,28 @@ export const offersTool: ToolDefinition = {
                     ...(o.price !== null
                       ? {
                           price: `${o.currency} ${o.price}`,
-                          priceFrom:
-                            o.priceSource === "google_shopping"
-                              ? `Google Shopping, linking this listing, at ${o.checkedAt}`
-                              : "Mercado Libre's official API",
+                          priceFrom: `Mercado Libre's official API, checked at ${o.checkedAt}`,
                         }
-                      : {}),
+                      : { price: "not available" }),
                     ...(o.condition ? { condition: o.condition } : {}),
                     match: o.match,
                     ...(o.freeShipping !== null ? { freeShipping: o.freeShipping } : {}),
                   })),
                   searchLink: "on screen (a search, not a listing)",
                 },
-        ...(marketplaceRefs.length
+        ...(refused
           ? {
-              mercadoLibreReferencePrices: marketplaceRefs.map((r) => ({
-                title: r.title,
-                price: `${r.currency} ${r.price}`,
-                match: r.match,
-                note: "Google Shopping says the store is Mercado Libre, but it doesn't link a listing above: a reference price, not one listing's",
-              })),
-            }
-          : {}),
-        ...(otherRefs.length
-          ? {
-              otherStorePrices: otherRefs.map((r) => ({
-                store: r.merchant,
-                title: r.title,
-                price: `${r.currency} ${r.price}`,
-                match: r.match,
-              })),
-              otherStorePricesFrom: `Google Shopping, consulted at ${otherRefs[0]!.checkedAt}`,
+              officialApi: `refused (HTTP ${refused.status ?? "?"} on ${refused.endpoint ?? "?"}) — no Mercado Libre prices this time`,
             }
           : {}),
         ...(stores.length ? { otherStores: stores } : {}),
         ...(maxPrice !== null ? { maxPrice: `${currency ?? ""} ${maxPrice}`.trim() } : {}),
         instructions: [
           "Say the source of each figure (Mercado Libre or the store). Never present Mercado Libre and other stores as one ranking: give each apart.",
-          refs.length
-            ? 'Google Shopping prices are what the index showed when consulted, not live: say "según Google Shopping" and that they may have changed. A price belongs to a Mercado Libre listing only where priceFrom says so; mercadoLibreReferencePrices and otherStorePrices are references — never say a listing costs that.'
-            : "",
           verified.length
             ? `Name two or three Mercado Libre options with price and the main difference (condition, exact model, shipping only as stated) — "de los resultados que encontré", never "el más barato de Mercado Libre".`
             : site && mode !== "avoid"
-              ? `There are NO verified prices for these Mercado Libre listings: say so in one short sentence and that the listings are on screen.${otherRefs.length || marketplaceRefs.length ? " Then give two or three reference prices (exact model first) saying where each is from." : " Never quote a Mercado Libre price."}`
+              ? `There are NO verified prices for these Mercado Libre listings: say so in one short sentence${refused ? " (Mercado Libre didn't authorize ELISE to read them)" : ""} and that the listings are on screen. Never quote a Mercado Libre price.`
               : "",
           "A related or accessory item is not the model asked for: say so if you mention it. Shipping, taxes, installments and promotions only as stated; never assume free shipping or a bank promo applies to them.",
           "Voice: the actionable data in two or three short sentences (options, price, difference), never URLs, never only 'te lo dejé en pantalla'.",
@@ -359,16 +304,25 @@ export const offersTool: ToolDefinition = {
   },
 };
 
-const refView = (r: PriceReference) => ({
-  title: r.title,
-  merchant: r.merchant,
-  price: r.price,
-  currency: r.currency,
-  url: r.url && /^https:\/\//.test(r.url) ? r.url : null,
-  image: r.image,
-  match: r.match,
-  condition: r.condition,
-  checkedAt: r.checkedAt,
+/** A pasted listing ELISE couldn't read: named by its id, never by a guessed title. */
+const pastedTitle = (key: string) => `Publicación ${key.split(":")[1]}`;
+
+/** A listing known only by its link (title from where it was found): no price, not verified. */
+const listingStub = (url: string, title: string, now: string): Offer => ({
+  source: "mercadolibre",
+  externalId: null,
+  title: title.slice(0, 200),
+  url,
+  price: null,
+  currency: null,
+  condition: null,
+  match: "related",
+  freeShipping: null,
+  installments: null,
+  seller: null,
+  image: null,
+  evidence: "search_result",
+  checkedAt: now,
 });
 
 const prefInput = z
