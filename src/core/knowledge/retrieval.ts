@@ -25,7 +25,14 @@ const STOPWORDS = new Set(
     "lo los me my of on or para por que qué se sobre su the this to un una was what when where which who why with y " +
     "cómo cuál cuando donde dónde dice dicen say says about our nuestro nuestra " +
     // Requests, not subjects ("buscame el cronograma", "mostrame…", "find me…").
-    "buscame búscame buscá busca mostrame decime dame contame encontrame find show tell give"
+    "buscame búscame buscá busca mostrame decime dame contame encontrame find show tell give " +
+    // Rioplatense fillers that once crowded the real subject out of the search ("¿me buscás ese
+    // artículo que tiene que ver con la eficiencia de tokens?").
+    "buscás buscas buscar busques encontrás encontras encontrá encontra ese esa eso esos esas " +
+    "aquel aquella tiene tienen tenía tenga ver mis tus tiene algo algún alguno alguna hay sea son era " +
+    "fue podés podes podrías podrias querés queres quiero quería necesito habla hablaba trata " +
+    "tratan acerca respecto relacionado relacionada mismo misma todo toda todos todas " +
+    "con sin al les nos pero muy más mas también tambien solo sólo otro otra otros otras hace"
   ).split(" "),
 );
 

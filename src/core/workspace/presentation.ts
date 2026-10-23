@@ -30,12 +30,17 @@ const CONSOLIDATE: ReadonlySet<string> = new Set([
 /** What a finished analysis makes obsolete in the same turn. */
 const SUPERSEDES: Readonly<Record<string, readonly string[]>> = {
   "structured.analyze": ["knowledge.search", "structured.query"],
+  // "El último publicado" answered: the turn's searches and listings were the way there.
+  "structured.latest": ["knowledge.search", "structured.query", "structured.analyze"],
 };
 
 export interface TurnPresentation {
   tool: string;
   ids: string[];
 }
+
+/** Resolution and schema lookups: never a card, in the Canvas or in the chat thread. */
+export const isPlumbing = (tool: string) => PLUMBING.has(tool);
 
 /** Before presenting: whether to, and which of this turn's Surfaces it replaces. */
 export function beforePresenting(

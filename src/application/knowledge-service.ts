@@ -484,6 +484,8 @@ export interface SourceView {
   lastRunAt: string | null;
   /** A sync in progress: since when. */
   runningSince: string | null;
+  /** What it follows — each root with its link in the provider ("Ver en Notion"). */
+  roots: { name: string; kind: "folder" | "file" | "page" | "database"; url: string | null }[];
 }
 
 export interface ItemView {
@@ -509,6 +511,37 @@ function selectionKind(configuration: Json): SourceView["kind"] {
   if (!parsed.success || !parsed.data.selection.length) return null;
   // Several roots in one source (before ADR-037): no single kind describes it.
   return parsed.data.selection.length === 1 ? parsed.data.selection[0]!.kind : "mixed";
+}
+
+/** The roots a connected source follows, with where to open each one (ADR-114). */
+export function sourceRoots(
+  sourceType: KnowledgeSourceRow["source_type"],
+  configuration: Json,
+): SourceView["roots"] {
+  const parsed = z
+    .object({
+      selection: z.array(
+        z.object({
+          id: z.string(),
+          kind: z.enum(["folder", "file", "page", "database"]),
+          name: z.string().optional(),
+        }),
+      ),
+    })
+    .safeParse(configuration);
+  if (!parsed.success) return [];
+  return parsed.data.selection.map((r) => ({
+    name: r.name ?? "",
+    kind: r.kind,
+    url:
+      sourceType === "notion"
+        ? `https://www.notion.so/${r.id.replace(/-/g, "")}`
+        : sourceType === "google_drive"
+          ? r.kind === "folder"
+            ? `https://drive.google.com/drive/folders/${encodeURIComponent(r.id)}`
+            : `https://drive.google.com/file/d/${encodeURIComponent(r.id)}/view`
+          : null,
+  }));
 }
 
 export async function getSpace(auth: AuthContext, spaceId: string) {
@@ -622,6 +655,7 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
         discovered: done?.items_discovered ?? null,
         lastRunAt: done?.completed_at ?? null,
         runningSince: run ? (run.started_at ?? run.created_at) : null,
+        roots: sourceRoots(s.source_type, s.configuration),
       };
     }),
     // Documents ELISE holds. A connected database's rows are the database's data, read when

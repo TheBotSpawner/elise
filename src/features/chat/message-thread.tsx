@@ -7,6 +7,7 @@ import Markdown from "react-markdown";
 
 import { stripCitationMarkers } from "@/core/agents/citation-markers";
 import type { ToolDisplay } from "@/core/agents/tools";
+import { isPlumbing } from "@/core/workspace/presentation";
 import { activityLabel } from "@/features/workspace/activity-labels";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -202,6 +203,8 @@ function AssistantMessage({
           // (the reply says it, with what ELISE can do), and when the turn found the mail,
           // document matches don't crowd it.
           if (emptyEmailSearch(o)) return null;
+          // Resolution lookups (which databases exist, a schema) aren't an answer (ADR-114).
+          if (isPlumbing(tool.name)) return null;
           if (
             o?.status === "succeeded" &&
             o.display?.kind === "knowledge_evidence" &&

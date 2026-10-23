@@ -37,10 +37,26 @@ export function wantsRecent(text: string): boolean {
   return RECENT.test(text.normalize("NFD").replace(/\p{M}/gu, ""));
 }
 
-/** The question's significant words, accent-free (what providers are searched for). */
+/** The kind of thing asked for, not what it is about ("el artículo de eficiencia de tokens"). */
+const KIND_WORDS = new Set(
+  (
+    "articulo articulos documento documentos doc docs pagina paginas nota notas post posts " +
+    "publicacion publicaciones archivo archivos registro registros entrada entradas informe " +
+    "reporte guia page pages note notes article articles document documents file files"
+  ).split(" "),
+);
+
+/**
+ * The question's significant words, accent-free (what providers are searched for). The subject
+ * usually comes last ("…el artículo que tiene que ver con la eficiencia de tokens"), so when there
+ * are too many words the longest (most specific) are kept, never simply the first ones.
+ */
 export function searchTerms(text: string): string[] {
   const words = keywordQuery(text).split(" | ").filter(Boolean).map(matchKey);
-  return [...new Set(words)].filter((w) => w.length >= 3 && !RECENT.test(w)).slice(0, 6);
+  const all = [...new Set(words)].filter((w) => w.length >= 3 && !RECENT.test(w));
+  if (all.length <= 8) return all;
+  const keep = new Set([...all].sort((a, b) => b.length - a.length).slice(0, 8));
+  return all.filter((w) => keep.has(w));
 }
 
 /** A word matches a term exactly or by a shared stem ("proyecto" ~ "proyectos"). */
@@ -64,7 +80,10 @@ export function termScore(text: string, terms: readonly string[]): number {
  */
 export function subjectTerms(terms: readonly string[], scopeNames: readonly string[]): string[] {
   const scope = scopeNames.join(" ");
-  return terms.filter((t) => termScore(scope, [t]) === 0);
+  const subject = terms.filter((t) => termScore(scope, [t]) === 0);
+  // "artículo", "post" only narrow the kind: searched for only when nothing else is left.
+  const topical = subject.filter((t) => !KIND_WORDS.has(t));
+  return topical.length ? topical : subject;
 }
 
 /** One thing the user connected that ELISE can ask: a Notion database or page, a Drive folder or file. */

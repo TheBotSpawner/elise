@@ -469,6 +469,9 @@ export type ToolDisplay =
       source: StructuredSourceRef;
       record: StructuredRecord;
       change: "created" | "updated" | "archived" | "shown";
+      /** "El último publicado" (ADR-114): the start of its body, and the ones before it. */
+      excerpt?: string;
+      previous?: StructuredRecord[];
     }
   | {
       kind: "structured_bulk_preview";

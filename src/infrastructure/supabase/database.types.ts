@@ -296,6 +296,27 @@ export type TaskEnrichmentRow = {
   updated_at: Ts;
 };
 
+/** ADR-115 (migration 066): a recurring task series over any task provider. */
+export type TaskRecurrenceRow = {
+  id: string;
+  workspace_id: string;
+  created_by: string;
+  provider_key: string;
+  connection_id: string;
+  provider_list_id: string;
+  current_task_id: string;
+  rrule: string;
+  dtstart: string;
+  occurrence_date: string;
+  occurrences: number;
+  timezone: string;
+  template: Json;
+  status: "active" | "ended";
+  ended_at: Ts | null;
+  created_at: Ts;
+  updated_at: Ts;
+};
+
 export type LabelAssignmentRow = {
   id: string;
   workspace_id: string;
@@ -1963,6 +1984,18 @@ export type Database = {
         "workspace_id" | "provider_key" | "connection_id" | "provider_list_id" | "provider_task_id"
       >;
       label_assignments: Table<LabelAssignmentRow, "workspace_id" | "label_id">;
+      task_recurrences: Table<
+        TaskRecurrenceRow,
+        | "workspace_id"
+        | "created_by"
+        | "provider_key"
+        | "connection_id"
+        | "current_task_id"
+        | "rrule"
+        | "dtstart"
+        | "occurrence_date"
+        | "timezone"
+      >;
       actions: Table<
         ActionRow,
         | "workspace_id"

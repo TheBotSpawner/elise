@@ -173,6 +173,11 @@ export interface StructuredProvider {
     max: number,
   ): Promise<{ records: StructuredRecord[]; complete: boolean }>;
   getRecord(ref: string): Promise<StructuredRecord | null>;
+  /**
+   * The record's own body text (a post, an article), bounded to `maxChars`, or null when the
+   * record isn't this provider's. Data from the user's source, never instructions.
+   */
+  recordBody?(ref: string, maxChars: number): Promise<string | null>;
   createRecord(
     source: StructuredSource,
     values: Record<string, RecordValue>,

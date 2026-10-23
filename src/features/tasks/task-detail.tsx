@@ -14,6 +14,7 @@ import {
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { RepeatField, type RepeatScope } from "./repeat-field";
 import type { TaskOp } from "./task-workspace";
 
 type Change =
@@ -66,6 +67,8 @@ export function TaskDetail({
   const [description, setDescription] = useState(task.description ?? "");
   const [labelDraft, setLabelDraft] = useState("");
   const [subDraft, setSubDraft] = useState("");
+  // ADR-115: what an edit of a recurring task changes; this occurrence unless the user says.
+  const [scope, setScope] = useState<RepeatScope>("this");
   const titleRef = useRef<HTMLInputElement>(null);
   const restore = useRef<HTMLElement | null>(null);
 
@@ -77,7 +80,11 @@ export function TaskDetail({
   }, []);
 
   const update = (args: Record<string, unknown>, patch: Partial<Task>) =>
-    void mutate("update", { taskId: task.id, ...args }, { kind: "patch", id: task.id, patch });
+    void mutate(
+      "update",
+      { taskId: task.id, ...args, ...(task.recurrence ? { repeatScope: scope } : {}) },
+      { kind: "patch", id: task.id, patch },
+    );
 
   const lists = overview.lists.filter(
     (l) => l.provenance.connectionId === task.provenance.connectionId,
@@ -189,6 +196,36 @@ export function TaskDetail({
               />
               {!caps.dueTime && <span className="text-[11px] text-faint">{w.noDueTime}</span>}
             </dd>
+
+            {!task.parentId && !done && (
+              <>
+                <dt className="self-start pt-1.5 text-muted">{w.repeat.label}</dt>
+                <dd>
+                  <RepeatField
+                    rrule={task.recurrence?.rrule ?? null}
+                    dueDate={task.dueDate}
+                    today={today}
+                    scope={scope}
+                    onScope={setScope}
+                    onChange={(repeat) =>
+                      void mutate(
+                        "update",
+                        {
+                          taskId: task.id,
+                          repeat,
+                          ...(task.recurrence && scope !== "this" ? { repeatScope: scope } : {}),
+                        },
+                        {
+                          kind: "patch",
+                          id: task.id,
+                          patch: { recurrence: repeat ? task.recurrence : null },
+                        },
+                      )
+                    }
+                  />
+                </dd>
+              </>
+            )}
 
             <dt className="text-muted">{t.tasks.priority}</dt>
             <dd className="flex flex-col gap-0.5">

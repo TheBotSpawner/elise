@@ -56,6 +56,7 @@ const notionSource = (over: Partial<SourceView> = {}): SourceView => ({
   discovered: 346,
   lastRunAt: "2026-10-03T10:00:00Z",
   runningSince: null,
+  roots: [{ name: "Projects", kind: "database", url: "https://www.notion.so/abc" }],
   ...over,
 });
 

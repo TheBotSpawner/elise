@@ -144,12 +144,18 @@ export function liveKnowledge(auth: AuthContext) {
       if (root.kind === "database") {
         return (await query(root.id)).map((p) => notionCandidate(root, p, true));
       }
-      // A page: the databases on it are queried live; its subpages come from the catalog.
+      // A page: the databases on it are queried live; its subpages come from the catalog. The
+      // ones whose name matches the question first ("artículo" → Artículos), at most four.
       const databases = (
         await remembered(`children:${root.id}`, async () =>
-          (await client.childDatabases(root.id)).map((d) => d.id),
+          (await client.childDatabases(root.id)).map((d) => `${d.id}	${d.title}`),
         )
-      ).slice(0, 2);
+      )
+        .map((line) => line.split("	") as [string, string])
+        .map(([id, title], i) => ({ id, rank: termScore(title ?? "", terms) * 100 - i }))
+        .sort((a, b) => b.rank - a.rank)
+        .slice(0, 4)
+        .map((d) => d.id);
       const fromDatabases = (await Promise.all(databases.map((id) => query(id)))).flat();
       const { data: subpages } = await auth.db
         .from("knowledge_items")

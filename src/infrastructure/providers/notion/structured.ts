@@ -8,6 +8,7 @@ import type {
 } from "@/core/capabilities/structured";
 import { AppError } from "@/core/errors";
 
+import { blocksToSections, type NotionBlock } from "./client";
 import type { NotionHttp } from "./http";
 
 /**
@@ -447,6 +448,20 @@ export class NotionStructuredApi {
       has_more: boolean;
       next_cursor: string | null;
     }>("POST", `/data_sources/${encodeURIComponent(dataSourceId)}/query`, body, true);
+  }
+
+  /** A row's body as plain text: its first 100 top-level blocks (one request), bounded. */
+  async bodyText(pageId: string, maxChars: number): Promise<string> {
+    const res = await this.http.request<{ results: NotionBlock[] }>(
+      "GET",
+      `/blocks/${encodeURIComponent(pageId)}/children?page_size=100`,
+      undefined,
+      true,
+    );
+    return blocksToSections(res.results)
+      .flatMap((s) => [...(s.headingPath.length ? [s.headingPath.at(-1)!] : []), ...s.blocks])
+      .join("\n")
+      .slice(0, maxChars);
   }
 
   page(pageId: string): Promise<NotionRowPage> {

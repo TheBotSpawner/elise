@@ -97,6 +97,21 @@ export function StructuredRecordCard({
       <div className={cn(display.change === "archived" && "line-through opacity-60")}>
         <Line record={display.record} source={display.source} />
       </div>
+      {display.excerpt && (
+        <p className="line-clamp-4 text-[13px] whitespace-pre-line text-muted">{display.excerpt}</p>
+      )}
+      {display.previous?.length ? (
+        <div className="flex flex-col gap-1.5 border-t border-border pt-2.5">
+          <span className="type-label text-faint">{t.structured.previous}</span>
+          <ul className="flex flex-col gap-1.5">
+            {display.previous.map((r) => (
+              <li key={r.id}>
+                <Line record={r} source={display.source} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </motion.section>
   );
 }

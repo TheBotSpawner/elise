@@ -1,6 +1,7 @@
 "use client";
 
-import { MoreHorizontal } from "lucide-react";
+import { ExternalLink, MoreHorizontal } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import type { SourceView } from "@/application/knowledge-service";
@@ -32,6 +33,8 @@ export function SourceMenu({
   const [details, setDetails] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const external = s.sourceType === "google_drive" || s.sourceType === "notion";
+  const provider = s.sourceType === "notion" ? "Notion" : "Drive";
+  const only = s.roots.length === 1 ? s.roots[0]!.url : null;
 
   useEffect(() => {
     if (!open) return;
@@ -84,9 +87,31 @@ export function SourceMenu({
           role="menu"
           className="absolute top-full right-0 z-40 mt-1 flex w-52 flex-col rounded-2xl border border-border bg-[var(--menu-bg)] p-1 shadow-lg backdrop-blur"
         >
-          {external && item(s.live ? k.checkNow : k.syncNow, onSyncNow)}
+          {external && only && (
+            <a
+              role="menuitem"
+              href={only}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13.5px] hover:bg-surface-2"
+            >
+              {k.openIn(provider)}
+              <ExternalLink className="size-3.5 text-faint" aria-hidden />
+            </a>
+          )}
           {external && item(k.details, () => setDetails(true))}
+          {external && item(s.live ? k.checkNow : k.syncNow, onSyncNow)}
           {item(k.removeSource, onRemove, true)}
+          {external && (
+            <Link
+              role="menuitem"
+              href="/connections"
+              className="flex w-full rounded-xl px-3 py-2 text-left text-[13.5px] text-muted hover:bg-surface-2"
+            >
+              {k.disconnectAccount}
+            </Link>
+          )}
         </div>
       )}
       {external && (
@@ -149,6 +174,28 @@ export function SourceMenu({
               </>
             )}
           </dl>
+          {s.roots.length > 0 && (
+            <div className="mt-4 flex flex-col gap-1.5">
+              <span className="type-label text-faint">{k.contains}</span>
+              <ul className="flex flex-col gap-1 text-[14px]">
+                {s.roots.map((r, i) => (
+                  <li key={i} className="flex items-baseline justify-between gap-3">
+                    <span className="truncate">{r.name || "—"}</span>
+                    {r.url && (
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 text-[12.5px] text-accent-text hover:underline"
+                      >
+                        {k.openIn(provider)}
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {s.live && <p className="mt-4 text-[13px] text-muted">{k.liveHint}</p>}
           {s.state === "needs_attention" && s.counts.ready > 0 && (
             <p className="mt-4 text-[13px] text-muted">{k.sourceDetails.stillAvailable}</p>

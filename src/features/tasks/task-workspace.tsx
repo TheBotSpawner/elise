@@ -10,6 +10,7 @@ import {
   Inbox,
   ListChecks,
   Plus,
+  Repeat,
   Search,
   Sun,
   Tag,
@@ -1105,6 +1106,15 @@ function TaskRow({
         </span>
         <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5">
           {task.dueDate && <DueChip date={task.dueDate} today={today} open={!done} />}
+          {task.recurrence && (
+            <span
+              title={task.recurrence.summary}
+              className="inline-flex items-center gap-1 text-[11.5px] text-muted"
+            >
+              <Repeat className="size-3" aria-hidden />
+              <span className="sr-only">{task.recurrence.summary}</span>
+            </span>
+          )}
           <PriorityFlag priority={task.priority} />
           {subtasks > 0 && (
             <span className="text-[11.5px] text-muted">{t.tasks.ws.subtaskCount(subtasks)}</span>

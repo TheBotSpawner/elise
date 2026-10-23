@@ -209,6 +209,20 @@ const searchInput = z
   })
   .strict();
 
+/**
+ * Why nothing was found, in the user's terms (ADR-114): no access is not "not indexed", and
+ * neither is "searched and it isn't there". Never claim a source was read when it wasn't.
+ */
+function notFoundReason(
+  live?: { consulted: readonly unknown[]; unavailable: readonly unknown[] } | null,
+) {
+  if (live?.unavailable.length)
+    return "Some connected sources couldn't be read (connectedSourcesUnavailable): say it's an ACCESS problem with those, not that the document doesn't exist.";
+  if (live?.consulted.length)
+    return "The connected sources in connectedSourcesAsked were searched live and had no match: say it wasn't found there, and that if it lives elsewhere in Notion/Drive that page must be shared with ELISE and added in Conocimiento.";
+  return "No connected source (Notion, Drive) covers this scope: only indexed documents were searched. Say it isn't in what ELISE has, not that it doesn't exist.";
+}
+
 export const searchKnowledgeTool: ToolDefinition = {
   name: "knowledge.search",
   capability: "knowledge",
@@ -312,7 +326,7 @@ export const searchKnowledgeTool: ToolDefinition = {
             }`
           : metadata.length
             ? "No document passage matched. scopeMetadata is what the user wrote about this Space/Section (its description and context): if it answers the question (what it is, what it's about), answer from it and say it comes from the Space's description. It is not evidence of what documents say; for document contents, say none were found."
-            : `The ${scope.spaceIds ? "selected Space" : "user's Knowledge"} does not contain enough evidence. Say so plainly; do not answer from general knowledge as if it came from their files.${scope.spaceIds ? " Offer to search all Knowledge." : ""}`,
+            : `The ${scope.spaceIds ? "selected Space" : "user's Knowledge"} does not contain enough evidence. Say so plainly; do not answer from general knowledge as if it came from their files.${scope.spaceIds ? " Offer to search all Knowledge." : ""} ${notFoundReason(live)}`,
         evidence: selected.map((h, i) => ({
           ref: i + 1,
           itemId: h.itemId,

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { destinationField } from "../providers/destination";
 import type { ProviderKey } from "../providers/types";
+import { repeatSchema } from "../tasks/recurrence";
 import { normalizeEntityTitle } from "../text";
 import { addDays, isIsoDate, todayIn } from "../time";
 
@@ -32,6 +33,11 @@ export interface Task {
   position?: string;
   /** Calendar date in the user's timezone. */
   dueDate: string | null;
+  /**
+   * A recurring task's series (ADR-115): its rule, in words, and — right after completing it —
+   * the date of the occurrence ELISE created next (null: the series ended).
+   */
+  recurrence?: { rrule: string; summary: string; next?: string | null } | null;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -169,6 +175,11 @@ export const createTaskInput = z
         "Create it as a subtask of this task (its id from tasks.list); it joins the parent's list.",
       ),
     labels: labelNames.optional().describe("ELISE labels by name; new names are created."),
+    repeat: repeatSchema
+      .optional()
+      .describe(
+        'A recurring task: "todos los días" → {freq:"daily"}; "todos los lunes" → {freq:"weekly", days:["mo"]}; "días hábiles" → weekly mo..fr; "cada 15 días" → daily interval 15; "el 10 de cada mes" → monthly monthDay 10; "el último viernes de cada mes" → monthly ordinal {n:-1, day:"fr"}; "todos los años" → yearly. Due date = the first occurrence.',
+      ),
     list: z
       .string()
       .trim()
@@ -205,6 +216,18 @@ export const updateTaskInput = z
       .describe("Move to another list of the same account (id or name)."),
     addLabels: labelNames.optional().describe("Labels to add, by name (created if new)."),
     removeLabels: labelNames.optional(),
+    repeat: repeatSchema
+      .nullable()
+      .optional()
+      .describe(
+        'Make it recurring or change its rule (same shape as tasks.create). null = "que no se repita más".',
+      ),
+    repeatScope: z
+      .enum(["this", "following", "all"])
+      .optional()
+      .describe(
+        'A recurring task: "solo esta" → this · "esta y las siguientes" → following · "todas"/"la serie" → all. If the user did not say and it matters, ask.',
+      ),
   })
   .strict();
 

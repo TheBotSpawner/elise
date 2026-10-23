@@ -28,6 +28,15 @@ function forModel(task: Task) {
     ...(task.description ? { description: task.description } : {}),
     ...(task.parentId ? { parentId: task.parentId } : {}),
     ...(task.labels?.length ? { labels: task.labels } : {}),
+    // ADR-115: "se repite todos los lunes"; after completing, when the next one is due.
+    ...(task.recurrence
+      ? {
+          repeats: task.recurrence.summary || task.recurrence.rrule,
+          ...(task.recurrence.next !== undefined
+            ? { nextOccurrence: task.recurrence.next ?? "none — the series ended" }
+            : {}),
+        }
+      : {}),
   };
 }
 
@@ -138,7 +147,7 @@ export const createTaskTool: ToolDefinition = {
   capability: "tasks",
   operation: "create",
   description:
-    'Create a task. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user\'s timezone; tasks have no time of day. Only set priority/category when the user implies them. `parentTaskId` makes it a subtask; `labels` adds ELISE labels. Set `destination` only when the user says which account ("Personal", "Acme"), and `list` when they name a list ("my Acme Clients list" → destination "Acme", list "Clients"). If the tool says a list is ambiguous or missing, ask.',
+    'Create a task. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user\'s timezone; tasks have no time of day. Only set priority/category when the user implies them. `parentTaskId` makes it a subtask; `labels` adds ELISE labels. Set `destination` only when the user says which account ("Personal", "Acme"), and `list` when they name a list ("my Acme Clients list" → destination "Acme", list "Clients"). If the tool says a list is ambiguous or missing, ask. A recurring task ("todos los lunes sacar la basura", "pagar el alquiler el 10 de cada mes") is ONE task with `repeat` — never several tasks, and not a Schedule (Programados run ELISE actions; a task is something the user does).',
   input: createTaskInput,
   route: routeList,
   async describe(input, env) {
@@ -164,7 +173,7 @@ export const updateTaskTool: ToolDefinition = {
   capability: "tasks",
   operation: "update",
   description:
-    "Edit an existing task (title, description, notes, status pending/in_progress/cancelled, priority, category, dueDate, list of the same account, addLabels/removeLabels). Pass null to clear a field. Use tasks.complete to mark it done. Priority and labels on a Google task are kept by ELISE (Google has neither); say so only if asked.",
+    "Edit an existing task (title, description, notes, status pending/in_progress/cancelled, priority, category, dueDate, list of the same account, addLabels/removeLabels). Pass null to clear a field. Use tasks.complete to mark it done. Priority and labels on a Google task are kept by ELISE (Google has neither); say so only if asked. Recurring task (it has `repeats`): `repeat` changes its rule (null stops it); `repeatScope` says whether an edit is for this occurrence, this and the following, or the whole series — if the user didn't say and it matters, ask.",
   input: updateTaskInput,
   route: routeTask,
   async describe(input, env) {
@@ -187,7 +196,7 @@ export const completeTaskTool: ToolDefinition = {
   capability: "tasks",
   operation: "complete",
   description:
-    "Mark a task as completed. If the user refers to a task by name, find its id with tasks.list first; if several tasks match, ask which one.",
+    "Mark a task as completed. If the user refers to a task by name, find its id with tasks.list first; if several tasks match, ask which one. A recurring task returns `nextOccurrence`: say when it comes back.",
   input: taskIdInput,
   route: routeTask,
   async describe(input, env) {

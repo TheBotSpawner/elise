@@ -404,6 +404,11 @@ export class NotionStructuredProvider implements StructuredProvider {
     return own ? this.toRecord(own.page, own.t) : null;
   }
 
+  async recordBody(ref: string, maxChars: number) {
+    const own = await this.ownPage(ref);
+    return own ? this.api.bodyText(own.page.id, maxChars) : null;
+  }
+
   async createRecord(source: StructuredSource, values: Record<string, RecordValue>) {
     const row = await this.sourceRow(source);
     const page = await this.api.createPage(

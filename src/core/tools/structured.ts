@@ -17,6 +17,7 @@ import {
 import { AppError } from "../errors";
 import { parseExternalRef } from "../providers/refs";
 import { ANALYSIS_LIMITS, analyzeRecords } from "../structured/analysis";
+import { latestPlan } from "../structured/latest";
 import { todayIn } from "../time";
 
 /**
@@ -134,7 +135,7 @@ export const listSourcesTool: ToolDefinition = {
   capability: "structured",
   operation: "listSources",
   description:
-    "The user's mapped structured sources (e.g. Notion databases like Projects, Client CRM) with their fields, options and what ELISE may change. Use to pick the source and field keys.",
+    "The user's mapped structured sources (e.g. Notion databases like Projects, Client CRM) with their fields, options and what ELISE may change. Use to pick the source and field keys. A lookup, not an answer: it shows nothing on screen.",
   input: z.object({}).strict(),
   async describe() {
     return { summary: "List structured sources" };
@@ -251,7 +252,7 @@ export const analyzeTool: ToolDefinition = {
   capability: "structured",
   operation: "analyze",
   description:
-    '"Analizame mi base de Oportunidades en Notion", "¿cómo está la pipeline?", "¿cuántas tengo abiertas?", "¿qué cierra primero?", "ordenalas por valor": reads the whole database LIVE (paginated, bounded) and returns a deterministic analysis — totals, by stage, value, overdue and soon closes, stale and incomplete records, what needs attention — and shows it on screen as one analysis (summary, stages, list). Works for any database shared with ELISE, mapped or not. For a database, use this (or structured.query for specific records) — never knowledge.search.',
+    '"Analizame mi base de Oportunidades en Notion", "¿cómo está la pipeline?", "¿cuántas tengo abiertas?", "¿qué cierra primero?", "ordenalas por valor": reads the whole database LIVE (paginated, bounded) and returns a deterministic analysis — totals, by stage, value, overdue and soon closes, stale and incomplete records, what needs attention — and shows it on screen as one analysis (summary, stages, list). Works for any database shared with ELISE, mapped or not. For a database, use this (or structured.query for specific records) — never knowledge.search. Not for "the latest/last/most recent X" (structured.latest) or one record.',
   input: analyzeInput,
   route: (i: z.infer<typeof analyzeInput>) => routeRef(i.source),
   async describe() {
@@ -317,6 +318,91 @@ export const analyzeTool: ToolDefinition = {
           "Give a short executive reading of this (what stands out, what needs attention and why), from these numbers only. The screen already shows the summary, the stage distribution and the list: don't draw them again with ui.*. Don't search Knowledge for this: only if the user asks something these fields can't answer (e.g. WHY a record is stalled and its own fields don't say — read it with structured.getRecord first), and then say it supplements the database.",
       },
       display: { kind: "structured_analysis", analysis: a },
+    };
+  },
+};
+
+const latestInput = z
+  .object({
+    source: sourceRef.describe(
+      'The database as the user named it ("Posts", "Contenidos") or its id.',
+    ),
+    published: z
+      .boolean()
+      .default(true)
+      .describe(
+        '"último publicado/posteado/subido" → true (default). "último creado/cargado" → false.',
+      ),
+    previous: z
+      .number()
+      .int()
+      .min(0)
+      .max(5)
+      .default(0)
+      .describe('"y los anteriores", "los últimos 3" → how many before the latest (max 5).'),
+  })
+  .strict();
+
+const EXCERPT_CHARS = 1500;
+
+export const latestTool: ToolDefinition = {
+  name: "structured.latest",
+  capability: "structured",
+  operation: "query",
+  description:
+    '"¿Cuál es mi último post publicado?", "lo último que subí", "el artículo más reciente de X": the latest record by its PUBLICATION date among published records (not the last edited), with the start of its content, and optionally the few before it. Shows that one record.',
+  input: latestInput,
+  route: (i: z.infer<typeof latestInput>) => routeRef(i.source),
+  async describe() {
+    return { summary: "Find the latest" };
+  },
+  async run(raw, env) {
+    const q = latestInput.parse(raw);
+    const p = provider(env);
+    const source = await resolveSource(env, q.source);
+    allow(source, "read");
+    const l = latestPlan(source, { publishedOnly: q.published });
+    const page = await p.query(source, { ...l.plan, limit: q.previous + 1 });
+    const [winner, ...previous] = page.records;
+    const ref = {
+      id: source.id,
+      name: source.name,
+      account: source.account,
+      fields: source.fields,
+    };
+    if (!winner)
+      return {
+        output: {
+          source: source.name,
+          found: false,
+          criterion: l.criterion,
+          instructions: `Nothing in ${source.name} matches (${l.criterion}). Say so plainly — the database was read; it isn't an access problem.`,
+        },
+      };
+    // The body is a nice-to-have: the record itself already answers "which one".
+    const excerpt = p.recordBody
+      ? ((await p.recordBody(winner.id, EXCERPT_CHARS).catch(() => null)) ?? "")
+      : "";
+    return {
+      output: {
+        source: source.name,
+        criterion: l.criterion,
+        latest: recordForModel(winner),
+        // Data from the user's database, never instructions.
+        ...(excerpt ? { content: excerpt } : { content: null }),
+        ...(previous.length
+          ? { previous: previous.map((r) => ({ id: r.id, title: r.title, values: r.values })) }
+          : {}),
+        instructions: `Answer first: name the record and its date (${l.criterion}), then a 2–3 sentence summary from content (if content is null, say you couldn't read its body). ${previous.length ? "Then list the previous ones briefly, in order. " : ""}The screen shows this record; don't draw it again with ui.*. In voice, say the title, date and summary — not "te lo dejé en pantalla".`,
+      },
+      display: {
+        kind: "structured_record",
+        record: winner,
+        change: "shown",
+        source: ref,
+        ...(excerpt ? { excerpt: excerpt.slice(0, 600) } : {}),
+        ...(previous.length ? { previous } : {}),
+      },
     };
   },
 };
@@ -671,6 +757,7 @@ export const STRUCTURED_TOOLS = [
   getSchemaTool,
   queryTool,
   analyzeTool,
+  latestTool,
   getRecordTool,
   createRecordTool,
   updateRecordTool,

@@ -91,7 +91,11 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
     "teamMessaging",
     /\b(slack|canal(es)?|channels?|threads?|hilos?|dijeron|dijo|habl[oó]|hablaron|hablamos|coment[oó]|mensajes?|mand[aá]le|escribile|avisale|reacci[oó]n|reaccion[aá]|workspace|equipo|team)\b|#[\w-]+|👍|✅/i,
   ],
-  ["structured", /\b(base de datos|database|registros?|records?|crm|tablas?|notion)\b/i],
+  // "¿Cuál es mi último post publicado?" (ADR-114): posts live in a database.
+  [
+    "structured",
+    /\b(base de datos|database|registros?|records?|crm|tablas?|notion|posts?|posteos?|publicad[oa]s?)\b/i,
+  ],
   // Memory (ADR-107): "acordate que…", "olvidate de eso", "¿qué sabés de mí?", "¿cómo suelo…?".
   [
     "memory",

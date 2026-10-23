@@ -93,6 +93,7 @@ import {
   EnrichedTaskProvider,
   TaskEnrichmentStore,
 } from "@/infrastructure/providers/task-enrichment";
+import { TaskRecurrenceStore } from "@/infrastructure/providers/task-recurrence";
 import { YouTubeMusicProvider } from "@/infrastructure/providers/youtube/music";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 import { SupabaseActionLog } from "@/infrastructure/supabase/repositories/action-log";
@@ -337,6 +338,7 @@ function providerFactory(
     return http;
   };
   let taskEnrichment: TaskEnrichmentStore | undefined;
+  let taskSeries: TaskRecurrenceStore | undefined;
   let knowledge:
     (SupabaseKnowledgeReader & KnowledgeManager & ReturnType<typeof liveKnowledge>) | undefined;
 
@@ -351,6 +353,13 @@ function providerFactory(
           (taskEnrichment ??= new TaskEnrichmentStore(auth.db, auth.workspaceId)),
           binding.providerKey,
           binding.connectionId,
+          (taskSeries ??= new TaskRecurrenceStore(
+            auth.db,
+            auth.workspaceId,
+            auth.userId,
+            auth.profile.timezone,
+            auth.profile.locale,
+          )),
         );
       if (binding.providerKey === "elise_native") {
         return enrich(new EliseTasksProvider(auth.db, auth.workspaceId, binding.connectionId));
