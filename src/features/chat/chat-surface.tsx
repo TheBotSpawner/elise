@@ -51,7 +51,8 @@ const GATHERING = /\.(search|list|get|find|read|prepare|brief|research|today|rec
 /** Plain words for the dock caption: no markdown marks, no links, at most a few sentences. */
 function plain(text: string): string {
   return text
-    .replace(/<spoken>[\s\S]*?<\/spoken>/g, "")
+    .replace(/<\s*spoken\s*>[\s\S]*?<\s*\/\s*spoken\s*>/gi, "")
+    .replace(/<\s*\/?\s*spoken\s*>?/gi, "")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/[*_`#>]+/g, "")
     .replace(/\s+/g, " ")

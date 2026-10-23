@@ -1924,3 +1924,23 @@ describe("asking for a new conversation", () => {
       expect(asksNewConversation(no), no).toBe(false);
   });
 });
+
+describe("cut phrases and loose spoken tags", () => {
+  it("a phrase closed by '?' after an ellipsis or a preposition is unfinished", async () => {
+    const { endVerdict } = await import("@/core/voice/turn");
+    expect(endVerdict("me buscás precios para un mazo de cartas de Magic de...?")).toBe(
+      "unfinished",
+    );
+    expect(endVerdict("un mazo de cartas de?")).toBe("unfinished");
+    expect(endVerdict("¿Qué tengo mañana en la agenda?")).toBe("complete");
+  });
+
+  it("'< spoken>' and '</ spoken >' are the same tags: never shown or said", () => {
+    const s = new SpokenSplitter();
+    s.push("< spoken>Tenés razón, perdón.</ spo");
+    s.push("ken >Detalle en pantalla.");
+    s.flush();
+    expect(s.spoken).toBe("Tenés razón, perdón.");
+    expect(s.display).toBe("Detalle en pantalla.");
+  });
+});

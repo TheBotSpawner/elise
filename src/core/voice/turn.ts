@@ -228,9 +228,12 @@ export function looksComplete(text: string): boolean {
 
 /** The provisional transcript's verdict on the phrase so far. */
 export function endVerdict(text: string): EndVerdict {
-  // Recognizers close even a cut phrase with a period ("…que me digas y."): look past it.
-  if (looksUnfinished(text) || looksUnfinished(text.trim().replace(/\.+$/, "")))
-    return "unfinished";
+  const t = text.trim();
+  // A trailing ellipsis is a cut phrase even when the recognizer closes it ("…de Magic de...?").
+  if (/(?:\.\.\.|…)[.!?]*$/.test(t)) return "unfinished";
+  // Recognizers close even a cut phrase with a period or a question mark ("…que me digas y.",
+  // "…un mazo de cartas de?"): look past it.
+  if (looksUnfinished(t) || looksUnfinished(t.replace(/[.!?]+$/, ""))) return "unfinished";
   return looksComplete(text) ? "complete" : null;
 }
 

@@ -19,7 +19,7 @@ import {
   type VoiceState,
   type WakeStatus,
 } from "@/core/voice/session";
-import { sessionCommand } from "@/core/voice/session-control";
+import { asksNewConversation, sessionCommand } from "@/core/voice/session-control";
 import {
   ackIntent,
   pickAcknowledgement,
@@ -607,7 +607,7 @@ export class VoiceController {
    * said or sent, and actions are never predicted (predictIntent refuses them).
    */
   private prepareAck(text: string, language: VoiceLanguage | null, version: number) {
-    if (!this.prefs.speak || !this.player?.prepare) return;
+    if (!this.prefs.speak || !this.player?.prepare || asksNewConversation(text)) return;
     const intent = predictIntent(text);
     if (!intent) return;
     const lang = language ?? this.prefs.language;
@@ -767,12 +767,18 @@ export class VoiceController {
     };
     this.superseded = false;
     this.decideDelivery(text);
+    // "Arrancá una nueva conversación": a fresh chat opens and nothing is answered, so nothing
+    // is acknowledged either (a "Ya lo reviso" cut short by the new chat).
+    const fresh = asksNewConversation(text);
     // A plain lookup is clear from the words alone: acknowledge now, while the request goes out,
     // instead of after the model picks its tool (ADR-034). Never for actions.
-    const predicted = predictIntent(text);
+    const predicted = fresh ? null : predictIntent(text);
     const prepared = this.preparedAck;
     this.preparedAck = null;
-    if (predicted) {
+    if (fresh) {
+      this.player?.stop();
+      this.trace("new_conversation");
+    } else if (predicted) {
       this.turn.acked = true;
       this.trace("ack_predicted", { intent: predicted, prepared: prepared?.intent === predicted });
       // The line whose audio was fetched at the pause, when the final words agree.
@@ -796,7 +802,7 @@ export class VoiceController {
     // ADR-104: from the request on, a long silence gets a truthful progress line.
     const turn = this.turn;
     turn.quietSince = this.now;
-    if (this.prefs.speak) this.later(PROGRESS_AFTER_MS, () => this.progress(turn));
+    if (this.prefs.speak && !fresh) this.later(PROGRESS_AFTER_MS, () => this.progress(turn));
   }
 
   // ── Delivery (ADR-049) ─────────────────────────────────────────────────────
@@ -1293,6 +1299,9 @@ export class VoiceController {
     }
     this.player?.stop();
     if (paused) this.player?.resume?.();
+    // "ELISE" while she prepares or says a reply ends that reply for real: the request is
+    // cancelled too, so it can't keep answering while she already listens to the new one.
+    if (this.turn && !this.turn.textDone) this.deps.cancel?.();
     if (this.turn)
       this.deps.onTimings?.({
         ...this.turn.marks,

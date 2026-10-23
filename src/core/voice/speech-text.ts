@@ -118,6 +118,15 @@ function clauseEnd(text: string): number {
 
 const OPEN = "<spoken>";
 const CLOSE = "</spoken>";
+/** The model sometimes writes "< spoken>" or "</ Spoken >": the same tag. */
+const LOOSE_OPEN = /<\s*spoken\s*>/gi;
+const LOOSE_CLOSE = /<\s*\/\s*spoken\s*>/gi;
+/** A tag that may still be arriving at the end of a delta ("<", "< spo", "</ spoken "). */
+const PARTIAL_TAG = /<\s*\/?\s*(?:s(?:p(?:o(?:k(?:e(?:n\s*)?)?)?)?)?)?$/i;
+
+/** Any leftover spoken tag, however it was written: never shown or said. */
+export const stripSpokenTags = (text: string) =>
+  text.replace(LOOSE_OPEN, "").replace(LOOSE_CLOSE, "");
 
 /**
  * Separates a voice turn's two expressions of the same answer (ADR-019 §spoken vs display):
@@ -132,7 +141,7 @@ export class SpokenSplitter {
   private inside = false;
 
   push(delta: string): { spoken: string; display: string } {
-    this.buffer += delta;
+    this.buffer = (this.buffer + delta).replace(LOOSE_OPEN, OPEN).replace(LOOSE_CLOSE, CLOSE);
     const out = { spoken: "", display: "" };
     for (;;) {
       const tag = this.inside ? CLOSE : OPEN;
@@ -143,13 +152,10 @@ export class SpokenSplitter {
         this.inside = !this.inside;
         continue;
       }
-      // Hold back a possible start of the tag ("<spo") until the next delta decides it.
-      let keep = 0;
-      for (let n = Math.min(tag.length - 1, this.buffer.length); n > 0; n--)
-        if (tag.startsWith(this.buffer.slice(-n))) {
-          keep = n;
-          break;
-        }
+      // Hold back a possible start of a tag ("<spo", "< sp", "</ spoken ") until the next
+      // delta decides it.
+      const partial = PARTIAL_TAG.exec(this.buffer.slice(-16));
+      const keep = partial ? partial[0].length : 0;
       this.take(out, this.buffer.slice(0, this.buffer.length - keep));
       this.buffer = this.buffer.slice(this.buffer.length - keep);
       return out;

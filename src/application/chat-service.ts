@@ -50,7 +50,7 @@ import { todayIn } from "@/core/time";
 import { loadMethod, scopeLabel } from "@/core/tools/methods";
 import { teamDisplayForStorage } from "@/core/tools/team-messaging";
 import { bindVoiceApproval } from "@/core/voice/approval";
-import { SpokenSplitter } from "@/core/voice/speech-text";
+import { SpokenSplitter, stripSpokenTags } from "@/core/voice/speech-text";
 import { approvalDecidedOps, citedKnowledge, intentForTool } from "@/core/workspace/from-results";
 import { changeOf } from "@/core/workspace/lifecycle";
 import { beforePresenting, overBudget, type TurnPresentation } from "@/core/workspace/presentation";
@@ -1069,13 +1069,13 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
          * shows on screen (the same words), so nothing ELISE said is missing from the thread.
          */
         function finishSpoken(text: string): string {
-          if (!splitter) return text;
+          if (!splitter) return stripSpokenTags(text);
           const rest = splitter.flush();
           if (rest.spoken) send({ type: "spoken", delta: rest.spoken });
           if (rest.display) send({ type: "text", delta: rest.display });
-          const display = splitter.display.trim();
+          const display = stripSpokenTags(splitter.display).trim();
           if (display) return display;
-          const spoken = splitter.spoken.trim();
+          const spoken = stripSpokenTags(splitter.spoken).trim();
           if (spoken) send({ type: "text", delta: spoken });
           return spoken;
         }
