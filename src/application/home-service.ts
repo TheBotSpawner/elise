@@ -520,9 +520,8 @@ export async function hubSync(hub: AuthedHub, raw: unknown) {
         .update({
           ...fields,
           ...(prior.room_override ? {} : { room_id: room }),
-          // ADR-103: a device the person removed that the engine brings back is found again,
-          // not silently theirs again.
-          ...(prior.removed_at && prior.added_at !== undefined ? { added_at: null } : {}),
+          // ADR-103: a device the person removed comes back "found" — its added_at was cleared
+          // when they removed it. One a sync lost by mistake comes back as it was.
         })
         .eq("id", prior.id)
         .eq("workspace_id", hub.workspaceId);
@@ -537,9 +536,19 @@ export async function hubSync(hub: AuthedHub, raw: unknown) {
   }
   const seen = new Set(input.devices.map((d) => d.providerKey));
   // ELISE's infrared devices aren't the engine's: a sync never removes them (ADR-110).
-  const gone = (existing ?? [])
-    .filter((d) => !seen.has(d.provider_key) && !d.provider_key.startsWith(IR_KEY))
-    .map((d) => d.id);
+  const engineOwned = (existing ?? []).filter(
+    (d) => !d.removed_at && !d.provider_key.startsWith(IR_KEY),
+  );
+  // An empty report from a hub that has devices is an engine still starting (it answers before
+  // its integrations load), not the person removing everything: nothing is removed for it.
+  const emptyGlitch = input.devices.length === 0 && engineOwned.length > 0;
+  if (emptyGlitch)
+    logger.warn("home_sync_empty_ignored", { hub_id: hub.id, active: engineOwned.length });
+  const gone = emptyGlitch
+    ? []
+    : (existing ?? [])
+        .filter((d) => !seen.has(d.provider_key) && !d.provider_key.startsWith(IR_KEY))
+        .map((d) => d.id);
   if (gone.length)
     await db
       .from("home_devices")
@@ -907,7 +916,8 @@ export async function removeHomeDevice(auth: AuthContext, deviceId: string) {
   const removed = outcome?.status === "succeeded";
   const { error } = await auth.db
     .from("home_devices")
-    .update(removed ? { removed_at: new Date().toISOString() } : { hidden: true })
+    // Removed by the person: if the engine finds it again it's offered, not theirs again.
+    .update(removed ? { removed_at: new Date().toISOString(), added_at: null } : { hidden: true })
     .eq("id", id)
     .eq("workspace_id", auth.workspaceId);
   check(error, "remove the device");

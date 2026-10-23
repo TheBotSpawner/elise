@@ -95,7 +95,12 @@ export function DeviceDiscovery({
   onDone,
   addedCount,
   found: onNetwork = [],
+  irControllers = 0,
+  onIrDevice,
 }: {
+  /** ADR-117: infrared controllers in the home: TVs and ACs are added from here too. */
+  irControllers?: number;
+  onIrDevice?: () => void;
   /** Continue to Hogar (with or without devices). */
   onDone: () => void;
   /** Devices already in Hogar (the step can finish once there is one). */
@@ -308,6 +313,21 @@ export function DeviceDiscovery({
           })}
         </ul>
       )}
+      {/* ADR-117: one place to add everything — infrared TVs and ACs through a Broadlink too. */}
+      {onIrDevice &&
+        (irControllers > 0 ||
+          visible.some((x) => x.kind === "broadlink" && status[x.flowId]?.kind === "added")) && (
+          <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-3.5 py-3">
+            <DeviceKindIcon kind="broadlink" added={false} />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-[14.5px]">{d.irTitle}</span>
+              <span className="text-[12.5px] text-muted">{d.irHint}</span>
+            </span>
+            <Button size="sm" onClick={onIrDevice}>
+              {d.add}
+            </Button>
+          </div>
+        )}
       <ManualBroadlink />
       {anyAdded && <p className="text-[13px] text-faint">{d.appearing}</p>}
       <div className="flex flex-wrap gap-2">
@@ -558,7 +578,12 @@ export function ManualBroadlink() {
     if (step.kind === "confirm" || step.kind === "form") return setStatus({ kind: "form", step });
     setStatus({
       kind: "message",
-      text: step.kind === "aborted" && step.reason === "invalid_host" ? m.invalid : m.failed,
+      text:
+        step.kind === "aborted" && step.reason === "invalid_host"
+          ? m.invalid
+          : step.kind === "aborted" && /already/.test(step.reason)
+            ? m.already
+            : m.failed,
     });
   };
   const run = async (op: () => Promise<DiscoveryStep>) => {

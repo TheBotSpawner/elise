@@ -118,6 +118,9 @@ export class HomeAssistantClient {
   }
 
   states = () => this.command<HaState[]>({ type: "get_states" });
+  /** The engine's own lifecycle: "RUNNING" once every integration has loaded. */
+  coreState = () =>
+    this.command<{ state?: string }>({ type: "get_config" }).then((c) => c.state ?? "RUNNING");
   entityRegistry = () => this.command<HaEntityEntry[]>({ type: "config/entity_registry/list" });
 
   async subscribeStates(listener: (s: HaState) => void) {

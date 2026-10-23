@@ -58,6 +58,9 @@ export class HubAgent {
   private latest = new Map<string, HaState>();
   private stopped = false;
   private connected = false;
+  /** Devices in the last registry reported to ELISE Cloud, and empty reads held since. */
+  private lastReported = -1;
+  private emptyHolds = 0;
   private registryTimer: ReturnType<typeof setTimeout> | undefined;
   /** ADR-110: one learning at a time per controller (it listens for a single button). */
   private learning = new Set<string>();
@@ -102,6 +105,14 @@ export class HubAgent {
   private async connectProvider() {
     await this.ha.connect();
     this.connected = true;
+    // Right after a (re)start the engine answers before its integrations have loaded: syncing
+    // then reports an empty home, and ELISE Cloud took every device as removed. Wait until it
+    // says it's running (at most 2 minutes), then sync.
+    for (let i = 0; i < 60; i++) {
+      const state = await this.ha.coreState().catch(() => "RUNNING");
+      if (state === "RUNNING") break;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
     await this.sync();
     await this.ha.subscribeStates((s) => this.onState(s));
     // Added, removed or renamed in the engine: ELISE shows it within seconds, not at the next
@@ -123,6 +134,17 @@ export class HubAgent {
     ];
     const names = await this.ha.names(deviceIds).catch(() => ({ devices: [], areas: [] }));
     const registry = normalizeRegistry(states, entries, names);
+    // An empty read where there were devices is the engine still loading (or a glitch), not
+    // the person removing everything: it isn't reported; it's read again shortly.
+    if (!registry.devices.length && this.lastReported > 0 && this.emptyHolds < 8) {
+      this.emptyHolds++;
+      log("home_sync_held", { previous: this.lastReported });
+      clearTimeout(this.registryTimer);
+      this.registryTimer = setTimeout(() => void this.sync().catch(() => undefined), 15_000);
+      return;
+    }
+    this.emptyHolds = 0;
+    this.lastReported = registry.devices.length;
     this.devices = new Map(registry.devices.map((d) => [d.providerKey, d]));
     this.byEntity = new Map(
       registry.devices.flatMap((d) => d.entityIds.map((e) => [e, d.providerKey] as const)),

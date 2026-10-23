@@ -4496,6 +4496,8 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
         scanning: "Searching your network…",
         scanHint: "It can take a few seconds. Devices need to be on.",
         stillLooking: "still looking",
+        irTitle: "TV, AC or fan by infrared",
+        irHint: "Through your Broadlink: pick the brand and we test it.",
         locked:
           "It is locked in the BroadLink app: unlock it there (device settings → “Lock device”: off) and tap Add again.",
         irAdded:
@@ -4716,6 +4718,8 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
         hint: "The IP is in the Broadlink app or your router (for example 192.168.1.40).",
         host: "IP or name on your network",
         add: "Add",
+        already:
+          "This Broadlink is already connected to your Home. If you don't see it, tap Refresh in Devices.",
         invalid: "It must be an address on your network: 192.168.x.x, 10.x.x.x or 172.16–31.x.x.",
         failed:
           "ELISE couldn't connect. Check it's on, on the same network and unlocked in the Broadlink app.",

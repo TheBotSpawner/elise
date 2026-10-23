@@ -214,13 +214,32 @@ describe("commands", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
-  it("a device that disappears is kept (removed) and comes back with its names", async () => {
+  it("a device that disappears is kept (removed) and comes back as it was", async () => {
     const { hub } = await ready();
     db.rows("home_devices")[0]!.aliases = ["luz PC"];
-    await hubSync(hub, { rooms: [], devices: [] });
+    db.rows("home_devices")[0]!.added_at = "2026-10-20T00:00:00Z";
+    const OTHER = {
+      ...LAMP,
+      providerKey: "dev_plug",
+      providerDeviceId: "dev_plug",
+      entityIds: ["switch.enchufe"],
+      name: "Enchufe",
+    };
+    await hubSync(hub, { rooms: [], devices: [OTHER] });
     expect(db.rows("home_devices")[0]!.removed_at).not.toBeNull();
-    await hubSync(hub, { rooms: [], devices: [LAMP] });
-    expect(db.rows("home_devices")[0]).toMatchObject({ removed_at: null, aliases: ["luz PC"] });
+    await hubSync(hub, { rooms: [], devices: [LAMP, OTHER] });
+    // Lost by a sync, not removed by the person: still theirs.
+    expect(db.rows("home_devices")[0]).toMatchObject({
+      removed_at: null,
+      aliases: ["luz PC"],
+      added_at: "2026-10-20T00:00:00Z",
+    });
+  });
+
+  it("an empty report from a hub with devices (engine still starting) removes nothing", async () => {
+    const { hub } = await ready();
+    await hubSync(hub, { rooms: [], devices: [] });
+    expect(db.rows("home_devices")[0]!.removed_at ?? null).toBeNull();
   });
 
   it("the hub's payloads are validated at the boundary", async () => {

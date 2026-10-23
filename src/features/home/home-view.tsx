@@ -8,7 +8,6 @@ import {
   Play,
   Plus,
   Radar,
-  Radio,
   RotateCw,
   Search,
   Sparkles,
@@ -198,7 +197,6 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
   const roomName = (id: string | null) => snapshot.rooms.find((r) => r.id === id)?.name ?? null;
   const addItems: MenuAction[] = [
     { label: h.setup.discover.scan, icon: Wifi, onClick: () => setAdding("devices") },
-    { label: h.ir.add, icon: Radio, onClick: () => setIr({}) },
     { label: h.add.room, icon: DoorOpen, onClick: () => setAdding("room") },
     { label: h.add.mode, icon: Sparkles, onClick: () => setEditing("new"), disabled: !hasDevices },
   ];
@@ -400,6 +398,11 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
           onDone={() => setAdding(null)}
           addedCount={snapshot.devices.length}
           found={snapshot.found}
+          irControllers={snapshot.devices.filter((d) => d.type === "ir_controller").length}
+          onIrDevice={() => {
+            setAdding(null);
+            setIr({});
+          }}
         />
       </Dialog>
     </div>

@@ -4532,6 +4532,8 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
         scanning: "Buscando en tu red…",
         scanHint: "Puede tardar unos segundos. Los dispositivos tienen que estar encendidos.",
         stillLooking: "seguimos buscando",
+        irTitle: "TV, aire o ventilador por infrarrojo",
+        irHint: "Con tu Broadlink: elegís la marca y lo probamos.",
         locked:
           "Está bloqueado en la app BroadLink: desbloquealo ahí (ajustes del dispositivo → “Bloquear dispositivo”: no) y tocá Agregar de nuevo.",
         irAdded:
@@ -4755,6 +4757,8 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
         hint: "La IP está en la app de Broadlink o en tu router (por ejemplo 192.168.1.40).",
         host: "IP o nombre en tu red",
         add: "Agregar",
+        already:
+          "Este Broadlink ya está conectado a tu Hogar. Si no lo ves en la lista, tocá Actualizar en Dispositivos.",
         invalid: "Tiene que ser una dirección de tu red: 192.168.x.x, 10.x.x.x o 172.16–31.x.x.",
         failed:
           "ELISE no pudo conectarse. Revisá que esté encendido, en la misma red y desbloqueado en la app de Broadlink.",
