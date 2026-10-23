@@ -47,6 +47,7 @@ export function RepeatField({
   scope,
   onScope,
   onChange,
+  compact = false,
 }: {
   rrule: string | null;
   dueDate: string | null;
@@ -54,6 +55,8 @@ export function RepeatField({
   scope: RepeatScope;
   onScope: (s: RepeatScope) => void;
   onChange: (repeat: Repeat | null) => void;
+  /** Creating a task: no series yet, so no "changes apply to" switch. */
+  compact?: boolean;
 }) {
   const { t, locale } = useI18n();
   const x = t.tasks.ws.repeat;
@@ -106,7 +109,7 @@ export function RepeatField({
           }}
         />
       )}
-      {current && (
+      {current && !compact && (
         <div role="radiogroup" aria-label={x.scopeLabel} className="flex flex-wrap gap-1">
           {(["this", "following", "all"] as const).map((s) => (
             <button

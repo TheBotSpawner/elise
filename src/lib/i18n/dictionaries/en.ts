@@ -428,6 +428,23 @@ export const en = {
       completed: "Completed tasks will show up here.",
     },
     ws: {
+      listMenu: {
+        options: (name: string) => `${name} options`,
+        rename: "Rename",
+        delete: "Delete",
+        removeFromElise: "Remove from ELISE",
+        renameTitle: "Rename list",
+        renameRemote: (account: string) =>
+          `The name changes in Google Tasks too (account ${account}).`,
+        deleteTitle: (name: string) => `Delete the list “${name}”?`,
+        deleteNative: "The list and all its tasks are deleted. This can't be undone.",
+        removeTitle: (name: string) => `Remove “${name}” from ELISE?`,
+        deleteRemote: (account: string) =>
+          `The list stops showing in ELISE, but it is NOT deleted from Google Tasks: it stays there with all its tasks (account ${account}).`,
+        cancel: "Cancel",
+        save: "Save",
+        deleteTask: "Delete task",
+      },
       repeat: {
         label: "Repeat",
         none: "Doesn't repeat",

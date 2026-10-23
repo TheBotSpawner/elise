@@ -5,6 +5,7 @@ import {
   listTaskListsInput,
   listTasksInput,
   taskIdInput,
+  manageTaskListInput,
   taskLabelsInput,
   toTaskQuery,
   updateTaskInput,
@@ -290,6 +291,49 @@ export const createTaskListTool: ToolDefinition = {
   },
 };
 
+export const manageTaskListTool: ToolDefinition = {
+  name: "tasks.manageList",
+  capability: "tasks",
+  operation: "manageList",
+  description:
+    'Rename a task list ("renombrá la lista Compras a Súper"), or delete one ("borrá la lista Viajes"). Deleting an ELISE list deletes it with its tasks; a Google Tasks list is only removed from ELISE and stays in Google Tasks — say which happened. The Inbox cannot be deleted.',
+  input: manageTaskListInput,
+  route: routeList,
+  async describe(input) {
+    const m = manageTaskListInput.parse(input);
+    return {
+      summary: m.action === "rename" ? `Rename task list to “${m.name ?? ""}”` : "Delete task list",
+    };
+  },
+  async run(input, env) {
+    const m = manageTaskListInput.parse(input);
+    const p = provider(env);
+    if (m.action === "rename") {
+      if (!m.name || !p.renameList)
+        throw new AppError("VALIDATION_ERROR", "Say the new name", { recovery: "review" });
+      const list = await p.renameList(m.list, m.name);
+      return {
+        output: { renamed: { id: list.id, name: list.name, source: list.provenance.source } },
+        display: { kind: "task_lists", lists: [list] },
+        target: { type: "task_list", id: list.id },
+      };
+    }
+    if (!p.deleteList)
+      throw new AppError("CAPABILITY_UNAVAILABLE", "This list can't be deleted here");
+    const r = await p.deleteList(m.list);
+    return {
+      output: {
+        deleted: m.list,
+        removedFrom:
+          r.removedFrom === "elise"
+            ? "ELISE only (still in Google Tasks)"
+            : "everywhere (ELISE list and its tasks)",
+      },
+      target: { type: "task_list", id: m.list },
+    };
+  },
+};
+
 export const taskLabelsTool: ToolDefinition = {
   name: "tasks.labels",
   capability: "tasks",
@@ -316,6 +360,7 @@ export const TASK_TOOLS = [
   listTasksTool,
   listTaskListsTool,
   createTaskListTool,
+  manageTaskListTool,
   createTaskTool,
   updateTaskTool,
   completeTaskTool,

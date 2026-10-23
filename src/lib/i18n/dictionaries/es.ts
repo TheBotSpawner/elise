@@ -431,6 +431,23 @@ export const es: Dictionary = {
       completed: "Las tareas completadas van a aparecer acá.",
     },
     ws: {
+      listMenu: {
+        options: (name: string) => `Opciones de ${name}`,
+        rename: "Renombrar",
+        delete: "Eliminar",
+        removeFromElise: "Quitar de ELISE",
+        renameTitle: "Renombrar lista",
+        renameRemote: (account: string) =>
+          `El nombre también cambia en Google Tasks (cuenta ${account}).`,
+        deleteTitle: (name: string) => `¿Eliminar la lista “${name}”?`,
+        deleteNative: "Se elimina la lista y todas sus tareas. No se puede deshacer.",
+        removeTitle: (name: string) => `¿Quitar “${name}” de ELISE?`,
+        deleteRemote: (account: string) =>
+          `La lista deja de verse en ELISE, pero NO se borra de Google Tasks: sigue ahí, con todas sus tareas (cuenta ${account}).`,
+        cancel: "Cancelar",
+        save: "Guardar",
+        deleteTask: "Eliminar tarea",
+      },
       repeat: {
         label: "Repetir",
         none: "No se repite",

@@ -75,6 +75,54 @@ export class EliseTasksProvider implements TaskProvider {
     return this.toList(data);
   }
 
+  private async ownList(listId: string): Promise<TaskListRow> {
+    const row = (await this.lists()).find((l) => l.id === listId);
+    if (!row) throw new AppError("NOT_FOUND", "That list doesn't exist", { recovery: "review" });
+    return row;
+  }
+
+  async renameList(listId: string, name: string): Promise<TaskList> {
+    await this.ownList(listId);
+    const { data, error } = await this.db
+      .from("task_lists")
+      .update({ name: name.trim() })
+      .eq("workspace_id", this.workspaceId)
+      .eq("id", listId)
+      .select("*")
+      .single();
+    if (error)
+      throw error.code === "23505"
+        ? new AppError("VALIDATION_ERROR", "There's already a list with that name", {
+            recovery: "review",
+          })
+        : dbError(error);
+    this.listRows = undefined;
+    return this.toList(data);
+  }
+
+  /** An ELISE list goes for good, with its tasks (they're archived, like a deleted task). */
+  async deleteList(listId: string): Promise<{ removedFrom: "everywhere" }> {
+    const row = await this.ownList(listId);
+    if (row.is_default)
+      throw new AppError("VALIDATION_ERROR", "The Inbox can't be deleted", { recovery: "review" });
+    const now = new Date().toISOString();
+    const tasks = await this.db
+      .from("tasks")
+      .update({ archived_at: now })
+      .eq("workspace_id", this.workspaceId)
+      .eq("task_list_id", listId)
+      .is("archived_at", null);
+    if (tasks.error) throw dbError(tasks.error);
+    const { error } = await this.db
+      .from("task_lists")
+      .update({ status: "archived" })
+      .eq("workspace_id", this.workspaceId)
+      .eq("id", listId);
+    if (error) throw dbError(error);
+    this.listRows = undefined;
+    return { removedFrom: "everywhere" };
+  }
+
   /** A named list (id or name) of this workspace, or the default Inbox. Never a guess. */
   private async resolveList(ref: string | undefined): Promise<TaskListRow | null> {
     const lists = await this.lists();

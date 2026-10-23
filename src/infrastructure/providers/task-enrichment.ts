@@ -35,6 +35,8 @@ import type { RecurrenceTemplate, TaskRecurrenceStore } from "./task-recurrence"
 /** PostgREST/Postgres "relation doesn't exist": the migration isn't applied yet. */
 const missingTable = (code?: string) => code === "PGRST205" || code === "42P01";
 
+const HIDDEN_LISTS_KEY = "tasks.hidden_lists";
+
 const NOT_READY = () =>
   new AppError("CAPABILITY_UNAVAILABLE", "Labels need the latest ELISE database update", {
     recovery: "review",
@@ -51,10 +53,53 @@ interface Snapshot {
 export class TaskEnrichmentStore {
   private snap: Promise<Snapshot | null> | null = null;
 
+  private hidden: Promise<Set<string>> | null = null;
+
   constructor(
     private readonly db: ServerSupabase,
     private readonly workspaceId: string,
+    /** Whose "removed from ELISE" lists apply (absent: none are hidden). */
+    private readonly userId?: string,
   ) {}
+
+  /**
+   * Lists of another account (Google Tasks) the person removed from ELISE: they stay in that
+   * account, untouched, and ELISE no longer shows or reads them. A user preference.
+   */
+  hiddenLists(): Promise<Set<string>> {
+    this.hidden ??= (async () => {
+      if (!this.userId) return new Set<string>();
+      const { data } = await this.db
+        .from("user_preferences")
+        .select("value_json")
+        .eq("workspace_id", this.workspaceId)
+        .eq("user_id", this.userId)
+        .eq("key", HIDDEN_LISTS_KEY)
+        .maybeSingle();
+      const lists = (data?.value_json as { lists?: unknown } | null)?.lists;
+      return new Set(Array.isArray(lists) ? lists.filter((l) => typeof l === "string") : []);
+    })().catch(() => new Set<string>());
+    return this.hidden;
+  }
+
+  async hideList(listId: string) {
+    if (!this.userId)
+      throw new AppError("CAPABILITY_UNAVAILABLE", "Lists can't be removed here", {
+        recovery: "review",
+      });
+    const lists = [...(await this.hiddenLists()), listId].slice(-200);
+    const { error } = await this.db.from("user_preferences").upsert(
+      {
+        workspace_id: this.workspaceId,
+        user_id: this.userId,
+        key: HIDDEN_LISTS_KEY,
+        value_json: { lists: [...new Set(lists)] },
+      },
+      { onConflict: "workspace_id,user_id,key" },
+    );
+    if (error) throw dbError(error);
+    this.hidden = null;
+  }
 
   /**
    * Three workspace-scoped reads, shared by every provider of this request (no per-task or
@@ -303,8 +348,23 @@ export class EnrichedTaskProvider implements TaskProvider {
     return this.series ? this.series.apply(enriched) : enriched;
   }
 
-  listLists() {
-    return this.inner.listLists();
+  async listLists() {
+    const [lists, hidden] = await Promise.all([this.inner.listLists(), this.store.hiddenLists()]);
+    return lists.filter((l) => !hidden.has(l.id));
+  }
+
+  async renameList(listId: string, name: string) {
+    if (!this.inner.renameList)
+      throw new AppError("CAPABILITY_UNAVAILABLE", "This account's lists can't be renamed here");
+    return this.inner.renameList(listId, name);
+  }
+
+  /** ELISE's own list is deleted; another account's is only removed from ELISE. */
+  async deleteList(listId: string): Promise<{ removedFrom: "elise" | "everywhere" }> {
+    if (this.providerKey === "elise_native" && this.inner.deleteList)
+      return this.inner.deleteList(listId);
+    await this.store.hideList(listId);
+    return { removedFrom: "elise" };
   }
 
   get createList() {
@@ -313,11 +373,16 @@ export class EnrichedTaskProvider implements TaskProvider {
 
   async list(query: TaskQuery): Promise<Task[]> {
     const filtered = Boolean(query.search || query.priority || query.label);
-    const tasks = await this.decorate(
-      await this.inner.list(
-        filtered
-          ? { ...query, search: undefined, priority: undefined, label: undefined, limit: 500 }
-          : query,
+    const hidden = await this.store.hiddenLists();
+    const visible = (ts: Task[]) =>
+      hidden.size ? ts.filter((t) => !t.provenance.listId || !hidden.has(t.provenance.listId)) : ts;
+    const tasks = visible(
+      await this.decorate(
+        await this.inner.list(
+          filtered
+            ? { ...query, search: undefined, priority: undefined, label: undefined, limit: 500 }
+            : query,
+        ),
       ),
     );
     if (!filtered) {

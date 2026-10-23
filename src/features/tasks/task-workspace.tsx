@@ -41,6 +41,7 @@ import {
   type TaskList,
   type TaskPriority,
 } from "@/core/capabilities/tasks";
+import { toRRule, type Repeat as RepeatRule } from "@/core/tasks/recurrence";
 import { addDays } from "@/core/time";
 import { completionFeedback } from "@/features/feedback/completion";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
@@ -50,6 +51,8 @@ import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 import { taskAction } from "./actions";
+import { ContextMenu, ListItemWithMenu } from "./list-menu";
+import { RepeatField } from "./repeat-field";
 import { TaskDetail } from "./task-detail";
 import {
   applyFilters,
@@ -405,17 +408,29 @@ export function TaskWorkspace({
                 <ul className="flex flex-col">
                   {s.lists.map((l) => (
                     <li key={l.id}>
-                      <NavItem
-                        active={
-                          selection.kind === "list" && selection.listId === l.id && !searching
+                      <ListItemWithMenu
+                        list={l}
+                        onRename={(name) =>
+                          void mutate("manageList", { action: "rename", list: l.id, name })
                         }
-                        onClick={() => go({ kind: "list", listId: l.id })}
-                        icon={<Hash className="size-3.5" aria-hidden />}
-                        count={listCounts.get(l.id) ?? 0}
-                        inset
+                        onDelete={() => {
+                          if (selection.kind === "list" && selection.listId === l.id)
+                            go({ kind: "view", view: "inbox" });
+                          void mutate("manageList", { action: "delete", list: l.id });
+                        }}
                       >
-                        {l.name}
-                      </NavItem>
+                        <NavItem
+                          active={
+                            selection.kind === "list" && selection.listId === l.id && !searching
+                          }
+                          onClick={() => go({ kind: "list", listId: l.id })}
+                          icon={<Hash className="size-3.5" aria-hidden />}
+                          count={listCounts.get(l.id) ?? 0}
+                          inset
+                        >
+                          {l.name}
+                        </NavItem>
+                      </ListItemWithMenu>
                     </li>
                   ))}
                   {s.providerKey === "elise_native" && (
@@ -587,6 +602,9 @@ export function TaskWorkspace({
                         setDetailOpen(true);
                       }}
                       onToggle={(el) => toggle(task, el)}
+                      onDelete={() =>
+                        void mutate("delete", { taskId: task.id }, { kind: "remove", id: task.id })
+                      }
                     />
                   ))}
                 </ul>
@@ -841,6 +859,8 @@ function QuickAdd({
   const [engaged, setEngaged] = useState(false);
   const [priority, setPriority] = useState<TaskPriority | "">("");
   const [description, setDescription] = useState("");
+  // ADR-115: "Repetir" right when creating it, not only once it exists.
+  const [repeat, setRepeat] = useState<RepeatRule | null>(null);
   // Smart default: the list in view, else ELISE's Inbox.
   const fallback =
     defaultList ??
@@ -860,6 +880,7 @@ function QuickAdd({
       ...(priority ? { priority } : {}),
       ...(description.trim() ? { description: description.trim() } : {}),
       ...(defaultLabel ? { labels: [defaultLabel] } : {}),
+      ...(repeat ? { repeat } : {}),
     };
     const now = new Date().toISOString();
     void onCreate(
@@ -895,6 +916,7 @@ function QuickAdd({
     setTitle("");
     setDescription("");
     setPriority("");
+    setRepeat(null);
   };
 
   return (
@@ -945,6 +967,15 @@ function QuickAdd({
           onChange={(e) => setDate(e.target.value)}
           aria-label={t.tasks.due}
           className="h-8 w-auto py-0 text-[12.5px]"
+        />
+        <RepeatField
+          rrule={repeat ? toRRule(repeat) : null}
+          dueDate={due || null}
+          today={defaultDate || new Date().toISOString().slice(0, 10)}
+          scope="all"
+          onScope={() => undefined}
+          onChange={setRepeat}
+          compact
         />
         <button
           type="button"
@@ -1047,6 +1078,7 @@ function TaskRow({
   selected,
   onSelect,
   onToggle,
+  onDelete,
 }: {
   task: Task;
   depth: number;
@@ -1057,13 +1089,21 @@ function TaskRow({
   selected: boolean;
   onSelect: () => void;
   onToggle: (element: Element) => void;
+  /** Right click → "Eliminar tarea", no confirmation (the owner asked for it this way). */
+  onDelete: () => void;
 }) {
   const { t } = useI18n();
   const done = task.status === "completed";
   const pendingCreate = task.id.startsWith("pending-");
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   return (
     <li
       data-task-row={task.id}
+      onContextMenu={(e) => {
+        if (pendingCreate) return;
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
       className={cn(
         "group flex items-start gap-3 px-3 py-2.5 transition-colors md:gap-2.5 md:py-[7px]",
         selected ? "bg-accent-soft/60" : "hover:bg-active",
@@ -1133,6 +1173,11 @@ function TaskRow({
           )}
         </span>
       </button>
+      <ContextMenu
+        at={menu}
+        items={[{ label: t.tasks.ws.listMenu.deleteTask, danger: true, onSelect: onDelete }]}
+        onClose={() => setMenu(null)}
+      />
     </li>
   );
 }

@@ -355,10 +355,11 @@ const itemUrl = (site: MarketplaceSite, id: string) =>
  * Cheapest first; each offer is ONE listing, linked to itself, with the product's photo.
  */
 async function productOffers(site: MarketplaceSite, id: string, limit: number): Promise<Offer[]> {
-  const p = product.parse(await get(`/products/${encodeURIComponent(id)}`));
+  // Listings first: most catalog products have none (404), and then the product isn't read.
   const listed = await get(`/products/${encodeURIComponent(id)}/items?limit=5`).catch(() => null);
   const parsed = productItems.safeParse(listed);
-  if (!parsed.success) return [];
+  if (!parsed.success || !parsed.data.results.length) return [];
+  const p = product.parse(await get(`/products/${encodeURIComponent(id)}`));
   const checkedAt = new Date().toISOString();
   return parsed.data.results
     .filter((r) => r.currency_id === site.currency)
@@ -398,14 +399,15 @@ export function mercadoLibreApi(): MarketplaceApi | null {
         site_id: site.site,
         q: query.slice(0, 120),
       });
-      // A few catalog products, each with its cheapest listings (one request per product).
-      const found = catalogSearch.parse(await get(`/products/search?${q}`)).results.slice(0, 4);
-      const offers: Offer[] = [];
-      for (const r of found) {
-        offers.push(...(await productOffers(site, r.id, 2).catch(() => [])));
-        if (offers.length >= limit) break;
-      }
-      return offers;
+      // Every catalog product found (most have no active listing: verified live 2026-10-23,
+      // 6 of 17 for "Broadlink RM4 Mini"), each with up to 3 of its cheapest listings, in
+      // parallel. The caller ranks them: the exact model first, other models flagged.
+      q.set("limit", "20");
+      const found = catalogSearch.parse(await get(`/products/search?${q}`)).results.slice(0, 20);
+      const all = await Promise.all(
+        found.map((r) => productOffers(site, r.id, 3).catch(() => [] as Offer[])),
+      );
+      return all.flat().slice(0, Math.max(limit, 12));
     },
     async listings(site: MarketplaceSite, keys: readonly string[]) {
       const out = new Map<string, Offer>();

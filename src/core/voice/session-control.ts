@@ -87,7 +87,8 @@ export function sessionCommand(text: string): SessionCommand | null {
  * commands above; "¿cómo inicio una nueva conversación?" is a question, not this.
  */
 const NEW_CHAT = [
-  /^(?:inicia|iniciemos|empeza|empecemos|arranca|arranquemos|abri|abrime|crea|comenza|comencemos|nueva|otra|quiero (?:una|un|empezar una|arrancar una)) ?(?:una |un |otra |otro )?(?:nueva |nuevo )?(?:conversacion|charla|chat)(?: nueva| nuevo| desde cero| de cero| en limpio)?$/,
+  /^(?:(?:quiero|queria|vamos a|podes|podrias|necesito|me gustaria|dale) )?(?:inicia|inicias|iniciemos|iniciar|empeza|empezas|empecemos|empezar|arranca|arrancas|arranquemos|arrancar|abri|abrime|abrir|crea|crear|comenza|comencemos|comenzar|nueva|otra|pasemos a|vamos con)? ?(?:una |un |otra |otro )?(?:nueva |nuevo )?(?:conversacion|charla|chat|sesion)(?: nueva| nuevo| desde cero| de cero| en limpio)?$/,
+  /^(?:(?:podes|podrias|quiero) )?(?:reinicia|reiniciar|resetea|resetear) (?:la |el |esta |este )?(?:conversacion|charla|chat)$/,
   /^(?:empecemos|empeza|arranquemos|arranca|comencemos|empezamos) (?:de|desde) cero$/,
   /^(?:nueva conversacion|nuevo chat|chat nuevo|conversacion nueva)$/,
   /^(?:start|begin|open) (?:a )?(?:new|fresh) (?:conversation|chat)$/,

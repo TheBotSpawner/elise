@@ -1905,12 +1905,21 @@ describe("asking for a new conversation", () => {
       "abrí un chat nuevo",
       "nueva conversación",
       "start a new conversation",
+      "Arrancá una nueva conversación",
+      "Iniciá un nuevo chat",
+      "Empezá una nueva conversación",
+      "ELISE, empecemos otra conversación",
+      "quiero empezar una conversación nueva",
+      "¿podés iniciar un chat nuevo?",
+      "reiniciá la conversación",
+      "vamos con un chat nuevo",
     ])
       expect(asksNewConversation(yes), yes).toBe(true);
     for (const no of [
       "¿cómo inicio una nueva conversación con mi jefe?",
       "anotá: nueva conversación con Pedro",
       "iniciá una nueva conversación con Juan por WhatsApp",
+      "borrá la conversación",
     ])
       expect(asksNewConversation(no), no).toBe(false);
   });

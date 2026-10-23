@@ -233,6 +233,14 @@ export const updateTaskInput = z
 
 export const taskIdInput = z.object({ taskId }).strict();
 
+export const manageTaskListInput = z
+  .object({
+    action: z.enum(["rename", "delete"]),
+    list: z.string().trim().min(1).max(600).describe("The list's id from tasks.listLists."),
+    name: z.string().trim().min(1).max(120).optional().describe("The new name (rename)."),
+  })
+  .strict();
+
 export const listTaskListsInput = z.object({ destination: destinationField }).strict();
 
 export const listTasksInput = z
@@ -372,6 +380,13 @@ export interface TaskProvider {
   listLists(): Promise<TaskList[]>;
   /** Providers with user-managed lists in ELISE (ELISE Native). */
   createList?(name: string): Promise<TaskList>;
+  /** Renames a list where it lives (ELISE, or Google Tasks itself). */
+  renameList?(listId: string, name: string): Promise<TaskList>;
+  /**
+   * "Eliminar" a list: an ELISE list is deleted with its tasks; a list from another account is
+   * only removed from ELISE (it stays, untouched, in that account).
+   */
+  deleteList?(listId: string): Promise<{ removedFrom: "elise" | "everywhere" }>;
   list(query: TaskQuery): Promise<Task[]>;
   get(taskId: string): Promise<Task | null>;
   create(input: CreateTaskInput, meta: TaskWriteMeta): Promise<Task>;

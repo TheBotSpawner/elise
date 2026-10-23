@@ -152,6 +152,17 @@ export class GoogleTasksProvider implements TaskProvider {
     }));
   }
 
+  async renameList(listRef: string, name: string): Promise<TaskList> {
+    const [listId] = this.parse(listRef, "list");
+    await this.http.request("PATCH", `${API}/users/@me/lists/${encodeURIComponent(listId!)}`, {
+      title: name.trim(),
+    });
+    this.lists = null;
+    const list = (await this.listLists()).find((l) => l.id === listRef);
+    if (!list) throw new AppError("NOT_FOUND", "That list doesn't exist", { recovery: "review" });
+    return list;
+  }
+
   async list(query: TaskQuery): Promise<Task[]> {
     const lists = await this.allLists();
     const includeCompleted = query.status !== "open";

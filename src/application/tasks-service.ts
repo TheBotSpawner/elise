@@ -99,7 +99,8 @@ export async function tasksOverview(
 
 export async function mutateTask(
   auth: AuthContext,
-  operation: "create" | "update" | "complete" | "reopen" | "delete" | "createList" | "labels",
+  operation:
+    "create" | "update" | "complete" | "reopen" | "delete" | "createList" | "manageList" | "labels",
   args: unknown,
   idempotencyKey?: string,
 ): Promise<Task | null> {

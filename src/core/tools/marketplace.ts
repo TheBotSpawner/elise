@@ -170,7 +170,7 @@ export const offersTool: ToolDefinition = {
       offers = rankOffers(
         dedupeOffers(offers.map((o) => ({ ...o, match: matchOffer(q.model ?? null, o.title) }))),
         { condition: q.condition ?? null, maxPrice, currency },
-      ).slice(0, 5);
+      ).slice(0, 8);
       if (refused)
         notes.push(
           refused.status === 401 || refused.status === 403

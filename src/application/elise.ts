@@ -350,7 +350,7 @@ function providerFactory(
       const enrich = (inner: TaskProvider) =>
         new EnrichedTaskProvider(
           inner,
-          (taskEnrichment ??= new TaskEnrichmentStore(auth.db, auth.workspaceId)),
+          (taskEnrichment ??= new TaskEnrichmentStore(auth.db, auth.workspaceId, auth.userId)),
           binding.providerKey,
           binding.connectionId,
           (taskSeries ??= new TaskRecurrenceStore(

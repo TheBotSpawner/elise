@@ -28,6 +28,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       list: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
       listLists: { kind: "read", risk: "low", defaultApproval: "allow_automatically" },
       createList: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
+      /** Rename a list, or delete it (ELISE list) / remove it from ELISE (another account's). */
+      manageList: { kind: "destructive", risk: "medium", defaultApproval: "ask_when_uncertain" },
       /** ELISE labels (ADR-050): create/rename/delete a label, never a task. */
       labels: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
       create: { kind: "write", risk: "low", defaultApproval: "allow_automatically" },
