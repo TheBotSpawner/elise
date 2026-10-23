@@ -499,7 +499,7 @@ export function buildContextPackage(input: ContextInput): ContextPackage {
   const dynamic = [
     `Session:
 - Current date and time: ${describeNow(input.user.timezone, input.now)}. Resolve relative dates ("mañana", "next Friday") from this.
-- Reply in ${language} unless the user writes in another language.
+- Reply in ${language} unless the user writes their message in another language (a spoken request transcribed with music or TV in the background is still theirs: their words decide, never the background's).
 - ${input.user.displayName ? `The user's name is ${input.user.displayName}.` : "The user's name is unknown."}
 - Capabilities available right now: ${capabilities}.`,
   ];

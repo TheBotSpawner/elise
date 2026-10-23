@@ -147,7 +147,8 @@ export const LISTING_ID = /M[A-Z]{2}U?-?\d{6,}/;
 /** "RM4 Mini", "rm4mini", "RM-4 mini" → the same tokens. */
 const modelTokens = (s: string) =>
   fold(s)
-    .replace(/([a-z])[-\s]?(\d)/g, "$1$2")
+    // "RM-4", "rm 4" → "rm4"; a code like "5g" never swallows the next number ("5g 256").
+    .replace(/\b([a-z]{1,4})[-\s](\d)/g, "$1$2")
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
 
@@ -171,9 +172,33 @@ export function matchOffer(model: string | null, title: string): OfferMatch {
   )
     return "accessory";
   if (!model) return "related";
-  const have = new Set(modelTokens(title));
-  const joined = modelTokens(title).join("");
-  return modelTokens(model).every((w) => have.has(w) || joined.includes(w)) ? "exact" : "related";
+  return covers(modelTokens(model), modelTokens(title)) ? "exact" : "related";
+}
+
+/** Joined runs of up to 3 neighbouring tokens: "rm 4", "rm4 mini" → "rm4", "rm4mini". */
+const runs = (tokens: string[]) => {
+  const out = new Set<string>();
+  for (let i = 0; i < tokens.length; i++)
+    for (let j = i; j < Math.min(tokens.length, i + 3); j++)
+      out.add(tokens.slice(i, j + 1).join(""));
+  return out;
+};
+
+/**
+ * Every model token is in the title as whole tokens, however they're split ("rm4mini" ↔ "RM4
+ * Mini") — never as a substring: "RM4" is not inside "RM4C Mini", a different model.
+ */
+function covers(model: string[], title: string[]): boolean {
+  const inTitle = runs(title);
+  const titleTokens = new Set(title);
+  return model.every(
+    (w, i) =>
+      inTitle.has(w) ||
+      // The title joins what the model splits: "rm4mini" for "rm4" + "mini".
+      [...runs(model.slice(Math.max(0, i - 2), i + 3))].some(
+        (r) => r.includes(w) && titleTokens.has(r) && r !== w,
+      ),
+  );
 }
 
 export const conditionOf = (title: string): "new" | "used" | null =>
@@ -251,6 +276,8 @@ export interface Offer {
   seller: string | null;
   image: string | null;
   evidence: OfferEvidence;
+  /** Where the price came from: the official API, or Google Shopping linking this exact listing. */
+  priceSource?: "api" | "google_shopping";
   checkedAt: string;
 }
 

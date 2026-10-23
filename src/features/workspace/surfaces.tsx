@@ -6,6 +6,7 @@ import {
   CalendarClock,
   Check,
   ChevronRight,
+  ExternalLink,
   FileText,
   History,
   Link2,
@@ -567,53 +568,105 @@ function EmailThreadBody({
   );
 }
 
-function KnowledgeSourceBody({ p }: { p: SurfacePayloads["knowledge_source"] }) {
+const PROVIDER_NAMES: Record<string, string> = {
+  notion: "Notion",
+  google_drive: "Google Drive",
+};
+
+/**
+ * One document, as an answer (ADR-114): what it is, where it lives, what it says, and the way
+ * to open it in its own app — the link is the most useful thing on the card.
+ */
+function KnowledgeArticle({
+  s,
+  compact = false,
+}: {
+  s: SurfacePayloads["knowledge_source"];
+  compact?: boolean;
+}) {
   const { t } = useI18n();
-  const first = p.passages[0];
+  const k = t.workspace.knowledge;
+  const provider = PROVIDER_NAMES[s.sourceType];
+  const passages = compact ? s.passages.slice(0, 2) : s.passages;
   return (
-    <div className="flex flex-col gap-2">
-      <p className={TITLE}>{p.title}</p>
-      <p className="text-[12.5px] text-muted">
-        {p.spaceName} · {t.workspace.passages(p.passages.length)}
-      </p>
-      {first && (
-        <blockquote className="border-l border-accent-line pl-3">
-          {first.section && <p className="type-label text-faint">{first.section}</p>}
-          <p className={cn(TEXT, "line-clamp-4 text-muted")}>{first.excerpt}</p>
-        </blockquote>
+    <article className="flex flex-col gap-3">
+      {!compact && (
+        <header className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
+            <FileText className="size-5" aria-hidden />
+          </span>
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className={TITLE}>{s.title}</span>
+            <span className="text-[12.5px] text-muted">
+              {[provider, s.spaceName].filter(Boolean).join(" · ")}
+            </span>
+          </span>
+        </header>
       )}
-    </div>
+      {passages.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {passages.map((p) => (
+            <section key={p.chunkId} className="rounded-xl bg-surface-2 px-3.5 py-2.5">
+              {p.section && <p className="mb-1 type-label text-faint">{p.section}</p>}
+              <p className={cn(TEXT, "whitespace-pre-line", compact && "line-clamp-4")}>
+                {p.excerpt}
+              </p>
+            </section>
+          ))}
+        </div>
+      )}
+      {s.url && (
+        <a
+          href={s.url}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          className="inline-flex h-9 w-fit items-center gap-1.5 rounded-full bg-fg px-4 text-[13px] font-medium text-bg hover:opacity-90"
+        >
+          {provider ? k.openIn(provider) : k.open}
+          <ExternalLink className="size-3.5" aria-hidden />
+        </a>
+      )}
+    </article>
   );
 }
 
-function KnowledgeResultBody({
-  surface,
-  p,
-  handlers,
-}: {
-  surface: Surface;
-  p: SurfacePayloads["knowledge_result"];
-  handlers: SurfaceHandlers;
-}) {
+function KnowledgeSourceBody({ p }: { p: SurfacePayloads["knowledge_source"] }) {
+  return <KnowledgeArticle s={p} />;
+}
+
+/**
+ * Several documents: a short list, each opening in place to what it says and its link. One
+ * document (the answer cited only it) is that document's card.
+ */
+function KnowledgeResultBody({ p }: { p: SurfacePayloads["knowledge_result"] }) {
+  if (p.sources.length === 1) return <KnowledgeArticle s={p.sources[0]!} />;
   return (
-    <ol className="-mx-2 flex flex-col">
-      {p.sources.map((s) => (
+    <ul className="-mx-2 flex flex-col">
+      {p.sources.map((s, i) => (
         <li key={s.itemId}>
-          <button
-            type="button"
-            onClick={() => handlers.onExpand(surface, s.itemId)}
-            className="flex w-full flex-col rounded-xl px-2 py-2 text-left transition-colors hover:bg-surface-2"
-          >
-            <span className="truncate text-[14px]">{s.title}</span>
-            <span className="line-clamp-2 text-[12.5px] text-muted">
-              <span className="text-faint">{s.spaceName}</span>
-              {s.passages[0]?.section ? ` · ${s.passages[0].section}` : ""} ·{" "}
-              {s.passages[0]?.excerpt}
-            </span>
-          </button>
+          <details className="group rounded-xl px-2 open:bg-surface-2/60" open={i === 0}>
+            <summary className="flex cursor-pointer list-none items-center gap-3 py-2.5 [&::-webkit-details-marker]:hidden">
+              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent-text">
+                <FileText className="size-4" aria-hidden />
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-[14px] font-medium">{s.title}</span>
+                <span className="truncate text-[12px] text-muted">
+                  {[PROVIDER_NAMES[s.sourceType], s.spaceName].filter(Boolean).join(" · ")}
+                </span>
+              </span>
+              <ChevronRight
+                className="size-4 shrink-0 text-faint transition-transform group-open:rotate-90"
+                aria-hidden
+              />
+            </summary>
+            <div className="pb-3 pl-11">
+              <KnowledgeArticle s={s} compact />
+            </div>
+          </details>
         </li>
       ))}
-    </ol>
+    </ul>
   );
 }
 
@@ -1043,7 +1096,7 @@ export function SurfaceBody({
     case "knowledge_source":
       return <KnowledgeSourceBody p={p} />;
     case "knowledge_result":
-      return <KnowledgeResultBody surface={surface} p={p} handlers={handlers} />;
+      return <KnowledgeResultBody p={p} />;
     case "document":
       return <DocumentBody p={p} timezone={timezone} />;
     case "recall":

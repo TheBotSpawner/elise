@@ -11,6 +11,7 @@ import type {
 } from "@/core/capabilities/structured";
 import { latestPlan } from "@/core/structured/latest";
 import { matchSourceNames } from "@/core/structured/mapping";
+import { citedKnowledge } from "@/core/workspace/from-results";
 import { beforePresenting, isPlumbing } from "@/core/workspace/presentation";
 
 import { binding, makeCtx, makePorts } from "../fixtures/core-fakes";
@@ -210,5 +211,27 @@ describe("presentation", () => {
       message: "¿Cuál es mi último post publicado?",
     });
     expect(sel.groups).toContain("structured");
+  });
+});
+
+describe("documents card keeps what the answer cited (ADR-114)", () => {
+  const src = (itemId: string, ref: number) => ({
+    itemId,
+    title: itemId,
+    sourceType: "notion",
+    spaceName: "Firbot",
+    url: null,
+    passages: [{ ref, chunkId: `c${ref}`, section: null, page: null, excerpt: "x" }],
+  });
+  const payload = { enough: true, sources: [src("claude", 1), src("openai", 2), src("mkt", 3)] };
+
+  it("one cited document → only that one", () => {
+    expect(
+      citedKnowledge(payload, "Encontré el artículo [1].")?.sources.map((s) => s.itemId),
+    ).toEqual(["claude"]);
+  });
+  it("no citations, or all cited → unchanged", () => {
+    expect(citedKnowledge(payload, "Sin citas.")).toBeNull();
+    expect(citedKnowledge(payload, "[1] [2] [3]")).toBeNull();
   });
 });

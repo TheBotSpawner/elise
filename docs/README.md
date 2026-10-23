@@ -52,6 +52,7 @@ These documents are the source of truth for product and architecture decisions. 
 | `34-mercadolibre-shopping.md` | Mercado Libre first for products to buy: official API feasibility, web-search fallback, honest offers, setup (ADR-112) |
 | `35-transit-routes.md` | Public transport with lines: Routes API transit details, itineraries, voice and card, live checks (ADR-113) |
 | `36-notion-recurring-widgets.md` | Notion retrieval and "latest published", honest not-found, source management, one-answer widgets, recurring tasks (ADR-114/115) |
+| `37-shopping-prices-and-widgets.md` | Google Shopping prices tied to listings by identity, article cards, newest-first Canvas, voice language with background audio (ADR-116) |
 
 ## roadmap/
 

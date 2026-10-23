@@ -19,6 +19,12 @@ import {
   type Offer,
 } from "../shopping/marketplace";
 import type { ShoppingCapability } from "../shopping/model";
+import {
+  attachPrices,
+  parseShoppingResults,
+  rankReferences,
+  type PriceReference,
+} from "../shopping/price-reference";
 import type { WebCapability } from "../web/model";
 import type { SurfacePayloads } from "../workspace/registry";
 
@@ -111,6 +117,9 @@ export const offersTool: ToolDefinition = {
     let method: Payload["marketplace"]["method"] = "link";
     let offers: Offer[] = [];
     let degraded: string | null = null;
+    let refs: PriceReference[] = [];
+    let marketplaceRefs: PriceReference[] = [];
+    let otherRefs: PriceReference[] = [];
 
     if (site && mode !== "avoid") {
       if (s.marketplace) {
@@ -159,10 +168,34 @@ export const offersTool: ToolDefinition = {
         });
         method = offers.length ? "search" : "link";
       }
-      offers = rankOffers(
-        dedupeOffers(offers.map((o) => ({ ...o, match: matchOffer(q.model ?? null, o.title) }))),
-        { condition: q.condition ?? null, maxPrice, currency },
-      ).slice(0, 5);
+      offers = dedupeOffers(
+        offers.map((o) => ({ ...o, match: matchOffer(q.model ?? null, o.title) })),
+      );
+      // ADR-116: Google Shopping prices — on a listing only when they link to that listing.
+      if (s.priceIndex) {
+        try {
+          refs = parseShoppingResults(await s.priceIndex.search(searchWords(q.query), site), {
+            model: q.model ?? null,
+            site,
+            now: env.ctx.now,
+            images: s.priceIndex.images,
+          }).filter(
+            (r) =>
+              !(maxPrice && currency === r.currency && r.price > maxPrice) &&
+              !(q.condition && r.condition && r.condition !== q.condition),
+          );
+          const a = attachPrices(offers, refs);
+          offers = a.offers;
+          marketplaceRefs = rankReferences(a.marketplaceRefs).slice(0, 3);
+          otherRefs = mode === "only" ? [] : rankReferences(a.otherRefs).slice(0, 5);
+        } catch {
+          notes.push("Google Shopping no respondió: no hay precios de referencia esta vez.");
+        }
+      }
+      offers = rankOffers(offers, { condition: q.condition ?? null, maxPrice, currency }).slice(
+        0,
+        5,
+      );
       if (degraded)
         notes.push(
           "La API de Mercado Libre no respondió: muestro publicaciones encontradas por búsqueda, sin precios.",
@@ -173,6 +206,7 @@ export const offersTool: ToolDefinition = {
     // gave no verified price — always as their own Surface (web.discover), never merged.
     const wantStores =
       mode !== "only" &&
+      !otherRefs.length &&
       (q.compareStores || mode === "avoid" || !site || !offers.some((o) => o.price !== null));
     let stores: { title: string; price?: string; url: string }[] = [];
     if (wantStores && env.invoke) {
@@ -216,12 +250,22 @@ export const offersTool: ToolDefinition = {
                 seller: o.seller,
                 image: o.image,
                 evidence: o.evidence,
+                ...(o.priceSource ? { priceSource: o.priceSource } : {}),
                 checkedAt: o.checkedAt,
               })),
             },
             maxPrice,
             currency,
             notes,
+            model: q.model ?? null,
+            ...(marketplaceRefs.length || otherRefs.length
+              ? {
+                  references: {
+                    marketplace: marketplaceRefs.map(refView),
+                    others: otherRefs.map(refView),
+                  },
+                }
+              : {}),
           }
         : null;
 
@@ -244,21 +288,53 @@ export const offersTool: ToolDefinition = {
                   offers: offers.map((o, i) => ({
                     n: i + 1,
                     title: o.title,
-                    ...(o.price !== null ? { price: `${o.currency} ${o.price}` } : {}),
+                    ...(o.price !== null
+                      ? {
+                          price: `${o.currency} ${o.price}`,
+                          priceFrom:
+                            o.priceSource === "google_shopping"
+                              ? `Google Shopping, linking this listing, at ${o.checkedAt}`
+                              : "Mercado Libre's official API",
+                        }
+                      : {}),
                     ...(o.condition ? { condition: o.condition } : {}),
                     match: o.match,
                     ...(o.freeShipping !== null ? { freeShipping: o.freeShipping } : {}),
                   })),
                   searchLink: "on screen (a search, not a listing)",
                 },
+        ...(marketplaceRefs.length
+          ? {
+              mercadoLibreReferencePrices: marketplaceRefs.map((r) => ({
+                title: r.title,
+                price: `${r.currency} ${r.price}`,
+                match: r.match,
+                note: "Google Shopping says the store is Mercado Libre, but it doesn't link a listing above: a reference price, not one listing's",
+              })),
+            }
+          : {}),
+        ...(otherRefs.length
+          ? {
+              otherStorePrices: otherRefs.map((r) => ({
+                store: r.merchant,
+                title: r.title,
+                price: `${r.currency} ${r.price}`,
+                match: r.match,
+              })),
+              otherStorePricesFrom: `Google Shopping, consulted at ${otherRefs[0]!.checkedAt}`,
+            }
+          : {}),
         ...(stores.length ? { otherStores: stores } : {}),
         ...(maxPrice !== null ? { maxPrice: `${currency ?? ""} ${maxPrice}`.trim() } : {}),
         instructions: [
           "Say the source of each figure (Mercado Libre or the store). Never present Mercado Libre and other stores as one ranking: give each apart.",
+          refs.length
+            ? 'Google Shopping prices are what the index showed when consulted, not live: say "según Google Shopping" and that they may have changed. A price belongs to a Mercado Libre listing only where priceFrom says so; mercadoLibreReferencePrices and otherStorePrices are references — never say a listing costs that.'
+            : "",
           verified.length
             ? `Name two or three Mercado Libre options with price and the main difference (condition, exact model, shipping only as stated) — "de los resultados que encontré", never "el más barato de Mercado Libre".`
             : site && mode !== "avoid"
-              ? "There are NO verified Mercado Libre prices: say so plainly (ELISE can't read Mercado Libre's prices without its official API) and that the listings and the search are on screen. Never quote a Mercado Libre price."
+              ? `There are NO verified prices for these Mercado Libre listings: say so in one short sentence and that the listings are on screen.${otherRefs.length || marketplaceRefs.length ? " Then give two or three reference prices (exact model first) saying where each is from." : " Never quote a Mercado Libre price."}`
               : "",
           "A related or accessory item is not the model asked for: say so if you mention it. Shipping, taxes, installments and promotions only as stated; never assume free shipping or a bank promo applies to them.",
           "Voice: the actionable data in two or three short sentences (options, price, difference), never URLs, never only 'te lo dejé en pantalla'.",
@@ -282,6 +358,18 @@ export const offersTool: ToolDefinition = {
     };
   },
 };
+
+const refView = (r: PriceReference) => ({
+  title: r.title,
+  merchant: r.merchant,
+  price: r.price,
+  currency: r.currency,
+  url: r.url && /^https:\/\//.test(r.url) ? r.url : null,
+  image: r.image,
+  match: r.match,
+  condition: r.condition,
+  checkedAt: r.checkedAt,
+});
 
 const prefInput = z
   .object({

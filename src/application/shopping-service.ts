@@ -17,6 +17,7 @@ import {
   type ShoppingData,
 } from "@/core/shopping/model";
 import { logger } from "@/infrastructure/observability/logger";
+import { googleShopping } from "@/infrastructure/shopping/google-shopping";
 import { mercadoLibreApi } from "@/infrastructure/shopping/mercadolibre";
 import { supabaseShoppingData } from "@/infrastructure/shopping/store";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
@@ -94,6 +95,7 @@ export function shoppingCapability(
       await savePrefs({ region: regionSchema.parse(region) });
     },
     marketplace: mercadoLibreApi(),
+    priceIndex: googleShopping(),
     async marketplaceMode() {
       const m = (await prefs()).marketplace;
       return m === "prefer" || m === "only" || m === "avoid" ? m : null;

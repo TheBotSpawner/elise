@@ -51,10 +51,10 @@ import { loadMethod, scopeLabel } from "@/core/tools/methods";
 import { teamDisplayForStorage } from "@/core/tools/team-messaging";
 import { bindVoiceApproval } from "@/core/voice/approval";
 import { SpokenSplitter } from "@/core/voice/speech-text";
-import { approvalDecidedOps, intentForTool } from "@/core/workspace/from-results";
+import { approvalDecidedOps, citedKnowledge, intentForTool } from "@/core/workspace/from-results";
 import { changeOf } from "@/core/workspace/lifecycle";
 import { beforePresenting, overBudget, type TurnPresentation } from "@/core/workspace/presentation";
-import { describeWorkspace } from "@/core/workspace/registry";
+import { describeWorkspace, type SurfacePayloads } from "@/core/workspace/registry";
 import { availableVoiceKeys, getAIProvider } from "@/infrastructure/ai";
 import { trackEvent } from "@/infrastructure/observability/analytics";
 import { logger } from "@/infrastructure/observability/logger";
@@ -972,6 +972,31 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
               }
               case "done": {
                 finalText = finishSpoken(event.text);
+                // The documents card shows what the answer cited, not every match (ADR-114).
+                const searched = new Set(
+                  presented.filter((p) => p.tool === "knowledge.search").flatMap((p) => p.ids),
+                );
+                for (const s of workspace.state().surfaces) {
+                  if (!searched.has(s.id) || s.type !== "knowledge_result") continue;
+                  const narrowed = citedKnowledge(
+                    s.payload as SurfacePayloads["knowledge_result"],
+                    event.text,
+                  );
+                  if (narrowed)
+                    workspace.apply([
+                      {
+                        op: "update",
+                        id: s.id,
+                        patch: {
+                          payload: narrowed,
+                          ...(narrowed.sources.length === 1
+                            ? { title: narrowed.sources[0]!.title }
+                            : {}),
+                        },
+                        at: new Date().toISOString(),
+                      },
+                    ]);
+                }
                 usage = event.usage;
                 model = event.model;
                 // A day planned only in words still gets its timeline (ADR-098): the schedule

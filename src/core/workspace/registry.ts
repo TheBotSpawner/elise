@@ -296,6 +296,18 @@ export const marketPayload = z.object({
  * only from an authorized source (the official API); a search link is never a listing. Other
  * stores show in their own web_collection Surface — never mixed into this ranking (terms).
  */
+const priceReference = z.object({
+  title: text(200),
+  merchant: text(80),
+  price: z.number().positive(),
+  currency: text(3),
+  url: href.nullable(),
+  image: href.nullable(),
+  match: z.enum(["exact", "related", "accessory"]),
+  condition: z.enum(["new", "used"]).nullable(),
+  checkedAt: text(40),
+});
+
 export const productOffersPayload = z.object({
   query: text(300),
   marketplace: z.object({
@@ -318,6 +330,8 @@ export const productOffersPayload = z.object({
           seller: text(80).nullable(),
           image: href.nullable(),
           evidence: z.enum(["api", "search_result"]),
+          /** ADR-116: where its price came from (absent on older Surfaces). */
+          priceSource: z.enum(["api", "google_shopping"]).optional(),
           checkedAt: text(40),
         }),
       )
@@ -326,6 +340,18 @@ export const productOffersPayload = z.object({
   maxPrice: z.number().positive().nullable(),
   currency: text(3).nullable(),
   notes: z.array(text(240)).max(5),
+  /** The exact model asked for; without one, nothing is flagged as "not the model". */
+  model: text(60).nullable().optional(),
+  /**
+   * ADR-116: Google Shopping prices that couldn't be tied to a listing above — Mercado Libre's
+   * (reference, store named by the index) and other stores', each in its own section.
+   */
+  references: z
+    .object({
+      marketplace: z.array(priceReference).max(5),
+      others: z.array(priceReference).max(5),
+    })
+    .optional(),
 });
 
 /**
@@ -1367,12 +1393,22 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     sizes: ["small", "medium", "large", "expanded"],
     size: "medium",
     priority: 55,
+    // With a link, the card's own "Abrir en Notion" is the way out (ADR-114).
     actions: (p) => [
-      { id: "open_source", kind: "link", href: `/knowledge/items/${p.itemId}` },
+      ...(p.url
+        ? []
+        : [
+            {
+              id: "open_source" as const,
+              kind: "link" as const,
+              href: `/knowledge/items/${p.itemId}`,
+            },
+          ]),
       { id: "summarize", kind: "prompt" },
       expand,
     ],
-    describe: (p) => `${q(p.title)} · ${p.spaceName} (item ${p.itemId})`,
+    describe: (p) =>
+      `${q(p.title)} · ${p.spaceName} (item ${p.itemId})${p.url ? ` · ${p.url}` : ""}`,
   },
   document: {
     sizes: ["small", "medium", "large", "expanded"],

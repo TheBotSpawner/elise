@@ -14,6 +14,7 @@ import {
   type ShoppingCapability,
   type ShoppingData,
 } from "@/core/shopping/model";
+import type { PriceIndex } from "@/core/shopping/price-reference";
 import type { WebCapability } from "@/core/web/model";
 import { decodeSnapshot, pricesOf, type Snapshot } from "@/infrastructure/shopping/snapshot";
 
@@ -90,6 +91,7 @@ export function shoppingEnv(
     lists?: NativeList[];
     links?: Map<string, { ean: string; quantity: number }>;
     marketplace?: MarketplaceApi | null;
+    priceIndex?: PriceIndex | null;
     mode?: MarketplaceMode | null;
     web?: Partial<WebCapability>;
     invoke?: ToolRunEnv["invoke"];
@@ -104,6 +106,7 @@ export function shoppingEnv(
   const shop: ShoppingCapability = {
     data,
     marketplace: opts.marketplace ?? null,
+    priceIndex: opts.priceIndex ?? null,
     marketplaceMode: async () => mode,
     saveMarketplaceMode: async (m) => void (mode = m),
     region: async () => region,

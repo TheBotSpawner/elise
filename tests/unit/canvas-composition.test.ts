@@ -355,3 +355,22 @@ describe("balanced packing (ADR-067)", () => {
     }
   });
 });
+
+describe("newest answer first", () => {
+  it("the latest turn's Surface leads, even over an older higher-priority one", () => {
+    const state = applyOps(emptyWorkspace(), [
+      { op: "present", surface: s("meeting", "meeting", meeting), at: "2026-10-02T12:00:00.000Z" },
+      { op: "turn", at: "2026-10-02T12:01:00.000Z" },
+      { op: "present", surface: s("emails", "email_list", emails), at: "2026-10-02T12:02:00.000Z" },
+    ]);
+    const c = resolveComposition({
+      state,
+      device: "desktop",
+      hasMessages: true,
+      running: false,
+      activeSteps: 0,
+      now: NOW,
+    });
+    expect(c.slots[0]?.id).toBe("emails");
+  });
+});

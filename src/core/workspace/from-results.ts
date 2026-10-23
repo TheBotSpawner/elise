@@ -285,6 +285,22 @@ export function knowledgeSurface(
   );
 }
 
+/**
+ * After the answer (ADR-114): the documents card keeps only the documents the answer cited
+ * ("[2]"). Asked for one article and cited only it → one article card, not every match the
+ * search found. Null when nothing changes (no citations, or all sources were cited).
+ */
+export function citedKnowledge<P extends { sources: { passages: { ref: number }[] }[] }>(
+  payload: P,
+  answer: string,
+): P | null {
+  const refs = new Set([...answer.matchAll(/\[(\d{1,2})\]/g)].map((m) => Number(m[1])));
+  if (!refs.size) return null;
+  const sources = payload.sources.filter((s) => s.passages.some((p) => refs.has(p.ref)));
+  if (!sources.length || sources.length === payload.sources.length) return null;
+  return { ...payload, sources };
+}
+
 type Display<K extends ToolDisplay["kind"]> = Extract<ToolDisplay, { kind: K }>;
 
 function recallSurface(d: Display<"recall_results">, opts: PresentOptions) {

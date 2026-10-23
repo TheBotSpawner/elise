@@ -252,7 +252,9 @@ describe("shopping.offers", () => {
       ["exact", null, null],
       ["accessory", null, null],
     ]);
-    expect(String(out(r).instructions)).toMatch(/NO verified Mercado Libre prices/);
+    expect(String(out(r).instructions)).toMatch(
+      /NO verified prices for these Mercado Libre listings/,
+    );
     // No verified price: other stores are brought, apart, without Mercado Libre.
     expect(t.invoke).toHaveBeenCalledWith(
       "web.discover",

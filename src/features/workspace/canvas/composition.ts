@@ -200,12 +200,17 @@ function balance(
 
 const isPendingApproval = (s: Surface) => s.type === "approval" && s.state === "attention";
 
-/** Priority order (pinned first among equals), oldest first on ties: stable across renders. */
+/**
+ * Newest answer first: the latest turn's Surfaces lead, so a new answer never lands below
+ * everything else (the user would have to scroll to it). Within a turn, priority (pinned first
+ * among equals), then newest. Stable across renders.
+ */
 function ordered(surfaces: Surface[]): Surface[] {
   return [...surfaces].sort(
     (a, b) =>
+      b.turn - a.turn ||
       b.priority + (b.pinned ? 5 : 0) - (a.priority + (a.pinned ? 5 : 0)) ||
-      a.createdAt.localeCompare(b.createdAt) ||
+      b.createdAt.localeCompare(a.createdAt) ||
       a.id.localeCompare(b.id),
   );
 }
