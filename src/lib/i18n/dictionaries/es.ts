@@ -4532,6 +4532,10 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
         scanning: "Buscando en tu red…",
         scanHint: "Puede tardar unos segundos. Los dispositivos tienen que estar encendidos.",
         stillLooking: "seguimos buscando",
+        locked:
+          "Está bloqueado en la app BroadLink: desbloquealo ahí (ajustes del dispositivo → “Bloquear dispositivo”: no) y tocá Agregar de nuevo.",
+        irAdded:
+          "Controlador infrarrojo listo. Para manejar la tele o el aire con él: Hogar → Agregar → Equipo infrarrojo.",
         noneShort: "Sin dispositivos nuevos por ahora",
         none: "Todavía no encontramos dispositivos. Revisá que estén encendidos y en la misma red Wi-Fi que esta computadora, y buscá de nuevo.",
         found: (n: number) =>
@@ -4697,6 +4701,42 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
     turnOff: "Apagar",
     toggle: (name: string) => `Encender o apagar ${name}`,
     ir: {
+      profile: {
+        noImport:
+          "Los equipos que ya configuraste en la app BroadLink no se pueden traer: BroadLink no ofrece una forma oficial de exportarlos. Probemos un perfil ya publicado para tu marca, sin apuntar tu control.",
+        intro: (name: string) => `¿De qué marca (y modelo, si lo sabés) es ${name}?`,
+        placeholder: {
+          tv: "Marca de la tele (ej. Samsung, LG UE40…)",
+          ac: "Marca del aire (ej. Panasonic, Midea…)",
+          fan: "Marca del ventilador",
+        },
+        search: "Buscar",
+        noResults:
+          "No hay perfiles publicados para esa marca. Podés enseñarle los botones con tu control.",
+        found: (n: number) =>
+          n === 1
+            ? "1 perfil posible. Probamos uno por uno."
+            : `${n} perfiles posibles. Probamos uno por uno.`,
+        test: "Probar",
+        trying: (i: number, n: number, name: string) => `Perfil ${i} de ${n}: ${name}`,
+        sending: "Enviando la señal…",
+        question: (name: string, key: string) =>
+          key === "power_off"
+            ? `¿${name} se apagó?`
+            : key === "power_on"
+              ? `¿${name} se prendió?`
+              : `¿${name} reaccionó?`,
+        yes: "Sí",
+        no: "No, probá otro",
+        works: (name: string) => `Listo: ${name} responde con este perfil.`,
+        credit:
+          "Códigos de la biblioteca pública SmartIR (licencia MIT). El resto de los botones se marcan como probados cuando los uses.",
+        done: "Terminar",
+        noneWorked:
+          "Ningún perfil funcionó. Podés enseñarle solo los botones que necesites con tu control.",
+        skip: "Omitir por ahora",
+        learn: "Enseñar con mi control",
+      },
       add: "Equipo infrarrojo (TV, aire…)",
       title: "Agregar por infrarrojo",
       manageTitle: (name: string) => `Botones de ${name}`,

@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { controlDeviceAction, createIrDeviceAction, irCommandAction } from "./actions";
 import { ManualBroadlink } from "./device-discovery";
 import { DeviceIcon } from "./device-icon";
+import { IrProfileStep } from "./ir-profile-step";
 import { useHomeRuntime } from "./runtime-context";
 
 const KINDS: IrKind[] = ["tv", "ac", "fan", "other"];
@@ -62,7 +63,7 @@ export function IrSetup({
   const router = useRouter();
   const runtime = useHomeRuntime();
   const controllers = snapshot.devices.filter((d) => d.type === "ir_controller");
-  const [step, setStep] = useState<"controller" | "device" | "buttons">(
+  const [step, setStep] = useState<"controller" | "device" | "profile" | "buttons">(
     device ? "buttons" : controllerId || controllers.length === 1 ? "device" : "controller",
   );
   const [controller, setController] = useState(controllerId ?? controllers[0]?.id ?? "");
@@ -85,7 +86,8 @@ export function IrSetup({
       });
       if (!r.ok) return void toast.error(errorText(t, r.error));
       setCreated(r.value.id);
-      setStep("buttons");
+      // ADR-117: a published profile first; learning from the remote is the fallback.
+      setStep(kind === "other" ? "buttons" : "profile");
       router.refresh();
     });
 
@@ -218,6 +220,17 @@ export function IrSetup({
             </Button>
           </div>
         </form>
+      )}
+
+      {step === "profile" && created && kind !== "other" && (
+        <IrProfileStep
+          deviceId={created}
+          deviceName={name.trim()}
+          kind={kind}
+          onWorks={onClose}
+          onLearn={() => setStep("buttons")}
+          onSkip={onClose}
+        />
       )}
 
       {step === "buttons" &&

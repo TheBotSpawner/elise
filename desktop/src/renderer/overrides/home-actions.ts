@@ -24,6 +24,8 @@ export const {
   revokeHubAction,
   createIrDeviceAction,
   irCommandAction,
+  irProfilesAction,
+  applyIrProfileAction,
 } = cloud as typeof import("@/features/home/actions");
 
 const remote = cloud as typeof import("@/features/home/actions");

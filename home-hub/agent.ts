@@ -1,6 +1,8 @@
+import { scanBroadlink } from "./broadlink-scan";
 import { EliseCloud } from "./cloud";
 import type { HubConfig } from "./config";
 import { HomeAssistantClient } from "./home-assistant-client";
+import { BROADLINK_FLOW, broadlinkFlowId, type BroadlinkFound } from "../src/core/home/broadlink";
 import {
   discoveredDevices,
   discoveryStep,
@@ -139,12 +141,66 @@ export class HubAgent {
 
   // ── Adding devices (ADR-090), local only: the engine's token never leaves this computer ──
 
+  /** ADR-117: Broadlinks that answered this computer's hello, for a short while. */
+  private broadlinks: { at: number; found: BroadlinkFound[] } | null = null;
+  private broadlinkScan: Promise<BroadlinkFound[]> | null = null;
+  private ignoredBroadlinks = new Set<string>();
+
+  private async foundBroadlinks(): Promise<BroadlinkFound[]> {
+    if (this.broadlinks && Date.now() - this.broadlinks.at < 20_000) return this.broadlinks.found;
+    this.broadlinkScan ??= scanBroadlink()
+      .catch(() => [] as BroadlinkFound[])
+      .finally(() => (this.broadlinkScan = null));
+    const found = await this.broadlinkScan;
+    this.broadlinks = { at: Date.now(), found };
+    log("home_broadlink_scan", { found: found.length });
+    return found;
+  }
+
+  /** MACs of what the engine already has ("a043b0123456"): those aren't offered again. */
+  private async knownMacs(): Promise<Set<string>> {
+    const devices = (await this.ha.deviceRegistry().catch(() => [])) as {
+      connections?: [string, string][];
+    }[];
+    return new Set(
+      devices.flatMap((d) =>
+        (d.connections ?? [])
+          .filter(([kind]) => kind === "mac")
+          .map(([, mac]) => mac.replace(/[^0-9a-f]/gi, "").toLowerCase()),
+      ),
+    );
+  }
+
   async discoveries(): Promise<DiscoveredDevice[]> {
     if (!this.connected) return [];
-    return discoveredDevices(await this.ha.flowProgress());
+    const [flows, broadlinks, known] = await Promise.all([
+      this.ha.flowProgress(),
+      this.foundBroadlinks(),
+      this.knownMacs(),
+    ]);
+    // The engine finds Broadlinks only from DHCP traffic it can't see from WSL2: this computer
+    // asks the network directly, and offers the ones the engine doesn't have yet.
+    const extra: DiscoveredDevice[] = broadlinks
+      .filter((b) => !known.has(b.mac) && !this.ignoredBroadlinks.has(b.mac))
+      .map((b) => ({
+        flowId: broadlinkFlowId(b.mac),
+        name: `Broadlink ${b.model}${b.name && !/broadlink/i.test(b.name) ? ` · ${b.name}` : ""} (${b.host})`.slice(
+          0,
+          80,
+        ),
+        kind: "broadlink",
+        ...(b.locked ? { note: "locked" as const } : {}),
+      }));
+    return [...extra, ...discoveredDevices(flows)];
   }
 
   async openDiscovery(flowId: string): Promise<DiscoveryStep> {
+    // ADR-117: a Broadlink this computer found: the same setup as "agregar por IP", no typing.
+    const found = BROADLINK_FLOW.exec(flowId);
+    if (found) {
+      const b = this.broadlinks?.found.find((x) => x.mac === found[1]);
+      return b ? this.addBroadlink(b.host) : { kind: "aborted", reason: "not_found" };
+    }
     if (!isFlowId(flowId)) return { kind: "aborted", reason: "not_found" };
     return discoveryStep(await this.ha.flowStep(flowId), flowId);
   }
@@ -167,6 +223,8 @@ export class HubAgent {
   }
 
   async ignoreDiscovery(flowId: string, name: string) {
+    const found = BROADLINK_FLOW.exec(flowId);
+    if (found) return void this.ignoredBroadlinks.add(found[1]!);
     if (!isFlowId(flowId)) return;
     await this.ha.ignoreFlow(flowId, name.slice(0, 80));
   }

@@ -22,6 +22,13 @@ export const HOME_DEVICE_TYPES = [
 export type HomeDeviceType = (typeof HOME_DEVICE_TYPES)[number];
 
 /** ADR-110: one button an infrared device's controller learned from the person's remote. */
+/** A Broadlink infrared code (base64), bounded. */
+export const IR_CODE = z
+  .string()
+  .regex(/^[A-Za-z0-9+/]+={0,2}$/)
+  .min(8)
+  .max(2400);
+
 export const irCommandSchema = z
   .object({
     key: z.string().regex(/^[a-z0-9_]{1,40}$/),
@@ -40,6 +47,11 @@ export const irCommandSchema = z
       })
       .strict()
       .optional(),
+    /**
+     * ADR-117: the infrared code itself (Broadlink base64), when it comes from a verified-source
+     * profile instead of being learned into the controller. Set by ELISE only, never the client.
+     */
+    code: IR_CODE.optional(),
   })
   .strict();
 
@@ -85,6 +97,16 @@ export const homeCapabilitySchema = z.discriminatedUnion("type", [
       device: z.string().regex(/^elise_[0-9a-f]{12}$/),
       kind: z.enum(["tv", "ac", "fan", "other"]),
       commands: z.array(irCommandSchema).max(60),
+      /** ADR-117: the brand/model profile its codes came from (SmartIR, MIT). */
+      profile: z
+        .object({
+          source: z.literal("smartir"),
+          code: z.number().int().min(1).max(99_999),
+          manufacturer: z.string().max(60),
+          models: z.string().max(200),
+        })
+        .strict()
+        .optional(),
     })
     .strict(),
 ]);
@@ -220,7 +242,7 @@ export type HomeAction =
   | { type: "source"; source: string }
   | { type: "app"; app: HomeApp }
   /** ADR-110: one learned infrared code, sent by the device's controller. */
-  | { type: "ir"; device: string; command: string; repeats: number }
+  | { type: "ir"; device: string; command: string; repeats: number; code?: string }
   /** Takes the device out of the home (the person's "Quitar"); never chosen by the model. */
   | { type: "remove" };
 
@@ -267,6 +289,8 @@ export const homeActionSchema: z.ZodType<HomeAction> = z.discriminatedUnion("typ
     device: z.string().regex(/^elise_[0-9a-f]{12}$/),
     command: z.string().regex(/^[a-z0-9_]{1,40}$/),
     repeats: z.number().int().min(1).max(10),
+    /** ADR-117: a profile's code, sent as is (otherwise the code learned under `command`). */
+    code: IR_CODE.optional(),
   }),
   z.object({ type: z.literal("remove") }),
 ]);
@@ -829,10 +853,13 @@ function validateIr(
 ): HomeValidation {
   const s = d.state;
   const find = (key: string) => ir.commands.find((c) => c.key === key);
-  const send = (command: string, repeats = 1): HomeValidation => ({
-    ok: true,
-    action: { type: "ir", device: ir.device, command, repeats },
-  });
+  const send = (command: string, repeats = 1): HomeValidation => {
+    const code = ir.commands.find((c) => c.key === command)?.code;
+    return {
+      ok: true,
+      action: { type: "ir", device: ir.device, command, repeats, ...(code ? { code } : {}) },
+    };
+  };
   const presets = ir.commands.filter((c) => c.preset);
   const named = (list: readonly IrCommand[]) => list.map((c) => c.label).join(", ") || "none";
   const no = (message: string): HomeValidation => ({ ok: false, code: "unsupported", message });

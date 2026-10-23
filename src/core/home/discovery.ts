@@ -21,6 +21,9 @@ const DISCOVERY_SOURCES = new Set([
   "hassio",
 ]);
 
+/** What a network has that isn't a device to control: routers' UPnP/IGD gateways. */
+const INFRASTRUCTURE = new Set(["upnp"]);
+
 export interface DiscoveredDevice {
   /** The engine's id for this pending setup (opaque). */
   flowId: string;
@@ -28,6 +31,8 @@ export interface DiscoveredDevice {
   name: string;
   /** The integration it belongs to ("hue", "cast"): for grouping only, never shown raw. */
   kind: string;
+  /** ADR-117: a Broadlink locked in its app (unlock it there first). */
+  note?: "locked";
 }
 
 export type DiscoveryFieldType = "text" | "password" | "number" | "boolean" | "select";
@@ -87,6 +92,8 @@ export function discoveredDevices(raw: unknown): DiscoveredDevice[] {
     if (!p.success || !isFlowId(p.data.flow_id)) continue;
     const source = p.data.context?.source ?? "";
     if (!DISCOVERY_SOURCES.has(source)) continue;
+    // ADR-117: the network's own gear (the router's UPnP gateway) isn't a home device to add.
+    if (INFRASTRUCTURE.has(p.data.handler)) continue;
     const placeholders = p.data.context?.title_placeholders ?? {};
     const label = [placeholders.name, placeholders.model, placeholders.host].find(
       (v): v is string => typeof v === "string" && v.trim().length > 0,

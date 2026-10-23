@@ -466,10 +466,17 @@ export function toServiceCalls(entityId: string, actions: readonly HomeAction[])
         );
         break;
       case "ir":
-        // ADR-110: a learned code, by the names ELISE stored it under (never a raw code).
+        // ADR-110: a learned code, by the names ELISE stored it under; ADR-117: a profile's
+        // code, sent as the engine's documented "b64:" raw code.
         if (domain !== "remote") throw new Error("infrared needs a controller");
         calls.push(
-          call("send_command", { device: a.device, command: a.command, num_repeats: a.repeats }),
+          a.code
+            ? call("send_command", { command: `b64:${a.code}`, num_repeats: a.repeats })
+            : call("send_command", {
+                device: a.device,
+                command: a.command,
+                num_repeats: a.repeats,
+              }),
         );
         break;
       default:

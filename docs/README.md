@@ -53,6 +53,7 @@ These documents are the source of truth for product and architecture decisions. 
 | `35-transit-routes.md` | Public transport with lines: Routes API transit details, itineraries, voice and card, live checks (ADR-113) |
 | `36-notion-recurring-widgets.md` | Notion retrieval and "latest published", honest not-found, source management, one-answer widgets, recurring tasks (ADR-114/115) |
 | `37-mercadolibre-official-prices.md` | Mercado Libre official prices by exact listing, OAuth for ELISE's account, SerpApi removed, article cards, newest-first Canvas, voice language (ADR-116) |
+| ADR-117 | Broadlink found by Desktop (local hello; the engine in WSL2 only sees DHCP), published IR profiles (SmartIR) before learning |
 
 ## roadmap/
 

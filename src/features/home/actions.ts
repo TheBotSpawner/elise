@@ -7,7 +7,9 @@ import { requireAuthContext } from "@/application/auth-context";
 import {
   adoptNewHomeDevices,
   createHomeRoom,
+  applyIrProfile,
   createIrDevice,
+  irProfiles,
   createPairingCode,
   deleteHomeScene,
   executeHomeCommands,
@@ -125,6 +127,19 @@ export async function revokeHubAction(hubId: string) {
 /** ADR-110: a TV, air conditioner or fan controlled through one of the home's IR controllers. */
 export async function createIrDeviceAction(raw: unknown) {
   return run(async () => createIrDevice(await requireAuthContext(), raw));
+}
+
+/** ADR-117: brand/model profiles for an infrared device. */
+export async function irProfilesAction(kind: string, query: string) {
+  return run(async () => {
+    await requireAuthContext();
+    return irProfiles(kind, query);
+  });
+}
+
+/** ADR-117: a profile's codes as the device's buttons (then tested with the person). */
+export async function applyIrProfileAction(deviceId: string, code: number) {
+  return run(async () => applyIrProfile(await requireAuthContext(), deviceId, code));
 }
 
 /** ADR-110: a learned button saved, confirmed ("Funcionó") or removed. */

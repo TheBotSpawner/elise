@@ -5,6 +5,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { AppError } from "@/core/errors";
+import { profileCommands, searchProfiles, testButton } from "@/core/home/ir-profiles";
 import {
   HOME_COMMAND_TTL_MS,
   HOME_DEVICE_TYPES,
@@ -30,6 +31,7 @@ import {
   type HubPresence,
   type IrCapability,
 } from "@/core/home/model";
+import { profileFile, profileIndex } from "@/infrastructure/home/ir-profiles";
 import { logger } from "@/infrastructure/observability/logger";
 import { notMigrated } from "@/infrastructure/providers/elise-native/common";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
@@ -973,7 +975,8 @@ export async function createIrDevice(auth: AuthContext, raw: unknown) {
 }
 
 const irCommandInput = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("save"), command: irCommandSchema }).strict(),
+  // A code is ELISE's (from a profile), never typed by a client.
+  z.object({ op: z.literal("save"), command: irCommandSchema.omit({ code: true }) }).strict(),
   z.object({ op: z.literal("verify"), key: z.string().max(40), worked: z.boolean() }).strict(),
   z.object({ op: z.literal("delete"), key: z.string().max(40) }).strict(),
 ]);
@@ -1017,6 +1020,83 @@ export async function updateIrCommands(auth: AuthContext, deviceId: string, raw:
     .eq("workspace_id", auth.workspaceId);
   check(error, "save the button");
   return { commands };
+}
+
+/**
+ * ADR-117: brand/model profiles for an infrared device (SmartIR's library, MIT). Empty query:
+ * the brands, for the person to pick from.
+ */
+export async function irProfiles(kind: unknown, query: unknown) {
+  const k = z.enum(["tv", "ac", "fan"]).parse(kind);
+  const q = z
+    .string()
+    .trim()
+    .max(80)
+    .parse(query ?? "");
+  const index = await profileIndex(k);
+  if (!q) return { brands: [...new Set(index.map((e) => e.brand))].sort(), profiles: [] };
+  return { brands: [], profiles: searchProfiles(index, q) };
+}
+
+/**
+ * ADR-117: a profile's codes become the device's buttons (unverified until the person says the
+ * device reacted). Learned buttons stay; a profile's earlier buttons are replaced.
+ */
+export async function applyIrProfile(auth: AuthContext, deviceId: string, code: unknown) {
+  const id = z.uuid().parse(deviceId);
+  const profileCode = z.number().int().min(1).max(99_999).parse(code);
+  const { data: row, error: e1 } = await auth.db
+    .from("home_devices")
+    .select("capabilities")
+    .eq("id", id)
+    .eq("workspace_id", auth.workspaceId)
+    .like("provider_key", `${IR_KEY}%`)
+    .maybeSingle();
+  check(e1, "load the device");
+  const caps = z
+    .array(homeCapabilitySchema)
+    .catch([])
+    .parse(row?.capabilities ?? []);
+  const ir = irOf({ capabilities: caps });
+  if (!row || !ir) throw new AppError("NOT_FOUND", "That device isn't in your home");
+  if (ir.kind === "other")
+    throw new AppError("VALIDATION_ERROR", "There are no profiles for this kind of device", {
+      recovery: "review",
+    });
+  const index = await profileIndex(ir.kind);
+  const entry = index.find((e) => e.code === profileCode);
+  if (!entry) throw new AppError("NOT_FOUND", "That profile isn't in the library");
+  const fromProfile = profileCommands(await profileFile(ir.kind, profileCode), ir.kind);
+  if (!fromProfile)
+    throw new AppError("VALIDATION_ERROR", "That profile can't be used with a Broadlink", {
+      recovery: "review",
+    });
+  const learned = ir.commands.filter((c) => !c.code && !fromProfile.some((p) => p.key === c.key));
+  const commands = [...learned, ...fromProfile].slice(0, 60);
+  const next = caps.map((c) =>
+    c.type === "ir"
+      ? {
+          ...ir,
+          commands,
+          profile: {
+            source: "smartir" as const,
+            code: entry.code,
+            manufacturer: entry.brand,
+            models: entry.models.join(", ").slice(0, 200),
+          },
+        }
+      : c,
+  );
+  const { error } = await auth.db
+    .from("home_devices")
+    .update({ capabilities: next as unknown as Json })
+    .eq("id", id)
+    .eq("workspace_id", auth.workspaceId);
+  check(error, "save the profile");
+  return {
+    buttons: commands.length,
+    test: testButton(fromProfile, ir.kind)?.key ?? null,
+  };
 }
 
 export async function createHomeRoom(auth: AuthContext, name: string) {

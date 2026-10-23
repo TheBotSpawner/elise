@@ -4496,6 +4496,10 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
         scanning: "Searching your network…",
         scanHint: "It can take a few seconds. Devices need to be on.",
         stillLooking: "still looking",
+        locked:
+          "It is locked in the BroadLink app: unlock it there (device settings → “Lock device”: off) and tap Add again.",
+        irAdded:
+          "Infrared controller ready. To run the TV or AC with it: Home → Add → Infrared device.",
         noneShort: "No new devices yet",
         none: "No devices found yet. Check they're on and on the same Wi-Fi as this computer, then search again.",
         found: (n: number) => (n === 1 ? "Found 1 device" : `Found ${n} devices`),
@@ -4658,6 +4662,42 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
     turnOff: "Turn off",
     toggle: (name: string) => `Turn ${name} on or off`,
     ir: {
+      profile: {
+        noImport:
+          "Devices you already set up in the BroadLink app can't be brought over: BroadLink offers no official way to export them. Let's try a published profile for your brand, without pointing your remote.",
+        intro: (name: string) => `What brand (and model, if you know it) is ${name}?`,
+        placeholder: {
+          tv: "TV brand (e.g. Samsung, LG UE40…)",
+          ac: "AC brand (e.g. Panasonic, Midea…)",
+          fan: "Fan brand",
+        },
+        search: "Search",
+        noResults:
+          "No published profiles for that brand. You can teach it the buttons with your remote.",
+        found: (n: number) =>
+          n === 1
+            ? "1 possible profile. We try them one by one."
+            : `${n} possible profiles. We try them one by one.`,
+        test: "Try",
+        trying: (i: number, n: number, name: string) => `Profile ${i} of ${n}: ${name}`,
+        sending: "Sending the signal…",
+        question: (name: string, key: string) =>
+          key === "power_off"
+            ? `Did ${name} turn off?`
+            : key === "power_on"
+              ? `Did ${name} turn on?`
+              : `Did ${name} react?`,
+        yes: "Yes",
+        no: "No, try another",
+        works: (name: string) => `Done: ${name} responds to this profile.`,
+        credit:
+          "Codes from the public SmartIR library (MIT license). Other buttons are marked as tested once you use them.",
+        done: "Finish",
+        noneWorked:
+          "No profile worked. You can teach it just the buttons you need with your remote.",
+        skip: "Skip for now",
+        learn: "Teach with my remote",
+      },
       add: "Infrared device (TV, AC…)",
       title: "Add by infrared",
       manageTitle: (name: string) => `${name} buttons`,

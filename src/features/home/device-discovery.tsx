@@ -216,8 +216,8 @@ export function DeviceDiscovery({
         <span>
           {scanning
             ? d.scanning
-            : visible.length
-              ? `${d.found(visible.length)} · ${d.stillLooking}`
+            : visible.length || onNetwork.length
+              ? `${d.found(visible.length + onNetwork.length)} · ${d.stillLooking}`
               : d.noneShort}
         </span>
         <Button
@@ -288,6 +288,12 @@ export function DeviceDiscovery({
                     </span>
                   ) : null}
                 </div>
+                {device.note === "locked" && s.kind !== "added" && (
+                  <p className="text-[13px] text-approval-text">{d.locked}</p>
+                )}
+                {device.kind === "broadlink" && s.kind === "added" && (
+                  <p className="text-[13px] text-muted">{d.irAdded}</p>
+                )}
                 {s.kind === "message" && <p className="text-[13px] text-muted">{s.text}</p>}
                 {s.kind === "form" && (
                   <StepForm
