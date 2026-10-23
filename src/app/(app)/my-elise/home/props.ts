@@ -1,8 +1,11 @@
 import "server-only";
 
+import { after } from "next/server";
+
 import type { AuthContext } from "@/application/auth-context";
 import { listDesktops } from "@/application/desktop-service";
 import { homeSnapshot } from "@/application/home-service";
+import { syncTuyaIfDue } from "@/application/tuya-home-service";
 import { isAdmin } from "@/application/usage-service";
 import { desktopReleaseFor, platformFromUserAgent } from "@/config/desktop-releases";
 import { serverEnv } from "@/config/server-env";
@@ -24,6 +27,9 @@ const EMPTY: HomeSnapshot = {
  */
 export async function homeHubPageProps(auth: AuthContext, userAgent: string | null = null) {
   const platform = platformFromUserAgent(userAgent);
+  // ADR-119: Smart Life changes (renamed, deleted remotes) arrive at most every 6 h, after the
+  // page is sent.
+  after(() => syncTuyaIfDue(auth).catch(() => undefined));
   const [snapshot, desktops, release] = await Promise.all([
     // A database without migration 049 yet: the setup screen, never an error page.
     homeSnapshot(auth).catch((error) => {

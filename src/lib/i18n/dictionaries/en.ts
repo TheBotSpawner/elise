@@ -4499,21 +4499,66 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
         irTitle: "TV, AC or fan by infrared",
         irHint: "Through your Broadlink: pick the brand and we test it.",
         tuya: {
-          title: "Connect Tuya / Smart Life",
-          hint: "Your Smart Life remotes (TV, AC…), ready without setting them up again.",
+          title: "Connect Smart Life / Tuya Smart",
+          hint: "Your Smart Life remotes (TV, AC…), ready without setting them up again. No ELISE Desktop needed.",
+          connectIntro:
+            "You'll authorize your own account on Tuya's official page (your login or the app's QR). ELISE never sees your password.",
+          another: "Another Smart Life account?",
+          region: "Your account's data center",
+          regionHint:
+            "The one for the region you created your Smart Life account in. If you pick another, Tuya says so and you try the right one.",
+          regions: {
+            us: "Americas (West)",
+            "us-e": "Americas (East)",
+            eu: "Central Europe",
+            "eu-w": "Western Europe",
+            in: "India",
+            sg: "Asia (Singapore)",
+            cn: "China",
+          },
           connect: "Connect",
+          reconnect: "Reconnect",
+          disconnect: "Disconnect",
+          disconnectConfirm:
+            "ELISE stops using this account: its authorization is deleted and its remotes leave your home. Nothing changes in Smart Life.",
+          connected: "Smart Life connected. Choose which remotes to add.",
+          connectedState: "Connected",
+          showRemotes: "Show remotes",
+          sync: "Sync",
+          notYet:
+            "Connecting Smart Life isn't available yet: ELISE is waiting for Tuya's official enablement. We'll never ask for your password.",
+          problems: {
+            token: "The authorization expired or was revoked: reconnect.",
+            wrong_region: "Your account is in another data center: connect choosing the other one.",
+            permission:
+              "Tuya didn't authorize this access (infrared service or permission not enabled for ELISE).",
+            quota: "ELISE used up its Smart Life quota for now. Try later.",
+            project: "Tuya refused ELISE's setup. Let us know.",
+            rate_limited: "Smart Life is busy. Try in a moment.",
+            unavailable: "Smart Life didn't answer. Try in a moment.",
+            CONFLICT: "The link expired or was already used. Start again.",
+            PERMISSION_DENIED:
+              "The authorization didn't complete (cancelled or opened in another browser). Start again from ELISE.",
+            CAPABILITY_UNAVAILABLE: "Smart Life isn't available in that region.",
+            generic: "Smart Life couldn't be connected. Try again.",
+          },
           loading: "Looking in Smart Life…",
-          notConfigured: "Smart Life isn't available in ELISE yet.",
-          notLinked:
-            "Connecting your Smart Life account from ELISE isn't enabled yet: it needs Tuya's official authorization for apps like ELISE. We'll never ask for your Smart Life password.",
-          noHubs: "Your Smart Life account has no infrared remotes.",
+          noHubs: "Your Smart Life account has no infrared hubs.",
+          others: (n: number) =>
+            n === 1
+              ? "1 more device in your account can't be controlled from ELISE yet."
+              : `${n} more devices in your account can't be controlled from ELISE yet.`,
           offline: "offline",
           hubFailed: "We couldn't read its remotes. Try again in a while.",
           noRemotes: "No remotes set up in Smart Life.",
           kinds: { tv: "TV", ac: "AC", fan: "Fan", other: "Remote" },
+          room: (name: string) => `Room for ${name}`,
+          noRoom: "No room",
           inHome: "In your home",
-          sameAs: (name: string) => `Looks like you already have it as “${name}”: not duplicated.`,
-          addAnyway: "Add anyway",
+          sameAs: (name: string) =>
+            `You already have “${name}” with that name: use Smart Life instead, or add both.`,
+          addAnyway: "Add both",
+          preferTuya: "Use Smart Life",
           addAll: (n: number) => (n === 1 ? "Add 1 remote" : `Add ${n} remotes`),
           skipped: (n: number) =>
             n === 1 ? "1 remote couldn't be added." : `${n} remotes couldn't be added.`,
@@ -4691,6 +4736,7 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
     turnOn: "Turn on",
     turnOff: "Turn off",
     toggle: (name: string) => `Turn ${name} on or off`,
+    cloudHome: "Connected through the cloud (Smart Life)",
     tuya: { on: "Turn on", off: "Turn off" },
     ir: {
       profile: {

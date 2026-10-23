@@ -207,7 +207,7 @@ export async function homeSnapshot(
   };
 }
 
-async function ensureHome(auth: AuthContext) {
+export async function ensureHome(auth: AuthContext) {
   const existing = await currentHome(auth.db, auth.workspaceId);
   if (existing) return existing;
   const { data, error } = await auth.db

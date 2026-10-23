@@ -80,6 +80,25 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
     multiAccount: false,
     availability: "live",
   },
+  // ADR-119: Smart Life / Tuya Smart, each person's own account; connected and used from Hogar.
+  {
+    id: "tuya",
+    name: "Smart Life / Tuya",
+    category: "native",
+    capabilities: ["home"],
+    keywords: [
+      "smart life",
+      "tuya",
+      "tuya smart",
+      "hogar",
+      "casa",
+      "control remoto",
+      "aire",
+      "tele",
+    ],
+    multiAccount: true,
+    availability: "live",
+  },
   {
     id: "youtube",
     name: "YouTube",

@@ -26,8 +26,12 @@ export const {
   irCommandAction,
   irProfilesAction,
   applyIrProfileAction,
+  tuyaStatusAction,
+  connectTuyaAction,
   tuyaOverviewAction,
   tuyaImportAction,
+  tuyaSyncAction,
+  disconnectTuyaAction,
 } = cloud as typeof import("@/features/home/actions");
 
 const remote = cloud as typeof import("@/features/home/actions");

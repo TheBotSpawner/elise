@@ -1,24 +1,28 @@
 "use client";
 
-import { Check, Cloud, Fan, Loader2, Snowflake, Tv } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Check, Cloud, Fan, Loader2, RotateCw, Snowflake, Tv } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 
-import type { TuyaLinkState, TuyaRemoteView } from "@/application/tuya-home-service";
+import type { TuyaAvailability, TuyaConnection } from "@/application/tuya-connection-service";
+import type { TuyaHubView, TuyaRemoteView } from "@/application/tuya-home-service";
 import { Button } from "@/components/ui/button";
-import type { tuyaTestAction } from "@/core/home/tuya";
+import { Select } from "@/components/ui/input";
+import type { HomeRoom } from "@/core/home/model";
+import type { TuyaRegion, tuyaTestAction } from "@/core/home/tuya";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
-import { controlDeviceAction, tuyaImportAction, tuyaOverviewAction } from "./actions";
+import {
+  connectTuyaAction,
+  controlDeviceAction,
+  disconnectTuyaAction,
+  tuyaImportAction,
+  tuyaOverviewAction,
+  tuyaStatusAction,
+  tuyaSyncAction,
+} from "./actions";
 
-type Hub = {
-  id: string;
-  name: string;
-  online: boolean;
-  failed: boolean;
-  remotes: TuyaRemoteView[];
-};
 type Test = NonNullable<ReturnType<typeof tuyaTestAction>>;
 type Added = { id: string; name: string; infraredId: string; remoteId: string; test: Test | null };
 
@@ -27,57 +31,44 @@ const keyOf = (r: Pick<TuyaRemoteView, "infraredId" | "remoteId">) =>
   `${r.infraredId}:${r.remoteId}`;
 
 /**
- * ADR-118: "Conectar Tuya / Smart Life" in "Buscar dispositivos". Hub → the remotes already set
- * up in Smart Life; adding one makes it a ready device (no learning). "Probar" sends one safe key
- * only after the person confirms. Nothing shows when Smart Life is off on this server.
+ * ADR-119: "Conectar Smart Life / Tuya Smart" for anyone signed in to ELISE. The person picks
+ * their account's data center and authorizes on Tuya's official page (their own login or the
+ * app's QR — ELISE never sees a password); back here, each of their accounts lists its hubs →
+ * the remotes already set up in Smart Life, ready to add (no learning). "Probar" sends one safe
+ * key only after confirmation. Works on the web and in Desktop, with or without ELISE Home hub.
  */
-export function TuyaConnect() {
+export function TuyaConnect({ rooms = [] }: { rooms?: readonly HomeRoom[] }) {
   const { t } = useI18n();
   const x = t.smartHome.setup.discover.tuya;
-  const router = useRouter();
-  const [link, setLink] = useState<TuyaLinkState | null>(null);
-  const [hubs, setHubs] = useState<Hub[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [added, setAdded] = useState<Record<string, Added>>({});
-  const [skipped, setSkipped] = useState(0);
+  const params = useSearchParams();
+  const [status, setStatus] = useState<{
+    availability: TuyaAvailability;
+    connections: TuyaConnection[];
+  } | null>(null);
+  const [region, setRegion] = useState<TuyaRegion | "">("");
 
-  useEffect(() => {
-    let live = true;
-    void tuyaOverviewAction(false).then((r) => live && r.ok && setLink(r.value.link));
-    return () => {
-      live = false;
-    };
+  const load = useCallback(async () => {
+    const r = await tuyaStatusAction();
+    if (r.ok) setStatus(r.value);
   }, []);
 
-  if (!link || link.state === "off") return null;
+  useEffect(() => {
+    const first = setTimeout(() => void load(), 0);
+    // Desktop: the authorization finishes in the system browser; back in ELISE, look again.
+    const onFocus = () => void load();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearTimeout(first);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [load]);
 
-  const open = async () => {
-    setBusy(true);
-    setError(null);
-    const r = await tuyaOverviewAction(true);
-    setBusy(false);
-    if (!r.ok) return setError(errorText(t, r.error));
-    setLink(r.value.link);
-    setHubs(r.value.hubs);
-  };
-
-  const importRemotes = async (remotes: TuyaRemoteView[]) => {
-    setBusy(true);
-    setError(null);
-    const r = await tuyaImportAction(
-      remotes.map((m) => ({ infraredId: m.infraredId, remoteId: m.remoteId })),
-    );
-    setBusy(false);
-    if (!r.ok) return setError(errorText(t, r.error));
-    setAdded((m) => ({ ...m, ...Object.fromEntries(r.value.added.map((a) => [keyOf(a), a])) }));
-    setSkipped(r.value.skipped.length);
-    router.refresh();
-  };
-
-  const pending = (hubs ?? []).flatMap((h) =>
-    h.remotes.filter((m) => !m.deviceId && !m.sameAs && !added[keyOf(m)]),
-  );
+  if (!status || status.availability.state === "off") return null;
+  const { availability, connections } = status;
+  const returned = params.get("tuya");
+  const failed = params.get("tuya_error");
+  const regions = availability.state === "available" ? availability.regions : [];
+  const chosen = region || (regions.length === 1 ? regions[0]! : "");
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface px-3.5 py-3">
@@ -89,22 +80,200 @@ export function TuyaConnect() {
           <span className="text-[14.5px]">{x.title}</span>
           <span className="text-[12.5px] text-muted">{x.hint}</span>
         </span>
-        {link.state === "linked" && hubs === null && (
-          <Button size="sm" disabled={busy} onClick={() => void open()}>
-            {busy && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
-            {busy ? x.loading : x.connect}
-          </Button>
-        )}
       </div>
 
-      {link.state === "not_configured" && (
-        <p className="text-[13px] text-muted">{x.notConfigured}</p>
+      {returned === "connected" && <p className="text-[13px] text-success">{x.connected}</p>}
+      {failed && (
+        <p role="alert" className="text-[13px] text-danger-text">
+          {x.problems[failed as keyof typeof x.problems] ?? x.problems.generic}
+        </p>
       )}
-      {link.state === "not_linked" && <p className="text-[13px] text-muted">{x.notLinked}</p>}
+
+      {availability.state === "unavailable" && <p className="text-[13px] text-muted">{x.notYet}</p>}
+
+      {connections.map((c) => (
+        <ConnectionCard key={c.id} connection={c} rooms={rooms} onChanged={load} />
+      ))}
+
+      {availability.state === "available" && (
+        <form
+          action={connectTuyaAction}
+          className="flex flex-col gap-2 border-t border-border pt-3"
+        >
+          <p className="text-[13px] text-muted">
+            {connections.length ? x.another : x.connectIntro}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              name="region"
+              required
+              aria-label={x.region}
+              value={chosen}
+              onChange={(e) => setRegion(e.target.value as TuyaRegion)}
+              className="h-10 min-w-0 flex-1"
+            >
+              <option value="" disabled>
+                {x.region}
+              </option>
+              {regions.map((r) => (
+                <option key={r} value={r}>
+                  {x.regions[r]}
+                </option>
+              ))}
+            </Select>
+            <Button type="submit" size="sm" disabled={!chosen}>
+              {x.connect}
+            </Button>
+          </div>
+          <p className="text-[12px] text-faint">{x.regionHint}</p>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function ConnectionCard({
+  connection: c,
+  rooms,
+  onChanged,
+}: {
+  connection: TuyaConnection;
+  rooms: readonly HomeRoom[];
+  onChanged: () => Promise<void>;
+}) {
+  const { t } = useI18n();
+  const x = t.smartHome.setup.discover.tuya;
+  const router = useRouter();
+  const [hubs, setHubs] = useState<TuyaHubView[] | null>(null);
+  const [others, setOthers] = useState(0);
+  const [busy, setBusy] = useState<"load" | "sync" | "import" | "disconnect" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [added, setAdded] = useState<Record<string, Added>>({});
+  const [roomFor, setRoomFor] = useState<Record<string, string>>({});
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const needsReconnect = c.status === "needs_reauthorization";
+
+  const open = async () => {
+    setBusy("load");
+    setError(null);
+    const r = await tuyaOverviewAction(c.id);
+    setBusy(null);
+    if (!r.ok) {
+      setError(errorText(t, r.error));
+      return void onChanged();
+    }
+    setHubs(r.value.hubs);
+    setOthers(r.value.otherDevices);
+  };
+
+  const importRemotes = async (remotes: TuyaRemoteView[], replaces?: string) => {
+    setBusy("import");
+    setError(null);
+    const r = await tuyaImportAction({
+      connectionId: c.id,
+      remotes: remotes.map((m) => ({
+        infraredId: m.infraredId,
+        remoteId: m.remoteId,
+        roomId: roomFor[keyOf(m)] || null,
+        ...(replaces ? { replaces } : {}),
+      })),
+    });
+    setBusy(null);
+    if (!r.ok) return setError(errorText(t, r.error));
+    setAdded((m) => ({ ...m, ...Object.fromEntries(r.value.added.map((a) => [keyOf(a), a])) }));
+    if (r.value.skipped.length) setError(x.skipped(r.value.skipped.length));
+    router.refresh();
+  };
+
+  const sync = async () => {
+    setBusy("sync");
+    setError(null);
+    const r = await tuyaSyncAction(c.id);
+    setBusy(null);
+    if (!r.ok) setError(errorText(t, r.error));
+    else router.refresh();
+    if (hubs) await open();
+  };
+
+  const disconnect = async () => {
+    setBusy("disconnect");
+    const r = await disconnectTuyaAction(c.id);
+    setBusy(null);
+    setConfirmDisconnect(false);
+    if (!r.ok) return setError(errorText(t, r.error));
+    router.refresh();
+    await onChanged();
+  };
+
+  const pending = (hubs ?? []).flatMap((h) =>
+    h.remotes.filter((m) => !m.deviceId && !m.sameAs && !added[keyOf(m)]),
+  );
+  const warn = needsReconnect || c.problem;
+
+  return (
+    <div className="flex flex-col gap-2.5 border-t border-border pt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-[14px] font-medium">{c.label}</span>
+          <span className={warn ? "text-[12.5px] text-approval-text" : "text-[12.5px] text-muted"}>
+            {needsReconnect
+              ? x.problems.token
+              : c.problem
+                ? (x.problems[c.problem as keyof typeof x.problems] ?? x.problems.generic)
+                : x.connectedState}
+          </span>
+        </span>
+        {needsReconnect ? (
+          <form action={connectTuyaAction}>
+            <input type="hidden" name="region" value={c.region} />
+            <input type="hidden" name="connectionId" value={c.id} />
+            <Button type="submit" size="sm">
+              {x.reconnect}
+            </Button>
+          </form>
+        ) : (
+          hubs === null && (
+            <Button size="sm" disabled={busy !== null} onClick={() => void open()}>
+              {busy === "load" && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
+              {busy === "load" ? x.loading : x.showRemotes}
+            </Button>
+          )
+        )}
+        {hubs !== null && (
+          <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void sync()}>
+            <RotateCw
+              className={busy === "sync" ? "motion-safe:animate-spin" : undefined}
+              aria-hidden
+            />
+            {x.sync}
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy !== null}
+          onClick={() => setConfirmDisconnect(true)}
+        >
+          {x.disconnect}
+        </Button>
+      </div>
+
+      {confirmDisconnect && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3 py-2">
+          <p className="flex-1 text-[13px]">{x.disconnectConfirm}</p>
+          <Button size="sm" variant="ghost" onClick={() => setConfirmDisconnect(false)}>
+            {x.cancel}
+          </Button>
+          <Button size="sm" disabled={busy !== null} onClick={() => void disconnect()}>
+            {x.disconnect}
+          </Button>
+        </div>
+      )}
 
       {hubs && !hubs.length && <p className="text-[13px] text-muted">{x.noHubs}</p>}
+      {others > 0 && <p className="text-[12.5px] text-faint">{x.others(others)}</p>}
       {hubs?.map((h) => (
-        <div key={h.id} className="flex flex-col gap-2 border-t border-border pt-3">
+        <div key={h.id} className="flex flex-col gap-2">
           <p className="text-[13.5px] font-medium">
             {h.name}
             {!h.online && <span className="font-normal text-muted"> · {x.offline}</span>}
@@ -118,20 +287,26 @@ export function TuyaConnect() {
               <RemoteRow
                 key={keyOf(m)}
                 remote={m}
+                rooms={rooms}
+                room={roomFor[keyOf(m)] ?? ""}
+                onRoom={(id) => setRoomFor((r) => ({ ...r, [keyOf(m)]: id }))}
                 added={added[keyOf(m)] ?? null}
-                busy={busy}
-                onAdd={() => void importRemotes([m])}
+                busy={busy !== null}
+                onAdd={(replaces) => void importRemotes([m], replaces)}
               />
             ))}
           </ul>
         </div>
       ))}
       {pending.length > 1 && (
-        <Button className="self-start" disabled={busy} onClick={() => void importRemotes(pending)}>
+        <Button
+          className="self-start"
+          disabled={busy !== null}
+          onClick={() => void importRemotes(pending)}
+        >
           {x.addAll(pending.length)}
         </Button>
       )}
-      {skipped > 0 && <p className="text-[13px] text-muted">{x.skipped(skipped)}</p>}
       {error && (
         <p role="alert" className="text-[13px] text-danger-text">
           {error}
@@ -143,14 +318,20 @@ export function TuyaConnect() {
 
 function RemoteRow({
   remote,
+  rooms,
+  room,
+  onRoom,
   added,
   busy,
   onAdd,
 }: {
   remote: TuyaRemoteView;
+  rooms: readonly HomeRoom[];
+  room: string;
+  onRoom: (id: string) => void;
   added: Added | null;
   busy: boolean;
-  onAdd: () => void;
+  onAdd: (replaces?: string) => void;
 }) {
   const { t } = useI18n();
   const x = t.smartHome.setup.discover.tuya;
@@ -180,7 +361,7 @@ function RemoteRow({
 
   return (
     <li className="flex flex-col gap-2">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Icon className="size-4 shrink-0 text-muted" aria-hidden />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[14px]">{remote.name}</span>
@@ -189,19 +370,38 @@ function RemoteRow({
             {remote.brand ? ` · ${remote.brand}` : ""}
           </span>
         </span>
+        {!inHome && rooms.length > 0 && (
+          <Select
+            aria-label={x.room(remote.name)}
+            value={room}
+            onChange={(e) => onRoom(e.target.value)}
+            className="h-9 w-36"
+          >
+            <option value="">{x.noRoom}</option>
+            {rooms.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </Select>
+        )}
         {inHome ? (
           <span className="flex items-center gap-1 text-[13px] text-success">
             <Check className="size-4" aria-hidden />
             {x.inHome}
           </span>
+        ) : remote.sameAs ? (
+          <>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => onAdd()}>
+              {x.addAnyway}
+            </Button>
+            <Button size="sm" disabled={busy} onClick={() => onAdd(remote.sameAs!.id)}>
+              {x.preferTuya}
+            </Button>
+          </>
         ) : (
-          <Button
-            size="sm"
-            variant={remote.sameAs ? "ghost" : "primary"}
-            disabled={busy}
-            onClick={onAdd}
-          >
-            {remote.sameAs ? x.addAnyway : t.smartHome.setup.discover.add}
+          <Button size="sm" disabled={busy} onClick={() => onAdd()}>
+            {t.smartHome.setup.discover.add}
           </Button>
         )}
         {added && test && phase === "idle" && (
@@ -211,7 +411,7 @@ function RemoteRow({
         )}
       </div>
       {remote.sameAs && !inHome && (
-        <p className="text-[12.5px] text-muted">{x.sameAs(remote.sameAs)}</p>
+        <p className="text-[12.5px] text-muted">{x.sameAs(remote.sameAs.name)}</p>
       )}
       {phase === "confirm" && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3 py-2">

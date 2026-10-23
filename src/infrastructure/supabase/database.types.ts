@@ -1603,7 +1603,8 @@ export type HomeDeviceRow = {
   id: string;
   workspace_id: string;
   home_id: string;
-  hub_id: string;
+  /** Null only for cloud devices (ADR-119, provider_key 'tuya:…'). */
+  hub_id: string | null;
   provider_key: string;
   provider_device_id: string | null;
   provider_entity_ids: string[];
@@ -1903,7 +1904,7 @@ export type Database = {
       home_rooms: Table<HomeRoomRow, "workspace_id" | "home_id" | "name">;
       home_devices: Table<
         HomeDeviceRow,
-        "workspace_id" | "home_id" | "hub_id" | "provider_key" | "name" | "device_type"
+        "workspace_id" | "home_id" | "provider_key" | "name" | "device_type"
       >;
       home_groups: Table<HomeGroupRow, "workspace_id" | "home_id" | "name">;
       home_scenes: Table<HomeSceneRow, "workspace_id" | "home_id" | "name">;

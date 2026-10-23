@@ -185,7 +185,7 @@ export const presentTool: ToolDefinition = {
   capability: "workspace",
   operation: "present",
   description:
-    "Add a structured summary (e.g. a meeting brief) or a set of links to the Live Workspace. Results you fetch with other tools are already shown — don't re-present them. Keep facts, retrieved context and your suggestions in separate sections.",
+    "Add a structured summary (e.g. a meeting brief, or the answer to a web question as a result card) or a set of links to the Live Workspace. Results you fetch with other tools are already shown — don't re-present them. Keep facts, retrieved context and your suggestions in separate sections.",
   input: presentInput,
   async describe() {
     return { summary: "Show in workspace" };

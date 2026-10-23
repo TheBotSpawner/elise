@@ -3,8 +3,9 @@ import { createHash, createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * ADR-118: Tuya's cloud client against a fake Tuya (no network): the documented signature, the
- * project token cached and asked again when refused, and how refusals and rate limits pause it.
+ * ADR-118/119: Tuya's cloud client against a fake Tuya (no network): the documented signature,
+ * OAuth code exchange and refresh in the account's own data center, a refused token refreshed
+ * once, and how refusals, wrong data centers, quotas and rate limits are told apart and paused.
  * Mocks only — not a test against Tuya.
  */
 
@@ -17,8 +18,18 @@ const env = vi.hoisted(() => ({
 }));
 vi.mock("@/config/server-env", () => ({ serverEnv: () => env }));
 
-const { resetTuyaForTests, tuyaSendAc, tuyaSendKey, tuyaSign, tuyaUserDevices } =
-  await import("@/infrastructure/home/tuya");
+const {
+  classifyTuya,
+  exchangeTuyaCode,
+  forgetTuyaAccount,
+  projectAuth,
+  refreshTuyaToken,
+  resetTuyaForTests,
+  tuyaSendAc,
+  tuyaSendKey,
+  tuyaSign,
+  tuyaUserDevices,
+} = await import("@/infrastructure/home/tuya");
 
 type Call = { url: string; method: string; headers: Record<string, string>; body?: string };
 let calls: Call[];
@@ -49,9 +60,31 @@ afterEach(() => vi.unstubAllGlobals());
 
 const TOKEN = {
   success: true,
-  result: { access_token: "access-aaa", refresh_token: "refresh-bbb", expire_time: 7200, uid: "x" },
+  result: {
+    access_token: "access-aaa",
+    refresh_token: "refresh-bbb",
+    expire_time: 7200,
+    uid: "uid-x",
+  },
 };
 const ok = (result: unknown) => () => ({ json: { success: true, result } });
+
+/** A person's token getter, as the application layer hands it in. */
+function userAuth(region: "us" | "eu" = "us") {
+  let token = "user-token-1";
+  return {
+    region,
+    key: "conn-1",
+    rejected: 0,
+    async accessToken() {
+      return token;
+    },
+    tokenRejected() {
+      this.rejected++;
+      token = "user-token-2";
+    },
+  };
+}
 
 describe("signature", () => {
   it("HMAC-SHA256 over client_id + token + t + nonce + stringToSign, upper-case", () => {
@@ -93,110 +126,145 @@ describe("signature", () => {
   });
 });
 
-describe("token and calls", () => {
-  it("asks the token once, signs the call with it, and sends the documented headers", async () => {
+describe("OAuth tokens (grant_type=2)", () => {
+  it("exchanges the person's code in THEIR data center, without an access token", async () => {
+    answers.push(() => ({ json: TOKEN }));
+    const t = await exchangeTuyaCode("eu", "code-123");
+    expect(calls[0]!.url).toBe("https://openapi.tuyaeu.com/v1.0/token?grant_type=2&code=code-123");
+    expect(calls[0]!.headers.access_token).toBeUndefined();
+    expect(t).toMatchObject({
+      accessToken: "access-aaa",
+      refreshToken: "refresh-bbb",
+      uid: "uid-x",
+    });
+    expect(t.expiresAt.getTime()).toBeGreaterThan(Date.now() + 7000_000);
+  });
+
+  it("refreshes with the refresh token's own path", async () => {
+    answers.push(() => ({ json: TOKEN }));
+    await refreshTuyaToken("us", "refresh-old");
+    expect(calls[0]!.url).toBe("https://openapi.tuyaus.com/v1.0/token/refresh-old");
+  });
+
+  it("an account from another data center is told apart (not a generic failure)", async () => {
+    answers.push(() => ({
+      json: { success: false, code: 1106, msg: "Data centers inconsistency" },
+    }));
+    await expect(exchangeTuyaCode("us", "code-x")).rejects.toMatchObject({
+      details: { tuyaProblem: "wrong_region" },
+    });
+  });
+
+  it("classifies Tuya's answers into what the person can act on", () => {
+    expect(classifyTuya(1010, 200)).toBe("token");
+    expect(classifyTuya(1106, 200)).toBe("permission");
+    expect(classifyTuya(28841105, 200)).toBe("permission");
+    expect(classifyTuya(null, 429)).toBe("rate_limited");
+    expect(classifyTuya(28841002, 200, "the API quota is exceeded")).toBe("quota");
+    expect(classifyTuya(1004, 200)).toBe("project");
+  });
+});
+
+describe("calls with the person's token", () => {
+  it("signs with their token, in their data center, and never sends the secret", async () => {
     answers.push(
-      () => ({ json: TOKEN }),
       ok([{ id: "dev_ir_01", name: "IR", category: "wnykq", online: true, sub: false }]),
     );
-    const list = await tuyaUserDevices("uid-1");
+    const auth = userAuth("eu");
+    const list = await tuyaUserDevices(auth, "uid-1");
     expect(list).toEqual([
       { id: "dev_ir_01", name: "IR", category: "wnykq", online: true, sub: false },
     ]);
-    expect(calls[0]!.url).toBe("https://openapi.tuyaus.com/v1.0/token?grant_type=1");
-    expect(calls[0]!.headers.access_token).toBeUndefined();
-    expect(calls[1]!.headers).toMatchObject({
+    expect(calls[0]!.url).toBe("https://openapi.tuyaeu.com/v1.0/users/uid-1/devices");
+    expect(calls[0]!.headers).toMatchObject({
       client_id: "client123",
       sign_method: "HMAC-SHA256",
-      access_token: "access-aaa",
+      access_token: "user-token-1",
     });
-    expect(calls[1]!.headers.t).toMatch(/^\d{13}$/);
-    expect(calls[1]!.headers.sign).toMatch(/^[0-9A-F]{64}$/);
-    // Never the secret on the wire.
+    expect(calls[0]!.headers.t).toMatch(/^\d{13}$/);
+    expect(calls[0]!.headers.sign).toMatch(/^[0-9A-F]{64}$/);
     expect(JSON.stringify(calls)).not.toContain("secret456");
   });
 
-  it("a refused token (1010) is asked again once, then the call retried", async () => {
-    answers.push(
-      () => ({ json: TOKEN }),
-      () => ({ json: { success: false, code: 1010, msg: "token invalid" } }),
-      () => ({ json: { ...TOKEN, result: { ...TOKEN.result, access_token: "access-ccc" } } }),
-      ok([]),
-    );
-    await expect(tuyaUserDevices("uid-2")).resolves.toEqual([]);
-    expect(calls[3]!.headers.access_token).toBe("access-ccc");
+  it("a refused token (1010) is refreshed once, then the call retried", async () => {
+    answers.push(() => ({ json: { success: false, code: 1010, msg: "token invalid" } }), ok([]));
+    const auth = userAuth();
+    await expect(tuyaUserDevices(auth, "uid-2")).resolves.toEqual([]);
+    expect(auth.rejected).toBe(1);
+    expect(calls[1]!.headers.access_token).toBe("user-token-2");
   });
 
-  it("a permission refusal (1106) says what to fix and doesn't pause everything", async () => {
-    answers.push(
-      () => ({ json: TOKEN }),
-      () => ({ json: { success: false, code: 1106, msg: "permission deny" } }),
-      ok([]),
-    );
-    await expect(tuyaUserDevices("uid-3")).rejects.toMatchObject({
-      code: "PROVIDER_UNAVAILABLE",
-      message: expect.stringContaining("isn't authorized"),
+  it("a permission refusal (IR service not enabled) says so and doesn't pause the account", async () => {
+    answers.push(() => ({ json: { success: false, code: 1106, msg: "permission deny" } }), ok([]));
+    const auth = userAuth();
+    await expect(tuyaUserDevices(auth, "uid-3")).rejects.toMatchObject({
+      details: { tuyaProblem: "permission" },
     });
-    await expect(tuyaUserDevices("uid-4")).resolves.toEqual([]);
+    await expect(tuyaUserDevices(auth, "uid-4")).resolves.toEqual([]);
   });
 
-  it("a rate limit (429) pauses Tuya instead of hammering it", async () => {
-    answers.push(
-      () => ({ json: TOKEN }),
-      () => ({ status: 429, json: { success: false } }),
-    );
-    await expect(tuyaUserDevices("uid-5")).rejects.toMatchObject({ code: "RATE_LIMITED" });
-    await expect(tuyaUserDevices("uid-6")).rejects.toMatchObject({
+  it("a rate limit pauses that account only", async () => {
+    answers.push(() => ({ status: 429, json: { success: false } }), ok([]));
+    const a = userAuth();
+    await expect(tuyaUserDevices(a, "uid-5")).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    await expect(tuyaUserDevices(a, "uid-6")).rejects.toMatchObject({
       message: "Smart Life is paused",
     });
+    const b = { ...userAuth(), key: "conn-2" };
+    await expect(tuyaUserDevices(b, "uid-7")).resolves.toEqual([]);
+  });
+
+  it("lists are cached per account and forgotten on disconnect", async () => {
+    answers.push(ok([]), ok([]));
+    const auth = userAuth();
+    await tuyaUserDevices(auth, "uid-9");
+    await tuyaUserDevices(auth, "uid-9");
+    expect(calls).toHaveLength(1);
+    forgetTuyaAccount("conn-1");
+    await tuyaUserDevices(auth, "uid-9");
     expect(calls).toHaveLength(2);
   });
 
-  it("a bad signature (1004) pauses the project", async () => {
-    answers.push(() => ({ json: { success: false, code: 1004, msg: "sign invalid" } }));
-    await expect(tuyaUserDevices("uid-7")).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE" });
-    await expect(tuyaUserDevices("uid-8")).rejects.toMatchObject({
-      message: "Smart Life is paused",
-    });
-  });
-
-  it("lists are cached: a second read doesn't ask Tuya", async () => {
-    answers.push(() => ({ json: TOKEN }), ok([]));
-    await tuyaUserDevices("uid-9");
-    await tuyaUserDevices("uid-9");
-    expect(calls).toHaveLength(2);
+  it("the project token (local script) is asked once and reused", async () => {
+    answers.push(() => ({ json: TOKEN }), ok([]), ok([]));
+    const auth = projectAuth("us");
+    await tuyaUserDevices(auth, "uid-a");
+    await tuyaUserDevices(auth, "uid-b");
+    expect(calls[0]!.url).toBe("https://openapi.tuyaus.com/v1.0/token?grant_type=1");
+    expect(calls.filter((c) => c.url.includes("/v1.0/token"))).toHaveLength(1);
   });
 });
 
 describe("commands", () => {
   it("a standard key goes to /command; a learned remote's to /raw/command with its key id", async () => {
-    answers.push(() => ({ json: TOKEN }), ok(true), ok(true));
-    await tuyaSendKey({
+    answers.push(ok(true), ok(true));
+    const auth = userAuth();
+    await tuyaSendKey(auth, {
       infraredId: "ir_1",
       remoteId: "rm_1",
       categoryId: 2,
       remoteIndex: 7,
       key: "Mute",
     });
-    await tuyaSendKey({
+    await tuyaSendKey(auth, {
       infraredId: "ir_1",
       remoteId: "rm_2",
       categoryId: 999,
       key: "k",
       keyId: 4,
     });
-    expect(calls[1]).toMatchObject({
+    expect(calls[0]).toMatchObject({
       method: "POST",
       url: "https://openapi.tuyaus.com/v2.0/infrareds/ir_1/remotes/rm_1/command",
     });
-    expect(JSON.parse(calls[1]!.body!)).toEqual({ category_id: 2, key: "Mute", remote_index: 7 });
-    expect(calls[2]!.url).toMatch(/remotes\/rm_2\/raw\/command$/);
-    expect(JSON.parse(calls[2]!.body!)).toEqual({ category_id: 999, key_id: 4, key: "k" });
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ category_id: 2, key: "Mute", remote_index: 7 });
+    expect(calls[1]!.url).toMatch(/remotes\/rm_2\/raw\/command$/);
+    expect(JSON.parse(calls[1]!.body!)).toEqual({ category_id: 999, key_id: 4, key: "k" });
   });
 
   it("an air conditioner's state goes as Tuya's numbers (scenes/command)", async () => {
-    answers.push(() => ({ json: TOKEN }), ok(true));
-    await tuyaSendAc({
+    answers.push(ok(true));
+    await tuyaSendAc(userAuth(), {
       infraredId: "ir_1",
       remoteId: "ac_1",
       categoryId: 5,
@@ -205,10 +273,10 @@ describe("commands", () => {
       temp: 24,
       fan: "high",
     });
-    expect(calls[1]!.url).toMatch(
+    expect(calls[0]!.url).toMatch(
       /\/v2\.0\/infrareds\/ir_1\/air-conditioners\/ac_1\/scenes\/command$/,
     );
-    expect(JSON.parse(calls[1]!.body!)).toEqual({
+    expect(JSON.parse(calls[0]!.body!)).toEqual({
       power: 1,
       mode: 1,
       temp: 24,

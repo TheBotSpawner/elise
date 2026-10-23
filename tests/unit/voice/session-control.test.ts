@@ -17,6 +17,12 @@ describe("sessionCommand (ADR-102)", () => {
     "che, pará de escuchar ya",
     "No me escuches más",
     "Stop listening",
+    "Callate",
+    "ELISE, no escuches",
+    "Apagate",
+    "No molestes",
+    "No me escuches",
+    "Eso es todo, gracias",
   ])("%s → stop", (text) => expect(sessionCommand(text)).toBe("stop"));
 
   it.each([
@@ -25,7 +31,23 @@ describe("sessionCommand (ADR-102)", () => {
     "No vuelvas a escuchar hasta que te active",
     "Dejá de escuchar hasta que te lo diga",
     "Apagá la escucha de ELISE",
+    "ELISE, desactivá el modo escucha",
+    "Desactivá la escucha",
+    "Desactivá Escucha Activa",
+    "Pasá a modo manual",
   ])("%s → disable_wake", (text) => expect(sessionCommand(text)).toBe("disable_wake"));
+
+  it.each([
+    "ELISE, activá la escucha",
+    "Activá escucha activa",
+    "Volvé a activar el modo escucha",
+    "Prendé la activación por voz",
+  ])("%s → enable_wake", (text) => expect(sessionCommand(text)).toBe("enable_wake"));
+
+  it.each(["apagá la tele", "callate un segundo que te explico algo largo", "no molestes a Juan"])(
+    "%s → not a session command",
+    (text) => expect(sessionCommand(text)).toBeNull(),
+  );
 
   it.each([
     "ELISE, mostrate",

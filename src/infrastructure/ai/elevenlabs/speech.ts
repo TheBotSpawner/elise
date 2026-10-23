@@ -166,7 +166,7 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
         signal,
       },
     );
-    if (!res.ok || !res.body) throw failure(res.status);
+    if (!res.ok || !res.body) throw failure(res.status, await res.text().catch(() => ""));
     this.report(text, started, Date.now() - started);
     return res.body;
   }
@@ -237,7 +237,7 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
         } catch {
           return;
         }
-        if (msg.error) return fail(failure(msg.code ?? 500));
+        if (msg.error) return fail(failure(msg.code ?? 500, msg.error));
         if (msg.audio) {
           const bytes = Uint8Array.from(Buffer.from(msg.audio, "base64"));
           if (!bytes.length) return;
@@ -277,7 +277,14 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
   }
 }
 
-function failure(status: number): AppError {
+function failure(status: number, body = ""): AppError {
+  // Credits used up is not a misconfiguration: the account's plan ran out (ElevenLabs answers
+  // 401 "quota_exceeded"). Only the status word is read; the message could echo the text.
+  if (/quota_exceeded|quota|credits/i.test(body))
+    return new AppError("RATE_LIMITED", "ElevenLabs has no credits left", {
+      recovery: "configure",
+      details: { quotaExceeded: true },
+    });
   if (status === 401 || status === 403)
     return new AppError("AI_NOT_CONFIGURED", "ElevenLabs isn't configured correctly", {
       recovery: "configure",

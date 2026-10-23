@@ -147,10 +147,13 @@ export function HomeView({
   const localPending = Boolean(runtime?.state && runtime.state.runtime.phase !== "ready");
   // ADR-090: devices, or the person chose to continue without them for now.
   const [devicesStepDone] = useDevicesStepDone();
+  // ADR-119: Smart Life devices live in Tuya's cloud: with them, Hogar needs no hub at all.
+  const cloudHome = snapshot.devices.some(isCloudDevice);
   if (
-    snapshot.hub?.setup !== "hub_ready" ||
-    (!snapshot.devices.length && !devicesStepDone) ||
-    localPending
+    !cloudHome &&
+    (snapshot.hub?.setup !== "hub_ready" ||
+      (!snapshot.devices.length && !devicesStepDone) ||
+      localPending)
   )
     return (
       <HomeSetup
@@ -164,6 +167,9 @@ export function HomeView({
     );
   return <Dashboard snapshot={snapshot} timezone={timezone} />;
 }
+
+/** ADR-119: a device controlled through a cloud account (Smart Life), not the home's hub. */
+const isCloudDevice = (d: HomeDevice) => d.capabilities.some((c) => c.type === "tuya_ir");
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
 
@@ -181,7 +187,7 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
   const [ir, setIr] = useState<{ device?: HomeDevice; controllerId?: string } | null>(null);
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
-  const hub = snapshot.hub!;
+  const hub = snapshot.hub;
   const hasDevices = snapshot.devices.length > 0;
   const types = [...new Set(snapshot.devices.map((d) => d.type))];
   const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
@@ -343,7 +349,7 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
                 <DeviceTile
                   device={d}
                   room={room ? null : roomName(d.roomId)}
-                  stale={hub.status === "offline"}
+                  stale={hub?.status === "offline" && !isCloudDevice(d)}
                   timezone={timezone}
                   onOpen={() => setOpen(d)}
                   onToggle={(on) => command.control(d, [{ type: "power", value: on }])}
@@ -398,6 +404,7 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
           onDone={() => setAdding(null)}
           addedCount={snapshot.devices.length}
           found={snapshot.found}
+          rooms={snapshot.rooms}
           irControllers={snapshot.devices.filter((d) => d.type === "ir_controller").length}
           onIrDevice={() => {
             setAdding(null);
@@ -421,9 +428,12 @@ function HubCard({
 }) {
   const { t, locale } = useI18n();
   const h = t.smartHome;
-  const hub = snapshot.hub!;
-  const online = hub.status === "online";
-  const dot = online ? "bg-success" : hub.status === "degraded" ? "bg-approval" : "bg-danger";
+  const hub = snapshot.hub;
+  // ADR-119: a home with only cloud devices has no hub to report on.
+  const status = hub?.status ?? "online";
+  const title = hub ? h.hub[hub.status] : h.cloudHome;
+  const online = status === "online";
+  const dot = online ? "bg-success" : status === "degraded" ? "bg-approval" : "bg-danger";
   const stats = [
     { label: h.devices, value: snapshot.devices.length },
     { label: h.onNow, value: snapshot.devices.filter((d) => d.available && d.state.on).length },
@@ -431,7 +441,7 @@ function HubCard({
   ];
   return (
     <section
-      aria-label={h.hub[hub.status]}
+      aria-label={title}
       className="relative rounded-3xl border border-border bg-surface p-4 md:p-5"
     >
       {online && (
@@ -459,8 +469,8 @@ function HubCard({
           </span>
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-medium">{h.hub[hub.status]}</p>
-          {hub.lastSyncAt && (
+          <p className="text-[15px] font-medium">{title}</p>
+          {hub?.lastSyncAt && (
             <p className="truncate text-[12.5px] text-faint">
               {h.hub.lastSync(relativeWhen(hub.lastSyncAt, new Date(), locale, timezone))}
             </p>

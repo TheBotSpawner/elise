@@ -28,8 +28,21 @@ export const KIND_TYPE: Record<IrKind, HomeDeviceType> = {
 /** An infrared hub's category in Tuya's device list ("wnykq": Smart IR, and its kin). */
 export const isTuyaIrHub = (category: string) => /ykq$/.test(category);
 
-export const tuyaProviderKey = (infraredId: string, remoteId: string) =>
-  `tuya:${infraredId}:${remoteId}`;
+/**
+ * Tuya's data centers (ADR-119). An account lives in exactly one; its authorization code and
+ * token only work there ("Data centers inconsistency" otherwise).
+ */
+export const TUYA_REGIONS = ["us", "us-e", "eu", "eu-w", "in", "sg", "cn"] as const;
+export type TuyaRegion = (typeof TUYA_REGIONS)[number];
+export const isTuyaRegion = (v: unknown): v is TuyaRegion =>
+  (TUYA_REGIONS as readonly unknown[]).includes(v);
+
+/**
+ * A remote's stable identity: the ELISE connection (one Tuya account in one data center), the
+ * infrared hub and the remote. Two people's identical ids never collide; names never merge.
+ */
+export const tuyaProviderKey = (connectionId: string, infraredId: string, remoteId: string) =>
+  `tuya:${connectionId}:${infraredId}:${remoteId}`;
 export const TUYA_KEY_PREFIX = "tuya:";
 
 const id = z.string().regex(/^[A-Za-z0-9_-]{4,64}$/);
@@ -145,6 +158,7 @@ export function meaningOf(key: string, name?: string): string {
  * Keys stay Tuya's own (`tuya`); `key` is what ELISE and voice call them.
  */
 export function remoteCapability(
+  connectionId: string,
   infraredId: string,
   remote: TuyaRemote,
   keys: TuyaKeys,
@@ -189,6 +203,7 @@ export function remoteCapability(
   if (!list.length && !modes.length) return null;
   return {
     type: "tuya_ir",
+    connectionId,
     infraredId,
     remoteId: remote.remote_id,
     categoryId: remote.category_id,

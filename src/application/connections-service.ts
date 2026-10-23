@@ -81,6 +81,7 @@ import { createAdminClient } from "@/infrastructure/supabase/admin";
 import type { AuthContext } from "./auth-context";
 import { purgeConnectionFinance } from "./finance-sources";
 import { purgeConnectionKnowledge } from "./knowledge-service";
+import { disconnectTuya, tuyaAvailability } from "./tuya-connection-service";
 
 // ── Pure rules (tested in isolation) ─────────────────────────────────────────
 
@@ -1161,6 +1162,8 @@ export async function disconnectConnection(auth: AuthContext, connectionId: stri
   const connection = await ownConnection(auth, connectionId);
   if (connection.provider_key === "elise_native")
     throw new AppError("VALIDATION_ERROR", "ELISE is built in and cannot be disconnected");
+  // ADR-119: a Smart Life account also takes its devices out of the home.
+  if (connection.provider_key === "tuya") return disconnectTuya(auth, connectionId);
 
   const ref = { connectionId, workspaceId: auth.workspaceId };
   const vault = new SupabaseCredentialVault(createAdminClient(), connection.provider_key);
@@ -1642,6 +1645,8 @@ export function configuredProviders(list: {
     notion: list.notionAvailable,
     spotify: list.spotifyAvailable,
     youtube: list.youtubeAvailable,
+    // ADR-119: connected from Hogar (the person's own account, Tuya's official page).
+    tuya: tuyaAvailability().state === "available",
     elise_native: true,
   };
 }

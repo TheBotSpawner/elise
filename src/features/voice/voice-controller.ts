@@ -202,6 +202,8 @@ export interface VoiceDeps {
    * Desktop's setting). The session itself ends either way.
    */
   disableWake?: () => void;
+  /** "Activá la escucha": the wake word on again where it lives (Desktop's setting). */
+  enableWake?: () => void;
   /** ADR-104: "ELISE, mostrate" — ELISE Desktop's window to the front. Absent on the web. */
   showApp?: () => void;
   /** ADR-106: the computer's volume, a few points (ELISE Desktop only). */
@@ -737,6 +739,10 @@ export class VoiceController {
       this.deps.disableWake?.();
       // The browser's wake phrase, for this page.
       this.setPrefs({ wakeEnabled: false });
+    }
+    if (command === "enable_wake") {
+      this.deps.enableWake?.();
+      this.setPrefs({ wakeEnabled: true });
     }
     this.end();
     return true;

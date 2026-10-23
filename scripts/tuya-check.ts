@@ -8,15 +8,23 @@
  *   … scripts/tuya-check.ts remotes      each infrared hub's remotes, keys and what ELISE makes of them
  *   … scripts/tuya-check.ts send <infrared_id> <remote_id> <elise-key | power-on | power-off> [--yes]
  */
-import { remoteCapability, isTuyaIrHub, kindOf } from "../src/core/home/tuya";
+import { isTuyaIrHub, isTuyaRegion, kindOf, remoteCapability } from "../src/core/home/tuya";
 import {
+  projectAuth,
   tuyaConfig,
+  tuyaHost,
   tuyaRemoteKeys,
   tuyaRemotes,
   tuyaSendAc,
   tuyaSendKey,
   tuyaUserDevices,
 } from "../src/infrastructure/home/tuya";
+
+// The project's own token in the data center of the account linked in Tuya's console (local
+// checks only: the app always uses each person's own OAuth token).
+const region = isTuyaRegion(process.env.TUYA_REGION) ? process.env.TUYA_REGION : "us";
+const auth = projectAuth(region);
+const LOCAL = "00000000-0000-4000-8000-000000000000";
 
 const uid = () => {
   const u = process.env.TUYA_DEV_UID;
@@ -30,16 +38,18 @@ function status() {
     TUYA_ENABLED: process.env.TUYA_ENABLED ?? "(vacío)",
     TUYA_CLIENT_ID: process.env.TUYA_CLIENT_ID ? "presente" : "falta",
     TUYA_CLIENT_SECRET: process.env.TUYA_CLIENT_SECRET ? "presente" : "falta",
-    TUYA_REGION: c?.region ?? process.env.TUYA_REGION ?? "us",
-    host: c?.host ?? "(sin configurar)",
+    TUYA_REGION: region,
+    host: c ? tuyaHost(region) : "(sin configurar)",
+    TUYA_OAUTH_URL: Object.keys(process.env).filter(
+      (k) => k.startsWith("TUYA_OAUTH_URL_") && process.env[k],
+    ),
     TUYA_DEV_UID: process.env.TUYA_DEV_UID ? "presente" : "falta",
-    TUYA_DEV_WORKSPACE_ID: process.env.TUYA_DEV_WORKSPACE_ID ? "presente" : "falta",
   });
   if (!c) console.log("\nTUYA_ENABLED tiene que ser true y el client id/secret estar cargados.");
 }
 
 async function devices() {
-  const list = await tuyaUserDevices(uid());
+  const list = await tuyaUserDevices(auth, uid());
   console.log(`\n${list.length} dispositivos en la cuenta vinculada:\n`);
   for (const d of list)
     console.log(
@@ -48,13 +58,13 @@ async function devices() {
 }
 
 async function remotes() {
-  const hubs = (await tuyaUserDevices(uid())).filter((d) => isTuyaIrHub(d.category));
+  const hubs = (await tuyaUserDevices(auth, uid())).filter((d) => isTuyaIrHub(d.category));
   if (!hubs.length) console.log("Ningún hub infrarrojo en la cuenta vinculada.");
   for (const h of hubs) {
     console.log(`\n== ${h.name} (${h.online ? "online" : "offline"}) · ${h.id}`);
-    for (const r of await tuyaRemotes(h.id)) {
-      const keys = await tuyaRemoteKeys(h.id, r.remote_id);
-      const cap = remoteCapability(h.id, r, keys);
+    for (const r of await tuyaRemotes(auth, h.id)) {
+      const keys = await tuyaRemoteKeys(auth, h.id, r.remote_id);
+      const cap = remoteCapability(LOCAL, h.id, r, keys);
       console.log(
         `  - ${r.remote_name} · categoría ${r.category_id} (${kindOf(r.category_id)}) · ${r.brand_name ?? "?"} · ${r.remote_id}`,
       );
@@ -77,9 +87,14 @@ async function remotes() {
 }
 
 async function send(infraredId: string, remoteId: string, what: string, yes: boolean) {
-  const remote = (await tuyaRemotes(infraredId)).find((r) => r.remote_id === remoteId);
+  const remote = (await tuyaRemotes(auth, infraredId)).find((r) => r.remote_id === remoteId);
   if (!remote) throw new Error("Ese control no está en ese hub.");
-  const cap = remoteCapability(infraredId, remote, await tuyaRemoteKeys(infraredId, remoteId));
+  const cap = remoteCapability(
+    LOCAL,
+    infraredId,
+    remote,
+    await tuyaRemoteKeys(auth, infraredId, remoteId),
+  );
   if (!cap) throw new Error("Tuya no lista teclas para ese control.");
   const target = {
     infraredId,
@@ -98,9 +113,9 @@ async function send(infraredId: string, remoteId: string, what: string, yes: boo
     );
     return;
   }
-  if (ac) await tuyaSendAc({ ...target, power: what === "power-on" });
+  if (ac) await tuyaSendAc(auth, { ...target, power: what === "power-on" });
   else
-    await tuyaSendKey({
+    await tuyaSendKey(auth, {
       ...target,
       key: key!.tuya,
       ...(key!.keyId !== undefined ? { keyId: key!.keyId } : {}),

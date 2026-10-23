@@ -6,7 +6,7 @@ import { useTransition, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import type { ConnectionView } from "@/application/connections-service";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { catalogEntry, summarize, type ProviderCatalogEntry } from "@/core/providers/catalog";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -191,6 +191,13 @@ function ConnectAction({
         <form action={connectSpotify}>
           <Button type="submit">{label}</Button>
         </form>
+      );
+    case "tuya":
+      // ADR-119: connected where its devices live (Hogar → Buscar dispositivos).
+      return (
+        <Link href="/my-elise/home" className={buttonVariants()}>
+          {label}
+        </Link>
       );
     case "youtube":
       return (

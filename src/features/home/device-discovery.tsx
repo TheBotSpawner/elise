@@ -21,7 +21,7 @@ import { createElement, useCallback, useEffect, useState, useSyncExternalStore }
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import type { DiscoveredDevice, DiscoveryField, DiscoveryStep } from "@/core/home/discovery";
-import type { HomeDevice } from "@/core/home/model";
+import type { HomeDevice, HomeRoom } from "@/core/home/model";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -98,7 +98,10 @@ export function DeviceDiscovery({
   found: onNetwork = [],
   irControllers = 0,
   onIrDevice,
+  rooms = [],
 }: {
+  /** ADR-119: the home's rooms, to place Smart Life remotes as they're added. */
+  rooms?: readonly HomeRoom[];
   /** ADR-117: infrared controllers in the home: TVs and ACs are added from here too. */
   irControllers?: number;
   onIrDevice?: () => void;
@@ -203,7 +206,7 @@ export function DeviceDiscovery({
       <div className="flex flex-col gap-3">
         <p className="max-w-xl text-[15px] text-muted">{d.onlyDesktop}</p>
         {/* ADR-118: Smart Life goes through Tuya's cloud: it works from the web too. */}
-        <TuyaConnect />
+        <TuyaConnect rooms={rooms} />
         <Button variant="ghost" className="self-start" onClick={onDone}>
           {d.later}
         </Button>
@@ -331,7 +334,7 @@ export function DeviceDiscovery({
             </Button>
           </div>
         )}
-      <TuyaConnect />
+      <TuyaConnect rooms={rooms} />
       <ManualBroadlink />
       {anyAdded && <p className="text-[13px] text-faint">{d.appearing}</p>}
       <div className="flex flex-wrap gap-2">

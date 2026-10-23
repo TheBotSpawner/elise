@@ -56,6 +56,7 @@ const PROVIDER_NAMES: Record<ProviderKey, string[]> = {
   youtube: ["youtube", "you tube"],
   deezer: ["deezer"],
   slack: ["slack"],
+  tuya: ["smart life", "tuya", "tuya smart"],
 };
 
 /**

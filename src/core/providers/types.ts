@@ -9,7 +9,8 @@ export type ProviderKey =
   | "spotify"
   | "youtube"
   | "deezer"
-  | "slack";
+  | "slack"
+  | "tuya";
 
 export interface ProviderDefinition {
   key: ProviderKey;

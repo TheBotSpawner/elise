@@ -4535,21 +4535,66 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
         irTitle: "TV, aire o ventilador por infrarrojo",
         irHint: "Con tu Broadlink: elegís la marca y lo probamos.",
         tuya: {
-          title: "Conectar Tuya / Smart Life",
-          hint: "Tus controles de Smart Life (tele, aire…), listos sin volver a configurarlos.",
+          title: "Conectar Smart Life / Tuya Smart",
+          hint: "Tus controles de Smart Life (tele, aire…), listos sin volver a configurarlos. No necesita ELISE Desktop.",
+          connectIntro:
+            "Vas a autorizar tu propia cuenta en la página oficial de Tuya (con tu usuario o el QR de la app). ELISE nunca ve tu contraseña.",
+          another: "¿Otra cuenta de Smart Life?",
+          region: "Centro de datos de tu cuenta",
+          regionHint:
+            "Es el de la región con la que creaste tu cuenta de Smart Life. Si elegís otro, Tuya avisa y probás con el correcto.",
+          regions: {
+            us: "América (Oeste)",
+            "us-e": "América (Este)",
+            eu: "Europa Central",
+            "eu-w": "Europa Occidental",
+            in: "India",
+            sg: "Asia (Singapur)",
+            cn: "China",
+          },
           connect: "Conectar",
+          reconnect: "Reconectar",
+          disconnect: "Desconectar",
+          disconnectConfirm:
+            "ELISE deja de usar esta cuenta: se borra su autorización y sus controles salen de tu casa. En Smart Life no cambia nada.",
+          connected: "Smart Life conectado. Elegí qué controles agregar.",
+          connectedState: "Conectada",
+          showRemotes: "Ver controles",
+          sync: "Sincronizar",
+          notYet:
+            "Conectar Smart Life todavía no está disponible: ELISE está esperando la habilitación oficial de Tuya. Nunca te vamos a pedir tu contraseña.",
+          problems: {
+            token: "La autorización venció o fue revocada: reconectá.",
+            wrong_region: "Tu cuenta está en otro centro de datos: conectá eligiendo el otro.",
+            permission:
+              "Tuya no autorizó este acceso (servicio de infrarrojo o permiso no habilitado para ELISE).",
+            quota: "ELISE agotó su cuota de uso de Smart Life por ahora. Probá más tarde.",
+            project: "Tuya rechazó la configuración de ELISE. Avisanos.",
+            rate_limited: "Smart Life está ocupado. Probá en un momento.",
+            unavailable: "Smart Life no respondió. Probá en un momento.",
+            CONFLICT: "El enlace venció o ya se usó. Empezá de nuevo.",
+            PERMISSION_DENIED:
+              "No se completó la autorización (cancelada o abierta en otro navegador). Empezá de nuevo desde ELISE.",
+            CAPABILITY_UNAVAILABLE: "Smart Life no está disponible en esa región.",
+            generic: "No se pudo conectar Smart Life. Probá de nuevo.",
+          },
           loading: "Buscando en Smart Life…",
-          notConfigured: "Smart Life todavía no está disponible en ELISE.",
-          notLinked:
-            "Conectar tu cuenta de Smart Life desde ELISE todavía no está habilitado: necesita la autorización oficial de Tuya para apps como ELISE. Nunca te vamos a pedir tu contraseña de Smart Life.",
-          noHubs: "Tu cuenta de Smart Life no tiene controles infrarrojos.",
+          noHubs: "Tu cuenta de Smart Life no tiene hubs infrarrojos.",
+          others: (n: number) =>
+            n === 1
+              ? "1 dispositivo más de tu cuenta todavía no se puede controlar desde ELISE."
+              : `${n} dispositivos más de tu cuenta todavía no se pueden controlar desde ELISE.`,
           offline: "sin conexión",
           hubFailed: "No pudimos leer sus controles. Probá de nuevo en un rato.",
           noRemotes: "Sin controles configurados en Smart Life.",
           kinds: { tv: "Tele", ac: "Aire", fan: "Ventilador", other: "Control" },
+          room: (name: string) => `Habitación de ${name}`,
+          noRoom: "Sin habitación",
           inHome: "En tu casa",
-          sameAs: (name: string) => `Parece que ya lo tenés como “${name}”: no lo duplicamos.`,
-          addAnyway: "Agregar igual",
+          sameAs: (name: string) =>
+            `Ya tenés “${name}” con ese nombre: podés usar Smart Life en su lugar o agregar los dos.`,
+          addAnyway: "Agregar los dos",
+          preferTuya: "Usar Smart Life",
           addAll: (n: number) => (n === 1 ? "Agregar 1 control" : `Agregar ${n} controles`),
           skipped: (n: number) =>
             n === 1 ? "1 control no se pudo agregar." : `${n} controles no se pudieron agregar.`,
@@ -4735,6 +4780,7 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
     turnOn: "Encender",
     turnOff: "Apagar",
     toggle: (name: string) => `Encender o apagar ${name}`,
+    cloudHome: "Conectado por la nube (Smart Life)",
     tuya: { on: "Encender", off: "Apagar" },
     ir: {
       profile: {

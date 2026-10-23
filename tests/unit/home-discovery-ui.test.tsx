@@ -6,17 +6,24 @@ import { DeviceDiscovery } from "@/features/home/device-discovery";
 import { HomeRuntimeProvider, type HomeRuntimeControls } from "@/features/home/runtime-context";
 import { I18nProvider } from "@/lib/i18n/client";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 // ADR-103: adopting what a finished setup brought in is a server action.
 vi.mock("@/features/home/actions", () => ({
   adoptNewDevicesAction: vi.fn(async () => ({ ok: true, value: { added: 0 } })),
   updateDeviceAction: vi.fn(async () => ({ ok: true, value: null })),
-  // ADR-118: Smart Life is off on this server: its entry doesn't show.
-  tuyaOverviewAction: vi.fn(async () => ({
+  // ADR-119: Smart Life is off on this server: its entry doesn't show.
+  tuyaStatusAction: vi.fn(async () => ({
     ok: true,
-    value: { link: { state: "off" }, hubs: [] },
+    value: { availability: { state: "off" }, connections: [] },
   })),
+  connectTuyaAction: vi.fn(),
+  tuyaOverviewAction: vi.fn(),
   tuyaImportAction: vi.fn(),
+  tuyaSyncAction: vi.fn(),
+  disconnectTuyaAction: vi.fn(),
   controlDeviceAction: vi.fn(),
 }));
 

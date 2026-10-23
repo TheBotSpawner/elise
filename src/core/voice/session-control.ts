@@ -9,7 +9,8 @@
  * ADR-106: "ELISE, subí / bajá el volumen" moves the computer's volume a few points (Desktop).
  */
 
-export type SessionCommand = "stop" | "disable_wake" | "show" | "volume_up" | "volume_down";
+export type SessionCommand =
+  "stop" | "disable_wake" | "enable_wake" | "show" | "volume_up" | "volume_down";
 
 const fold = (s: string) =>
   s
@@ -32,16 +33,27 @@ const STOP = [
   /^(?:corta|termina|cerra|finaliza|terminemos|cortemos|fin de) (?:la )?(?:conversacion|charla|sesion|escucha)$/,
   /^(?:stop|quit) listening$/,
   /^(?:be quiet|shut up|end (?:the )?conversation|that s all|thats all)$/,
+  // "Callate", "no escuches", "apagate", "no molestes", "no me escuches más" and their kin: the
+  // whole utterance asks her to stop listening (the wake word stays on).
+  /^(?:callate|calla|callese|callate la boca|shhh*|silencio por favor|hace silencio|apagate|apagate ya|anda a dormir|dormite|a dormir|no molestes|no me molestes|deja de molestar|no escuches|no me escuches|no escuches mas|no me escuches mas|no me escuches nada mas|deja de escucharme|ya no me escuches|no me sigas escuchando|no sigas escuchando|cerra el microfono|apaga el microfono|corta el microfono|eso es todo|nada mas|nada mas por ahora|chau|chao|hasta luego|nos vemos)$/,
 ];
 
 const DISABLE = [
-  /^(?:desactiva|desactive|apaga|apague|deshabilita|deshabilite) (?:la |el )?(?:activacion por voz|palabra de activacion|escucha(?: de| de elise| en segundo plano)?|modo escucha|wake word)$/,
+  /^(?:desactiva|desactivas|desactive|desactivar|apaga|apague|deshabilita|deshabilite|saca|quita) (?:la |el )?(?:activacion por voz|palabra de activacion|escucha(?: de| de elise| en segundo plano| activa)?|modo (?:de )?escucha(?: activa)?|wake word)$/,
+  /^(?:pasa|pasate|cambia|cambiate|ponete) (?:a|al|en) modo manual$/,
   /^no (?:me )?(?:escuches|vuelvas a escuchar)(?: mas)? hasta que (?:te )?(?:lo )?(?:active|activo|diga|digo|llame|vuelva a activar)$/,
   /^(?:deja|para) de escuchar hasta que (?:te )?(?:lo )?(?:active|activo|diga|digo|vuelva a activar)$/,
   /^(?:turn off|disable) (?:the )?(?:wake word|voice activation)$/,
 ];
 
 /** Bring the app to the front: about ELISE herself, never "mostrame mis tareas". */
+/** "ELISE, activá la escucha": the wake word on again (from a session the person opened). */
+const ENABLE = [
+  /^(?:activa|activas|active|activar|reactiva|prende|prenda|encende|enciende|habilita|habilite|volve a activar|volve a prender) (?:la |el )?(?:activacion por voz|palabra de activacion|escucha(?: activa)?|modo (?:de )?escucha(?: activa)?|wake word)$/,
+  /^(?:volve a escucharme|escuchame de nuevo|segui escuchando|volve a escuchar)$/,
+  /^(?:turn on|enable) (?:the )?(?:wake word|voice activation)$/,
+];
+
 const SHOW = [
   /^(?:mostrate|muestrate|abrite|aparece|aparecete|apareceme|veni|vente|veni para aca|traete)$/,
   /^(?:abri|abrime|mostrame|traeme|pone|pasame) (?:la |tu )?(?:app|aplicacion|ventana|pantalla)(?: de elise)?$/,
@@ -74,6 +86,7 @@ export function sessionCommand(text: string): SessionCommand | null {
   // Repeated: "por favor, ELISE, ..." peels in more than one pass.
   for (let i = 0; i < 3; i++) s = s.replace(AROUND, "").trim();
   if (DISABLE.some((r) => r.test(s))) return "disable_wake";
+  if (ENABLE.some((r) => r.test(s))) return "enable_wake";
   if (STOP.some((r) => r.test(s))) return "stop";
   if (SHOW.some((r) => r.test(s))) return "show";
   if (VOLUME_UP.some((r) => r.test(s))) return "volume_up";

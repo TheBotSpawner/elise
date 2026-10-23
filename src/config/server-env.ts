@@ -64,23 +64,35 @@ const serverEnvSchema = z.object({
   /** The redirect URI registered in Mercado Libre Developers, exactly (ADR-116). */
   MERCADOLIBRE_REDIRECT_URI: z.string().url().startsWith("https://").optional(),
   /**
-   * Smart Life / Tuya (ADR-118): off unless "true". ELISE's own Tuya cloud project (Smart Home),
-   * server-only. TUYA_REGION picks the data center the project and the app account live in.
+   * Smart Life / Tuya (ADR-118, ADR-119): off unless "true". ELISE's own Tuya cloud project
+   * (client id + secret from the project's Overview), server-only. The same project serves every
+   * data center enabled in it.
    */
   TUYA_ENABLED: z.enum(["true", "false"]).default("false"),
   TUYA_CLIENT_ID: z.string().min(1).optional(),
   TUYA_CLIENT_SECRET: z.string().min(1).optional(),
-  TUYA_REGION: z.enum(["us", "us-e", "eu", "eu-w", "in", "cn", "sg"]).default("us"),
   /**
-   * Development linking (ADR-118): the Smart Life account linked to the project in Tuya's
-   * console ("Link App Account", its UID) and the one ELISE workspace allowed to import from it.
-   * Both or neither: without them no workspace sees any Tuya device.
+   * ADR-119: each person connects their own account through Tuya's official H5 authorization
+   * page. One link per data center, exactly as Tuya's console shows it after "Configure OAuth
+   * 2.0 Authorization" (its callback: https://<ELISE>/api/connections/tuya/callback/<region>).
+   * A data center without a link isn't offered.
    */
+  TUYA_OAUTH_URL_US: z.string().url().startsWith("https://").optional(),
+  TUYA_OAUTH_URL_US_E: z.string().url().startsWith("https://").optional(),
+  TUYA_OAUTH_URL_EU: z.string().url().startsWith("https://").optional(),
+  TUYA_OAUTH_URL_EU_W: z.string().url().startsWith("https://").optional(),
+  TUYA_OAUTH_URL_IN: z.string().url().startsWith("https://").optional(),
+  TUYA_OAUTH_URL_SG: z.string().url().startsWith("https://").optional(),
+  TUYA_OAUTH_URL_CN: z.string().url().startsWith("https://").optional(),
+  /**
+   * Local check script only (scripts/tuya-check.ts): a Smart Life account linked to the project
+   * in Tuya's console and its data center. Never used by the app.
+   */
+  TUYA_REGION: z.enum(["us", "us-e", "eu", "eu-w", "in", "cn", "sg"]).default("us"),
   TUYA_DEV_UID: z
     .string()
     .regex(/^[A-Za-z0-9_-]{4,80}$/)
     .optional(),
-  TUYA_DEV_WORKSPACE_ID: z.uuid().optional(),
   /** Location (ADR-023): server key restricted to Places (New), Routes and Geocoding. */
   GOOGLE_MAPS_SERVER_API_KEY: z.string().min(1).optional(),
   /** Weather (ADR-038): Open-Meteo commercial key; without it, the free non-commercial API. */

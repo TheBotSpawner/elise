@@ -549,13 +549,13 @@ export class LiveVoiceSession {
     // Volume is answered by the device's wake path and the speech pipeline; a Live session
     // delegates it like any request (ADR-106).
     if (!command || command === "volume_up" || command === "volume_down") return false;
-    if (command === "disable_wake")
+    if (command === "disable_wake" || command === "enable_wake")
       void (
         window as {
           eliseDesktop?: { setPreferences?: (p: { wakeWord: boolean }) => Promise<unknown> };
         }
       ).eliseDesktop
-        ?.setPreferences?.({ wakeWord: false })
+        ?.setPreferences?.({ wakeWord: command === "enable_wake" })
         .catch(() => undefined);
     this.deps.stop();
     void this.end();

@@ -36,7 +36,8 @@ const es = (env: ToolRunEnv) => env.ctx.locale === "es";
 
 async function snapshot(env: ToolRunEnv): Promise<HomeSnapshot> {
   const s = await port(env).snapshot();
-  if (!s.home || !s.hub)
+  // ADR-119: a home with Smart Life devices works with no hub.
+  if (!s.home || (!s.hub && !s.devices.length))
     throw new AppError("CAPABILITY_UNAVAILABLE", "ELISE Home isn't set up yet", {
       recovery: "configure",
       details: { setup: "/my-elise/home" },
@@ -58,7 +59,7 @@ function view(
 ): HomeView {
   return {
     title: title.slice(0, 120),
-    hub: s.hub!.status,
+    hub: s.hub?.status ?? "online",
     items: devices.slice(0, 24).map((d) => {
       const o = outcomes?.find((x) => x.deviceId === d.id);
       const now = o?.state ? { ...d, state: o.state } : d;
@@ -116,10 +117,10 @@ export const homeStatusTool: ToolDefinition = {
       devices = r.kind === "one" ? s.devices.filter((d) => d.roomId === r.item.id) : [];
     }
     if (q.type) devices = devices.filter((d) => d.type === q.type);
-    const stale = s.hub!.status === "offline";
+    const stale = (s.hub?.status ?? "online") === "offline";
     return {
       output: {
-        hub: s.hub!.status,
+        hub: s.hub?.status ?? "online",
         ...(stale ? { note: offlineNote(s) } : {}),
         devices: devices.slice(0, 40).map((d) => ({
           name: d.name,

@@ -251,7 +251,12 @@ export function ChatSurface({
   const orbState = resolveOrbState([...voiceOrb, chatOrb]);
   const voiceHandlers = {
     start: voiceSession.start,
-    end: voiceSession.end,
+    // The X: no listening and no answer — a request already sent is cancelled too (the mic
+    // button, instead, ends the turn and lets ELISE answer).
+    end: () => {
+      voiceSession.end();
+      if (busy) stop();
+    },
     interrupt: voiceSession.interrupt,
     finishNow: voiceSession.finishNow,
     toggleMute: voiceSession.toggleMute,

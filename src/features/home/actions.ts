@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { requireAuthContext } from "@/application/auth-context";
@@ -20,7 +22,13 @@ import {
   updateHomeDevice,
   updateIrCommands,
 } from "@/application/home-service";
-import { tuyaImport, tuyaLink, tuyaOverview } from "@/application/tuya-home-service";
+import {
+  disconnectTuya,
+  startTuyaConnection,
+  tuyaAvailability,
+  tuyaConnections,
+} from "@/application/tuya-connection-service";
+import { syncTuya, tuyaImport, tuyaOverview } from "@/application/tuya-home-service";
 import { AppError, toPublicError, type PublicError } from "@/core/errors";
 import {
   homeActionInputSchema,
@@ -149,21 +157,52 @@ export async function irCommandAction(deviceId: string, raw: unknown) {
 }
 
 /**
- * ADR-118: Smart Life (Tuya). Whether it's available to this account and, when linked, its
- * infrared hubs with the remotes already set up in Smart Life.
+ * ADR-119: Smart Life (Tuya). Whether it's offered here, and this workspace's own accounts.
  */
-export async function tuyaOverviewAction(load: boolean) {
+export async function tuyaStatusAction() {
   return run(async () => {
     const auth = await requireAuthContext();
-    const link = tuyaLink(auth);
+    const availability = tuyaAvailability();
     return {
-      link,
-      ...(load && link.state === "linked" ? await tuyaOverview(auth) : { hubs: [] }),
+      availability,
+      connections: availability.state === "off" ? [] : await tuyaConnections(auth),
     };
   });
 }
 
-/** ADR-118: the chosen Smart Life remotes become ready devices in the home. */
+/** Starts the person's own authorization on Tuya's official page (their data center). */
+export async function connectTuyaAction(form: FormData): Promise<void> {
+  const auth = await requireAuthContext();
+  const h = await headers();
+  let url: string;
+  try {
+    url = await startTuyaConnection(auth, {
+      region: form.get("region"),
+      connectionId: form.get("connectionId") || null,
+      origin: h.get("origin") ?? `https://${h.get("host")}`,
+    });
+  } catch (error) {
+    redirect(`/my-elise/home?tuya_error=${toPublicError(error).code}`);
+  }
+  redirect(url);
+}
+
+/** One connection's hubs and the remotes already set up in Smart Life. */
+export async function tuyaOverviewAction(connectionId: string) {
+  return run(async () => tuyaOverview(await requireAuthContext(), connectionId));
+}
+
+/** The chosen Smart Life remotes become ready devices in the home. */
 export async function tuyaImportAction(raw: unknown) {
   return run(async () => tuyaImport(await requireAuthContext(), raw));
+}
+
+/** "Sincronizar": names, keys and deleted remotes from Smart Life, now. */
+export async function tuyaSyncAction(connectionId: string) {
+  return run(async () => syncTuya(await requireAuthContext(), connectionId));
+}
+
+/** "Desconectar": this account's token, cache and devices leave ELISE. */
+export async function disconnectTuyaAction(connectionId: string) {
+  return run(async () => disconnectTuya(await requireAuthContext(), connectionId));
 }

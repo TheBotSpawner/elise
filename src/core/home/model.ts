@@ -131,6 +131,8 @@ export const homeCapabilitySchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("tuya_ir"),
+      /** ADR-119: the ELISE connection (one person's Tuya account) this remote comes from. */
+      connectionId: z.uuid(),
       infraredId: TUYA_ID,
       remoteId: TUYA_ID,
       /** Tuya's infrared category (2 TV, 5 air conditioner, 8 fan, 999 learned…). */

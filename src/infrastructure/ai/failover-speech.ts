@@ -47,7 +47,9 @@ export class FailoverSpeechOutput implements SpeechOutputProvider {
         return await this.primary.synthesize(request, signal);
       } catch (error) {
         if (signal?.aborted) throw error;
-        this.openUntil = this.now() + this.restMs;
+        // Credits used up won't come back in a minute: don't retry the primary for 30.
+        const quota = (error as { details?: { quotaExceeded?: boolean } }).details?.quotaExceeded;
+        this.openUntil = this.now() + (quota ? 30 * 60_000 : this.restMs);
         logger.warn("speech.failover", {
           from: this.primary.id,
           to: this.fallback.id,

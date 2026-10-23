@@ -171,6 +171,13 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     let chimed = false;
     /** ADR-109: this capture began over ELISE's reply (paused until it's settled). */
     let interrupting = false;
+    /**
+     * Heard while she was still preparing the reply (thinking, executing): nothing of hers is
+     * playing to stop, so only a confirmed call ("ELISE" plus words, transcribed) may cancel it.
+     * A false "ELISE" from noise or the person's own sentence used to throw the reply away and
+     * leave her listening again with no answer.
+     */
+    let overPreparing = false;
     /** ADR-109: this capture is her own voice saying her name: dropped. */
     let ignoring = false;
     /** The paused reply continues (it wasn't a call, or the request didn't need it to stop). */
@@ -219,6 +226,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
             // ADR-109: over her own reply — unless she just said her own name (her echo) — her
             // voice freezes at once while the words are checked.
             interrupting = deviceMayInterrupt(phase);
+            overPreparing = interrupting && phase !== "speaking";
             if (interrupting && saidOwnName()) {
               logSound("wake:candidate", "own name in her reply, ignored");
               ignoring = true;
@@ -272,8 +280,15 @@ export function DesktopWake({ children }: { children: ReactNode }) {
         seconds: +(capture.audio.length / capture.sampleRate).toFixed(1),
         speechAfter: capture.speechAfter,
       });
+      const reject = () => {
+        detector.outcome("rejected");
+        return finishHandOff();
+      };
+      // Over a reply still being prepared, silence after the word is no call.
+      if (overPreparing && !capture.speechAfter) return reject();
       if (capture.speechAfter) {
         const text = await transcribe(wav(capture.audio, capture.sampleRate));
+        if (overPreparing && text === null) return reject();
         if (text !== null) {
           // Over her reply, the capture may begin with her own voice: the name is found where
           // it is (ADR-109); otherwise it must open what was said.
@@ -284,10 +299,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
           });
           // The words didn't start with "ELISE" (someone said it mid-sentence, or it wasn't
           // the word): no conversation starts, and the next candidates need more evidence.
-          if (!m.matched && text.trim()) {
-            detector.outcome("rejected");
-            return finishHandOff();
-          }
+          if (!m.matched && (text.trim() || overPreparing)) return reject();
           remainder = m.remainder;
         }
       }
@@ -317,8 +329,10 @@ export function DesktopWake({ children }: { children: ReactNode }) {
         // "ELISE, basta": the reply that was paused stops for good.
         if (interrupting) requestVoiceControl("interrupt");
         interrupting = false;
-        if (command === "disable_wake")
-          void window.eliseDesktop?.setPreferences?.({ wakeWord: false }).catch(() => undefined);
+        if (command === "disable_wake" || command === "enable_wake")
+          void window.eliseDesktop
+            ?.setPreferences?.({ wakeWord: command === "enable_wake" })
+            .catch(() => undefined);
         requestVoiceEnd();
         return finishHandOff();
       }

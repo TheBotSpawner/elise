@@ -70,6 +70,15 @@ export const PROVIDERS: readonly ProviderDefinition[] = [
     status: "available",
     sourceOfTruth: "external",
   },
+  // Smart Life / Tuya (ADR-119): the person's own account (OAuth, their data center); ELISE Home.
+  {
+    key: "tuya",
+    authType: "oauth2",
+    supportsMultipleAccounts: true,
+    capabilities: ["home"],
+    status: "available",
+    sourceOfTruth: "external",
+  },
   {
     key: "web_search",
     authType: "api_key",

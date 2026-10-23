@@ -708,6 +708,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
         let failure: ReturnType<typeof toPublicError> | null = null;
         let usage: { inputTokens: number; outputTokens: number } | null = null;
         const splitter = modality === "voice" ? new SpokenSplitter() : null;
+        let displayStarted = false;
         let model: string | null = null;
         // The turn's tool context, kept so a Surface's own read can be replayed (ADR-029).
         let toolCtx: ToolContext | null = null;
@@ -851,8 +852,18 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                   break;
                 }
                 const part = splitter.push(event.delta);
-                if (part.spoken) send({ type: "spoken", delta: part.spoken });
-                if (part.display) send({ type: "text", delta: part.display });
+                // The answer is always on screen too: what she says first, then what only the
+                // screen adds (details, sources). A screen part with nothing but the sources
+                // used to leave the thread without the answer itself.
+                if (part.spoken) {
+                  send({ type: "spoken", delta: part.spoken });
+                  send({ type: "text", delta: part.spoken });
+                }
+                if (part.display) {
+                  const gap = splitter.spoken && !displayStarted ? "\n\n" : "";
+                  displayStarted = true;
+                  send({ type: "text", delta: gap + part.display });
+                }
                 break;
               }
               case "status":
@@ -1065,19 +1076,24 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
         }
 
         /**
-         * The text kept on screen and in History. A voice reply that was only spoken still
-         * shows on screen (the same words), so nothing ELISE said is missing from the thread.
+         * The text kept on screen and in History: what ELISE said, then what only the screen
+         * adds. Nothing she said is missing from the thread.
          */
         function finishSpoken(text: string): string {
           if (!splitter) return stripSpokenTags(text);
           const rest = splitter.flush();
-          if (rest.spoken) send({ type: "spoken", delta: rest.spoken });
-          if (rest.display) send({ type: "text", delta: rest.display });
-          const display = stripSpokenTags(splitter.display).trim();
-          if (display) return display;
+          if (rest.spoken) {
+            send({ type: "spoken", delta: rest.spoken });
+            send({ type: "text", delta: rest.spoken });
+          }
+          if (rest.display)
+            send({
+              type: "text",
+              delta: (splitter.spoken && !displayStarted ? "\n\n" : "") + rest.display,
+            });
           const spoken = stripSpokenTags(splitter.spoken).trim();
-          if (spoken) send({ type: "text", delta: spoken });
-          return spoken;
+          const display = stripSpokenTags(splitter.display).trim();
+          return [spoken, display].filter(Boolean).join("\n\n");
         }
 
         /** A request's first tool sets a lightweight intent when there is none yet. */

@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { createPairingCodeAction } from "./actions";
 import { DeviceDiscovery, useDevicesStepDone } from "./device-discovery";
 import { useHomeRuntime } from "./runtime-context";
+import { TuyaConnect } from "./tuya-connect";
 
 export interface DesktopDownload {
   platform: "windows" | "macos";
@@ -129,6 +130,8 @@ export function HomeSetup({
           <HomeVisual active={step} />
         </div>
       </section>
+      {/* ADR-119: Smart Life needs no ELISE Desktop: it can be connected from here too. */}
+      <TuyaConnect rooms={snapshot.rooms} />
       {devTools && <DevPairing />}
     </div>
   );

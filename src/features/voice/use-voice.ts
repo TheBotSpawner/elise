@@ -96,6 +96,14 @@ export function useVoice({
             ).eliseDesktop;
             void desktop?.setPreferences?.({ wakeWord: false });
           },
+          enableWake: () => {
+            const desktop = (
+              window as {
+                eliseDesktop?: { setPreferences?: (p: { wakeWord: boolean }) => Promise<unknown> };
+              }
+            ).eliseDesktop;
+            void desktop?.setPreferences?.({ wakeWord: true });
+          },
           // ADR-104: "ELISE, mostrate" — only where there is a window to bring up.
           ...("eliseDesktop" in window
             ? {
