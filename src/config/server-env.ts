@@ -93,6 +93,15 @@ const serverEnvSchema = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]{4,80}$/)
     .optional(),
+  /**
+   * Real images (ADR-120). Wikimedia Commons: free, no key, ~1 s — on unless "false".
+   * Openverse: free, no key, but 10–17 s per uncached search anonymously — off unless "true".
+   * Place photos from Places API (New): billed per use (Text Search + Place Photo SKUs) on the
+   * Maps key below — off unless "true".
+   */
+  IMAGES_COMMONS_ENABLED: z.enum(["true", "false"]).default("true"),
+  IMAGES_OPENVERSE_ENABLED: z.enum(["true", "false"]).default("false"),
+  IMAGES_PLACES_ENABLED: z.enum(["true", "false"]).default("false"),
   /** Location (ADR-023): server key restricted to Places (New), Routes and Geocoding. */
   GOOGLE_MAPS_SERVER_API_KEY: z.string().min(1).optional(),
   /** Weather (ADR-038): Open-Meteo commercial key; without it, the free non-commercial API. */

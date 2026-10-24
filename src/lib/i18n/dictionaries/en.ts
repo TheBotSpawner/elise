@@ -1989,7 +1989,7 @@ export const en = {
     editTitle: (name: string) => `Edit “${name}”`,
     presets: {
       morning_brief: {
-        name: "Morning Brief",
+        name: "Daily summary",
         purpose: "Start the day with your calendar, tasks and what matters.",
         instructions: "",
       },
@@ -2189,8 +2189,8 @@ export const en = {
     firstRun: (when: string) => `First: ${when}`,
   },
   brief: {
-    title: "Morning Brief",
-    ready: "Morning Brief ready",
+    title: "Daily summary",
+    ready: "Daily summary ready",
     view: "View",
     listen: "Listen",
     stop: "Stop",
@@ -3420,6 +3420,20 @@ export const en = {
         future: "Still ahead",
       },
     },
+    gallery: {
+      of: (i: number, n: number) => `${i} of ${n}`,
+      previous: "Previous photo",
+      next: "Next photo",
+      enlarge: (name: string) => `Enlarge photo of ${name}`,
+      close: "Close",
+      viewSource: "View source",
+      photoBy: (who: string) => `Photo: ${who}`,
+      map: "View on map",
+      more: "See more images on Google",
+      external: "Opens outside ELISE",
+      unavailable: "Image unavailable",
+      label: (name: string) => `Photos of ${name}`,
+    },
     media: {
       play: "Play",
       open: "Open",
@@ -3484,6 +3498,7 @@ export const en = {
       shortcut: "Shortcut",
       visualization: "Chart",
       media: "Media",
+      image_gallery: "Photos",
       map: "Map",
       place: "Place",
       weather: "Weather",
@@ -4239,7 +4254,7 @@ export const en = {
     asksFirst: "Asks first",
     runs: (n: number) => `Used ${n} ${n === 1 ? "time" : "times"}`,
     steps: {
-      "morning_brief.run": "Morning Brief",
+      "morning_brief.run": "Daily summary",
       "daily_planning.start": "Plan the day",
       "meeting.prepare_next": "Prepare the next meeting",
       "study.start": "Start a study session",

@@ -39,10 +39,13 @@ beforeEach(() => {
 });
 
 describe("the tab's active conversation", () => {
-  it("is remembered in sessionStorage (id only), read back, and forgotten", () => {
+  it("is remembered in sessionStorage (id and when it was used), read back, and forgotten", () => {
     expect(readActiveThread()).toBeNull();
     rememberThread(A);
-    expect(JSON.parse(sessionStorage.getItem(ACTIVE_THREAD_KEY)!)).toEqual(A);
+    expect(JSON.parse(sessionStorage.getItem(ACTIVE_THREAD_KEY)!)).toEqual({
+      ...A,
+      at: expect.any(Number),
+    });
     expect(readActiveThread()).toEqual(A);
     forgetThread(B.id); // another one: kept
     expect(readActiveThread()).toEqual(A);
@@ -83,6 +86,16 @@ describe("arriving on Home", () => {
 
   it("a bare Home visit (navigation, reload of /) reopens the active conversation", () => {
     expect(homeArrival({ ...base, pointer: A }).open).toBe(`/chat/${A.id}`);
+  });
+
+  it("hours later, Inicio is a new conversation (the old one stays in Historial)", () => {
+    const now = Date.parse("2026-10-24T20:00:00Z");
+    const recent = homeArrival({ ...base, pointer: A, pointerAt: now - 2 * 3_600_000, now });
+    expect(recent.open).toBe(`/chat/${A.id}`);
+    const old = homeArrival({ ...base, pointer: A, pointerAt: now - 3.5 * 3_600_000, now });
+    expect(old).toMatchObject({ open: null, forget: "all" });
+    // A pointer saved before this rule (no time) is treated as old.
+    expect(homeArrival({ ...base, pointer: A, pointerAt: null, now }).open).toBeNull();
   });
 
   it("no active conversation: fresh Home, nothing created", () => {

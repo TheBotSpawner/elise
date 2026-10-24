@@ -131,7 +131,7 @@ export function locationCapability(
  * coordinates. Server key only — it never reaches the browser. Without Maps configured the
  * picker says so and the old free-text value keeps working.
  */
-function serverMaps(): GoogleMapsLocation {
+export function serverMaps(): GoogleMapsLocation {
   const key = serverKey();
   if (!key)
     throw new AppError("CAPABILITY_UNAVAILABLE", "Maps isn't configured", {

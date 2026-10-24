@@ -261,6 +261,10 @@ function ensurePlayer(): Promise<YTPlayer> {
               if (next === "playing" || next === "paused" || next === "ended")
                 window.clearTimeout(watchdog);
               if (e.data === YT.ENDED && index < queue.length - 1) return void playIndex(index + 1);
+              // The last requested song ended: like YouTube's own autoplay, its Mix plays on
+              // (no need to ask again). A Mix ending just ends: it's a playlist by then.
+              if (e.data === YT.ENDED && queue[index]?.kind === "video")
+                return void startMix(e.target, queue[index]!);
               publish(e.target, next);
             },
             onAutoplayBlocked: () => {
@@ -295,6 +299,25 @@ function ensurePlayer(): Promise<YTPlayer> {
     ready = null;
   });
   return ready;
+}
+
+/**
+ * Nothing else queued: YouTube's own Mix of this song ("up next"), from its second item — on
+ * "siguiente" and when the song ends by itself (autoplay). From then on next / previous move
+ * through the Mix.
+ */
+function startMix(p: YTPlayer, current: MusicItem) {
+  const mix = `RD${idOf(current.ref)}`;
+  queue[index] = {
+    ...current,
+    kind: "playlist",
+    ref: `youtube:${mix}`,
+    title: `Mix: ${current.title}`,
+  };
+  trace("mix");
+  p.loadPlaylist({ list: mix, listType: "playlist", index: 1 });
+  publish(p, "play_requested");
+  armWatchdog();
 }
 
 async function playIndex(i: number) {
@@ -349,19 +372,7 @@ export async function applyYouTube(command: MusicCommand, video = false) {
       if (current?.kind === "playlist") p.nextVideo();
       else if (index < queue.length - 1) await playIndex(index + 1);
       else if (current) {
-        // Nothing else queued: YouTube's own mix of this song ("up next"), from its second
-        // item. From then on next / previous move through the mix.
-        const mix = `RD${idOf(current.ref)}`;
-        queue[index] = {
-          ...current,
-          kind: "playlist",
-          ref: `youtube:${mix}`,
-          title: `Mix: ${current.title}`,
-        };
-        trace("mix");
-        p.loadPlaylist({ list: mix, listType: "playlist", index: 1 });
-        publish(p, "play_requested");
-        armWatchdog();
+        startMix(p, current);
       } else
         publish(p, state, locale === "es" ? "La cola terminó." : "That's the end of the queue.");
       return;

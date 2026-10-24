@@ -21,6 +21,7 @@ import {
   HOME_SIGNAL,
   selectTools,
   toolsInNotes,
+  wantsWebSearch,
 } from "@/core/agents/tool-selection";
 import type { ToolContext } from "@/core/agents/tools";
 import { isImage, resolveImageContext } from "@/core/attachments/vision";
@@ -454,6 +455,15 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     );
   const turnHints = [
     contextHint,
+    // "Mostrame los hábitos de hoy" right after talking about tasks: habits are their own
+    // module (a day plan, a task list or a method on screen must not pull it into tasks).
+    /(?<!\p{L})h[aá]bitos?(?!\p{L})|(?<!\p{L})habits?(?!\p{L})/iu.test(input.message)
+      ? "The user asks about their Habits (ELISE's habits module): use habits.list / habits.getProgress / habits.getStats — never tasks tools for this. Report only what those tools return; never say a query failed unless a tool result says so."
+      : null,
+    // "Investigá…", "buscá en internet…": the user wants the answer from the web, not memory.
+    wantsWebSearch(input.message)
+      ? 'The user explicitly asked to search the web for this ("investigá" / "buscá en internet"): answer ONLY from web tools called in this turn (web.search; web.research for a broad topic), citing the sources — never from your general knowledge, even if you think you know.'
+      : null,
     repairIntent ? repairHint(repairIntent, repairTarget, auth.profile.locale) : null,
     canonicalHint(canonical),
     approval.kind === "ask"

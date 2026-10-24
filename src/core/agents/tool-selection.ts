@@ -49,6 +49,14 @@ const FOLLOWING =
 const HOME_WORDS =
   /(?<!\p{L})(luz|luces|l[aá]mpara\p{L}*|foco\p{L}*|aire( acondicionado)?|split|ventilador\p{L}*|humidificador\p{L}*|enchufe\p{L}*|tele|tv|televisor|calefacci[oó]n|termostato|persiana\p{L}*|living|dormitorio|habitaci[oó]n|cocina|ba[ñn]o|modo (estudio|cine|dormir|trabajo|lectura|fiesta)|modos?|escenas?|hogar|dispositivos?|prend[eéií]\p{L}*|apag[aáuo]\p{L}*|encend[eé]\p{L}*|light|lights|lamp|thermostat|turn (on|off)|scene)(?!\p{L})/iu;
 export const HOME_SIGNAL = { test: (m: string) => HOME_WORDS.test(m) };
+/**
+ * "Investigá…", "buscá en internet / en la web / en Google…", "fijate en internet": the person
+ * wants a web search, not ELISE's general knowledge (decided before the model, every turn).
+ */
+const WEB_REQUEST =
+  /(?<!\p{L})(investig[aá]\p{L}*|averigu[aá]\p{L}*|busc[aá](lo|la|me)? (en|por) (internet|la web|la red|google|la internet)|fijate (en|por) (internet|la web|google)|search (the web|online|the internet)|look (it )?up online|google it|googlealo|gugleal[oa])(?!\p{L})/iu;
+export const wantsWebSearch = (message: string) => WEB_REQUEST.test(message);
+
 /** Holidays: the tool is in the always-on calendar group; this only brings its guidance. */
 export const HOLIDAY_WORDS =
   /(?<!\p{L})(feriad\p{L}*|no laborable|fin de semana largo|finde largo|holidays?)(?!\p{L})/iu;
@@ -120,7 +128,7 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   ["notes", /\b(notas?|notes?|anot\w*|apunt[aá]\w*)\b/i],
   [
     "schedules",
-    /\b(program[aá]\w*|todos los d[ií]as|cada (d[ií]a|lunes|martes|mi[eé]rcoles|jueves|viernes|semana|mañana)|every (day|morning|week\w*)|morning brief|resumen (matutino|diario)|recordame cada)\b/i,
+    /\b(program[aá]\w*|todos los d[ií]as|cada (d[ií]a|lunes|martes|mi[eé]rcoles|jueves|viernes|semana|mañana)|every (day|morning|week\w*)|morning brief|resumen (matutino|diario|del d[ií]a)|recordame cada)\b/i,
   ],
   ["location", LOCATION_SIGNAL],
   // Public markets (ADR-074): tickers, listed companies in a market context, prices, indices.
@@ -141,7 +149,7 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   ],
   [
     "web",
-    /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|publicaci\w*|anuncios?|listings?|ofertas?|productos?|opciones|departamentos?|alquiler\w*|en venta|comprar|usados?|cursos?|buscame|encontrame|find me)\b/i,
+    /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|publicaci\w*|anuncios?|listings?|ofertas?|productos?|opciones|departamentos?|alquiler\w*|en venta|comprar|usados?|cursos?|buscame|encontrame|find me|fotos?|im[aá]genes|imagen|photos?|pictures?|images?|c[oó]mo (es|son|se ve\w*)|mostrame|playas?|viaj\w*|turismo|hotel(es)?|excursi\w*|itinerario)\b/i,
   ],
 ];
 
@@ -170,6 +178,7 @@ const SURFACE_GROUPS: Readonly<Record<string, string>> = {
   web_news: "web",
   web_research: "web",
   web_collection: "web",
+  image_gallery: "web",
   context_overview: "contexts",
   context_proposal: "contexts",
   study_question: "study",
@@ -219,6 +228,7 @@ export function selectTools(
 ): ToolSelection {
   const groups = new Set(CORE_GROUPS);
   for (const [g, re] of SIGNALS) if (re.test(signals.message)) groups.add(g);
+  if (wantsWebSearch(signals.message)) groups.add("web");
   if (signals.listNames?.length && namesAList(signals.message, signals.listNames))
     groups.add("lists");
   for (const s of signals.surfaceTypes ?? []) if (SURFACE_GROUPS[s]) groups.add(SURFACE_GROUPS[s]);

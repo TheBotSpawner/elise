@@ -204,6 +204,8 @@ export interface VoiceDeps {
   disableWake?: () => void;
   /** "Activá la escucha": the wake word on again where it lives (Desktop's setting). */
   enableWake?: () => void;
+  /** "Decime mi resumen del día": opens today's summary and plays it; false when none. */
+  openDailySummary?: () => Promise<boolean>;
   /** ADR-104: "ELISE, mostrate" — ELISE Desktop's window to the front. Absent on the web. */
   showApp?: () => void;
   /** ADR-106: the computer's volume, a few points (ELISE Desktop only). */
@@ -467,7 +469,28 @@ export class VoiceController {
     this.act({ type: "speech_start" });
     this.act({ type: "speech_end" });
     this.act({ type: "transcript", text });
-    this.beginTurn(text, this.prefs.language, 0);
+    if (!this.wantsDailySummary(text)) return this.beginTurn(text, this.prefs.language, 0);
+    const phase = this.state.phase;
+    void this.dailySummary(text).then((opened) => {
+      if (!opened && this.state.phase === phase) this.beginTurn(text, this.prefs.language, 0);
+    });
+  }
+
+  private wantsDailySummary(text: string) {
+    return Boolean(this.deps.openDailySummary) && sessionCommand(text) === "daily_summary";
+  }
+
+  /**
+   * "Decime mi resumen del día": today's summary opens and plays (its "Escuchar"), and this
+   * session ends — the summary is the answer. With none ready, the request goes to ELISE as
+   * usual, which prepares one now.
+   */
+  private async dailySummary(text: string): Promise<boolean> {
+    if (!this.wantsDailySummary(text)) return false;
+    this.trace("session_command", { command: "daily_summary" });
+    const opened = await this.deps.openDailySummary!().catch(() => false);
+    if (opened) this.end();
+    return opened;
   }
 
   /** A fresh utterance: recorder on, turn detection from zero (the room is calibrated). */
@@ -703,6 +726,11 @@ export class VoiceController {
     }
     if (this.sessionControl(text)) return;
     this.lastActivity = this.now;
+    if (this.wantsDailySummary(text)) {
+      const phase = this.state.phase;
+      if (await this.dailySummary(text)) return;
+      if (this.state.phase !== phase) return; // ended meanwhile
+    }
     this.beginTurn(text, result.language, utterance.durationMs);
     this.startTail();
   }
@@ -714,7 +742,8 @@ export class VoiceController {
    */
   private sessionControl(text: string): boolean {
     const command = sessionCommand(text);
-    if (!command) return false;
+    // The daily summary needs to look it up first (dailySummary).
+    if (!command || command === "daily_summary") return false;
     // On the web there is no window to bring up: the request goes to ELISE as usual.
     if (command === "show" && !this.deps.showApp) return false;
     const volume = command === "volume_up" ? "up" : command === "volume_down" ? "down" : null;
@@ -1482,6 +1511,15 @@ export class VoiceController {
     this.delivery = new DeliverySession(this.prefs.adaptiveDelivery ?? true);
     this.player?.setDelivery?.("normal");
     this.act({ type: "end" });
+  }
+
+  /**
+   * "No quiero ni que respondas" (the X, Desktop's corner Orb): listening ends and a reply still
+   * being prepared is cancelled too — not just the session.
+   */
+  cancelAll() {
+    if (this.turn && !this.turn.textDone) this.deps.cancel?.();
+    this.end();
   }
 
   dispose() {

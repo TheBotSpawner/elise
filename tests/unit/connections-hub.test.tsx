@@ -257,7 +257,7 @@ describe("Connections Hub", () => {
   });
 
   it("Mi ELISE: every module listed (hidden ones too), state in words, toggled in place", async () => {
-    hub(ACCOUNTS, { ...effectiveModules(null), home: true, habits: false });
+    hub(ACCOUNTS, { ...effectiveModules(null), goals: true, finance: true, habits: false });
     const habits = screen.getByRole("switch", { name: "Mostrar Hábitos en Mi ELISE" });
     expect(habits.getAttribute("aria-checked")).toBe("false");
     // A hidden module stays here so it can be shown again.

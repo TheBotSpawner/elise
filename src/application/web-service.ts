@@ -24,6 +24,7 @@ import {
 } from "@/infrastructure/web/search-providers";
 
 import type { AuthContext } from "./auth-context";
+import { imageSearchAvailable, searchImages } from "./image-search-service";
 import { listSpaces, saveWebPageToKnowledge } from "./knowledge-service";
 
 /**
@@ -106,6 +107,7 @@ export function webCapability(auth: AuthContext, runId: string | null = null): W
     });
   };
   return {
+    ...(imageSearchAvailable() ? { images: (req) => searchImages(auth, req) } : {}),
     async search(q: WebSearchQuery): Promise<WebResult[]> {
       const key = `${auth.workspaceId}:s:${q.kind}:${q.recency}:${q.domains?.join(",")}:${q.query.toLowerCase()}`;
       const hit = cached<WebResult[]>(key);

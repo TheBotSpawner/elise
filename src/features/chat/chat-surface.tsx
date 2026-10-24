@@ -27,7 +27,13 @@ import { LiveCanvas } from "@/features/workspace/canvas/live-canvas";
 import { SurfaceView, type CanvasHandlers } from "@/features/workspace/canvas/surface-view";
 import { useWorkspaceController } from "@/features/workspace/use-workspace";
 import { useOnline } from "@/hooks/use-online";
-import { forgetThread, homeArrival, readActiveThread, rememberThread } from "@/lib/active-thread";
+import {
+  activeThreadAt,
+  forgetThread,
+  homeArrival,
+  readActiveThread,
+  rememberThread,
+} from "@/lib/active-thread";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -153,6 +159,8 @@ export function ChatSurface({
       gone,
       fresh,
       pointer: readActiveThread(),
+      pointerAt: activeThreadAt(),
+      now: Date.now(),
       search: window.location.search,
     });
     if (step.remember) rememberThread(step.remember);

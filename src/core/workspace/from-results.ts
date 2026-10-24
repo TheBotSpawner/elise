@@ -1026,6 +1026,24 @@ export function surfacesFromOutcome(
           ref: null,
         }),
       );
+    case "image_gallery": {
+      // ADR-120: "más fotos de la segunda" updates that subject's gallery; a new question makes
+      // its own (keyed by its subjects), so an older gallery never stands in for this one.
+      const names = d.gallery.groups.map((g) => g.name);
+      return one(
+        draft(
+          "image_gallery",
+          d.key ?? d.gallery.groups.map((g) => g.key).join("+"),
+          d.gallery,
+          opts,
+          {
+            title: names.join(" · ").slice(0, 120),
+            source: { capability: "web_search", label: null },
+            ref: null,
+          },
+        ),
+      );
+    }
     case "weather": {
       const w = d.weather;
       // One forecast per interaction: asking again (another day, another city) updates it.

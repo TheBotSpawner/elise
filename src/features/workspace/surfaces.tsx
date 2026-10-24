@@ -38,6 +38,7 @@ import {
   Zap,
   BarChart3,
   Image as ImageIcon,
+  Images,
   Map as MapIcon,
   CloudSun,
   MapPin,
@@ -74,6 +75,7 @@ import { cn } from "@/lib/utils";
 import { AnswerBody } from "./answer-view";
 import { CalendarBody } from "./calendar-view";
 import type { VisualSize } from "./canvas/composition";
+import { ImageGalleryBody } from "./canvas/image-gallery";
 import { MapBody, PlaceBody } from "./canvas/map";
 import { MediaBody } from "./canvas/media";
 import { WeatherView } from "./canvas/weather";
@@ -126,6 +128,7 @@ export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
   shortcut: Zap,
   visualization: BarChart3,
   media: ImageIcon,
+  image_gallery: Images,
   map: MapIcon,
   weather: CloudSun,
   music: Music,
@@ -1238,6 +1241,13 @@ export function SurfaceBody({
       return (
         <MediaBody
           p={surface.payload as SurfacePayloads["media"]}
+          size={size ?? (large ? "large" : "medium")}
+        />
+      );
+    case "image_gallery":
+      return (
+        <ImageGalleryBody
+          p={surface.payload as SurfacePayloads["image_gallery"]}
           size={size ?? (large ? "large" : "medium")}
         />
       );

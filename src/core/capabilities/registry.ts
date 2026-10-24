@@ -271,6 +271,7 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     operations: {
       search: READ,
       searchNews: READ,
+      images: READ,
       open: READ,
       research: READ,
       discover: READ,

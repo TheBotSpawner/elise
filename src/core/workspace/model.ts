@@ -37,6 +37,8 @@ export const SURFACE_TYPES = [
   "shortcut",
   "visualization",
   "media",
+  /** ADR-120: real photos of places, products or things, grouped per subject, credited. */
+  "image_gallery",
   "map",
   "place",
   "weather",

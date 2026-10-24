@@ -106,7 +106,7 @@ describe("Scheduled hub (ADR-037)", () => {
 
   it("the existing Morning Brief is recognised: its idea says Already added and opens it", () => {
     view();
-    const idea = screen.getByRole("button", { name: /Morning Brief/ });
+    const idea = screen.getByRole("button", { name: /Resumen del día/ });
     expect(within(idea).getByText(/Ya agregada/)).toBeInTheDocument();
     fireEvent.click(idea);
     expect(screen.getByText("Editar “Morning Brief”")).toBeInTheDocument();
@@ -181,7 +181,7 @@ describe("Scheduled hub (ADR-037)", () => {
     view([]);
     expect(screen.getByText("Todavía no hay nada programado")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Nueva tarea programada" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Morning Brief/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Resumen del día/ })).toBeInTheDocument();
     expect(screen.queryByText(/Ya agregada/)).toBeNull();
   });
 

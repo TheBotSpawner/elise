@@ -149,6 +149,31 @@ function inMonth(r: Repeat, y: number, m: number, anchor: string): string[] {
 }
 
 /**
+ * The rule's first date on or after `from`, for a series that starts without a date ("cada
+ * viernes" created on a Saturday starts next Friday, not today). The series' anchor is then that
+ * date.
+ */
+export function firstOccurrence(r: Repeat, from: string): string {
+  if (r.freq === "weekly" && r.days?.length) {
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(from, i);
+      if (r.days.includes(WEEKDAYS[dow(d)]!)) return d;
+    }
+  }
+  if (r.freq === "monthly" && (r.ordinal || r.monthDay)) {
+    const [y0, m0] = ymd(from);
+    for (let k = 0; k < 14; k++) {
+      const total = m0 - 1 + k;
+      const hit = inMonth(r, y0 + Math.floor(total / 12), (total % 12) + 1, from).find(
+        (d) => d >= from,
+      );
+      if (hit) return hit;
+    }
+  }
+  return from;
+}
+
+/**
  * The first occurrence strictly after `after`, following the rule from `anchor` (the series'
  * first date), or null when the rule has ended by UNTIL. COUNT is the caller's to enforce (it
  * knows how many occurrences exist).

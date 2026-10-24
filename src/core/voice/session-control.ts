@@ -10,7 +10,14 @@
  */
 
 export type SessionCommand =
-  "stop" | "disable_wake" | "enable_wake" | "show" | "volume_up" | "volume_down";
+  | "stop"
+  | "disable_wake"
+  | "enable_wake"
+  /** "Decime mi resumen del día": open the latest one and play it. */
+  | "daily_summary"
+  | "show"
+  | "volume_up"
+  | "volume_down";
 
 const fold = (s: string) =>
   s
@@ -54,6 +61,16 @@ const ENABLE = [
   /^(?:turn on|enable) (?:the )?(?:wake word|voice activation)$/,
 ];
 
+/**
+ * "ELISE, decime mi resumen del día", "traeme mi resumen del día", "resumen del día": the whole
+ * utterance asks for today's summary (formerly "Morning Brief") to be opened and read.
+ */
+const DAILY_SUMMARY = [
+  /^(?:(?:decime|decimelo|dame|traeme|trae|contame|leeme|lee|mostrame|abri|abrime|pasame|poneme|pone|reproduci|quiero|quiero escuchar|quiero ver|escuchar|podes decirme|me decis|me das|me traes|me lees) )?(?:el |mi |tu )?(?:resumen (?:del dia|de hoy|diario|de la ma(?:n|ñ)ana|del dia de hoy)|morning brief|brief de hoy)$/,
+  /^(?:que dice|como viene) (?:el |mi )?resumen (?:del dia|de hoy)$/,
+  /^(?:tell me|give me|read me|play|open|show me)? ?(?:my |the )?(?:daily summary|morning brief|summary of the day)$/,
+];
+
 const SHOW = [
   /^(?:mostrate|muestrate|abrite|aparece|aparecete|apareceme|veni|vente|veni para aca|traete)$/,
   /^(?:abri|abrime|mostrame|traeme|pone|pasame) (?:la |tu )?(?:app|aplicacion|ventana|pantalla)(?: de elise)?$/,
@@ -87,6 +104,7 @@ export function sessionCommand(text: string): SessionCommand | null {
   for (let i = 0; i < 3; i++) s = s.replace(AROUND, "").trim();
   if (DISABLE.some((r) => r.test(s))) return "disable_wake";
   if (ENABLE.some((r) => r.test(s))) return "enable_wake";
+  if (DAILY_SUMMARY.some((r) => r.test(s))) return "daily_summary";
   if (STOP.some((r) => r.test(s))) return "stop";
   if (SHOW.some((r) => r.test(s))) return "show";
   if (VOLUME_UP.some((r) => r.test(s))) return "volume_up";

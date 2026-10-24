@@ -158,6 +158,8 @@ export function estimateHeight(s: Surface): number {
       return head + count("items", 8) * 56;
     case "weather":
       return 300;
+    case "image_gallery":
+      return head + (s.payload as SurfacePayloads["image_gallery"]).groups.length * 330;
     case "visualization": {
       const spec = (s.payload as SurfacePayloads["visualization"]).spec;
       if (spec.type === "kpi") return 120;

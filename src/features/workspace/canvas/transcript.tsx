@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { MessageThread, type ThreadHandlers } from "@/features/chat/message-thread";
 import type { ChatMessage } from "@/features/chat/types";
+import { useStickToBottom } from "@/features/chat/use-stick-to-bottom";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -37,11 +38,9 @@ export function TranscriptPanel({
   const body = useRef<HTMLDivElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState(false);
-  const last = messages.at(-1);
-  const signature = `${messages.length}:${last?.content.length ?? 0}`;
-  useEffect(() => {
-    if (open) body.current?.scrollTo({ top: body.current.scrollHeight });
-  }, [open, signature]);
+  const inner = useRef<HTMLDivElement>(null);
+  // New replies scroll in only while the person is at the bottom (never while they read above).
+  useStickToBottom(body, inner, open);
   useEffect(() => {
     if (!open) return;
     heading.current?.focus({ preventScroll: true });
@@ -132,7 +131,7 @@ export function TranscriptPanel({
             ref={body}
             className="min-h-0 flex-1 [scrollbar-width:thin] overflow-y-auto overscroll-contain pb-6"
           >
-            <div className="px-5">
+            <div ref={inner} className="px-5">
               <MessageThread messages={messages} timezone={timezone} column handlers={handlers} />
             </div>
           </div>

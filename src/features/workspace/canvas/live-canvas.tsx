@@ -22,6 +22,7 @@ import { playStartupSound } from "@/features/boot/startup-sound";
 import { FileDropZone } from "@/features/chat/attachments-ui";
 import { MessageThread, type ThreadHandlers } from "@/features/chat/message-thread";
 import type { ChatMessage } from "@/features/chat/types";
+import { useStickToBottom } from "@/features/chat/use-stick-to-bottom";
 import type { VoiceHandlers } from "@/features/voice/voice-controls";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -158,6 +159,9 @@ export function LiveCanvas(props: LiveCanvasProps) {
 
   const kind = composition.kind;
   const canvasActive = kind !== "idle" && kind !== "conversation";
+  // The full-page conversation follows new replies only while the person is at the bottom.
+  const threadRef = useRef<HTMLDivElement>(null);
+  useStickToBottom(null, threadRef, kind === "conversation");
   const approval = composition.approvalId ? byId.get(composition.approvalId) : undefined;
   const transcriptAvailable = canvasActive && messages.length > 0;
   const showTranscript = transcriptOpen && transcriptAvailable;
@@ -277,11 +281,13 @@ export function LiveCanvas(props: LiveCanvasProps) {
             <div className="mb-2 flex justify-end">{props.newChat}</div>
           )}
           {kind === "conversation" && (
-            <MessageThread
-              messages={messages}
-              timezone={timezone}
-              handlers={props.threadHandlers}
-            />
+            <div ref={threadRef}>
+              <MessageThread
+                messages={messages}
+                timezone={timezone}
+                handlers={props.threadHandlers}
+              />
+            </div>
           )}
           {canvasActive && (
             <Zones

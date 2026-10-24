@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   describeRepeat,
+  firstOccurrence,
   nextAfterCompletion,
   nextOccurrence,
   parseRRule,
@@ -65,6 +66,25 @@ describe("nextOccurrence", () => {
     // Madrid moves its clocks on 2026-10-25; the date series is unaffected.
     expect(nextOccurrence(r({ freq: "daily" }), "2026-10-24", "2026-10-24")).toBe("2026-10-25");
     expect(nextOccurrence(r({ freq: "daily" }), "2026-10-24", "2026-10-25")).toBe("2026-10-26");
+  });
+});
+
+describe("firstOccurrence (a series created without a date)", () => {
+  // 2026-10-24 is a Saturday.
+  it("weekly on given days starts on the next of those days, not today", () => {
+    expect(firstOccurrence(r({ freq: "weekly", days: ["fr"] }), "2026-10-24")).toBe("2026-10-30");
+    expect(firstOccurrence(r({ freq: "weekly", days: ["sa", "mo"] }), "2026-10-24")).toBe(
+      "2026-10-24",
+    );
+  });
+  it("monthly on a day or an ordinal starts on its next date", () => {
+    expect(firstOccurrence(r({ freq: "monthly", monthDay: 15 }), "2026-10-24")).toBe("2026-11-15");
+    expect(
+      firstOccurrence(r({ freq: "monthly", ordinal: { n: 1, day: "mo" } }), "2026-10-24"),
+    ).toBe("2026-11-02");
+  });
+  it("daily (or no specific day) starts today", () => {
+    expect(firstOccurrence(r({ freq: "daily" }), "2026-10-24")).toBe("2026-10-24");
   });
 });
 

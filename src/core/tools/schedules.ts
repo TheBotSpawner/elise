@@ -16,7 +16,7 @@ import { isIsoDate, toLocalDateTime } from "../time";
 
 const proposeInput = z
   .object({
-    name: z.string().trim().min(1).max(120).default("Morning Brief"),
+    name: z.string().trim().min(1).max(120).default("Resumen del día"),
     days: z
       .array(z.number().int().min(0).max(6))
       .min(1)

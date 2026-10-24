@@ -30,11 +30,33 @@ function raw(): string | null {
 
 export const readActiveThread = (): ThreadRef | null => parseThread(raw());
 
+/**
+ * An interaction idle longer than this isn't resumed by Inicio: coming back hours later opens a
+ * new conversation (the old one stays in Historial).
+ */
+export const RESUME_WINDOW_MS = 3 * 60 * 60_000;
+
+/** When the active interaction was last used (ms), or null when unknown (older pointers). */
+export function activeThreadAt(): number | null {
+  try {
+    const at = (JSON.parse(raw() ?? "null") as { at?: unknown } | null)?.at;
+    return typeof at === "number" && Number.isFinite(at) ? at : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Marks the active interaction as used now (each reply), if it is still `id`. */
+export function touchThread(id: string) {
+  const current = readActiveThread();
+  if (current?.id === id) rememberThread(current);
+}
+
 export function rememberThread(thread: ThreadRef) {
   try {
     window.sessionStorage.setItem(
       ACTIVE_THREAD_KEY,
-      JSON.stringify({ kind: thread.kind, id: thread.id }),
+      JSON.stringify({ kind: thread.kind, id: thread.id, at: Date.now() }),
     );
   } catch {
     // Not remembered: Inicio opens a fresh Home.
@@ -68,7 +90,7 @@ export const homeHref = (thread: ThreadRef | null) => (thread ? threadUrl(thread
  * Before first paint: a bare "/" in a tab with an active interaction hides Home until the
  * client opens that interaction, so a fresh Home never flashes.
  */
-export const RESUME_SCRIPT = `(function(){try{if(location.pathname==="/"&&!location.search){var t=JSON.parse(sessionStorage.getItem("${ACTIVE_THREAD_KEY}")||"null");if(t&&t.id){document.documentElement.dataset.resuming="1";setTimeout(function(){delete document.documentElement.dataset.resuming},4000)}}}catch(e){}})();`;
+export const RESUME_SCRIPT = `(function(){try{if(location.pathname==="/"&&!location.search){var t=JSON.parse(sessionStorage.getItem("${ACTIVE_THREAD_KEY}")||"null");if(t&&t.id&&typeof t.at==="number"&&Date.now()-t.at<${RESUME_WINDOW_MS}){document.documentElement.dataset.resuming="1";setTimeout(function(){delete document.documentElement.dataset.resuming},4000)}}}catch(e){}})();`;
 
 /**
  * What arriving on Home does (ADR-032): an opened interaction becomes the tab's active one; a
@@ -81,6 +103,9 @@ export function homeArrival(input: {
   fresh: boolean;
   pointer: ThreadRef | null;
   search: string;
+  /** When the pointer's interaction was last used, and now (ms): idle > 3 h starts fresh. */
+  pointerAt?: number | null;
+  now?: number;
 }): {
   remember: ThreadRef | null;
   forget: "all" | string | null;
@@ -88,7 +113,12 @@ export function homeArrival(input: {
   open: string | null;
 } {
   if (input.thread) return { remember: input.thread, forget: null, cleanUrl: false, open: null };
-  const forget = input.fresh ? "all" : input.gone;
+  // Hours later, Inicio is a new conversation (unknown age counts as old).
+  const stale =
+    input.pointer !== null &&
+    input.now !== undefined &&
+    (input.pointerAt == null || input.now - input.pointerAt > RESUME_WINDOW_MS);
+  const forget = input.fresh || stale ? "all" : input.gone;
   const pointer =
     forget === "all" || (forget && input.pointer?.id === forget) ? null : input.pointer;
   const cleanUrl = Boolean(input.gone || input.fresh);

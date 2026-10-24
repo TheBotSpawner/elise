@@ -13,13 +13,13 @@ import {
 import { AppError } from "@/core/errors";
 import { makeExternalRef, parseExternalRef } from "@/core/providers/refs";
 import {
+  firstOccurrence,
   nextAfterCompletion,
-  nextOccurrence,
   parseRRule,
   toRRule,
   type Repeat,
 } from "@/core/tasks/recurrence";
-import { addDays, todayIn } from "@/core/time";
+import { todayIn } from "@/core/time";
 import type { TaskEnrichmentRow, LabelRow } from "@/infrastructure/supabase/database.types";
 import type { ServerSupabase } from "@/infrastructure/supabase/server";
 
@@ -484,7 +484,7 @@ export class EnrichedTaskProvider implements TaskProvider {
     const today = todayIn(this.series.timezone);
     let dated = task;
     if (!task.dueDate) {
-      const first = nextOccurrence(repeat, today, addDays(today, -1)) ?? today;
+      const first = firstOccurrence(repeat, today);
       dated = await this.inner.update({ taskId: task.id, dueDate: first });
     }
     await this.series.start(dated, toRRule(repeat), dated.dueDate!, this.template(dated));

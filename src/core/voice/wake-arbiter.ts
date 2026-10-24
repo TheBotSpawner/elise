@@ -71,11 +71,15 @@ export const WAKE_POLICIES: Record<WakePolicy["name"], WakePolicy> = {
     // removed no false activation — the opening-word rule and the transcription do that.
     stableMs: 0,
     minConf: 0.55,
-    guardedConf: 0.8,
+    // Guarded, a call at ordinary confidence still counts — silently, the transcription decides.
+    // A higher bar here silently dropped real "ELISE"s for minutes after any false alarm (a
+    // person's normal "ELISE" scores ~0.6–0.8): she seemed deaf.
+    guardedConf: 0.55,
     guardMs: 3 * 60_000,
     burst: 2,
     burstMs: 60_000,
-    cooldownMs: 20_000,
+    // A short breather after a burst of false alarms, not 20 s of deafness.
+    cooldownMs: 6_000,
     refractoryMs: 1500,
   },
 };

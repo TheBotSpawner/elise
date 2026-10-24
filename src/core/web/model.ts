@@ -1,3 +1,4 @@
+import type { ImageEntity, ImageGroup } from "./images";
 import type { WebItem } from "./items";
 
 /**
@@ -68,6 +69,13 @@ export interface WebCapability {
   search(query: WebSearchQuery): Promise<WebResult[]>;
   open(url: string): Promise<WebPage>;
   saveToKnowledge(page: WebPage, space: string | null): Promise<{ itemId: string; space: string }>;
+  /** ADR-120: real photos of named subjects, grouped per subject (absent: not offered here). */
+  images?(req: {
+    entities: ImageEntity[];
+    count: number;
+    more: boolean;
+    language: "es" | "en";
+  }): Promise<{ groups: ImageGroup[]; missing: string[]; moreUrl: string; providers: string[] }>;
 }
 
 /** Deterministic limits (ADR-015). ELISE never searches or reads without bounds. */

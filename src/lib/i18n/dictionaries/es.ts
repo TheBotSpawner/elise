@@ -2020,7 +2020,7 @@ export const es: Dictionary = {
     editTitle: (name: string) => `Editar “${name}”`,
     presets: {
       morning_brief: {
-        name: "Morning Brief",
+        name: "Resumen del día",
         purpose: "Empezá el día con tu agenda, tus tareas y lo importante.",
         instructions: "",
       },
@@ -2220,8 +2220,8 @@ export const es: Dictionary = {
     firstRun: (when: string) => `Primero: ${when}`,
   },
   brief: {
-    title: "Morning Brief",
-    ready: "Morning Brief listo",
+    title: "Resumen del día",
+    ready: "Resumen del día listo",
     view: "Ver",
     listen: "Escuchar",
     stop: "Detener",
@@ -3455,6 +3455,20 @@ export const es: Dictionary = {
         future: "Por delante",
       },
     },
+    gallery: {
+      of: (i: number, n: number) => `${i} de ${n}`,
+      previous: "Foto anterior",
+      next: "Foto siguiente",
+      enlarge: (name: string) => `Ampliar foto de ${name}`,
+      close: "Cerrar",
+      viewSource: "Ver fuente",
+      photoBy: (who: string) => `Foto: ${who}`,
+      map: "Ver en el mapa",
+      more: "Ver más imágenes en Google",
+      external: "Se abre fuera de ELISE",
+      unavailable: "Imagen no disponible",
+      label: (name: string) => `Fotos de ${name}`,
+    },
     media: {
       play: "Reproducir",
       open: "Abrir",
@@ -3519,6 +3533,7 @@ export const es: Dictionary = {
       shortcut: "Atajo",
       visualization: "Gráfico",
       media: "Multimedia",
+      image_gallery: "Fotos",
       map: "Mapa",
       place: "Lugar",
       weather: "Clima",
@@ -4272,7 +4287,7 @@ export const es: Dictionary = {
     asksFirst: "Pregunta antes",
     runs: (n: number) => `Usado ${n} ${n === 1 ? "vez" : "veces"}`,
     steps: {
-      "morning_brief.run": "Morning Brief",
+      "morning_brief.run": "Resumen del día",
       "daily_planning.start": "Planificar el día",
       "meeting.prepare_next": "Preparar la próxima reunión",
       "study.start": "Empezar una sesión de estudio",

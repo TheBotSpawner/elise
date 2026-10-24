@@ -11,6 +11,7 @@ import {
   cancelActive,
   createSchedule,
   deleteSchedule,
+  latestDailySummary,
   listRuns,
   markResultRead,
   runScheduleNow,
@@ -178,4 +179,9 @@ export async function weatherCityAction(
   } catch (error) {
     return { ok: false, error: toPublicError(error) };
   }
+}
+
+/** "ELISE, decime mi resumen del día": the newest one to open and play, or null. */
+export async function latestDailySummaryAction(): Promise<ScheduleActionResult<string | null>> {
+  return run(async () => latestDailySummary(await requireAuthContext()));
 }

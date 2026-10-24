@@ -284,11 +284,12 @@ export function DesktopWake({ children }: { children: ReactNode }) {
         detector.outcome("rejected");
         return finishHandOff();
       };
-      // Over a reply still being prepared, silence after the word is no call.
-      if (overPreparing && !capture.speechAfter) return reject();
+      // Over a reply still being prepared, a bare "ELISE" (or one that can't be read) is let go:
+      // the reply continues. Not evidence of a false alarm, so detection isn't guarded for it.
+      if (overPreparing && !capture.speechAfter) return finishHandOff();
       if (capture.speechAfter) {
         const text = await transcribe(wav(capture.audio, capture.sampleRate));
-        if (overPreparing && text === null) return reject();
+        if (overPreparing && text === null) return finishHandOff();
         if (text !== null) {
           // Over her reply, the capture may begin with her own voice: the name is found where
           // it is (ADR-109); otherwise it must open what was said.
@@ -324,7 +325,8 @@ export function DesktopWake({ children }: { children: ReactNode }) {
           .catch(() => undefined);
         return finishHandOff();
       }
-      if (command) {
+      // "ELISE, resumen del día" opens a session like any request: the session handles it.
+      if (command && command !== "daily_summary") {
         console.debug("[wake] session command", { command });
         // "ELISE, basta": the reply that was paused stops for good.
         if (interrupting) requestVoiceControl("interrupt");

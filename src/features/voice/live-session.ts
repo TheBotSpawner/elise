@@ -548,7 +548,9 @@ export class LiveVoiceSession {
     const command = sessionCommand(text);
     // Volume is answered by the device's wake path and the speech pipeline; a Live session
     // delegates it like any request (ADR-106).
+    // The daily summary is delegated like any request (ELISE prepares it).
     if (!command || command === "volume_up" || command === "volume_down") return false;
+    if (command === "daily_summary") return false;
     if (command === "disable_wake" || command === "enable_wake")
       void (
         window as {

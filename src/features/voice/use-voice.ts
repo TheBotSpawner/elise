@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import type { VoicePreferences } from "@/application/auth-context";
 import type { VoiceLanguage } from "@/core/voice/providers";
 import { initialVoice, type VoiceState } from "@/core/voice/session";
 import type { SendOptions, StreamListener } from "@/features/chat/use-elise-chat";
+import { latestDailySummaryAction } from "@/features/schedules/actions";
 import { useI18n } from "@/lib/i18n/client";
 
 import {
@@ -60,6 +62,11 @@ export function useVoice({
   // ELISE Desktop listens for "ELISE" itself, in the background (ADR-095): the browser's
   // wake phrase engine isn't used there, and the session keeps going with the window hidden.
   const deviceWake = useDeviceWake();
+  const router = useRouter();
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
   const [wake] = useState(() =>
     typeof window !== "undefined" && !deviceWake && WebSpeechWakeEngine.supported()
       ? new WebSpeechWakeEngine()
@@ -104,8 +111,15 @@ export function useVoice({
             ).eliseDesktop;
             void desktop?.setPreferences?.({ wakeWord: true });
           },
+          // "Decime mi resumen del día": the latest one opens with "Escuchar" already on.
+          openDailySummary: async () => {
+            const r = await latestDailySummaryAction();
+            if (!r.ok || !r.value) return false;
+            routerRef.current.push(`/schedules/results/${r.value}?listen=1`);
+            return true;
+          },
           // ADR-104: "ELISE, mostrate" — only where there is a window to bring up.
-          ...("eliseDesktop" in window
+          ...(typeof window !== "undefined" && "eliseDesktop" in window
             ? {
                 showApp: () =>
                   void (
@@ -175,7 +189,8 @@ export function useVoice({
     return onDeviceWake((remainder) => void controller.deviceWake(remainder), deviceWakeFallback);
   }, [controller, deviceWake, deviceWakeFallback]);
   useEffect(
-    () => (deviceWake ? onVoiceEnd(() => controller.end()) : undefined),
+    // The corner Orb tapped: no listening and no answer (like the X).
+    () => (deviceWake ? onVoiceEnd(() => controller.cancelAll()) : undefined),
     [controller, deviceWake],
   );
   // ADR-109: "ELISE" said over her reply pauses it, then resumes it or cuts it for a new turn.

@@ -330,6 +330,34 @@ export async function latestBrief(
   return data ? { id: data.id, title: data.title, read: data.read_at !== null } : null;
 }
 
+/**
+ * "ELISE, decime mi resumen del día": the newest Resumen del día of the last 24 hours — a brief
+ * about today (no other period), never weekly planning or tomorrow's prep. Null when there is none.
+ */
+export async function latestDailySummary(auth: AuthContext): Promise<string | null> {
+  const since = new Date(Date.now() - 24 * 3_600_000).toISOString();
+  const { data } = await auth.db
+    .from("scheduled_results")
+    .select("id, schedule_id")
+    .eq("workspace_id", auth.workspaceId)
+    .eq("user_id", auth.userId)
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  if (!data?.length) return null;
+  const { data: schedules } = await auth.db
+    .from("schedules")
+    .select("id, configuration")
+    .eq("workspace_id", auth.workspaceId)
+    .in("id", [...new Set(data.map((r) => r.schedule_id))]);
+  const today = new Set(
+    (schedules ?? [])
+      .filter((s) => !(s.configuration as { period?: unknown } | null)?.period)
+      .map((s) => s.id),
+  );
+  return data.find((r) => today.has(r.schedule_id))?.id ?? null;
+}
+
 export async function markResultRead(auth: AuthContext, id: string) {
   await auth.db
     .from("scheduled_results")

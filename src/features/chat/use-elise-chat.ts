@@ -17,7 +17,7 @@ import { applyOps, emptyWorkspace, type WorkspaceState } from "@/core/workspace/
 import { locationForTurn } from "@/features/location/shared-location";
 import { embeddedSnapshot } from "@/features/music/store";
 import { VOICE_PREFS_EVENT } from "@/features/voice/voice-controller";
-import { rememberThread } from "@/lib/active-thread";
+import { rememberThread, touchThread } from "@/lib/active-thread";
 import { applyAppearance } from "@/lib/theme";
 
 import { draftAttachments, type DraftStore } from "./draft-attachments";
@@ -311,6 +311,8 @@ export function useEliseChat(initial: {
                 failed = event.error;
                 break;
               case "done":
+                // Each reply keeps the interaction "recent" for Inicio (3 h window).
+                if (thread.current) touchThread(thread.current.id);
                 if (event.messageId)
                   patchAssistant(assistantId, (m) => ({
                     ...m,

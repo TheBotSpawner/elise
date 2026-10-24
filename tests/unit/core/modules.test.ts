@@ -28,15 +28,16 @@ describe("native module registry", () => {
     const keys = NATIVE_MODULES.map((m) => m.key);
     expect(new Set(keys).size).toBe(keys.length);
     expect(new Set(NATIVE_MODULES.map((m) => m.route)).size).toBe(keys.length);
+    // Hogar and Tiempos first, then Tareas, Listas, Notas; Finanzas and Hábitos last.
     expect(availableModules().map((m) => m.key)).toEqual([
-      "tasks",
-      "habits",
-      "lists",
-      "goals",
-      "notes",
-      "finance",
-      "time",
       "home",
+      "time",
+      "tasks",
+      "lists",
+      "notes",
+      "goals",
+      "finance",
+      "habits",
     ]);
     for (const k of keys)
       for (const t of [es, en]) {
@@ -49,10 +50,14 @@ describe("native module registry", () => {
   });
 
   it("never chose → defaults; a saved choice always wins; unknown keys are ignored", () => {
-    // Hogar needs ELISE Desktop first: shown to existing people, not to someone who never chose.
-    expect(visibleModuleKeys(effectiveModules(null))).toEqual(
-      NATIVE_MODULES.filter((m) => m.defaultForNewUsers).map((m) => m.key),
-    );
+    // A new account starts with Hogar, Tiempos, Tareas, Listas and Notas.
+    expect(visibleModuleKeys(effectiveModules(null))).toEqual([
+      "home",
+      "time",
+      "tasks",
+      "lists",
+      "notes",
+    ]);
     const saved = effectiveModules({ finance: false, unknown: true });
     expect(saved.finance).toBe(false);
     expect(saved.tasks).toBe(true);
@@ -161,12 +166,12 @@ describe("modules service", () => {
     const db = new FakeSupabase();
     const a = auth(db);
     expect(await hasChosenModules(a)).toBe(false);
-    await setModuleVisibility(a, { goals: false }, "user_ui");
-    await setModuleVisibility(a, { goals: false }, "user_ui");
+    await setModuleVisibility(a, { lists: false }, "user_ui");
+    await setModuleVisibility(a, { lists: false }, "user_ui");
     expect(db.rows("audit_events")).toHaveLength(1);
     // Stored in the person's preferences: survives any reload, sign-in or device.
     expect(db.rows("user_preferences")).toMatchObject([
-      { key: "my_elise.visibility", user_id: "user-a", value_json: { goals: false } },
+      { key: "my_elise.visibility", user_id: "user-a", value_json: { lists: false } },
     ]);
     expect(await hasChosenModules(a)).toBe(true);
     await expect(setModuleVisibility(a, { email: true }, "ai")).rejects.toMatchObject({
@@ -174,7 +179,7 @@ describe("modules service", () => {
     });
     // Another person in the same workspace is unaffected.
     const b = auth(db, "user-b");
-    expect((await moduleVisibility(b)).goals).toBe(true);
+    expect((await moduleVisibility(b)).lists).toBe(true);
     // Onboarding: exactly the chosen ones shown; choosing none is allowed.
     await chooseModules(b, ["notes", "bogus"]);
     expect(visibleModuleKeys(await moduleVisibility(b))).toEqual(["notes"]);

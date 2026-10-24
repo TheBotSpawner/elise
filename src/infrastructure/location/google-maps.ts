@@ -10,6 +10,7 @@ import {
   type LocationProvider,
   type MatrixCell,
   type Place,
+  type PlacePhotos,
   type PlaceSearch,
   type Route,
   type TransitItinerary,
@@ -433,6 +434,65 @@ export class GoogleMapsLocation implements LocationProvider {
       signal,
     );
     return (data.places ?? []).map((g) => toPlace(g, q.near)).filter((p): p is Place => Boolean(p));
+  }
+
+  /**
+   * ADR-120: photos of ONE identified place — Text Search (New) for the best match (id, name,
+   * address, Maps link, photo references), then Place Photos (New) with skipHttpRedirect for a
+   * key-free photoUri per photo. Each photo keeps the authors Google requires to be credited.
+   * `offset` skips photos already shown ("más fotos de la segunda").
+   */
+  async placePhotos(
+    query: string,
+    language: "es" | "en",
+    count: number,
+    offset = 0,
+    signal?: AbortSignal,
+  ): Promise<PlacePhotos | null> {
+    const data = await this.call<{ places?: GPlace[] }>(
+      "places.search",
+      `${PLACES}/places:searchText`,
+      {
+        method: "POST",
+        body: { textQuery: query, pageSize: 1, languageCode: language },
+        fields:
+          "places.id,places.displayName,places.formattedAddress,places.googleMapsUri,places.photos",
+      },
+      signal,
+    );
+    const g = data.places?.[0];
+    if (!g?.id) return null;
+    const refs = (g.photos ?? [])
+      .filter((p) => p.name && /^places\/[\w-]+\/photos\/[\w-]+$/.test(p.name))
+      .slice(offset, offset + Math.min(count, 6));
+    const photos = await Promise.all(
+      refs.map(async (photo) => {
+        const media = await this.call<{ photoUri?: string }>(
+          "places.photo",
+          `${PLACES}/${photo.name}/media?maxWidthPx=1200&skipHttpRedirect=true`,
+          {},
+          signal,
+        ).catch(() => null);
+        const url = https(media?.photoUri);
+        return url
+          ? {
+              id: photo.name!,
+              url,
+              attributions: (photo.authorAttributions ?? []).slice(0, 3).map((a) => ({
+                name: a.displayName ?? "",
+                url: https(a.uri),
+              })),
+            }
+          : null;
+      }),
+    );
+    return {
+      placeId: g.id,
+      name: g.displayName?.text ?? query,
+      address: g.formattedAddress ?? null,
+      mapsUrl: https(g.googleMapsUri),
+      photos: photos.filter((p): p is NonNullable<typeof p> => p !== null),
+    };
   }
 
   /**

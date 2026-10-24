@@ -431,6 +431,9 @@ export function DisplayCard({
     case "morning_brief":
       // A brief lives on the Canvas as its own Surfaces (ADR-041); the thread keeps the words.
       return null;
+    case "image_gallery":
+      // ADR-120: the gallery lives on the Canvas; the thread keeps the words.
+      return null;
     case "weather":
       return (
         <motion.section {...rise} aria-label={t.chat.resultLabel} className={CARD}>

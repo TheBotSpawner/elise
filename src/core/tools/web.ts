@@ -12,6 +12,7 @@ import {
   type CollectionRequest,
 } from "../web/discover";
 import { selectPassages } from "../web/extract";
+import { entityKey, IMAGE_LIMITS, imageEntitySchema } from "../web/images";
 import { itemKey, looksLikeItemUrl, type WebItem } from "../web/items";
 import { WEB_LIMITS, type Recency, type WebCapability, type WebPage } from "../web/model";
 import { groupNews, isStale, isWeak, queryTerms, rankResults, reformulations } from "../web/rank";
@@ -988,10 +989,99 @@ export const discoverTool: ToolDefinition = {
   },
 };
 
+// ── Images (ADR-120) ─────────────────────────────────────────────────────────
+
+const imagesInput = z
+  .object({
+    entities: z
+      .array(imageEntitySchema)
+      .min(1)
+      .max(IMAGE_LIMITS.entitiesMax)
+      .describe(
+        "One entry per subject to show, each named exactly and disambiguated (3 beaches → 3 entries).",
+      ),
+    count: z
+      .number()
+      .int()
+      .min(1)
+      .max(IMAGE_LIMITS.perEntityMax)
+      .optional()
+      .describe("Photos per subject: 4–6 for one subject, 1–2 each for several."),
+    more: z
+      .boolean()
+      .optional()
+      .describe('"Mostrame más fotos de la segunda": true, with that one subject only.'),
+  })
+  .strict();
+
+export const imagesTool: ToolDefinition = {
+  name: "web.images",
+  capability: "web_search",
+  operation: "images",
+  description:
+    '"Mostrame fotos de las playas de Aruba", "¿cómo es la playa Kenepa Grandi?", "mostrame imágenes del Broadlink RM4C Mini", "¿cómo se ve el hotel?": REAL photos of named places, products or things, from allowed sources with credits — shown as a gallery, one labeled group per subject. Only when seeing it helps (asked for photos, "cómo es / cómo se ve", travel and places to visit, comparing places); never for calculations, code, money, agenda or abstract questions, and never when the user said not to show images. Name each subject exactly with where it is ("Baby Beach" + "Aruba"); for a product, its exact model.',
+  input: imagesInput,
+  async describe() {
+    return { summary: "Search images" };
+  },
+  async run(raw, env) {
+    const q = imagesInput.parse(raw);
+    const w = web(env);
+    if (!w.images)
+      return {
+        output: {
+          found: false,
+          instructions:
+            "Image search isn't available here. Answer in words; don't describe photos you didn't see.",
+        },
+      };
+    const count =
+      q.count ??
+      (q.entities.length === 1 ? IMAGE_LIMITS.perEntityDefault : q.entities.length > 3 ? 1 : 2);
+    const r = await w.images({
+      entities: q.entities,
+      count,
+      more: q.more ?? false,
+      language: env.ctx.locale === "es" ? "es" : "en",
+    });
+    const counts = r.groups.map((g) => ({
+      subject: g.name,
+      where: g.context,
+      photos: g.images.length,
+      // What the photos are, per their own titles — not a description of what's in them.
+      titles: g.images.slice(0, 4).map((i) => i.title),
+    }));
+    if (!r.groups.length)
+      return {
+        output: {
+          found: false,
+          missing: r.missing,
+          instructions:
+            "No verifiable photos were found. Say so in a few words and answer in words; the person can look on the public image search themselves. Never describe or invent photos.",
+        },
+      };
+    return {
+      output: {
+        found: true,
+        groups: counts,
+        missing: r.missing,
+        instructions:
+          "The gallery is on screen, one labeled group per subject, with credits and sources. Answer first, then say briefly what's shown (\"Te muestro cuatro fotos de Baby Beach\"). Describe a place only from evidence (your sources or what the user said), never from the photos' titles alone. Never read links, credits or licenses aloud. Name any subject with no photos.",
+      },
+      display: {
+        kind: "image_gallery",
+        key: q.more && q.entities.length === 1 ? entityKey(q.entities[0]!) : null,
+        gallery: { groups: r.groups, moreUrl: r.moreUrl },
+      },
+    };
+  },
+};
+
 export const WEB_TOOLS = [
   searchWebTool,
   discoverTool,
   searchNewsTool,
+  imagesTool,
   openPageTool,
   researchTool,
   saveToKnowledgeTool,

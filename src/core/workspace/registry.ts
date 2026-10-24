@@ -30,6 +30,7 @@ import { CONTEXT_KINDS, LINK_TYPES } from "../contexts/model";
 import { BLOCK_CATEGORIES } from "../planning/day-plan";
 import { toLocalDateTime } from "../time";
 import { clockText, currentPhase, elapsedMs, remainingMs } from "../timers/model";
+import { imageGalleryPayload } from "../web/images";
 
 /**
  * Surface registry (ADR-013), in the spirit of the capability registry: each type declares its
@@ -1039,6 +1040,7 @@ export const PAYLOADS = {
   visualization: z.object({ spec: visualizationSpec }),
   /** Images, video and link previews from URLs the workspace already holds (ADR-021). */
   media: mediaPayload,
+  image_gallery: imageGalleryPayload,
   /** Places, a route or a travel-time comparison on a map (ADR-023). */
   map: mapPayload,
   /** One place in detail (ADR-023). */
@@ -1705,6 +1707,14 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     actions: (p) => [...link("open", p.items[0]?.url), expand],
     describe: (p) =>
       `${p.kind}: ${p.items.map((m, i) => `${i + 1}) ${q(m.title || m.domain)} (${m.url})`).join("; ")}`,
+  },
+  image_gallery: {
+    sizes: ["medium", "large", "expanded"],
+    size: "large",
+    priority: 68,
+    actions: () => [expand],
+    describe: (p) =>
+      `photos: ${p.groups.map((g, i) => `${i + 1}) ${q(g.name)}${g.context ? ` (${q(g.context)})` : ""}: ${g.images.length}`).join("; ")}`,
   },
   map: {
     sizes: ["medium", "large", "expanded"],

@@ -144,6 +144,21 @@ describe("YouTube player state", () => {
     expect(fake.nextVideo).toHaveBeenCalled();
   });
 
+  it("autoplay: when the requested song ends, its Mix plays on by itself", async () => {
+    await applyYouTube({ action: "load", items: [video("aaaaaaaaaaa")], index: 0, video: false });
+    emit("onStateChange", YT.PLAYING);
+    emit("onStateChange", YT.ENDED);
+    expect(fake.loadPlaylist).toHaveBeenLastCalledWith({
+      list: "RDaaaaaaaaaaa",
+      listType: "playlist",
+      index: 1,
+    });
+    expect(state()).toBe("play_requested");
+    // The Mix itself ending (or failing) just ends: no loop of Mixes.
+    emit("onStateChange", YT.ENDED);
+    expect(state()).toBe("ended");
+  });
+
   it("frames from youtube-nocookie (the only player host the CSP allows)", async () => {
     let host = "";
     const Player = window.YT!.Player;

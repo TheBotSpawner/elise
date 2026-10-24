@@ -572,7 +572,7 @@ describe("proposing a schedule from chat", () => {
       display: {
         kind: "schedule_proposal",
         input: {
-          name: "Morning Brief",
+          name: "Resumen del día",
           timezone: BA,
           definition: { kind: "weekly", days: [1, 2, 3, 4, 5], time: "07:30" },
         },

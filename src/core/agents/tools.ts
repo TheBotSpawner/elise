@@ -526,6 +526,11 @@ export type ToolDisplay =
   | { kind: "map"; map: SurfacePayloads["map"] }
   | { kind: "place"; place: SurfacePayloads["place"] }
   | { kind: "weather"; weather: SurfacePayloads["weather"] }
+  /**
+   * ADR-120: real photos, one labeled group per subject. `key`: one subject's "más fotos"
+   * (updates that subject's gallery); null for a new gallery of this turn.
+   */
+  | { kind: "image_gallery"; gallery: SurfacePayloads["image_gallery"]; key: string | null }
   /** Public market data (ADR-074). */
   | { kind: "market"; market: SurfacePayloads["market"] }
   /** Public economic data (ADR-094). */

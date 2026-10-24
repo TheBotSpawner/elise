@@ -65,18 +65,28 @@ describe("wake arbiter (ADR-108)", () => {
     });
   });
 
-  it("after a false alarm, partials don't count and finals need more confidence (guarded)", () => {
+  it("after a false alarm, partials don't count; an ordinary 'ELISE' still wakes her, silently (guarded)", () => {
     const a = new WakeArbiter(TOKENS);
     a.rejected(0);
     expect(a.signal(partial("elise", 5_000))).toEqual({ accept: false, reason: "guarded_partial" });
-    expect(a.signal(final([word("elise", 0, 0.7)], 5_000))).toEqual({
-      accept: false,
-      reason: "low_confidence",
-    });
-    expect(a.signal(final([word("elise", 0, 0.9)], 5_100))).toMatchObject({
+    // A normal call (~0.7) is never dropped for minutes after a false alarm: accepted guarded,
+    // the transcription confirms it before any sound.
+    expect(a.signal(final([word("elise", 0, 0.7)], 5_000))).toMatchObject({
       accept: true,
       guarded: true,
     });
+    expect(a.signal(final([word("elise", 0, 0.4)], 9_000))).toEqual({
+      accept: false,
+      reason: "low_confidence",
+    });
+  });
+
+  it("she never stays deaf: after any number of false alarms, a call is heard within seconds", () => {
+    const a = new WakeArbiter(TOKENS);
+    let now = 0;
+    for (let i = 0; i < 10; i++) a.rejected((now += 3_000));
+    // A burst pauses detection only briefly (6 s), and the guard never needs more than a normal call.
+    expect(a.signal(final([word("elise", 0, 0.65)], now + 7_000))).toMatchObject({ accept: true });
   });
 
   it("a burst of false alarms pauses detection briefly; a real call lifts the guard", () => {
@@ -87,7 +97,7 @@ describe("wake arbiter (ADR-108)", () => {
       accept: false,
       reason: "cooldown",
     });
-    expect(a.signal(final([word("elise", 0, 0.99)], 31_000))).toMatchObject({ accept: true });
+    expect(a.signal(final([word("elise", 0, 0.99)], 17_000))).toMatchObject({ accept: true });
     a.confirmed();
     expect(a.signal(partial("elise", 40_000))).toMatchObject({ accept: true, guarded: false });
   });

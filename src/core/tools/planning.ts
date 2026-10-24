@@ -306,10 +306,10 @@ export const briefTodayTool: ToolDefinition = {
   capability: "workspace",
   operation: "briefToday",
   description:
-    '"Morning Brief", "¿qué tengo que saber hoy?": today\'s Morning Brief now — calendar, important email, replies waiting, tasks, focus — gathered exactly like the scheduled one.',
+    '"Resumen del día", "decime mi resumen del día", "Morning Brief", "¿qué tengo que saber hoy?": today\'s summary (the Resumen del día, formerly Morning Brief) now — calendar, important email, replies waiting, tasks, focus — gathered exactly like the scheduled one.',
   input: z.object({}).strict(),
   async describe() {
-    return { summary: "Morning Brief" };
+    return { summary: "Resumen del día" };
   },
   async run(_raw, env: ToolRunEnv) {
     const { brief, reads } = await (env.providers.get("briefs", env.binding) as BriefPort).today();

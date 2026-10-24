@@ -291,11 +291,28 @@ export interface CityPlace {
   lng: number;
 }
 
+/** ADR-120: photos of one identified place, each with the authors to credit. */
+export interface PlacePhotos {
+  placeId: string;
+  name: string;
+  address: string | null;
+  mapsUrl: string | null;
+  photos: (PlacePhoto & { id: string })[];
+}
+
 /** A maps provider (Google Maps Platform…), isolated in infrastructure. */
 export interface LocationProvider {
   readonly id: string;
   searchPlaces(q: PlaceSearch, signal?: AbortSignal): Promise<Place[]>;
   getPlace(id: string, language: "es" | "en", signal?: AbortSignal): Promise<Place | null>;
+  /** ADR-120: an identified place's photos (none when the provider has no such feature). */
+  placePhotos?(
+    query: string,
+    language: "es" | "en",
+    count: number,
+    offset?: number,
+    signal?: AbortSignal,
+  ): Promise<PlacePhotos | null>;
   /** `near` biases ambiguous addresses toward a region (never restricts them). */
   geocode(
     address: string,

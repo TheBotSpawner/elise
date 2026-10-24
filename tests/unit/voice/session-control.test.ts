@@ -44,6 +44,24 @@ describe("sessionCommand (ADR-102)", () => {
     "Prendé la activación por voz",
   ])("%s → enable_wake", (text) => expect(sessionCommand(text)).toBe("enable_wake"));
 
+  it.each([
+    "Elise, decime mi resumen del día",
+    "Elise, traeme mi resumen del día",
+    "Elise, resumen del día",
+    "Dame el resumen de hoy",
+    "Leeme mi resumen del día, porfa",
+    "Quiero escuchar el resumen del día",
+    "Morning Brief",
+    "¿Me decís el resumen del día?",
+  ])("%s → daily_summary", (text) => expect(sessionCommand(text)).toBe("daily_summary"));
+
+  it.each([
+    "programá el resumen del día todos los días a las 7",
+    "agregá las noticias al resumen del día",
+  ])("%s → not the daily summary (goes to ELISE)", (text) =>
+    expect(sessionCommand(text)).not.toBe("daily_summary"),
+  );
+
   it.each(["apagá la tele", "callate un segundo que te explico algo largo", "no molestes a Juan"])(
     "%s → not a session command",
     (text) => expect(sessionCommand(text)).toBeNull(),
