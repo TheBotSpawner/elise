@@ -772,6 +772,8 @@ export const PAYLOADS = {
         steps: z.array(text(300)).min(1).max(12),
         tip: text(240).optional(),
         image: z.object({ url: href, alt: text(160), credit: text(160).nullable() }).optional(),
+        /** Where it comes from, when it does (a recipe site) — a link already in the workspace. */
+        source: z.object({ label: text(80), url: href }).optional(),
       })
       .optional(),
     /** Step-by-step instructions (assembling, setting up, a how-to): materials and steps to tick. */
@@ -780,12 +782,22 @@ export const PAYLOADS = {
         icon: z.enum(SUMMARY_ICONS).optional(),
         duration: text(32).optional(),
         difficulty: text(32).optional(),
-        materials: z.array(text(100)).max(15).optional(),
+        /** What's needed, each with an icon by kind (a board → layers, screws → package…). */
+        materials: z
+          .array(
+            z.union([
+              text(100),
+              z.object({ label: text(100), icon: z.enum(SUMMARY_ICONS).optional() }),
+            ]),
+          )
+          .max(15)
+          .optional(),
         steps: z
           .array(z.object({ title: text(80), text: text(300).optional() }))
           .min(1)
           .max(12),
         tip: text(240).optional(),
+        source: z.object({ label: text(80), url: href }).optional(),
       })
       .optional(),
   }),

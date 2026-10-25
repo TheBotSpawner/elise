@@ -56,6 +56,13 @@ export const HOME_SIGNAL = { test: (m: string) => HOME_WORDS.test(m) };
 const WEB_REQUEST =
   /(?<!\p{L})(investig[aá]\p{L}*|averigu[aá]\p{L}*|busc[aá](lo|la|me)? (en|por) (internet|la web|la red|google|la internet)|fijate (en|por) (internet|la web|google)|search (the web|online|the internet)|look (it )?up online|google it|googlealo|gugleal[oa])(?!\p{L})/iu;
 export const wantsWebSearch = (message: string) => WEB_REQUEST.test(message);
+/**
+ * A recipe or instructions to follow ("¿cómo hago un pollo al verdeo?", "paso a paso para armar…"):
+ * the answer belongs on screen as a card too (decided before the model, every turn).
+ */
+const PRACTICAL_REQUEST =
+  /(?<!\p{L})(recetas?|ingredientes|paso a paso|instrucciones (para|de)|c[oó]mo (se )?(hago|hace[ns]?|prepar\p{L}*|cocin\p{L}*|arm\p{L}*|instal\p{L}*|configur\p{L}*|mont\p{L}*|ensambl\p{L}*|reemplaz\p{L}*|cambi[oa]r?)|recipe|step by step|how (do i|to) (make|cook|build|assemble|install|set up))(?!\p{L})/iu;
+export const wantsPracticalCard = (message: string) => PRACTICAL_REQUEST.test(message);
 
 /** Holidays: the tool is in the always-on calendar group; this only brings its guidance. */
 export const HOLIDAY_WORDS =

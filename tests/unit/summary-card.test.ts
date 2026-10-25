@@ -26,6 +26,22 @@ describe("summary items", () => {
     );
   });
 
+  it("the model's own numbering is dropped: the card numbers its points itself", () => {
+    expect(parseItem("1. Salpimentá las presas y sellalas en aceite de oliva.").text).toBe(
+      "Salpimentá las presas y sellalas en aceite de oliva.",
+    );
+    expect(parseItem("Paso 2: Sumá la cebolla de verdeo y el ajo.").text).toBe(
+      "Sumá la cebolla de verdeo y el ajo.",
+    );
+    expect(parseItem("3) Agregá vino y dejalo reducir.").text).toBe(
+      "Agregá vino y dejalo reducir.",
+    );
+    // A year or an amount at the start is content, not numbering.
+    expect(parseItem("2015 fue el año de su fundación.").text).toBe(
+      "2015 fue el año de su fundación.",
+    );
+  });
+
   it("plain text stays plain; unsafe links are dropped", () => {
     expect(parseItem("Sin título acá. [x](javascript:alert(1))").title).toBeNull();
     expect(parseItem("Sin título acá. [x](javascript:alert(1))").links).toEqual([]);

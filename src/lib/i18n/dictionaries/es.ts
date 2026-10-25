@@ -3768,6 +3768,11 @@ export const es: Dictionary = {
       items: (n: number) => (n === 1 ? "1 ítem" : `${n} ítems`),
       progress: (done: number, total: number) => `${done} de ${total} completados`,
       tip: "Consejo de ELISE:",
+      detail: "Ver detalle",
+      guideMe: "Guiame paso a paso",
+      guidePrompt: (title: string) =>
+        `Guiame paso a paso con «${title}»: de a un paso por vez, y esperá a que te diga "listo" para pasar al siguiente.`,
+      source: (label: string) => `Fuente: ${label}`,
       markDone: (step: string) => `Marcar "${step}" como hecho`,
     },
     summarySources: (n: number) => (n === 1 ? "1 fuente" : `${n} fuentes`),

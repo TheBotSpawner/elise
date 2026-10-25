@@ -21,6 +21,7 @@ import {
   HOME_SIGNAL,
   selectTools,
   toolsInNotes,
+  wantsPracticalCard,
   wantsWebSearch,
 } from "@/core/agents/tool-selection";
 import type { ToolContext } from "@/core/agents/tools";
@@ -469,6 +470,10 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     // "Investigá…", "buscá en internet…": the user wants the answer from the web, not memory.
     wantsWebSearch(input.message)
       ? 'The user explicitly asked to search the web for this ("investigá" / "buscá en internet"): answer ONLY from web tools called in this turn (web.search; web.research for a broad topic), citing the sources — never from your general knowledge, even if you think you know.'
+      : null,
+    // "¿Cómo hago un pollo al verdeo?": the steps go on screen, to follow while doing them.
+    wantsPracticalCard(input.message)
+      ? 'This is a recipe or instructions to follow: in this same response call ui.present {type:"summary"} with "recipe" (ingredients with amounts, steps, times, servings) or "guide" (materials, steps as title + detail), and keep your spoken answer to the gist and the first step. Skip the card only if it is a single-step answer.'
       : null,
     repairIntent ? repairHint(repairIntent, repairTarget, auth.profile.locale) : null,
     canonicalHint(canonical),

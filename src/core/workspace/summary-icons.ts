@@ -40,5 +40,15 @@ export const SUMMARY_ICONS = [
   "chef",
   "flame",
   "list",
+  "hammer",
+  "ruler",
+  "drill",
+  "paintbrush",
+  "plug",
+  "cable",
+  "scissors",
+  "layers",
+  "settings",
+  "droplet",
 ] as const;
 export type SummaryIcon = (typeof SUMMARY_ICONS)[number];

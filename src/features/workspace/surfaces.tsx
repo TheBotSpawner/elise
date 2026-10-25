@@ -1076,7 +1076,15 @@ export function SurfaceBody({
       const sp = surface.payload as SurfacePayloads["summary"];
       // A recipe or a how-to gets its own layout; any other summary, the summary card.
       if (sp.recipe) return <RecipeCard p={{ ...sp, recipe: sp.recipe }} title={surface.title} />;
-      if (sp.guide) return <GuideCard p={{ ...sp, guide: sp.guide }} title={surface.title} />;
+      if (sp.guide)
+        return (
+          <GuideCard
+            p={{ ...sp, guide: sp.guide }}
+            title={surface.title}
+            onDetail={size === "focus" ? undefined : () => handlers.onExpand(surface, null)}
+            onGuide={() => handlers.onPrompt(dictionary.workspace.guide.guidePrompt(surface.title))}
+          />
+        );
       return <SummaryCard p={sp} title={surface.title} large={large} />;
     }
     case "answer":

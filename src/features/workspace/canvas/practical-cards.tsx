@@ -1,11 +1,16 @@
 "use client";
 
 import {
+  AudioLines,
   BarChart3,
   Check,
+  ChevronRight,
+  ClipboardList,
   ChefHat,
   Clock,
   CookingPot,
+  ExternalLink,
+  FileText,
   Lightbulb,
   ListOrdered,
   Package,
@@ -19,7 +24,7 @@ import type { SurfacePayloads } from "@/core/workspace/registry";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-import { ICONS, SummaryHeader, TONE, CYCLE } from "./summary-card";
+import { CYCLE, ICONS, LEADING_NUMBER, SummaryHeader, TONE } from "./summary-card";
 
 type Summary = SurfacePayloads["summary"];
 type Recipe = NonNullable<Summary["recipe"]>;
@@ -44,12 +49,15 @@ function Panel({
   aside,
   children,
   className,
+  heading = "label",
 }: {
   icon: typeof Clock;
   title: string;
   aside?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** "label": a small caps label (recipe); "title": a bold panel title (guide). */
+  heading?: "label" | "title";
 }) {
   return (
     <section
@@ -62,7 +70,13 @@ function Panel({
         >
           <Icon className="size-4" />
         </span>
-        <span className="text-[12px] font-semibold tracking-[0.1em] text-muted uppercase">
+        <span
+          className={
+            heading === "title"
+              ? "text-[17px] font-semibold tracking-tight text-fg"
+              : "text-[12px] font-semibold tracking-[0.1em] text-muted uppercase"
+          }
+        >
           {title}
         </span>
         {aside && <span className="ml-auto">{aside}</span>}
@@ -218,28 +232,44 @@ export function RecipeCard({ p, title }: { p: Summary & { recipe: Recipe }; titl
               >
                 {i + 1}
               </span>
-              <span className="pt-1">{step}</span>
+              <span className="pt-1">{step.replace(LEADING_NUMBER, "")}</span>
             </li>
           ))}
         </ol>
         {r.tip && <TipBox label={x.tip} text={r.tip} />}
       </Panel>
+      {r.source && <SourceLink source={r.source} />}
     </div>
   );
 }
 
 /**
- * Step-by-step instructions (assembling, setting up, a how-to): duration, difficulty and how many
- * materials; materials to tick; steps to mark done with the progress so far, the next one
- * highlighted; and a tip.
+ * Step-by-step instructions (assembling, setting up, a how-to), laid out like a work sheet: the
+ * task's icon, how long and how hard, materials with their icons to tick, steps to mark done with
+ * the progress so far (the next one highlighted, its detail one tap away), a tip, and — when the
+ * page offers them — "Ver detalle" (the card large) and "Guiame paso a paso" (ELISE walks the
+ * person through it, one step at a time).
  */
-export function GuideCard({ p, title }: { p: Summary & { guide: Guide }; title: string }) {
+export function GuideCard({
+  p,
+  title,
+  onDetail,
+  onGuide,
+}: {
+  p: Summary & { guide: Guide };
+  title: string;
+  onDetail?: () => void;
+  onGuide?: () => void;
+}) {
   const { t } = useI18n();
   const g = p.guide;
   const x = t.workspace.guide;
   const [materials, toggleMaterial] = useTicks();
   const [done, toggleDone] = useTicks();
-  const materialList = g.materials ?? [];
+  const [open, toggleOpen] = useTicks();
+  const materialList = (g.materials ?? []).map((m) =>
+    typeof m === "string" ? { label: m, icon: undefined } : m,
+  );
   const next = g.steps.findIndex((_, i) => !done.has(i));
   const chips = [
     ...(g.duration ? [{ label: g.duration, icon: Clock }] : []),
@@ -265,33 +295,54 @@ export function GuideCard({ p, title }: { p: Summary & { guide: Guide }; title: 
       >
         {materialList.length > 0 && (
           <Panel
-            icon={Package}
+            icon={ClipboardList}
             title={x.materials}
-            aside={<span className="text-[12.5px] text-muted">{x.items(materialList.length)}</span>}
+            heading="title"
+            aside={<span className="text-[13px] text-muted">{x.items(materialList.length)}</span>}
             className="self-start"
           >
-            <ul className="flex flex-col divide-y divide-border rounded-xl border border-border">
-              {materialList.map((m, i) => (
-                <li key={i} className="flex items-center gap-3 px-3 py-2.5 text-[14px] text-fg">
-                  <Tick checked={materials.has(i)} onToggle={() => toggleMaterial(i)} label={m} />
-                  <span className={cn(materials.has(i) && "text-muted line-through")}>{m}</span>
-                </li>
-              ))}
+            <ul className="flex flex-col divide-y divide-border rounded-xl border border-border bg-surface">
+              {materialList.map((m, i) => {
+                const Icon = m.icon ? ICONS[m.icon] : Package;
+                const tone = TONE[CYCLE[i % CYCLE.length]!];
+                return (
+                  <li key={i} className="flex items-center gap-3 px-3 py-2.5 text-[14px] text-fg">
+                    <Tick
+                      checked={materials.has(i)}
+                      onToggle={() => toggleMaterial(i)}
+                      label={m.label}
+                    />
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "grid size-9 shrink-0 place-items-center rounded-xl",
+                        tone.bubble,
+                      )}
+                    >
+                      <Icon className="size-[18px]" />
+                    </span>
+                    <span className={cn("min-w-0", materials.has(i) && "text-muted line-through")}>
+                      {m.label}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </Panel>
         )}
         <Panel
           icon={ListOrdered}
           title={x.steps}
+          heading="title"
           aside={
-            <span className="flex flex-col items-end gap-1 text-[12px] text-muted">
+            <span className="flex flex-col items-end gap-1.5 text-[12.5px] text-muted">
               {x.progress(done.size, g.steps.length)}
               <span
                 aria-hidden
-                className="block h-1.5 w-28 overflow-hidden rounded-full bg-surface-2"
+                className="block h-1.5 w-32 overflow-hidden rounded-full bg-surface-2"
               >
                 <span
-                  className="block h-full rounded-full bg-accent transition-[width]"
+                  className="block h-full rounded-full bg-accent transition-[width] motion-reduce:transition-none"
                   style={{ width: `${(done.size / g.steps.length) * 100}%` }}
                 />
               </span>
@@ -302,6 +353,7 @@ export function GuideCard({ p, title }: { p: Summary & { guide: Guide }; title: 
             {g.steps.map((step, i) => {
               const isDone = done.has(i);
               const isNext = i === next;
+              const expanded = open.has(i);
               return (
                 <li
                   key={i}
@@ -310,8 +362,8 @@ export function GuideCard({ p, title }: { p: Summary & { guide: Guide }; title: 
                     isDone
                       ? "border-[color-mix(in_oklab,#16a36a_25%,transparent)] bg-[color-mix(in_oklab,#16a36a_7%,transparent)]"
                       : isNext
-                        ? "border-accent-line bg-accent-soft/40"
-                        : "border-border",
+                        ? "border-accent-line bg-accent-soft/40 shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-accent,#0e9fb0)_8%,transparent)]"
+                        : "border-border bg-surface",
                   )}
                 >
                   <Tick
@@ -323,33 +375,99 @@ export function GuideCard({ p, title }: { p: Summary & { guide: Guide }; title: 
                   <span
                     aria-hidden
                     className={cn(
-                      "grid size-8 shrink-0 place-items-center rounded-full border text-[13px] font-semibold tabular-nums",
-                      isNext ? "border-accent text-accent-text" : "border-border text-muted",
+                      "grid size-8 shrink-0 place-items-center rounded-full text-[13px] font-semibold tabular-nums",
+                      isNext
+                        ? "border-2 border-accent bg-surface text-accent-text"
+                        : "bg-surface-2 text-muted",
                     )}
                   >
                     {i + 1}
                   </span>
-                  <span className="flex min-w-0 flex-col">
-                    <span
-                      className={cn(
-                        "text-[14.5px] leading-snug font-semibold text-fg",
-                        isDone && "text-muted",
+                  <button
+                    type="button"
+                    aria-expanded={step.text ? expanded : undefined}
+                    disabled={!step.text}
+                    onClick={() => toggleOpen(i)}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  >
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span
+                        className={cn(
+                          "text-[14.5px] leading-snug font-semibold text-fg",
+                          isDone && "text-muted",
+                        )}
+                      >
+                        {step.title.replace(LEADING_NUMBER, "")}
+                      </span>
+                      {step.text && (
+                        <span
+                          className={cn(
+                            "text-[13px] leading-snug text-muted",
+                            !expanded && "line-clamp-1",
+                          )}
+                        >
+                          {step.text}
+                        </span>
                       )}
-                    >
-                      {step.title}
                     </span>
                     {step.text && (
-                      <span className="text-[13px] leading-snug text-muted">{step.text}</span>
+                      <ChevronRight
+                        aria-hidden
+                        className={cn(
+                          "size-4 shrink-0 text-faint transition-transform motion-reduce:transition-none",
+                          expanded && "rotate-90",
+                        )}
+                      />
                     )}
-                  </span>
+                  </button>
                 </li>
               );
             })}
           </ol>
         </Panel>
       </div>
-      {g.tip && <TipBox label={x.tip} text={g.tip} />}
+      {(g.tip || onDetail || onGuide) && (
+        <div className="grid items-stretch gap-3 @2xl:grid-cols-[minmax(0,1fr)_auto_auto]">
+          {g.tip ? <TipBox label={x.tip} text={g.tip} /> : <span />}
+          {onDetail && (
+            <button
+              type="button"
+              onClick={onDetail}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-surface px-5 py-3 text-[14px] font-medium text-fg hover:bg-active"
+            >
+              <FileText className="size-4" aria-hidden />
+              {x.detail}
+            </button>
+          )}
+          {onGuide && (
+            <button
+              type="button"
+              onClick={onGuide}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-5 py-3 text-[14px] font-medium text-white hover:brightness-95"
+            >
+              <AudioLines className="size-4" aria-hidden />
+              {x.guideMe}
+            </button>
+          )}
+        </div>
+      )}
+      {g.source && <SourceLink source={g.source} />}
     </div>
+  );
+}
+
+function SourceLink({ source }: { source: { label: string; url: string } }) {
+  const { t } = useI18n();
+  return (
+    <a
+      href={source.url}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      className="inline-flex items-center gap-1.5 self-start text-[12.5px] text-accent-text hover:underline"
+    >
+      <ExternalLink className="size-3" aria-hidden />
+      {t.workspace.guide.source(source.label)}
+    </a>
   );
 }
 

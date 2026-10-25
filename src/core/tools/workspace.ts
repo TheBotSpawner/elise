@@ -114,10 +114,10 @@ const presentInput = z
       'summary only. 2–4 chips that place the subject: where, what kind, a status ("Nueva Zelanda" map-pin, "Asesoramiento financiero" briefcase, "Licenciada por FMA" shield).',
     ),
     recipe: PAYLOADS.summary.shape.recipe.describe(
-      'summary only, for a recipe ("¿cómo se hace el pollo al verdeo?"): times (prep, cook, total: "10 min"), servings ("2 porciones"), difficulty ("Fácil"), ingredients with amounts ("200 g pasta"), steps one action each, an optional tip. Diet or style as tags ("Vegetariana" leaf). image: only a photo already shown by web.images in this workspace (its url, alt and credit) — omit it otherwise. sections may then be empty.',
+      'summary only, for a recipe ("¿cómo se hace el pollo al verdeo?"): times (prep, cook, total: "10 min"), servings ("2 porciones"), difficulty ("Fácil"), ingredients with amounts ("200 g pasta"), steps one action each, an optional tip. Diet or style as tags ("Vegetariana" leaf). image: only a photo already shown by web.images in this workspace (its url, alt and credit) — omit it otherwise. source: the link to the recipe site when it came from the web. sections may then be empty.',
     ),
     guide: PAYLOADS.summary.shape.guide.describe(
-      "summary only, for step-by-step instructions (assembling, installing, setting up, a how-to): icon (wrench, package, list…), duration, difficulty, materials/tools, steps as {title: short action, text: one detail line}, an optional tip. sections may then be empty.",
+      'summary only, for step-by-step instructions (assembling, installing, setting up, a how-to): icon for the task (wrench, hammer, drill, settings, plug…), duration ("25 min"), difficulty ("Dificultad baja"), materials and tools each as {label, icon} by kind (board → layers, screws → package, screwdriver → wrench, drill → drill, tape measure → ruler, paint → paintbrush, cables → cable, water → droplet), steps as {title: short action in imperative, text: one concrete detail line}, a practical tip, and source when it came from the web. sections may then be empty.',
     ),
     facts: PAYLOADS.summary.shape.facts.describe(
       'summary only. Key facts at a glance for a person, company, place or product: label → short value ("Director" → "Rod Schubert", user; "Fundada" → "1957", calendar). Only facts from your sources.',
@@ -223,7 +223,7 @@ export const presentTool: ToolDefinition = {
   capability: "workspace",
   operation: "present",
   description:
-    "Add a structured summary (e.g. a meeting brief, or the answer to a web question as a result card) or a set of links to the Live Workspace. Results you fetch with other tools are already shown — don't re-present them. Keep facts, retrieved context and your suggestions in separate sections.",
+    "Add a structured card to the Live Workspace: a summary (a meeting brief, the answer to a web question, any answer with a shape — options, key facts, a plan), a recipe, step-by-step instructions, or a set of links. Results you fetch with other tools are already shown — don't re-present them. Keep facts, retrieved context and your suggestions in separate sections.",
   input: presentInput,
   async describe() {
     return { summary: "Show in workspace" };
@@ -238,6 +238,13 @@ export const presentTool: ToolDefinition = {
       if (!q.sections?.length && !q.recipe && !q.guide)
         throw new AppError("VALIDATION_ERROR", "A summary needs sections", { recovery: "review" });
       // A recipe's photo is one ELISE already showed (a gallery), never a URL from nowhere.
+      const credited = q.recipe?.source ?? q.guide?.source;
+      if (credited && !knownUrls(state).has(credited.url))
+        throw new AppError(
+          "VALIDATION_ERROR",
+          "The source must be a link that appears in this workspace's own sources — or omit it.",
+          { recovery: "review" },
+        );
       if (q.recipe?.image && !knownImages(state).has(q.recipe.image.url))
         throw new AppError(
           "VALIDATION_ERROR",

@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   BookOpen,
   Briefcase,
+  Cable,
   Building2,
   Calendar,
   Car,
@@ -15,6 +16,8 @@ import {
   Clock,
   Code,
   DollarSign,
+  Drill,
+  Droplet,
   Dumbbell,
   ExternalLink,
   File,
@@ -22,9 +25,11 @@ import {
   Flame,
   Globe,
   GraduationCap,
+  Hammer,
   Heart,
   House,
   Info,
+  Layers,
   Leaf,
   Lightbulb,
   Link2,
@@ -32,10 +37,15 @@ import {
   Mail,
   MapPin,
   Package,
+  Paintbrush,
   Paperclip,
   Phone,
   Plane,
+  Plug,
+  Ruler,
   Scale,
+  Scissors,
+  Settings,
   Shield,
   Sparkles,
   Star,
@@ -95,6 +105,16 @@ export const ICONS: Record<SummaryIcon, LucideIcon> = {
   chef: ChefHat,
   flame: Flame,
   list: List,
+  hammer: Hammer,
+  ruler: Ruler,
+  drill: Drill,
+  paintbrush: Paintbrush,
+  plug: Plug,
+  cable: Cable,
+  scissors: Scissors,
+  layers: Layers,
+  settings: Settings,
+  droplet: Droplet,
 };
 
 /** Each kind of section: its own icon and tint, so a glance tells facts from suggestions. */
@@ -154,6 +174,9 @@ export const TONE: Record<Tone, { bubble: string; number: string; line: string }
   },
 };
 
+/** "1. ", "2) ", "Paso 3: ", "- " at the start of a point the card already numbers or bullets. */
+export const LEADING_NUMBER = /^\s*(?:(?:paso|step)\s*)?(?:\d{1,2}\s*[.):-]|[-•*])\s+/i;
+
 const MD_LINK = /\[([^\]]{1,200})\]\((https:\/\/[^)\s]{1,2000})\)/g;
 const BRACKETED_URL = /\[(https:\/\/[^\]\s]+)\](?!\()/g;
 const host = (u: string) => {
@@ -183,6 +206,8 @@ export function parseItem(raw: string): ParsedItem {
       return "";
     })
     .replace(/\s*\(\s*\)|\s*[·•]\s*$/g, "")
+    // The card numbers its points itself: "1. Salpimentá…" would read "1 · 1.".
+    .replace(LEADING_NUMBER, "")
     .replace(/\s{2,}/g, " ")
     .trim()
     .replace(/[\s.,;:·-]+$/, (m) => (m.includes(".") ? "." : ""));
@@ -289,24 +314,19 @@ export function SummaryCard({ p, title, large }: { p: Summary; title: string; la
                           <Icon className="size-[18px]" />
                         </span>
                         <div className="flex min-w-0 flex-col gap-1">
-                          {(item.title || numbered) && (
+                          {item.title && (
                             <p className="flex items-start gap-2 text-[14.5px] leading-snug font-semibold text-fg">
-                              {numbered && (
-                                <span
-                                  className={cn(
-                                    "mt-px grid h-5 min-w-5 shrink-0 place-items-center rounded-md px-1 text-[11.5px] font-semibold tabular-nums",
-                                    tone.number,
-                                  )}
-                                >
-                                  {i + 1}
-                                </span>
-                              )}
-                              {item.title && <span className="min-w-0">{rich(item.title)}</span>}
+                              {numbered && <Num n={i + 1} className={tone.number} />}
+                              <span className="min-w-0">{rich(item.title)}</span>
                             </p>
                           )}
                           {item.text && (
-                            <p className="text-[13.5px] leading-relaxed text-fg2">
-                              {rich(item.text)}
+                            <p className="flex items-start gap-2 text-[13.5px] leading-relaxed text-fg2">
+                              {/* Without a title the number sits on the text's own line. */}
+                              {numbered && !item.title && (
+                                <Num n={i + 1} className={cn("mt-0.5", tone.number)} />
+                              )}
+                              <span className="min-w-0">{rich(item.text)}</span>
                             </p>
                           )}
                           {item.links.length > 0 && (
@@ -433,6 +453,19 @@ export function Chips({ chips }: { chips: { label: string; icon?: SummaryIcon | 
         );
       })}
     </ul>
+  );
+}
+
+function Num({ n, className }: { n: number; className: string }) {
+  return (
+    <span
+      className={cn(
+        "mt-px grid h-5 min-w-5 shrink-0 place-items-center rounded-md px-1 text-[11.5px] font-semibold tabular-nums",
+        className,
+      )}
+    >
+      {n}
+    </span>
   );
 }
 

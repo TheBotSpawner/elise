@@ -3734,6 +3734,11 @@ export const en = {
       items: (n: number) => (n === 1 ? "1 item" : `${n} items`),
       progress: (done: number, total: number) => `${done} of ${total} done`,
       tip: "ELISE's advice:",
+      detail: "See details",
+      guideMe: "Guide me step by step",
+      guidePrompt: (title: string) =>
+        `Guide me through "${title}" one step at a time, and wait for me to say "done" before the next one.`,
+      source: (label: string) => `Source: ${label}`,
       markDone: (step: string) => `Mark "${step}" as done`,
     },
     summarySources: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
