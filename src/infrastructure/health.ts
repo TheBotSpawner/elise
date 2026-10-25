@@ -2,6 +2,7 @@ import "server-only";
 
 import { isSupabaseConfigured, supabasePublicConfig } from "@/config/env";
 import { invalidEnvKeys, serverEnv } from "@/config/server-env";
+import { ocrAuthMode } from "@/infrastructure/ocr/google-document-ai";
 import { isGoogleConfigured } from "@/infrastructure/providers/google/config";
 import { isMicrosoftConfigured } from "@/infrastructure/providers/microsoft/config";
 import { isNotionConfigured } from "@/infrastructure/providers/notion/oauth";
@@ -23,6 +24,7 @@ export type HealthDomain =
   | "microsoft"
   | "notion"
   | "slack"
+  | "ocr"
   | "encryption";
 
 export type DomainState = "ready" | "not_configured" | "down";
@@ -45,6 +47,8 @@ export function configuredDomains(): Record<HealthDomain, DomainState> {
     microsoft: state(isMicrosoftConfigured()),
     notion: state(isNotionConfigured()),
     slack: state(isSlackConfigured()),
+    // Scanned pages (ADR-035/121): ready once the processor and a way to authenticate exist.
+    ocr: state(ocrAuthMode() !== null),
     encryption: state(Boolean(env.ELISE_ENCRYPTION_KEY && env.SUPABASE_SECRET_KEY)),
   };
 }

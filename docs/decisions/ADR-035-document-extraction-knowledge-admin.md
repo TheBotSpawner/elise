@@ -86,8 +86,9 @@ The key and the processor stay server-only. No new dependency.
 1. Enable "Cloud Document AI API" (`documentai.googleapis.com`) in a project with billing.
 2. Create an "Enterprise Document OCR" processor (region `us` or `eu`). Set
    `GOOGLE_DOCUMENT_AI_PROCESSOR=projects/P/locations/us/processors/ID`.
-3. Create a service account with the role `roles/documentai.apiUser`, add a JSON key, and set
-   `GOOGLE_SERVICE_ACCOUNT_JSON` to the raw JSON or its base64.
+3. Create a service account with the role `roles/documentai.apiUser`. Authenticate it without
+   keys (ADR-121: Workload Identity Federation on Vercel, a token broker for Trigger.dev jobs),
+   or — only where the organization allows keys — set `GOOGLE_SERVICE_ACCOUNT_JSON`.
 
 Without them, scanned pages are reported as "text recognition isn't set up yet". Native PDFs
 work as before.

@@ -41,6 +41,29 @@ const serverEnvSchema = z.object({
     .regex(/^projects\/[^/]+\/locations\/[a-z0-9-]+\/processors\/[^/]+$/)
     .optional(),
   GOOGLE_SERVICE_ACCOUNT_JSON: z.string().min(1).optional(),
+  /**
+   * OCR without keys (ADR-121): Workload Identity Federation from Vercel's OIDC token to the OCR
+   * service account. Not secrets — identifiers only; all four or none.
+   */
+  GCP_PROJECT_NUMBER: z.string().regex(/^\d+$/).optional(),
+  GCP_WORKLOAD_IDENTITY_POOL_ID: z.string().min(1).optional(),
+  GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID: z.string().min(1).optional(),
+  GCP_SERVICE_ACCOUNT_EMAIL: z.email().optional(),
+  /**
+   * Where background jobs (Trigger.dev, which has no identity Google can trust) get a one-hour
+   * OCR token: ELISE's own /api/internal/ocr-token on Vercel (ADR-121).
+   */
+  OCR_TOKEN_BROKER_URL: z
+    .url()
+    .refine((u) => u.startsWith("https://") || /^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(u), {
+      message: "The OCR broker must be reached over HTTPS",
+    })
+    .optional(),
+  /**
+   * Signs background jobs' requests to the OCR broker (ADR-121). The same random value (≥ 32
+   * characters) in Vercel and Trigger.dev; a secret of its own, rotated on its own.
+   */
+  OCR_BROKER_SECRET: z.string().min(32).optional(),
   /** Curated voices (ADR-030): 1 = ELISE, 2 = Martín, 3 = Adriana. Server-only ids. */
   ELEVENLABS_VOICE_ID_1: z.string().min(1).optional(),
   ELEVENLABS_VOICE_ID_2: z.string().min(1).optional(),

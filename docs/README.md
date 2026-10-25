@@ -57,6 +57,7 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-118 | Smart Life / Tuya: remotes already set up in Smart Life imported as ready devices, sent through Tuya's cloud (dev-linked account; consumer OAuth blocked), off by default |
 | ADR-119 | Smart Life / Tuya multiusuario: cada persona conecta SU cuenta por el OAuth oficial de Tuya (H5, su centro de datos), tokens cifrados por conexión, dispositivos de nube sin hub (migración 067), aislamiento por workspace |
 | ADR-120 | Imágenes reales con créditos: Wikimedia Commons (gratis), fotos de Places opcionales (pago, apagado), una galería por sujeto, web.images |
+| ADR-121 | OCR sin claves: Workload Identity Federation desde Vercel (OIDC) y broker de tokens de 1 h para los jobs de Trigger.dev |
 
 ## roadmap/
 
