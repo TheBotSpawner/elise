@@ -5,6 +5,7 @@ import { AppError } from "@/core/errors";
 import {
   dedupe,
   diversify,
+  fitsWhole,
   entityKey,
   IMAGE_LIMITS,
   moreImagesUrl,
@@ -143,6 +144,7 @@ async function entityGroup(
     name: place?.group.name ?? entity.name,
     context: place?.group.context ?? entity.context ?? null,
     mapsUrl: place?.group.mapsUrl ?? null,
+    fit: fitsWhole(entity.kind) ? "contain" : "cover",
     images: diversify(images).slice(0, req.count),
   };
   if (group.images.length) {

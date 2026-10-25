@@ -4367,7 +4367,8 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       },
       provocative: {
         name: "Witty and provocative",
-        description: "Dry humor, a bit of sarcasm and some pressure — still helping.",
+        description:
+          "Sharp humor, spicy sarcasm and provocation: needles you and doesn't back down — still helping.",
         sample: "Meeting at 3, done. The report? Right, tomorrow. Like yesterday.",
       },
     },

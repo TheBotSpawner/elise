@@ -4400,7 +4400,8 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
       },
       provocative: {
         name: "Ácida y provocadora",
-        description: "Humor seco, sarcasmo y un poco de presión, sin dejar de ayudarte.",
+        description:
+          "Humor ácido, sarcasmo con picante y provocación: te pincha y no se achica, sin dejar de ayudarte.",
         sample: "Reunión a las 15, hecho. ¿Y el informe? Ah, cierto, mañana. Como ayer.",
       },
     },

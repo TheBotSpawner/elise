@@ -23,6 +23,10 @@ export function originalPath(
       .normalize("NFKD")
       .replace(/[^\w.-]+/g, "_")
       .replace(/_+/g, "_")
+      // "Programa A. de S..png": a run of dots is one dot, and no leading dot — a file name may
+      // never look like a path step (the ownership check refuses "..").
+      .replace(/\.{2,}/g, ".")
+      .replace(/^\.+/, "")
       .slice(-120) || "file";
   return `workspace/${workspaceId}/knowledge/${itemId}/${versionId}/${safe}`;
 }
@@ -104,6 +108,10 @@ export function financeImportPath(workspaceId: string, importId: string, filenam
       .normalize("NFKD")
       .replace(/[^\w.-]+/g, "_")
       .replace(/_+/g, "_")
+      // "Programa A. de S..png": a run of dots is one dot, and no leading dot — a file name may
+      // never look like a path step (the ownership check refuses "..").
+      .replace(/\.{2,}/g, ".")
+      .replace(/^\.+/, "")
       .slice(-120) || "file";
   return `workspace/${workspaceId}/finance-imports/${importId}/${safe}`;
 }
@@ -167,6 +175,10 @@ export function chatAttachmentPath(workspaceId: string, attachmentId: string, fi
       .normalize("NFKD")
       .replace(/[^\w.-]+/g, "_")
       .replace(/_+/g, "_")
+      // "Programa A. de S..png": a run of dots is one dot, and no leading dot — a file name may
+      // never look like a path step (the ownership check refuses "..").
+      .replace(/\.{2,}/g, ".")
+      .replace(/^\.+/, "")
       .slice(-120) || "file";
   return `workspace/${workspaceId}/chat/${attachmentId}/${safe}`;
 }

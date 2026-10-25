@@ -5,6 +5,7 @@ import { z } from "zod";
 import { AppError } from "@/core/errors";
 import {
   IMAGE_LIMITS,
+  fitsWhole,
   isOnTopic,
   searchQuery,
   visualResultSchema,
@@ -68,7 +69,9 @@ export async function commonsImages(
     format: "json",
     generator: "search",
     gsrnamespace: "6",
-    gsrsearch: `${searchQuery(entity)} filetype:bitmap`,
+    // Photos are bitmaps; logos and diagrams are mostly SVG drawings (shown as Wikimedia's PNG
+    // render of them, never the SVG itself).
+    gsrsearch: `${searchQuery(entity)}${fitsWhole(entity.kind) ? "" : " filetype:bitmap"}`,
     gsrlimit: String(want),
     gsroffset: String((opts.page - 1) * want),
     prop: "imageinfo",
@@ -98,11 +101,21 @@ export async function commonsImages(
   return pages.flatMap((p) => {
     const info = p.imageinfo?.[0];
     if (!info?.thumburl || !info.descriptionurl) return [];
-    if (info.mime && !/^image\/(jpeg|png|webp)$/.test(info.mime)) return [];
+    const svg = info.mime === "image/svg+xml";
+    if (
+      info.mime &&
+      !/^image\/(jpeg|png|webp)$/.test(info.mime) &&
+      !(svg && fitsWhole(entity.kind))
+    )
+      return [];
     const meta = info.extmetadata ?? {};
     const name = p.title.replace(/^File:/, "").replace(/\.(jpe?g|png|webp)$/i, "");
     const description = plain(meta.ImageDescription?.value).slice(0, 400);
-    if (!isOnTopic(entity, `${name} ${plain(meta.ObjectName?.value)} ${description}`)) return [];
+    // A logo is the brand's own file: its name must be in the file's title (a description that
+    // merely mentions the brand is someone else's picture).
+    const text =
+      entity.kind === "logo" ? name : `${name} ${plain(meta.ObjectName?.value)} ${description}`;
+    if (!isOnTopic(entity, text)) return [];
     const v = visualResultSchema.safeParse({
       id: `commons:${p.pageid}`,
       provider: "wikimedia_commons",

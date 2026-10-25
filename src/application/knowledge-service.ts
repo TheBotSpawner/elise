@@ -780,7 +780,21 @@ export async function prepareUploads(
       .single();
     if (error)
       throw new AppError("INTERNAL_ERROR", "Could not prepare the upload", { cause: error });
-    targets.push(await newUploadVersion(auth, item.id, 1, file));
+    try {
+      targets.push(await newUploadVersion(auth, item.id, 1, file));
+    } catch (cause) {
+      // Never a document left "uploading" forever: it says it failed (the person can remove it).
+      await admin
+        .from("knowledge_items")
+        .update({
+          status: "failed",
+          error_code: "INTERNAL_ERROR",
+          status_detail: "The upload could not start",
+        })
+        .eq("id", item.id)
+        .eq("workspace_id", auth.workspaceId);
+      throw cause;
+    }
   }
   return targets;
 }

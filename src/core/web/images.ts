@@ -41,6 +41,12 @@ export const visualResultSchema = z
   .strict();
 export type VisualResult = z.infer<typeof visualResultSchema>;
 
+export const IMAGE_KINDS = ["place", "person", "logo", "diagram", "product", "thing"] as const;
+export type ImageKind = (typeof IMAGE_KINDS)[number];
+
+/** Logos and diagrams are shown whole (never cropped); photos fill their frame. */
+export const fitsWhole = (kind: ImageKind) => kind === "logo" || kind === "diagram";
+
 /** What the model asks for: one or more named subjects, each disambiguated. */
 export const imageEntitySchema = z
   .object({
@@ -57,9 +63,11 @@ export const imageEntitySchema = z
       .optional()
       .describe('Where it is or what it belongs to, to tell it apart: "Curaçao", "Aruba".'),
     kind: z
-      .enum(["place", "product", "thing"])
+      .enum(IMAGE_KINDS)
       .default("thing")
-      .describe("place: a beach, museum, hotel, landmark; product: a model to buy; thing: else."),
+      .describe(
+        "place: a beach, city, museum, hotel, landmark · person: a public figure · logo: a company's or brand's logo (name = the brand) · diagram: a diagram, chart or map of a concept (name in English, as files are named) · product: a model to buy · thing: anything else.",
+      ),
   })
   .strict();
 export type ImageEntity = z.infer<typeof imageEntitySchema>;
@@ -72,6 +80,8 @@ export const imageGroupSchema = z
     context: z.string().trim().max(120).nullable().default(null),
     /** The provider's own place page, when the photos are of an identified place. */
     mapsUrl: https.nullable().default(null),
+    /** "contain" for logos and diagrams (shown whole), "cover" for photos. */
+    fit: z.enum(["cover", "contain"]).default("cover"),
     images: z.array(visualResultSchema).max(10),
   })
   .strict();
@@ -140,10 +150,20 @@ const tokens = (s: string) =>
  * "RM4" photo), and for a one-word name, a word of its context too (a "Baby Beach" elsewhere
  * isn't Aruba's).
  */
-export function isOnTopic(entity: Pick<ImageEntity, "name" | "context">, text: string): boolean {
-  const have = new Set(fold(text).split(" "));
+export function isOnTopic(
+  entity: Pick<ImageEntity, "name" | "context"> & { kind?: ImageKind },
+  text: string,
+): boolean {
+  // File names glue words ("DavidGogginsMay08"): split on case changes first (never between a
+  // letter and a digit: "RM4C" is one model name).
+  const spaced = text.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2");
+  const have = new Set([...fold(text).split(" "), ...fold(spaced).split(" ")]);
   const name = tokens(entity.name);
-  if (!name.length || !name.every((w) => have.has(w))) return false;
+  if (!name.length) return false;
+  // A diagram's file rarely repeats every word of how it was asked ("Krebs cycle" is filed as
+  // "Citric acid cycle"): one distinctive word is enough there.
+  if (entity.kind === "diagram") return name.some((w) => have.has(w));
+  if (!name.every((w) => have.has(w))) return false;
   // A one-word name ("Baby" Beach, "Eagle" Beach) exists in many places: its context must be
   // there too. Two or more distinctive words ("Kenepa Grandi", "RM4C mini") already tell it apart.
   const context = entity.context && name.length < 2 ? tokens(entity.context) : [];
@@ -155,10 +175,13 @@ export function isOnTopic(entity: Pick<ImageEntity, "name" | "context">, text: s
  * English file names) plus the context, accents folded ("Curaçao" → "curacao"). A one-word name
  * keeps its full form ("Baby Beach").
  */
-export function searchQuery(entity: Pick<ImageEntity, "name" | "context">): string {
+export function searchQuery(
+  entity: Pick<ImageEntity, "name" | "context"> & { kind?: ImageKind },
+): string {
   const name = tokens(entity.name);
   const subject = name.length >= 2 ? name.join(" ") : fold(entity.name);
-  return [subject, entity.context ? fold(entity.context) : ""].filter(Boolean).join(" ");
+  const what = entity.kind === "logo" ? "logo" : entity.kind === "diagram" ? "diagram" : "";
+  return [subject, entity.context ? fold(entity.context) : "", what].filter(Boolean).join(" ");
 }
 
 /** The same photo through two paths, or the same page twice: kept once. */

@@ -48,6 +48,8 @@ describe("sessionCommand (ADR-102)", () => {
     "Elise, decime mi resumen del día",
     "Elise, traeme mi resumen del día",
     "Elise, resumen del día",
+    "Elise, a ver mi resumen del día",
+    "A ver el resumen de hoy",
     "Dame el resumen de hoy",
     "Leeme mi resumen del día, porfa",
     "Quiero escuchar el resumen del día",

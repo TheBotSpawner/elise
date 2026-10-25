@@ -66,7 +66,7 @@ const ENABLE = [
  * utterance asks for today's summary (formerly "Morning Brief") to be opened and read.
  */
 const DAILY_SUMMARY = [
-  /^(?:(?:decime|decimelo|dame|traeme|trae|contame|leeme|lee|mostrame|abri|abrime|pasame|poneme|pone|reproduci|quiero|quiero escuchar|quiero ver|escuchar|podes decirme|me decis|me das|me traes|me lees) )?(?:el |mi |tu )?(?:resumen (?:del dia|de hoy|diario|de la ma(?:n|ñ)ana|del dia de hoy)|morning brief|brief de hoy)$/,
+  /^(?:(?:a ver|aver|decime|decimelo|dame|traeme|trae|contame|leeme|lee|mostrame|abri|abrime|pasame|poneme|pone|reproduci|quiero|quiero escuchar|quiero ver|escuchar|podes decirme|me decis|me das|me traes|me lees|veamos|vamos con) )?(?:el |mi |tu )?(?:resumen (?:del dia|de hoy|diario|de la ma(?:n|ñ)ana|del dia de hoy)|morning brief|brief de hoy)$/,
   /^(?:que dice|como viene) (?:el |mi )?resumen (?:del dia|de hoy)$/,
   /^(?:tell me|give me|read me|play|open|show me)? ?(?:my |the )?(?:daily summary|morning brief|summary of the day)$/,
 ];

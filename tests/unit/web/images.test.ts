@@ -269,3 +269,20 @@ describe("'investigá' / 'buscá en internet'", () => {
     expect(selectTools(all, { message: "averiguá el horario del banco" }).tools).toHaveLength(1);
   });
 });
+
+describe("people, logos and diagrams", () => {
+  it("a logo searches for the brand's logo; a diagram takes one distinctive word", async () => {
+    const { searchQuery, isOnTopic: onTopic, fitsWhole } = await import("@/core/web/images");
+    expect(searchQuery({ name: "OpenAI", kind: "logo" })).toBe("openai logo");
+    expect(onTopic({ name: "OpenAI", kind: "logo" }, "OpenAI wordmark 2017")).toBe(true);
+    expect(
+      onTopic({ name: "Krebs cycle", kind: "diagram" }, "Citric acid cycle with aconitate 2"),
+    ).toBe(true);
+    expect(onTopic({ name: "David Goggins", kind: "person" }, "DavidGogginsMay08")).toBe(true);
+    expect(onTopic({ name: "Broadlink RM4C Mini" }, "BroadlinkRM4Mini")).toBe(false);
+    expect(onTopic({ name: "David Goggins", kind: "person" }, "David Goggins Badwater 2007")).toBe(
+      true,
+    );
+    expect(fitsWhole("logo") && fitsWhole("diagram") && !fitsWhole("person")).toBe(true);
+  });
+});

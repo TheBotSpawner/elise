@@ -123,7 +123,12 @@ function Carousel({
           <Photo
             key={image.id}
             image={image}
-            className={cn("w-full object-cover", tall ? "aspect-[16/10]" : "aspect-[16/9]")}
+            className={cn(
+              "w-full",
+              // Logos and diagrams whole, on a light card; photos fill the frame.
+              group.fit === "contain" ? "bg-white object-contain p-4" : "object-cover",
+              tall ? "aspect-[16/10]" : "aspect-[16/9]",
+            )}
           />
         </button>
         {n > 1 && (
@@ -147,7 +152,14 @@ function Carousel({
                   k === i ? "outline-2 outline-accent" : "opacity-70 hover:opacity-100",
                 )}
               >
-                <Photo image={im} thumb className="size-12 object-cover" />
+                <Photo
+                  image={im}
+                  thumb
+                  className={cn(
+                    "size-12",
+                    group.fit === "contain" ? "bg-white object-contain p-1" : "object-cover",
+                  )}
+                />
               </button>
             </li>
           ))}
@@ -334,7 +346,10 @@ function Lightbox({
             key={image.id}
             image={image}
             whole
-            className="size-full rounded-xl object-contain"
+            className={cn(
+              "size-full rounded-xl object-contain",
+              group.fit === "contain" && "bg-white p-6",
+            )}
           />
           {n > 1 && (
             <>

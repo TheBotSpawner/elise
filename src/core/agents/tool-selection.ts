@@ -149,7 +149,7 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   ],
   [
     "web",
-    /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|publicaci\w*|anuncios?|listings?|ofertas?|productos?|opciones|departamentos?|alquiler\w*|en venta|comprar|usados?|cursos?|buscame|encontrame|find me|fotos?|im[aá]genes|imagen|photos?|pictures?|images?|c[oó]mo (es|son|se ve\w*)|mostrame|playas?|viaj\w*|turismo|hotel(es)?|excursi\w*|itinerario)\b/i,
+    /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|publicaci\w*|anuncios?|listings?|ofertas?|productos?|opciones|departamentos?|alquiler\w*|en venta|comprar|usados?|cursos?|buscame|encontrame|find me|fotos?|im[aá]genes|imagen|photos?|pictures?|images?|c[oó]mo (es|son|se ve\w*)|mostrame|playas?|viaj\w*|turismo|hotel(es)?|excursi\w*|itinerario|qui[eé]n (es|era|fue)|who (is|was)|logos?|diagramas?|diagrams?|mapas?|cu[aá]l es mejor|compar\w*|empresas?|marcas?)\b/i,
   ],
 ];
 

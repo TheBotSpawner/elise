@@ -225,3 +225,33 @@ test("a product model is never confused; arithmetic shows no images", async ({ p
   report.math = { tools: math.tools.map((t) => t.tool_name), reply: math.reply.slice(-120) };
   expect(math.tools.map((t) => t.tool_name)).not.toContain("web.images");
 });
+
+test("images come on their own when they help: a person, two places, a logo", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page);
+  const person = await ask(page, "¿Quién es David Goggins?");
+  await page.screenshot({ path: `${OUT}/person.png` });
+  const two = await ask(page, "¿Cuál es mejor, la playa de Joao Pessoa o la de Aruba?");
+  await page.screenshot({ path: `${OUT}/compare.png` });
+  const logo = await ask(page, "¿Qué es Mercado Libre?");
+  await page.screenshot({ path: `${OUT}/logo.png` });
+  report.proactive = {
+    person: {
+      ms: person.ms,
+      tools: person.tools.map((t) => t.tool_name),
+      gallery: person.galleries.map(summary),
+    },
+    compare: {
+      ms: two.ms,
+      tools: two.tools.map((t) => t.tool_name),
+      gallery: two.galleries.map(summary),
+    },
+    logo: {
+      ms: logo.ms,
+      tools: logo.tools.map((t) => t.tool_name),
+      gallery: logo.galleries.map(summary),
+    },
+  };
+  expect(person.tools.map((t) => t.tool_name)).toContain("web.images");
+  expect(two.galleries.some((g) => g.groups.length >= 2)).toBe(true);
+});

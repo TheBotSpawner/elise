@@ -112,7 +112,10 @@ export function useVoice({
             void desktop?.setPreferences?.({ wakeWord: true });
           },
           // "Decime mi resumen del día": the latest one opens with "Escuchar" already on.
+          // Only from Inicio with a new conversation: once one has started (its URL is /chat/…),
+          // "resumen del día" is a request inside it, answered there like any other.
           openDailySummary: async () => {
+            if (window.location.pathname !== "/") return false;
             const r = await latestDailySummaryAction();
             if (!r.ok || !r.value) return false;
             routerRef.current.push(`/schedules/results/${r.value}?listen=1`);
