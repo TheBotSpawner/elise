@@ -49,7 +49,12 @@ OCR runs in two places:
    nothing else.
 4. **Unchanged:** the Document AI calls (`:process`, page selection, limits, usage records).
    The JSON-key path stays available for organizations that allow keys.
-5. **Order of use:**
+5. **Federation only where Vercel's identity exists** (`VERCEL=1`, or `VERCEL_OIDC_TOKEN` after
+   `vercel env pull`). Found in the first production test (2026-10-24): Trigger.dev had the
+   `GCP_*` identifiers too, tried federation, and failed with "Unexpected error". Off Vercel
+   the identifiers are now ignored and the broker is used. A missing OIDC token and an
+   unreachable broker are typed errors.
+6. **Order of use:**
    - a JSON key;
    - otherwise federation;
    - otherwise the broker;

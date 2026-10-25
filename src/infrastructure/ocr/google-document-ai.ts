@@ -98,13 +98,16 @@ function federatedTokens(f: Federation): TokenSource {
   return async () => {
     // Loaded only here: background jobs (broker) never need Vercel's library.
     const { getVercelOidcToken } = await import("@vercel/oidc");
+    const subject = await getVercelOidcToken().catch(() => {
+      throw rejected("oidc", 0);
+    });
     const sts = await postJson("https://sts.googleapis.com/v1/token", {
       grantType: "urn:ietf:params:oauth:grant-type:token-exchange",
       audience: `//iam.googleapis.com/projects/${f.projectNumber}/locations/global/workloadIdentityPools/${f.pool}/providers/${f.provider}`,
       scope: SCOPE,
       requestedTokenType: "urn:ietf:params:oauth:token-type:access_token",
       subjectTokenType: "urn:ietf:params:oauth:token-type:jwt",
-      subjectToken: await getVercelOidcToken(),
+      subjectToken: subject,
     });
     if (!sts.ok) throw rejected("sts", sts.status);
     const federated = ((await sts.json()) as { access_token: string }).access_token;
@@ -158,6 +161,10 @@ function brokeredTokens(url: string, secret: string): TokenSource {
       method: "POST",
       headers: signBrokerRequest(secret),
       signal: AbortSignal.timeout(20_000),
+    }).catch(() => {
+      throw new AppError("PROVIDER_UNAVAILABLE", "The OCR token broker couldn't be reached", {
+        recovery: "retry",
+      });
     });
     if (!res.ok) throw rejected("broker", res.status);
     const body = (await res.json()) as { accessToken: string; expiresAt: number };
@@ -174,9 +181,17 @@ function cached(source: TokenSource): () => Promise<string> {
   };
 }
 
+/**
+ * Vercel hands its OIDC token only to its own functions (and locally after `vercel env pull`).
+ * Anywhere else — Trigger.dev, even if the GCP_* identifiers were synced there — federation
+ * can't work, so the broker is used instead.
+ */
+const vercelIdentity = () => process.env.VERCEL === "1" || Boolean(process.env.VERCEL_OIDC_TOKEN);
+
 function federation(): Federation | null {
   const env = serverEnv();
   if (
+    !vercelIdentity() ||
     !env.GCP_PROJECT_NUMBER ||
     !env.GCP_WORKLOAD_IDENTITY_POOL_ID ||
     !env.GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID ||

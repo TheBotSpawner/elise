@@ -47,8 +47,14 @@ const ocrOnce = async (provider: { ocr: (i: never) => Promise<unknown> } | null)
 
 beforeEach(() => {
   env.value = { GOOGLE_DOCUMENT_AI_PROCESSOR: PROCESSOR };
+  // Running on Vercel (its functions get the OIDC token); tests off Vercel unset it.
+  vi.stubEnv("VERCEL", "1");
+  vi.stubEnv("VERCEL_OIDC_TOKEN", "");
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe("OCR without keys (ADR-121)", () => {
   it("nothing configured: no OCR (scanned pages are reported, not guessed)", async () => {
@@ -97,6 +103,50 @@ describe("OCR without keys (ADR-121)", () => {
       verifyBrokerRequest(SECRET, headers.get("x-elise-at"), headers.get("x-elise-signature")),
     ).toBe(true);
     expect(new Headers(calls[1]!.init.headers).get("authorization")).toBe("Bearer brokered");
+  });
+
+  it("off Vercel the GCP_* identifiers are ignored: Trigger.dev uses the broker even when they were synced", async () => {
+    vi.stubEnv("VERCEL", "");
+    env.value = {
+      ...env.value,
+      ...FEDERATION,
+      OCR_TOKEN_BROKER_URL: "https://elise.example.org/api/internal/ocr-token",
+      OCR_BROKER_SECRET: SECRET,
+    };
+    const calls = google();
+    const { getOcrProvider, ocrAuthMode } = await load();
+    expect(ocrAuthMode()).toBe("broker");
+    await ocrOnce(getOcrProvider() as never);
+    expect(calls[0]!.url).toBe("https://elise.example.org/api/internal/ocr-token");
+    expect(calls.some((c) => c.url.startsWith("https://sts"))).toBe(false);
+  });
+
+  it("a missing Vercel token or an unreachable broker is a typed error, never 'Unexpected error'", async () => {
+    const oidc = await import("@vercel/oidc");
+    vi.mocked(oidc.getVercelOidcToken).mockRejectedValueOnce(new Error("header missing"));
+    env.value = { ...env.value, ...FEDERATION };
+    google();
+    let mod = await load();
+    await expect(ocrOnce(mod.getOcrProvider() as never)).rejects.toMatchObject({
+      code: "AI_NOT_CONFIGURED",
+    });
+
+    vi.stubEnv("VERCEL", "");
+    env.value = {
+      GOOGLE_DOCUMENT_AI_PROCESSOR: PROCESSOR,
+      OCR_TOKEN_BROKER_URL: "https://elise.example.org/api/internal/ocr-token",
+      OCR_BROKER_SECRET: SECRET,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      }),
+    );
+    mod = await load();
+    await expect(ocrOnce(mod.getOcrProvider() as never)).rejects.toMatchObject({
+      code: "PROVIDER_UNAVAILABLE",
+    });
   });
 
   it("the broker refuses a wrong secret, a forged signature and an old request", async () => {
