@@ -308,7 +308,17 @@ export class GoogleDocumentAiOcr implements OcrProvider {
     );
     if (!res.ok) {
       const status = res.status;
-      logger.warn("ocr.request_failed", { provider: this.id, status });
+      // Google's own reason (e.g. INVALID_ARGUMENT and which field): no document content in it.
+      const reason = await res
+        .json()
+        .then((b: { error?: { status?: string; message?: string } }) => b.error)
+        .catch(() => undefined);
+      logger.warn("ocr.request_failed", {
+        provider: this.id,
+        status,
+        reason: reason?.status,
+        message: reason?.message?.slice(0, 300),
+      });
       throw new AppError(
         status === 429
           ? "RATE_LIMITED"
