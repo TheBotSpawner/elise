@@ -33,6 +33,8 @@ export interface WebSearchQuery {
   language: "es" | "en" | null;
   /** Restrict to these domains (e.g. official docs), when the request calls for it. */
   domains?: string[];
+  /** Where the person is (ISO 3166 alpha-2): prices, stores and services from there first. */
+  country?: string | null;
 }
 
 /** A search provider (OpenAI web search, Tavily…), isolated in infrastructure. */

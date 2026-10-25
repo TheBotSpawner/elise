@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { executeToolCall } from "@/core/agents/executor";
-import { ECONOMY_SIGNAL, HOLIDAY_WORDS } from "@/core/agents/tool-selection";
+import { ECONOMY_SIGNAL, HOLIDAY_WORDS, SHOPPING_SIGNAL } from "@/core/agents/tool-selection";
 import type { ProviderFactory } from "@/core/agents/tools";
 import {
   compoundInflation,
@@ -412,5 +412,16 @@ describe("routing", () => {
       expect(ECONOMY_SIGNAL.test(m), m).toBe(true);
     expect(ECONOMY_SIGNAL.test("prendé la luz del living")).toBe(false);
     expect(HOLIDAY_WORDS.test("¿hay feriados la semana que viene?")).toBe(true);
+  });
+
+  it("a product's price brings shopping (Mercado Libre), however it's asked", () => {
+    for (const m of [
+      "cuánto me sale un termo Stanley?",
+      "cuánto sale un Broadlink RM4 Mini",
+      "cuánto cuestan los auriculares Sony",
+      "cuánto te sale una freidora de aire",
+    ])
+      expect(SHOPPING_SIGNAL.test(m), m).toBe(true);
+    expect(SHOPPING_SIGNAL.test("cuánto falta para el viernes")).toBe(false);
   });
 });

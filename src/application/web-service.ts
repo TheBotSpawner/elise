@@ -4,6 +4,7 @@ import { serverEnv } from "@/config/server-env";
 import { entitlementsFor } from "@/core/entitlements";
 import { AppError, toAppError } from "@/core/errors";
 import { isMarketplaceHost } from "@/core/shopping/marketplace";
+import { canonicalTimezone } from "@/core/time";
 import {
   WEB_LIMITS,
   type WebCapability,
@@ -22,6 +23,7 @@ import {
   TavilyWebSearch,
   type SearchUsage,
 } from "@/infrastructure/web/search-providers";
+import { timezoneCountry } from "@/lib/timezones";
 
 import type { AuthContext } from "./auth-context";
 import { imageSearchAvailable, searchImages } from "./image-search-service";
@@ -108,8 +110,14 @@ export function webCapability(auth: AuthContext, runId: string | null = null): W
   };
   return {
     ...(imageSearchAvailable() ? { images: (req) => searchImages(auth, req) } : {}),
-    async search(q: WebSearchQuery): Promise<WebResult[]> {
-      const key = `${auth.workspaceId}:s:${q.kind}:${q.recency}:${q.domains?.join(",")}:${q.query.toLowerCase()}`;
+    async search(query: WebSearchQuery): Promise<WebResult[]> {
+      // Searched from where the person is (their time zone's country): "¿cuánto sale…?" in
+      // Argentina means Argentine prices, never another country's.
+      const q = {
+        ...query,
+        country: query.country ?? timezoneCountry(canonicalTimezone(auth.profile.timezone)),
+      };
+      const key = `${auth.workspaceId}:s:${q.kind}:${q.recency}:${q.country}:${q.domains?.join(",")}:${q.query.toLowerCase()}`;
       const hit = cached<WebResult[]>(key);
       if (hit) {
         logger.info("web.searched", { ...log, kind: q.kind, results: hit.length, cached: true });

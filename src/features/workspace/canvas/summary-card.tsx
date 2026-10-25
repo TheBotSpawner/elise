@@ -219,8 +219,10 @@ export function SummaryCard({ p, title, large }: { p: Summary; title: string; la
   const facts = p.facts ?? [];
   const map = Boolean(options && large && title.length <= 24 && !facts.length);
   const side = map || facts.length > 0;
+  // Columns follow the card's own width (container queries), never the window's: a card
+  // squeezed beside another stacks instead of crushing its text.
   return (
-    <div className="flex flex-col gap-4">
+    <div className="@container flex flex-col gap-4">
       {(title || p.badge || p.lead) && (
         <header className="flex flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2.5">
@@ -254,7 +256,9 @@ export function SummaryCard({ p, title, large }: { p: Summary; title: string; la
           )}
         </header>
       )}
-      <div className={cn("grid gap-5", side && "lg:grid-cols-[minmax(0,1fr)_minmax(240px,0.7fr)]")}>
+      <div
+        className={cn("grid gap-5", side && "@2xl:grid-cols-[minmax(0,1fr)_minmax(240px,0.7fr)]")}
+      >
         <div className="flex min-w-0 flex-col gap-5">
           {parsed.map((s, si) => {
             const kind = KIND[s.kind];
@@ -278,7 +282,7 @@ export function SummaryCard({ p, title, large }: { p: Summary; title: string; la
                 <ul
                   className={cn(
                     "grid gap-2.5",
-                    !side && large && s.parsed.length > 1 && "md:grid-cols-2",
+                    !side && large && s.parsed.length > 1 && "@2xl:grid-cols-2",
                   )}
                 >
                   {s.parsed.map((item, i) => {

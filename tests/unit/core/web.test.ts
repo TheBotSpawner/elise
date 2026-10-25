@@ -641,6 +641,20 @@ describe("search providers", () => {
     );
     expect(restricted.input).toBe("api version site:developers.notion.com");
     expect(restricted.tools[0].filters).toBeUndefined();
+
+    // Searched from the person's country: Argentine prices for someone in Argentina.
+    await new OpenAIWebSearch("k", "gpt-4.1-mini").search({
+      query: "precio termo Stanley 1 litro",
+      kind: "web",
+      recency: null,
+      limit: 8,
+      language: "es",
+      country: "AR",
+    });
+    const local = JSON.parse(
+      (fetchMock.mock.calls[2] as unknown as [string, { body: string }])[1].body,
+    );
+    expect(local.tools[0].user_location).toEqual({ type: "approximate", country: "AR" });
   });
 
   it("Tavily: maps news results and honest errors", async () => {

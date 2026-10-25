@@ -142,7 +142,7 @@ export const SurfaceView = memo(function SurfaceView({
         aria-label={`${typeLabel}: ${name}`}
         data-tier={tier}
         className={cn(
-          "relative min-w-0 rounded-2xl bg-[var(--overlay-bg)]",
+          "@container relative min-w-0 rounded-2xl bg-[var(--overlay-bg)]",
           tier === "dim" && "opacity-30",
           className,
         )}
@@ -270,7 +270,13 @@ export const SurfaceView = memo(function SurfaceView({
           </span>
         )}
       </header>
-      <div className={cn("flex min-h-0 flex-col gap-3", !framed && "[&_.result-card]:border-0")}>
+      {/* A container: bodies lay out by the card's own width, not the window's. */}
+      <div
+        className={cn(
+          "@container flex min-h-0 flex-col gap-3",
+          !framed && "[&_.result-card]:border-0",
+        )}
+      >
         <SurfaceBody
           surface={surface}
           timezone={timezone}

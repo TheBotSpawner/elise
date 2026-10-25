@@ -1414,7 +1414,7 @@ function WebCollectionBody({
           : c.found(p.items.length, p.requested)}
       </p>
       {p.items.length > 0 && (
-        <ol className={cn("grid gap-2", large && "sm:grid-cols-2")}>
+        <ol className={cn("grid gap-2", large && "@xl:grid-cols-2")}>
           {p.items.slice(0, large ? 12 : 6).map((it) => (
             <li key={it.url}>
               <a
@@ -2206,7 +2206,7 @@ function StudySummaryBody({ p }: { p: SurfacePayloads["study_summary"] }) {
         {s.questions(p.questions)}
         {p.covered.length ? ` · ${s.covered}: ${p.covered.join(", ")}` : ""}
       </p>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 @xl:grid-cols-2">
         {sections.map((x) => (
           <section key={x.label} className="flex flex-col gap-1.5">
             <h3 className={cn("type-label", x.tone)}>{x.label}</h3>
