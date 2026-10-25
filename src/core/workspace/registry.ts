@@ -298,6 +298,21 @@ export const marketPayload = z.object({
  * only from an authorized source (the official API); a search link is never a listing. Other
  * stores show in their own web_collection Surface — never mixed into this ranking (terms).
  */
+const productOffer = z.object({
+  title: text(200),
+  url: href,
+  price: z.number().positive().nullable(),
+  currency: text(3).nullable(),
+  condition: z.enum(["new", "used"]).nullable(),
+  match: z.enum(["exact", "related", "accessory"]),
+  freeShipping: z.boolean().nullable(),
+  installments: text(80).nullable(),
+  seller: text(80).nullable(),
+  image: href.nullable(),
+  evidence: z.enum(["api", "search_result"]),
+  checkedAt: text(40),
+});
+
 export const productOffersPayload = z.object({
   query: text(300),
   marketplace: z.object({
@@ -306,30 +321,28 @@ export const productOffersPayload = z.object({
     /** api: prices from the official API · search: listings a web search found (no prices). */
     method: z.enum(["api", "search", "link"]),
     searchUrl: href,
-    offers: z
-      .array(
-        z.object({
-          title: text(200),
-          url: href,
-          price: z.number().positive().nullable(),
-          currency: text(3).nullable(),
-          condition: z.enum(["new", "used"]).nullable(),
-          match: z.enum(["exact", "related", "accessory"]),
-          freeShipping: z.boolean().nullable(),
-          installments: text(80).nullable(),
-          seller: text(80).nullable(),
-          image: href.nullable(),
-          evidence: z.enum(["api", "search_result"]),
-          checkedAt: text(40),
-        }),
-      )
-      .max(8),
+    offers: z.array(productOffer).max(8),
   }),
   maxPrice: z.number().positive().nullable(),
   currency: text(3).nullable(),
   notes: z.array(text(240)).max(5),
   /** The exact model asked for; without one, nothing is flagged as "not the model". */
   model: text(60).nullable().optional(),
+  /**
+   * No model named: the models ELISE recommends for what was described, each with why and its
+   * cheapest listings found now (or only its search link when it has none).
+   */
+  options: z
+    .array(
+      z.object({
+        name: text(80),
+        why: text(160).nullable(),
+        searchUrl: href,
+        offers: z.array(productOffer).max(3),
+      }),
+    )
+    .max(4)
+    .optional(),
 });
 
 /**
@@ -1994,6 +2007,12 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
               o.match,
             ].join(" · "),
           ),
+        ...(p.options ?? []).map((x, i) => {
+          const priced = x.offers.find((o) => o.price !== null);
+          return `option ${i + 1}: ${x.name} — ${
+            priced ? `from ${priced.currency ?? ""} ${priced.price}` : "no listing now"
+          }`;
+        }),
       ].join("; "),
   },
   // Supermarket prices (ADR-111): a product's prices, a list's comparison, a history.

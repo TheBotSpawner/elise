@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { wantsPracticalCard } from "@/core/agents/tool-selection";
+import { selectTools, wantsPracticalCard } from "@/core/agents/tool-selection";
 import { GuideCard, RecipeCard } from "@/features/workspace/canvas/practical-cards";
 import { I18nProvider } from "@/lib/i18n/client";
 
@@ -21,6 +21,20 @@ describe("which questions get a recipe or step-by-step card", () => {
       expect(wantsPracticalCard(m), m).toBe(true);
     for (const m of ["¿qué hora es?", "contame un chiste", "¿cómo estás?"])
       expect(wantsPracticalCard(m), m).toBe(false);
+  });
+});
+
+describe("what brings the web tools (and with them, photos)", () => {
+  it("living things, landmarks and 'qué es…' questions, from the first message", () => {
+    for (const m of [
+      "qué es la polilla bruja?",
+      "¿cómo son los pandas rojos?",
+      "mostrame un colibrí",
+      "contame del volcán Lanín",
+      "¿qué raza de perro es la más tranquila?",
+    ])
+      expect(selectTools([], { message: m }).groups, m).toContain("web");
+    expect(selectTools([], { message: "agregá leche a la lista" }).groups).not.toContain("web");
   });
 });
 

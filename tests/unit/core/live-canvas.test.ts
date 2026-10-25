@@ -14,7 +14,12 @@ import {
   type WorkspaceState,
 } from "@/core/workspace/model";
 import type { ActivityStep, WorkspacePort } from "@/core/workspace/port";
-import { describeWorkspace, draftDefaults, parseWorkspace } from "@/core/workspace/registry";
+import {
+  describeWorkspace,
+  draftDefaults,
+  parseWorkspace,
+  type SurfacePayloads,
+} from "@/core/workspace/registry";
 import { financeSummaryVisuals, goalPace, visualizationSpec } from "@/core/workspace/visualization";
 
 import { makeCtx, makePorts } from "../../fixtures/core-fakes";
@@ -420,7 +425,15 @@ describe("ui tools for the Live Canvas", () => {
           image: { url: "https://example.org/pasta.jpg", alt: "x", credit: null },
         },
       }),
-    ).toMatchObject({ status: "failed", error: { code: "VALIDATION_ERROR" } });
+    ).toMatchObject({ status: "succeeded" });
+    // A photo no gallery showed is dropped, never displayed — the recipe still shows.
+    expect(
+      (
+        ws.value.surfaces.find((s) => s.type === "summary")?.payload as {
+          recipe: { image?: unknown };
+        }
+      ).recipe.image,
+    ).toBeUndefined();
 
     expect(
       await call({
@@ -434,6 +447,66 @@ describe("ui tools for the Live Canvas", () => {
       }),
     ).toMatchObject({ status: "succeeded" });
     expect(await call({ type: "summary", title: "Nada" })).toMatchObject({ status: "failed" });
+  });
+
+  it("a card is never lost to the model's shape: numbers, objects, unknown icons and links are normalized", async () => {
+    const ws = new FakeWorkspace();
+    const { ports } = makePorts([]);
+    const ctx = makeCtx({ workspace: ws });
+    const call = (args: object) => executeToolCall(ports, ctx, { name: "ui.present", args });
+    expect(
+      await call({
+        type: "summary",
+        title: "Hummus casero",
+        badge: "Fácil",
+        tags: [{ label: "Vegano", icon: "vegan" }],
+        recipe: {
+          servings: 4,
+          total: 10,
+          ingredients: [{ amount: "1 lata", name: "garbanzos" }, "2 cdas de tahini"],
+          steps: [
+            { title: "Procesá", text: "garbanzos, tahini, ajo y limón." },
+            "Sumá agua fría de a poco.",
+          ],
+          tip: "x".repeat(400),
+          image: { url: "https://example.org/hummus.jpg", alt: "Hummus" },
+          source: { label: "BBC Good Food", url: "https://example.org/not-shown" },
+        },
+      }),
+    ).toMatchObject({ status: "succeeded" });
+    const card = ws.value.surfaces.find((s) => s.type === "summary")!;
+    const p = card.payload as SurfacePayloads["summary"];
+    expect(p.recipe).toMatchObject({
+      servings: "4",
+      total: "10",
+      ingredients: ["1 lata garbanzos", "2 cdas de tahini"],
+      steps: ["Procesá: garbanzos, tahini, ajo y limón.", "Sumá agua fría de a poco."],
+    });
+    expect(p.recipe!.tip!.length).toBeLessThanOrEqual(240);
+    expect(p.recipe!.image).toBeUndefined();
+    expect(p.recipe!.source).toBeUndefined();
+    expect(p.tags).toEqual([{ label: "Vegano" }]);
+
+    expect(
+      await call({
+        type: "summary",
+        title: "Armar una mesita",
+        guide: {
+          icon: "carpentry",
+          materials: [{ name: "Madera", icon: "layers" }, "Tornillos"],
+          steps: [{ step: "Cortá las piezas", detail: "Tapa 50×40 cm." }, "Lijá todo"],
+        },
+      }),
+    ).toMatchObject({ status: "succeeded" });
+    const guide = (
+      ws.value.surfaces.find((s) => s.type === "summary")!.payload as SurfacePayloads["summary"]
+    ).guide!;
+    expect(guide.icon).toBeUndefined();
+    expect(guide.materials).toEqual([{ label: "Madera", icon: "layers" }, "Tornillos"]);
+    expect(guide.steps).toEqual([
+      { title: "Cortá las piezas", text: "Tapa 50×40 cm." },
+      { title: "Lijá todo" },
+    ]);
   });
 
   it("present media only from URLs the workspace already holds", async () => {

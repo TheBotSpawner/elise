@@ -4413,6 +4413,9 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
     open: "View listing",
     searchOn: "Search on Mercado Libre",
     noPrice: "Price on the listing",
+    recommended: "Recommended options",
+    noListing: "No listings right now.",
+    seeAll: "See all on Mercado Libre",
     viaOfficial: (when: string) => `Official Mercado Libre price · ${when}`,
     unpriced: (n: number) =>
       n === 1

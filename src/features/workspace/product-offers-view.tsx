@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Package, Search } from "lucide-react";
+import { ExternalLink, Package, Search, Sparkles } from "lucide-react";
 
 import type { SurfacePayloads } from "@/core/workspace/registry";
 import { useI18n } from "@/lib/i18n/client";
@@ -68,6 +68,57 @@ export function ProductOffersBody({ p }: { p: Offers }) {
           ))}
         </ul>
       )}
+      {p.options && p.options.length > 0 && (
+        <section className="flex flex-col gap-2.5">
+          <h3 className="flex items-center gap-2 text-[12px] font-semibold tracking-[0.1em] text-muted uppercase">
+            <Sparkles className="size-3.5 text-accent-text" aria-hidden />
+            {x.recommended}
+          </h3>
+          <ol className="flex flex-col gap-2.5">
+            {p.options.map((o, i) => (
+              <li
+                key={o.name}
+                className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-3.5"
+              >
+                <div className="flex items-start gap-2.5">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-md bg-accent-soft text-[12px] font-semibold text-accent-text tabular-nums">
+                    {i + 1}
+                  </span>
+                  <div className="flex min-w-0 flex-col">
+                    <span className="text-[15px] leading-snug font-semibold text-fg">{o.name}</span>
+                    {o.why && <span className="text-[13px] text-muted">{o.why}</span>}
+                  </div>
+                </div>
+                {o.offers.length > 0 ? (
+                  <ul className="flex flex-col gap-1.5">
+                    {o.offers.map((offer) => (
+                      <li key={offer.url}>
+                        <a
+                          href={offer.url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="flex items-center gap-3 rounded-xl px-1.5 py-1 hover:bg-active"
+                        >
+                          <Thumb src={offer.image} small />
+                          <span className="line-clamp-1 min-w-0 flex-1 text-[13px] text-fg2">
+                            {offer.title}
+                          </span>
+                          <span className="shrink-0 text-[15px] font-semibold">
+                            {offer.price !== null ? money(offer.price, offer.currency) : x.noPrice}
+                          </span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[12.5px] text-muted">{x.noListing}</p>
+                )}
+                <OpenLink href={o.searchUrl} label={x.seeAll} />
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
       {unpriced > 0 && <p className="text-[12px] text-muted">{x.unpriced(unpriced)}</p>}
       <a
         href={m.searchUrl}
@@ -89,7 +140,8 @@ export function ProductOffersBody({ p }: { p: Offers }) {
   );
 }
 
-function Thumb({ src }: { src: string | null }) {
+function Thumb({ src, small = false }: { src: string | null; small?: boolean }) {
+  const size = small ? "size-10" : "size-16";
   return src ? (
     // Only images from the source's own image hosts (validated server-side).
     // eslint-disable-next-line @next/next/no-img-element
@@ -97,10 +149,10 @@ function Thumb({ src }: { src: string | null }) {
       src={src}
       alt=""
       loading="lazy"
-      className="size-16 shrink-0 rounded-lg bg-white object-contain"
+      className={`${size} shrink-0 rounded-lg bg-white object-contain`}
     />
   ) : (
-    <span className="grid size-16 shrink-0 place-items-center rounded-lg bg-surface-2 text-faint">
+    <span className={`grid ${size} shrink-0 place-items-center rounded-lg bg-surface-2 text-faint`}>
       <Package className="size-6" aria-hidden />
     </span>
   );

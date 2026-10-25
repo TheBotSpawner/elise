@@ -219,13 +219,16 @@ export function parseItem(raw: string): ParsedItem {
   return { title: null, text, links };
 }
 
-/** **bold** inside a text, rendered (nothing else is markup). */
-function rich(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]{1,120}\*\*)/g).map((part, i) =>
+/** **bold** and *italic* inside a text, rendered (nothing else is markup). */
+export function rich(text: string): ReactNode[] {
+  return text.split(/(\*\*[^*]{1,120}\*\*|\*[^*\s][^*]{0,80}?\*)/g).map((part, i) =>
     /^\*\*[^*]+\*\*$/.test(part) ? (
       <strong key={i} className="font-semibold text-fg">
         {part.slice(2, -2)}
       </strong>
+    ) : /^\*[^*\s][^*]*\*$/.test(part) ? (
+      // *Ascalapha odorata*: a species, a title, a foreign word.
+      <em key={i}>{part.slice(1, -1)}</em>
     ) : (
       part
     ),
@@ -429,7 +432,7 @@ export function SummaryHeader({
             </span>
           )}
         </div>
-        {p.lead && <p className="text-[14px] text-muted">{p.lead}</p>}
+        {p.lead && <p className="text-[14px] text-muted">{rich(p.lead)}</p>}
         {p.tags && p.tags.length > 0 && <Chips chips={p.tags} />}
       </div>
     </header>

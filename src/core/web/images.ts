@@ -171,6 +171,21 @@ export function isOnTopic(
 }
 
 /**
+ * A second name to try when the first found nothing: a living thing or an object asked by its
+ * common name ("Polilla bruja") with its scientific or full name as context ("Ascalapha odorata")
+ * — files are named by the latter. Only a context of two or more words, and never for a place
+ * (a place's context is where it is, not another name for it).
+ */
+export function alternateName<
+  E extends Pick<ImageEntity, "name" | "context"> & { kind: ImageKind },
+>(entity: E): E | null {
+  if (entity.kind === "place" || !entity.context || /[,;]/.test(entity.context)) return null;
+  return tokens(entity.context).length >= 2
+    ? { ...entity, name: entity.context, context: null }
+    : null;
+}
+
+/**
  * What to ask a search engine for: the name's distinctive words (a Spanish "Playa" isn't in
  * English file names) plus the context, accents folded ("Curaçao" → "curacao"). A one-word name
  * keeps its full form ("Baby Beach").

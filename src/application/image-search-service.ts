@@ -3,6 +3,7 @@ import "server-only";
 import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
 import {
+  alternateName,
   dedupe,
   diversify,
   fitsWhole,
@@ -137,6 +138,16 @@ async function entityGroup(
         return [];
       });
     if (open.length) providers.push(source.id);
+    images = dedupe([...images, ...open]);
+  }
+  // "Polilla bruja" + "Ascalapha odorata": nothing under the common name, so the other one.
+  const alternate = images.length ? null : alternateName(entity);
+  for (const source of alternate ? OPEN_SOURCES : []) {
+    if (images.length >= req.count || !source.on()) continue;
+    const open = await source
+      .search(alternate!, { count: req.count, page: req.more ? 2 : 1 })
+      .catch(() => []);
+    if (open.length) providers.push(`${source.id}:alternate`);
     images = dedupe([...images, ...open]);
   }
   const group: ImageGroup = {

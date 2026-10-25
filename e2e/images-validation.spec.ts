@@ -272,14 +272,29 @@ test("summary and web cards look the part (screenshots)", async ({ page }) => {
 test("a recipe and a how-to get their own cards (screenshots)", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await signIn(page);
-  const recipe = await ask(page, "¿Cómo se hace una pasta cremosa de champiñones para dos?");
+  const recipe = await ask(page, "¿Me decís cómo hago un hummus casero?");
   await expect(page.getByText("Ingredientes").first()).toBeVisible();
   await page.screenshot({ path: `${OUT}/card-recipe.png` });
+  const baba = await ask(page, "¿Cómo hago un baba ganoush casero?");
+  await expect(page.getByText("Ingredientes").first()).toBeVisible();
+  await page.screenshot({ path: `${OUT}/card-recipe-2.png` });
   const guide = await ask(page, "¿Cómo armo un escritorio de trabajo? Paso a paso");
   await expect(page.getByText(/de \d+ completados/).first()).toBeVisible();
   await page.screenshot({ path: `${OUT}/card-guide.png` });
+  const moth = await ask(page, "qué es la polilla bruja?");
+  await page.screenshot({ path: `${OUT}/card-moth.png` });
   report.practical = {
     recipe: recipe.tools.map((t) => t.tool_name),
+    baba: baba.tools.map((t) => t.tool_name),
     guide: guide.tools.map((t) => t.tool_name),
+    moth: moth.tools.map((t) => t.tool_name),
+    mothGallery: moth.galleries.map((g) => g.groups.map((x) => x.name)),
   };
+  expect(moth.tools.map((t) => t.tool_name)).toContain("web.images");
+  const asus = await ask(
+    page,
+    "cuánto sale una Asus que tenga una buena placa de video y un buen procesador?",
+  );
+  await page.screenshot({ path: `${OUT}/card-asus.png` });
+  report.asus = asus.tools.map((t) => t.tool_name);
 });

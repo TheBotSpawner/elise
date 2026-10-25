@@ -473,7 +473,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
       : null,
     // "¿Cómo hago un pollo al verdeo?": the steps go on screen, to follow while doing them.
     wantsPracticalCard(input.message)
-      ? 'This is a recipe or instructions to follow: in this same response call ui.present {type:"summary"} with "recipe" (ingredients with amounts, steps, times, servings) or "guide" (materials, steps as title + detail), and keep your spoken answer to the gist and the first step. Skip the card only if it is a single-step answer.'
+      ? 'This is a recipe or instructions to follow. Answer it from your own knowledge — a well-known dish or a common task needs no web search (search only if the user asked to, or names a specific source, brand, model or product manual), and never reply that you found nothing: give the recipe or the steps. In this same response call ui.present {type:"summary"} with "recipe" (ingredients with amounts, steps, times, servings, a tip) or "guide" (materials, steps as title + detail, duration, difficulty, a tip), and keep your spoken answer to the gist and the first step. If ui.present answers with an error, fix what it says and call it again once. This needs no Method lookup. Never say the recipe or the steps are on screen unless ui.present succeeded in this turn.'
       : null,
     repairIntent ? repairHint(repairIntent, repairTarget, auth.profile.locale) : null,
     canonicalHint(canonical),

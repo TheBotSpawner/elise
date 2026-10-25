@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  alternateName,
   dedupe,
   entityKey,
   imageGalleryPayload,
@@ -284,5 +285,18 @@ describe("people, logos and diagrams", () => {
       true,
     );
     expect(fitsWhole("logo") && fitsWhole("diagram") && !fitsWhole("person")).toBe(true);
+  });
+});
+
+describe("a second name when the first finds nothing", () => {
+  it("a common name with its scientific name as context tries the latter; never for a place", () => {
+    expect(
+      alternateName({ name: "Polilla bruja", context: "Ascalapha odorata", kind: "thing" }),
+    ).toEqual({ name: "Ascalapha odorata", context: null, kind: "thing" });
+    expect(alternateName({ name: "Baby Beach", context: "Aruba", kind: "place" })).toBeNull();
+    expect(
+      alternateName({ name: "Tambaú", context: "João Pessoa, Brasil", kind: "thing" }),
+    ).toBeNull();
+    expect(alternateName({ name: "Colibrí", context: "Argentina", kind: "thing" })).toBeNull();
   });
 });

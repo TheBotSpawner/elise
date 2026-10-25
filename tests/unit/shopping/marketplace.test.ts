@@ -17,6 +17,7 @@ import {
   type Offer,
 } from "@/core/shopping/marketplace";
 import { offersTool } from "@/core/tools/marketplace";
+import { discoverTool } from "@/core/tools/web";
 import type { WebResult } from "@/core/web/model";
 import { productOffersPayload } from "@/core/workspace/registry";
 
@@ -261,6 +262,9 @@ describe("shopping.offers", () => {
       "web.discover",
       expect.objectContaining({ exclude: expect.arrayContaining(["mercadolibre.com.ar"]) }),
     );
+    // What's sent must pass web.discover's own validation (all 7 domains used to fail it).
+    const sent = (t.invoke.mock.calls[0] as unknown as [string, unknown])[1];
+    expect(discoverTool.input.safeParse(sent).success).toBe(true);
     expect(out(r).otherStores).toHaveLength(1);
   });
 
@@ -482,6 +486,93 @@ describe("official prices by exact listing (ADR-116)", () => {
     expect(p.marketplace.offers.map((o) => [o.match, o.price])).toEqual([
       ["exact", 369999.99],
       ["related", 30000],
+    ]);
+  });
+
+  it("no model named: ELISE's recommended options, each searched on its own, accessories out", async () => {
+    const tuf = "https://articulo.mercadolibre.com.ar/MLA-3333333333";
+    const case_ = "https://articulo.mercadolibre.com.ar/MLA-4444444444";
+    const search = vi.fn(async (_site: unknown, words: string) =>
+      words.includes("tuf")
+        ? [
+            offer({
+              title: "Funda para notebook ASUS TUF Gaming A15",
+              url: case_,
+              price: 9000,
+              currency: "ARS",
+              evidence: "api",
+            }),
+            offer({
+              title: "Notebook ASUS TUF Gaming A15 RTX 4060 16GB",
+              url: tuf,
+              price: 1899999,
+              currency: "ARS",
+              evidence: "api",
+            }),
+          ]
+        : [],
+    );
+    const t = setup({ marketplace: { search, listings: async () => new Map() } }, []);
+    const r = await offersTool.run(
+      {
+        request: "cuánto sale una Asus que tenga una buena placa de video y un buen procesador",
+        query: "notebook ASUS buena placa de video",
+        options: [
+          { name: "ASUS TUF Gaming A15 RTX 4060", why: "Buena relación precio/rendimiento" },
+          { name: "ASUS ROG Strix G16 RTX 4070", why: "Más potencia para juegos exigentes" },
+        ],
+      },
+      t.env,
+    );
+    expect(search).toHaveBeenCalledTimes(2);
+    const p = productOffersPayload.parse(shown(r));
+    expect(p.marketplace.method).toBe("api");
+    expect(p.options?.map((o) => [o.name, o.offers.map((x) => x.price)])).toEqual([
+      ["ASUS TUF Gaming A15 RTX 4060", [1899999]],
+      ["ASUS ROG Strix G16 RTX 4070", []],
+    ]);
+    // An option with no listing keeps its own search link.
+    expect(p.options?.[1]?.searchUrl).toContain("mercadolibre.com.ar");
+  });
+
+  it("a description that matched nothing asks for options; options show even without the API", async () => {
+    const t = setup({}, []);
+    const empty = await offersTool.run(
+      { request: "una notebook ASUS buena para juegos", query: "notebook asus buena para juegos" },
+      t.env,
+    );
+    expect(JSON.stringify(empty.output)).toContain("call shopping.offers again now with `options`");
+    const r = await offersTool.run(
+      {
+        request: "una notebook ASUS buena para juegos",
+        query: "notebook asus buena para juegos",
+        options: [{ name: "ASUS TUF Gaming A15 RTX 4060", why: "Precio/rendimiento" }],
+      },
+      t.env,
+    );
+    const p = productOffersPayload.parse(shown(r));
+    expect(p.options).toEqual([
+      expect.objectContaining({ name: "ASUS TUF Gaming A15 RTX 4060", offers: [] }),
+    ]);
+  });
+
+  it("a long description with no model and no options still finds by its first words", async () => {
+    const search = vi.fn(async (_site: unknown, words: string) =>
+      words === "notebook asus gamer"
+        ? [offer({ title: "Notebook ASUS", url: RM4C, price: 1, currency: "ARS", evidence: "api" })]
+        : [],
+    );
+    const t = setup({ marketplace: { search, listings: async () => new Map() } }, []);
+    await offersTool.run(
+      {
+        request: "una notebook asus gamer con buena placa",
+        query: "notebook asus gamer con buena placa de video",
+      },
+      t.env,
+    );
+    expect(search.mock.calls.map((c) => c[1])).toEqual([
+      "notebook asus gamer con buena placa de video",
+      "notebook asus gamer",
     ]);
   });
 

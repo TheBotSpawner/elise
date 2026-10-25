@@ -148,6 +148,17 @@ describe("readable content", () => {
     );
     expect(passages[0]).toContain("2026-03-11");
   });
+
+  it("wiki templates and markup leftovers never become a passage (polilla bruja regression)", () => {
+    const text = [
+      `{{Cita web|url=https://www.gbif.org/species/1775796|titulo=Ascalapha odorata}}</ref>"}},"i":0}]}'> Mariposa de la muerte`,
+      "La polilla bruja (Ascalapha odorata) es una polilla nocturna grande y oscura, nativa de América.",
+    ].join("\n");
+    const passages = selectPassages(text, "polilla bruja", 3, 600);
+    expect(passages).toEqual([
+      "La polilla bruja (Ascalapha odorata) es una polilla nocturna grande y oscura, nativa de América.",
+    ]);
+  });
 });
 
 // ── Ranking and news ─────────────────────────────────────────────────────────

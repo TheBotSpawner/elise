@@ -33,6 +33,7 @@ import {
   surfaceDefinition,
   type SurfacePayloads,
 } from "../workspace/registry";
+import { SUMMARY_ICONS, type SummaryIcon } from "../workspace/summary-icons";
 import { visualizationSpec } from "../workspace/visualization";
 
 /**
@@ -83,7 +84,145 @@ export const listSurfacesTool: ToolDefinition = {
   },
 };
 
-const section = PAYLOADS.summary.shape.sections.element;
+/**
+ * What the model writes is normalized here, never rejected for its shape: a card that fails
+ * validation is a card the person never sees (the model rarely retries). A number where text goes,
+ * {name, amount} for an ingredient, a step as an object, an icon name not in the set, a line too
+ * long — all become the card's own format. Only provenance (links, photos) is strict, and an
+ * unknown one is dropped, not the whole card.
+ */
+const clip = (value: string, max: number) =>
+  value.length > max ? `${value.slice(0, max - 1).trimEnd()}…` : value;
+const words = (v: unknown): string =>
+  typeof v === "string" || typeof v === "number"
+    ? String(v)
+    : v && typeof v === "object"
+      ? Object.values(v as Record<string, unknown>)
+          .filter((x) => typeof x === "string" || typeof x === "number")
+          .join(" ")
+      : "";
+const line = (max: number) =>
+  z
+    .union([z.string(), z.number(), z.record(z.string(), z.unknown())])
+    .transform((v) => clip(words(v).replace(/\s+/g, " ").trim(), max));
+const icon = z
+  .string()
+  .optional()
+  .transform((v) =>
+    v && (SUMMARY_ICONS as readonly string[]).includes(v) ? (v as SummaryIcon) : undefined,
+  );
+const lines = (max: number, most: number) =>
+  z.array(line(max)).transform((a) => a.filter(Boolean).slice(0, most));
+const credit = z
+  .object({ label: line(80).optional(), url: z.string().max(2000) })
+  .transform((c) => ({ label: c.label || c.url, url: c.url }));
+
+const section = PAYLOADS.summary.shape.sections.element.extend({
+  heading: line(120),
+  items: lines(600, 8).pipe(z.array(z.string()).min(1)),
+  icons: z
+    .array(z.string())
+    .optional()
+    .transform((a) =>
+      a
+        ?.slice(0, 8)
+        .map((v) =>
+          (SUMMARY_ICONS as readonly string[]).includes(v) ? (v as SummaryIcon) : "info",
+        ),
+    ),
+});
+
+/** A step written as text, or as {title, text|detail|description}. */
+const stepText = z
+  .union([z.string(), z.number(), z.record(z.string(), z.unknown())])
+  .transform((v) => {
+    if (typeof v !== "object") return String(v);
+    const o = v as Record<string, unknown>;
+    const title = words(o.title ?? o.step ?? o.name ?? "");
+    const detail = words(o.text ?? o.detail ?? o.description ?? o.instructions ?? "");
+    return [title, detail].filter(Boolean).join(title && detail ? ": " : "");
+  });
+
+const recipeInput = z.object({
+  prep: line(24).optional(),
+  cook: line(24).optional(),
+  total: line(24).optional(),
+  servings: line(32).optional(),
+  difficulty: line(32).optional(),
+  ingredients: lines(120, 20).pipe(z.array(z.string()).min(1)),
+  steps: z
+    .array(stepText)
+    .transform((a) =>
+      a
+        .map((x) => clip(x.trim(), 300))
+        .filter(Boolean)
+        .slice(0, 12),
+    )
+    .pipe(z.array(z.string()).min(1)),
+  tip: line(240).optional(),
+  image: z
+    .object({ url: z.string().max(2000), alt: line(160).optional(), credit: z.string().nullish() })
+    .optional(),
+  source: credit.optional(),
+});
+
+const guideInput = z.object({
+  icon,
+  duration: line(32).optional(),
+  difficulty: line(32).optional(),
+  materials: z
+    .array(
+      z.union([
+        z.string(),
+        z.object({
+          label: z.string().optional(),
+          name: z.string().optional(),
+          icon: z.string().optional(),
+        }),
+      ]),
+    )
+    .optional()
+    .transform((a) =>
+      a
+        ?.map((m) =>
+          typeof m === "string"
+            ? clip(m, 100)
+            : {
+                label: clip(m.label ?? m.name ?? "", 100),
+                icon: (SUMMARY_ICONS as readonly string[]).includes(m.icon ?? "")
+                  ? (m.icon as SummaryIcon)
+                  : undefined,
+              },
+        )
+        .filter((m) => (typeof m === "string" ? m : m.label))
+        .slice(0, 15),
+    ),
+  steps: z
+    .array(z.union([z.string(), z.record(z.string(), z.unknown())]))
+    .transform((a) =>
+      a
+        .map((v) => {
+          if (typeof v === "string") return { title: clip(v, 80) };
+          const title = words(v.title ?? v.step ?? v.name ?? "");
+          const text = words(v.text ?? v.detail ?? v.description ?? "");
+          return title
+            ? { title: clip(title, 80), ...(text ? { text: clip(text, 300) } : {}) }
+            : { title: clip(text, 80) };
+        })
+        .filter((x) => x.title)
+        .slice(0, 12),
+    )
+    .pipe(z.array(z.object({ title: z.string(), text: z.string().optional() })).min(1)),
+  tip: line(240).optional(),
+  source: credit.optional(),
+});
+
+const chips = z
+  .array(z.object({ label: line(48), icon }))
+  .transform((a) => a.filter((c) => c.label).slice(0, 6));
+const keyFacts = z
+  .array(z.object({ label: line(40), value: line(120), icon }))
+  .transform((a) => a.filter((f) => f.label && f.value).slice(0, 8));
 
 const presentInput = z
   .object({
@@ -96,32 +235,34 @@ const presentInput = z
       .describe(
         'summary only. kinds: facts (verified data, e.g. from the calendar), context (retrieved from email/recall/documents — say where from), changes, open_items, questions, suggestions (your own ideas, clearly), material. Write each item as "Short title: one or two sentences" (the title shows in bold; **bold** a key figure), sources as markdown links [site](url) at its end, and give `icons` (one per item, by meaning: scale, dumbbell, building, money, calendar, map-pin, users, globe, chart, alert, check, lightbulb…) so each point is recognizable at a glance.',
       ),
-    lead: z
-      .string()
-      .trim()
-      .max(200)
+    lead: line(200)
       .optional()
       .describe(
         'summary only. One line under the title: "Según el contexto, IAFS puede referirse a:".',
       ),
-    badge: z
-      .string()
-      .trim()
-      .max(40)
+    badge: line(40)
       .optional()
       .describe('summary only. A short tag by the title: "2 significados", "3 opciones", "Hoy".'),
-    tags: PAYLOADS.summary.shape.tags.describe(
-      'summary only. 2–4 chips that place the subject: where, what kind, a status ("Nueva Zelanda" map-pin, "Asesoramiento financiero" briefcase, "Licenciada por FMA" shield).',
-    ),
-    recipe: PAYLOADS.summary.shape.recipe.describe(
-      'summary only, for a recipe ("¿cómo se hace el pollo al verdeo?"): times (prep, cook, total: "10 min"), servings ("2 porciones"), difficulty ("Fácil"), ingredients with amounts ("200 g pasta"), steps one action each, an optional tip. Diet or style as tags ("Vegetariana" leaf). image: only a photo already shown by web.images in this workspace (its url, alt and credit) — omit it otherwise. source: the link to the recipe site when it came from the web. sections may then be empty.',
-    ),
-    guide: PAYLOADS.summary.shape.guide.describe(
-      'summary only, for step-by-step instructions (assembling, installing, setting up, a how-to): icon for the task (wrench, hammer, drill, settings, plug…), duration ("25 min"), difficulty ("Dificultad baja"), materials and tools each as {label, icon} by kind (board → layers, screws → package, screwdriver → wrench, drill → drill, tape measure → ruler, paint → paintbrush, cables → cable, water → droplet), steps as {title: short action in imperative, text: one concrete detail line}, a practical tip, and source when it came from the web. sections may then be empty.',
-    ),
-    facts: PAYLOADS.summary.shape.facts.describe(
-      'summary only. Key facts at a glance for a person, company, place or product: label → short value ("Director" → "Rod Schubert", user; "Fundada" → "1957", calendar). Only facts from your sources.',
-    ),
+    tags: chips
+      .optional()
+      .describe(
+        'summary only. 2–4 chips that place the subject: where, what kind, a status ("Nueva Zelanda" map-pin, "Asesoramiento financiero" briefcase, "Licenciada por FMA" shield).',
+      ),
+    recipe: recipeInput
+      .optional()
+      .describe(
+        'summary only, for a recipe ("¿cómo se hace el pollo al verdeo?"): times (prep, cook, total: "10 min"), servings ("2 porciones"), difficulty ("Fácil"), ingredients with amounts ("200 g pasta"), steps one action each, an optional tip. Diet or style as tags ("Vegetariana" leaf). image: only a photo already shown by web.images in this workspace (its url, alt and credit) — omit it otherwise. source: the link to the recipe site when it came from the web. sections may then be empty.',
+      ),
+    guide: guideInput
+      .optional()
+      .describe(
+        'summary only, for step-by-step instructions (assembling, installing, setting up, a how-to): icon for the task (wrench, hammer, drill, settings, plug…), duration ("25 min"), difficulty ("Dificultad baja"), materials and tools each as {label, icon} by kind (board → layers, screws → package, screwdriver → wrench, drill → drill, tape measure → ruler, paint → paintbrush, cables → cable, water → droplet), steps as {title: short action in imperative, text: one concrete detail line}, a practical tip, and source when it came from the web. sections may then be empty.',
+      ),
+    facts: keyFacts
+      .optional()
+      .describe(
+        'summary only. Key facts at a glance for a person, company, place or product: label → short value ("Director" → "Rod Schubert", user; "Fundada" → "1957", calendar). Only facts from your sources.',
+      ),
     links: z
       .array(z.object({ title: z.string().trim().min(1).max(200), url: z.string().max(2000) }))
       .min(1)
@@ -238,23 +379,29 @@ export const presentTool: ToolDefinition = {
       if (!q.sections?.length && !q.recipe && !q.guide)
         throw new AppError("VALIDATION_ERROR", "A summary needs sections", { recovery: "review" });
       // A recipe's photo is one ELISE already showed (a gallery), never a URL from nowhere.
-      const credited = q.recipe?.source ?? q.guide?.source;
-      if (credited && !knownUrls(state).has(credited.url))
-        throw new AppError(
-          "VALIDATION_ERROR",
-          "The source must be a link that appears in this workspace's own sources — or omit it.",
-          { recovery: "review" },
-        );
-      if (q.recipe?.image && !knownImages(state).has(q.recipe.image.url))
-        throw new AppError(
-          "VALIDATION_ERROR",
-          "The recipe photo must be one already shown by web.images in this workspace — or omit it.",
-          { recovery: "review" },
-        );
+      // Provenance stays strict, but an unknown link or photo is dropped — not the card.
+      const known = knownUrls(state);
+      const images = knownImages(state);
+      const recipe = q.recipe && {
+        ...q.recipe,
+        source: q.recipe.source && known.has(q.recipe.source.url) ? q.recipe.source : undefined,
+        image:
+          q.recipe.image && images.has(q.recipe.image.url)
+            ? {
+                url: q.recipe.image.url,
+                alt: q.recipe.image.alt || q.title,
+                credit: q.recipe.image.credit ?? null,
+              }
+            : undefined,
+      };
+      const guide = q.guide && {
+        ...q.guide,
+        source: q.guide.source && known.has(q.guide.source.url) ? q.guide.source : undefined,
+      };
       const payload = PAYLOADS.summary.parse({
         sections: q.sections ?? [],
-        ...(q.recipe ? { recipe: q.recipe } : {}),
-        ...(!q.recipe && q.guide ? { guide: q.guide } : {}),
+        ...(recipe ? { recipe: JSON.parse(JSON.stringify(recipe)) } : {}),
+        ...(!recipe && guide ? { guide: JSON.parse(JSON.stringify(guide)) } : {}),
         ...(q.lead ? { lead: q.lead } : {}),
         ...(q.badge ? { badge: q.badge } : {}),
         ...(q.tags?.length ? { tags: q.tags } : {}),

@@ -81,6 +81,18 @@ const offersInput = z
       .regex(/^[A-Za-z]{2}$/)
       .optional()
       .describe("ISO country they buy in, only if they said it now."),
+    options: z
+      .array(
+        z.object({
+          name: z.string().trim().min(2).max(80),
+          why: z.string().trim().max(160).optional(),
+        }),
+      )
+      .max(4)
+      .optional()
+      .describe(
+        'When the user did NOT name a model ("una notebook ASUS con buena placa de video", "un celular bueno y barato", "auriculares para correr"): 3–4 concrete current models you recommend for exactly that, each {name: brand + model + the key spec ("ASUS TUF Gaming A15 RTX 4060"), why: one line ("buena relación precio/rendimiento para juegos")}. Each is searched on its own, so the user sees real options with prices. Omit when they named a model.',
+      ),
     url: z
       .string()
       .trim()
@@ -97,7 +109,7 @@ export const offersTool: ToolDefinition = {
   capability: "shopping",
   operation: "offers",
   description:
-    '"Buscame un Broadlink RM4 Mini al mejor precio", "¿cuánto está un aire inverter de 3000 frigorías?", "tres auriculares inalámbricos por menos de 100 lucas", "¿conviene en Mercado Libre o en otra tienda?": products to buy (electronics, appliances, home…) — Mercado Libre first where the user buys, other stores apart. Not groceries (shopping.findProduct), not services, travel or real estate.',
+    '"Buscame un Broadlink RM4 Mini al mejor precio", "¿cuánto está un aire inverter de 3000 frigorías?", "tres auriculares inalámbricos por menos de 100 lucas", "¿cuánto sale una notebook ASUS buena para juegos?", "¿conviene en Mercado Libre o en otra tienda?": products to buy (electronics, appliances, home…) — Mercado Libre first where the user buys, other stores apart. When they describe what they want instead of naming a model, recommend concrete models in `options`. Not groceries (shopping.findProduct), not services, travel or real estate.',
   input: offersInput,
   async describe(raw) {
     return { summary: `Offers: ${offersInput.parse(raw).query}` };
@@ -120,6 +132,7 @@ export const offersTool: ToolDefinition = {
     let method: Payload["marketplace"]["method"] = "link";
     let offers: Offer[] = [];
     let refused: { status: number | null; endpoint: string | null } | null = null;
+    let picks: Option[] = [];
 
     if (site && mode !== "avoid") {
       const pasted = q.url ? safeMarketplaceUrl(q.url, site) : null;
@@ -131,8 +144,40 @@ export const offersTool: ToolDefinition = {
             // The listing they gave: exactly that one, nothing searched instead.
             const official = await s.marketplace.listings(site, [pastedKey]);
             offers = [official.get(pastedKey) ?? listingStub(pasted, pastedTitle(pastedKey), now)];
-          } else offers = await s.marketplace.search(site, searchWords(q.query), 8);
-          if (offers.some((o) => o.evidence === "api")) method = "api";
+          } else if (q.options?.length) {
+            // No model named: ELISE's recommendations, each searched on its own (a description
+            // like "con buena placa de video" matches no catalog product).
+            const market = s.marketplace;
+            picks = await Promise.all(
+              q.options.map(async (o) => {
+                const found = await market.search(site, searchWords(o.name), 6).catch(() => []);
+                const ranked = rankOffers(
+                  dedupeOffers(found.map((f) => ({ ...f, match: matchOffer(o.name, f.title) }))),
+                  { condition: q.condition ?? null, maxPrice, currency },
+                )
+                  .filter((f) => f.match !== "accessory")
+                  .slice(0, 2);
+                return {
+                  name: o.name,
+                  why: o.why ?? null,
+                  searchUrl: marketplaceSearchUrl(
+                    o.name,
+                    site,
+                    currency === site.currency ? maxPrice : null,
+                  ),
+                  offers: ranked,
+                };
+              }),
+            );
+          } else {
+            offers = await s.marketplace.search(site, searchWords(q.query), 8);
+            // A long description finds nothing: its first words (brand and kind) may.
+            const short = searchWords(q.query).split(" ").slice(0, 3).join(" ");
+            if (!offers.length && short !== searchWords(q.query))
+              offers = await s.marketplace.search(site, short, 8);
+          }
+          if ([...offers, ...picks.flatMap((x) => x.offers)].some((o) => o.evidence === "api"))
+            method = "api";
         } catch (e) {
           // 401/403/429 or down: what can be shown honestly stays, nothing is invented.
           const d = toAppError(e).details as
@@ -141,8 +186,20 @@ export const offersTool: ToolDefinition = {
           if (pasted && pastedKey) offers = [listingStub(pasted, pastedTitle(pastedKey), now)];
         }
       } else if (pasted && pastedKey) offers = [listingStub(pasted, pastedTitle(pastedKey), now)];
+      // The recommendations are shown even when the catalog couldn't be read: each with its link.
+      if (q.options?.length && !picks.length)
+        picks = q.options.map((o) => ({
+          name: o.name,
+          why: o.why ?? null,
+          searchUrl: marketplaceSearchUrl(
+            o.name,
+            site,
+            currency === site.currency ? maxPrice : null,
+          ),
+          offers: [],
+        }));
       // 2) Without official results: listings a web search found (links only, never read).
-      if (!offers.length) {
+      if (!offers.length && !picks.some((x) => x.offers.length)) {
         const found = await web(env)
           .search({
             query: `${searchWords(q.query)}${q.condition === "used" ? " usado" : ""}`,
@@ -166,7 +223,8 @@ export const offersTool: ToolDefinition = {
           ];
         });
       }
-      if (method !== "api") method = offers.length ? "search" : "link";
+      if (method !== "api")
+        method = offers.length || picks.some((x) => x.offers.length) ? "search" : "link";
       offers = rankOffers(
         dedupeOffers(offers.map((o) => ({ ...o, match: matchOffer(q.model ?? null, o.title) }))),
         { condition: q.condition ?? null, maxPrice, currency },
@@ -183,7 +241,10 @@ export const offersTool: ToolDefinition = {
     // gave no verified price — always as their own Surface (web.discover), never merged.
     const wantStores =
       mode !== "only" &&
-      (q.compareStores || mode === "avoid" || !site || !offers.some((o) => o.price !== null));
+      (q.compareStores ||
+        mode === "avoid" ||
+        !site ||
+        ![...offers, ...picks.flatMap((x) => x.offers)].some((o) => o.price !== null));
     let stores: { title: string; price?: string; url: string }[] = [];
     if (wantStores && env.invoke) {
       const r = await env
@@ -191,7 +252,13 @@ export const offersTool: ToolDefinition = {
           request: q.request,
           query: searchWords(q.query),
           count: 5,
-          exclude: Object.values(MARKETPLACE_SITES).map((x) => x.host),
+          // The buyer's own Mercado Libre is shown apart (web.discover takes at most 5 domains:
+          // all seven countries' always failed validation).
+          exclude: site
+            ? [site.host]
+            : Object.values(MARKETPLACE_SITES)
+                .map((x) => x.host)
+                .slice(0, 5),
           ...(maxPrice !== null && currency ? { maxPrice, currency } : {}),
           ...(q.model ? { mustMatch: [q.model] } : {}),
         })
@@ -214,29 +281,26 @@ export const offersTool: ToolDefinition = {
                 sitePayload,
                 currency === site.currency ? maxPrice : null,
               ),
-              offers: offers.map((o) => ({
-                title: o.title,
-                url: o.url,
-                price: o.price,
-                currency: o.currency,
-                condition: o.condition,
-                match: o.match,
-                freeShipping: o.freeShipping,
-                installments: o.installments,
-                seller: o.seller,
-                image: o.image,
-                evidence: o.evidence,
-                checkedAt: o.checkedAt,
-              })),
+              offers: offers.map(offerPayload),
             },
             maxPrice,
             currency,
             notes,
             model: q.model ?? null,
+            ...(picks.length
+              ? {
+                  options: picks.map((x) => ({
+                    name: x.name.slice(0, 80),
+                    why: x.why?.slice(0, 160) ?? null,
+                    searchUrl: x.searchUrl,
+                    offers: x.offers.map(offerPayload),
+                  })),
+                }
+              : {}),
           }
         : null;
 
-    const verified = offers.filter((o) => o.price !== null);
+    const verified = [...offers, ...picks.flatMap((x) => x.offers)].filter((o) => o.price !== null);
     return {
       output: {
         buyingIn: country ?? "unknown",
@@ -266,6 +330,22 @@ export const offersTool: ToolDefinition = {
                     ...(o.freeShipping !== null ? { freeShipping: o.freeShipping } : {}),
                   })),
                   searchLink: "on screen (a search, not a listing)",
+                  ...(picks.length
+                    ? {
+                        recommendedOptions: picks.map((x) => ({
+                          option: x.name,
+                          why: x.why,
+                          listings: x.offers.map((o) =>
+                            o.price !== null
+                              ? `${o.title} — ${o.currency} ${o.price} (official API)`
+                              : `${o.title} — price not available`,
+                          ),
+                          ...(x.offers.length
+                            ? {}
+                            : { found: "no listings now — a search link is on screen" }),
+                        })),
+                      }
+                    : {}),
                 },
         ...(refused
           ? {
@@ -280,6 +360,11 @@ export const offersTool: ToolDefinition = {
             ? `Name two or three Mercado Libre options with price and the main difference (condition, exact model, shipping only as stated) — "de los resultados que encontré", never "el más barato de Mercado Libre".`
             : site && mode !== "avoid"
               ? `There are NO verified prices for these Mercado Libre listings: say so in one short sentence${refused ? " (Mercado Libre didn't authorize ELISE to read them)" : ""} and that the listings are on screen. Never quote a Mercado Libre price.`
+              : "",
+          picks.length
+            ? "These are your recommended options for what they asked: say each one briefly with why it fits and its price as found (or that it has no listing now). Ask about budget or use only if it would change the pick."
+            : !q.model && !q.url && !verified.length && site && mode !== "avoid"
+              ? "They described what they want without naming a model, and that description matched no product: call shopping.offers again now with `options` — 3–4 concrete current models you recommend for exactly what they asked (brand + model + key spec, each with why). Never answer only that nothing was found."
               : "",
           "A related or accessory item is not the model asked for: say so if you mention it. Shipping, taxes, installments and promotions only as stated; never assume free shipping or a bank promo applies to them.",
           "Voice: the actionable data in two or three short sentences (options, price, difference), never URLs, never only 'te lo dejé en pantalla'.",
@@ -303,6 +388,23 @@ export const offersTool: ToolDefinition = {
     };
   },
 };
+
+type Option = { name: string; why: string | null; searchUrl: string; offers: Offer[] };
+
+const offerPayload = (o: Offer): Payload["marketplace"]["offers"][number] => ({
+  title: o.title,
+  url: o.url,
+  price: o.price,
+  currency: o.currency,
+  condition: o.condition,
+  match: o.match,
+  freeShipping: o.freeShipping,
+  installments: o.installments,
+  seller: o.seller,
+  image: o.image,
+  evidence: o.evidence,
+  checkedAt: o.checkedAt,
+});
 
 /** A pasted listing ELISE couldn't read: named by its id, never by a guessed title. */
 const pastedTitle = (key: string) => `Publicación ${key.split(":")[1]}`;

@@ -156,7 +156,7 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   ],
   [
     "web",
-    /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|publicaci\w*|anuncios?|listings?|ofertas?|productos?|opciones|departamentos?|alquiler\w*|en venta|comprar|usados?|cursos?|buscame|encontrame|find me|fotos?|im[aá]genes|imagen|photos?|pictures?|images?|c[oó]mo (es|son|se ve\w*)|mostrame|playas?|viaj\w*|turismo|hotel(es)?|excursi\w*|itinerario|qui[eé]n (es|era|fue)|who (is|was)|logos?|diagramas?|diagrams?|mapas?|cu[aá]l es mejor|compar\w*|empresas?|marcas?)\b/i,
+    /\b(noticias?|news|investig\w*|research|web|internet|google|[uú]ltim\w*|latest|actual\w*|precio\w*|prices?|versi[oó]n|version|qu[eé] pas[oó]|cotizaci\w*|publicaci\w*|anuncios?|listings?|ofertas?|productos?|opciones|departamentos?|alquiler\w*|en venta|comprar|usados?|cursos?|buscame|encontrame|find me|fotos?|im[aá]genes|imagen|photos?|pictures?|images?|c[oó]mo (es|son|se ve\w*)|mostrame|playas?|viaj\w*|turismo|hotel(es)?|excursi\w*|itinerario|qui[eé]n (es|era|fue)|who (is|was)|logos?|diagramas?|diagrams?|mapas?|cu[aá]l es mejor|compar\w*|empresas?|marcas?|qu[eé] (es|son|era|eran|significa) (el|la|los|las|un|una)|c[oó]mo (es|son) (el|la|los|las|un|una)|animal(es)?|insectos?|aves?|p[aá]jaros?|peces|reptiles?|ara[ñn]as?|mariposas?|polillas?|plantas?|flor(es)?|[aá]rbol(es)?|hongos?|razas?|especies?|dinosaurios?|monumentos?|edificios?|museos?|cuadros?|pinturas?|esculturas?|obras? de arte|platos? t[ií]picos?|volc[aá]n(es)?|monta[ñn]as?|cataratas?|planetas?|constelaci\w*)\b/i,
   ],
 ];
 

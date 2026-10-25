@@ -4447,6 +4447,9 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
     searchOn: "Buscar en Mercado Libre",
     noPrice: "Precio en la publicación",
     checked: (when: string) => `Verificado ${when}`,
+    recommended: "Opciones recomendadas",
+    noListing: "Sin publicaciones en este momento.",
+    seeAll: "Ver todas en Mercado Libre",
     viaOfficial: (when: string) => `Precio oficial de Mercado Libre · ${when}`,
     unpriced: (n: number) =>
       n === 1

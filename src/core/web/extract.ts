@@ -187,6 +187,11 @@ export function normalizeDate(raw: string | null | undefined): string | null {
   return year >= 1995 && year <= 2100 ? new Date(t).toISOString() : null;
 }
 
+/** A wiki template ("{{Cita web|url=…}}") left in a page's text: never part of a passage. */
+const WIKI_TEMPLATE = /\{\{[^{}]{0,2000}\}\}/g;
+/** What's left of source code or markup in a paragraph ("}},"i":0}]}'>", "|url=", "<ref"). */
+const MARKUP_LEFTOVER = /\{\{|\}\}|\|\s*url=|<\/?ref\b|"\w+":\s*[\d{["]|\]\]['"]?>/;
+
 /**
  * The passages of a page that bear on the question — not the whole page. Paragraphs are
  * scored by how many of the question's words they contain; the page's opening stands in
@@ -200,8 +205,13 @@ export function selectPassages(
 ): string[] {
   const paragraphs = text
     .split(/\n{1,}/)
-    .map((p) => p.trim())
-    .filter((p) => p.length >= 40);
+    .map((p) =>
+      p
+        .replace(WIKI_TEMPLATE, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim(),
+    )
+    .filter((p) => p.length >= 40 && !MARKUP_LEFTOVER.test(p));
   if (!paragraphs.length) return text ? [text.slice(0, chars)] : [];
   const terms = focus
     ? keywordQuery(focus)

@@ -1,6 +1,8 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { parseItem } from "@/features/workspace/canvas/summary-card";
+import { parseItem, rich } from "@/features/workspace/canvas/summary-card";
 
 /** Summary points: a bold title, clean text, and sources as chips (never inline clutter). */
 describe("summary items", () => {
@@ -40,6 +42,19 @@ describe("summary items", () => {
     expect(parseItem("2015 fue el año de su fundación.").text).toBe(
       "2015 fue el año de su fundación.",
     );
+  });
+
+  it("*italic* and **bold** render; a lone asterisk stays text", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        "p",
+        null,
+        ...rich("La *Ascalapha odorata* mide **15 cm** de envergadura (5 * 3 = 15)."),
+      ),
+    );
+    expect(html).toContain("<em>Ascalapha odorata</em>");
+    expect(html).toContain(">15 cm</strong>");
+    expect(html).toContain("5 * 3 = 15");
   });
 
   it("plain text stays plain; unsafe links are dropped", () => {

@@ -471,7 +471,11 @@ function SourceLink({ source }: { source: { label: string; url: string } }) {
   );
 }
 
-function ChipRow({ chips }: { chips: { label: string; icon?: typeof Clock }[] }) {
+function ChipRow({ chips: all }: { chips: { label: string; icon?: typeof Clock }[] }) {
+  // "Fácil" as the difficulty and again as a tag reads twice: each label once.
+  const chips = all.filter(
+    (c, i) => all.findIndex((o) => o.label.toLowerCase() === c.label.toLowerCase()) === i,
+  );
   return (
     <ul className="-mt-1 flex flex-wrap gap-2">
       {chips.map((chip, i) => {
