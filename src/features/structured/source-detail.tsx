@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import type { SourceView } from "@/application/structured-service";
 import { NotionIcon } from "@/components/elise/brand-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Input, Label } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { RecordValue } from "@/core/capabilities/structured";
@@ -30,6 +31,7 @@ const DOT = {
 
 export function SourceDetail({ source, workspaceId }: { source: SourceView; workspaceId: string }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const s = t.structured;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -258,8 +260,9 @@ export function SourceDetail({ source, workspaceId }: { source: SourceView; work
           variant="ghost"
           className="hover:text-danger-text"
           disabled={pending}
-          onClick={() => {
-            if (!window.confirm(s.disconnectConfirm(source.name))) return;
+          onClick={async () => {
+            if (!(await confirm({ title: s.disconnectConfirm(source.name), destructive: true })))
+              return;
             act(
               () => unmapAction(source.id),
               () => router.push("/connections"),

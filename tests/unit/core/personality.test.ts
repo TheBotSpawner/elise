@@ -157,5 +157,6 @@ describe("the provocative one keeps its bite", () => {
     const text = personalitySection("provocative");
     expect(text).toMatch(/never back down, apologize or call your own remark unnecessary/);
     expect(text).toMatch(/drop the sarcasm entirely for health, safety/);
+    expect(text).toMatch(/never announce or label the tone/);
   });
 });

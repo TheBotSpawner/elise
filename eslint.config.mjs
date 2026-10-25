@@ -19,6 +19,22 @@ const eslintConfig = defineConfig([
           alphabetize: { order: "asc", caseInsensitive: true },
         },
       ],
+      // ADR-075: ELISE's own dialogs (useConfirm), never the browser's or Windows' native ones.
+      "no-restricted-globals": [
+        "error",
+        ...["confirm", "alert", "prompt"].map((name) => ({
+          name,
+          message: "Use useConfirm() / ELISE's dialogs, never native popups.",
+        })),
+      ],
+      "no-restricted-properties": [
+        "error",
+        ...["confirm", "alert", "prompt"].map((property) => ({
+          object: "window",
+          property,
+          message: "Use useConfirm() / ELISE's dialogs, never native popups.",
+        })),
+      ],
     },
   },
   {

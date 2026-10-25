@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Select } from "@/components/ui/input";
 import { OverflowMenu } from "@/components/ui/sheet-menu";
@@ -532,6 +533,7 @@ function Column({
   onDrop: (listId: string, beforeItemId: string | null) => void;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const w = t.native.lists.ws;
   const { active, done } = splitItems(list);
   const [showDone, setShowDone] = useState(done.length > 0 && done.length <= 3);
@@ -725,8 +727,13 @@ function Column({
               }
               onDuplicate={() => act("lists.duplicate", { list: list.id })}
               onCompare={() => setComparing(true)}
-              onClearDone={() => {
-                if (window.confirm(w.clearDoneConfirm(done.length, list.name)))
+              onClearDone={async () => {
+                if (
+                  await confirm({
+                    title: w.clearDoneConfirm(done.length, list.name),
+                    destructive: true,
+                  })
+                )
                   act(
                     "lists.clearChecked",
                     { list: list.id },
@@ -734,8 +741,13 @@ function Column({
                   );
               }}
               onMove={(d) => onMove(list.id, d)}
-              onDelete={() => {
-                if (window.confirm(w.deleteConfirm(list.name, list.items.length)))
+              onDelete={async () => {
+                if (
+                  await confirm({
+                    title: w.deleteConfirm(list.name, list.items.length),
+                    destructive: true,
+                  })
+                )
                   act("lists.archive", { list: list.id }, { kind: "removeList", id: list.id });
               }}
             />

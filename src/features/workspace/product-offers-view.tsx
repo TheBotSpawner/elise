@@ -121,11 +121,8 @@ function Badges({
   return (
     <span className="flex flex-wrap gap-x-2 gap-y-0.5 text-[12px] text-faint">
       {condition && <span>{condition === "used" ? x.used : x.new}</span>}
-      {flagged && flagged !== "exact" && (
-        <span className="text-approval-text">
-          {flagged === "accessory" ? x.accessory : x.related}
-        </span>
-      )}
+      {/* A close model is shown plainly: the owner asked never to label it "not exact". */}
+      {flagged === "accessory" && <span className="text-approval-text">{x.accessory}</span>}
       {extra.map((e) => (
         <span key={e}>{e}</span>
       ))}

@@ -1685,6 +1685,7 @@ export const en = {
         stalled: "The background work never finished. Retrying usually fixes it.",
         timeout: "It took too long and was stopped. You can retry.",
         unreachable: "The source couldn't be reached. Try again in a few minutes.",
+        upload_failed: "The upload didn't finish. Delete it and upload the file again.",
         unknown: "ELISE couldn't index this item.",
       },
     },
@@ -4396,7 +4397,6 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
     shippingUnknown: "Shipping not confirmed",
     used: "Used",
     new: "New",
-    related: "Not exactly the model asked for",
     accessory: "Accessory or part",
     upTo: (price: string) => `Up to ${price}`,
     disclaimer:

@@ -1715,6 +1715,7 @@ export const es: Dictionary = {
         stalled: "El procesamiento en segundo plano nunca terminó. Reintentar suele resolverlo.",
         timeout: "Tardó demasiado y se detuvo. Podés reintentar.",
         unreachable: "No se pudo llegar a la fuente. Probá de nuevo en unos minutos.",
+        upload_failed: "La subida no terminó. Eliminalo y volvé a subir el archivo.",
         unknown: "ELISE no pudo indexar este elemento.",
       },
     },
@@ -4429,7 +4430,6 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
     shippingUnknown: "Envío sin confirmar",
     used: "Usado",
     new: "Nuevo",
-    related: "No es exactamente el modelo pedido",
     accessory: "Accesorio o repuesto",
     upTo: (price: string) => `Hasta ${price}`,
     disclaimer:

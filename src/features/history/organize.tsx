@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { OverflowMenu, type MenuAction } from "@/components/ui/sheet-menu";
@@ -284,6 +285,7 @@ export function ThreadMenu({
   archived: boolean;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const m = t.history.menu;
   const router = useRouter();
   const { move, remove } = useOrganizer();
@@ -334,8 +336,8 @@ export function ThreadMenu({
       label: m.delete,
       icon: Trash2,
       danger: true,
-      onClick: () => {
-        if (!window.confirm(m.deleteConfirm(title))) return;
+      onClick: async () => {
+        if (!(await confirm({ title: m.deleteConfirm(title), destructive: true }))) return;
         remove(
           rowKey,
           () => (voice ? deleteVoiceSessionAction(thread.id) : deleteConversationAction(thread.id)),

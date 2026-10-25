@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { InfoTip } from "@/components/shared/info-tip";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
@@ -27,6 +28,7 @@ export function SpaceContext({
   isSection: boolean;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const k = t.knowledge.context;
   const router = useRouter();
   const fieldId = useId();
@@ -37,8 +39,8 @@ export function SpaceContext({
   const dirty = value.trim() !== saved.trim();
   const info = <InfoTip label={k.about} body={[isSection ? k.infoSection : k.infoSpace]} />;
 
-  function close() {
-    if (dirty && !window.confirm(k.discard)) return;
+  async function close() {
+    if (dirty && !(await confirm({ title: k.discard, destructive: true }))) return;
     setValue(saved);
     setOpen(false);
   }

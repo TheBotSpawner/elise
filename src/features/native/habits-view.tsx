@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import type { HabitsWorkspace } from "@/application/native-service";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
+import { useConfirm } from "@/components/ui/confirm";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -694,6 +695,7 @@ function HabitRow({
   goals?: string[];
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const w = t.native.habits.ws;
   const fmt = useFormats();
   const { act } = useNative();
@@ -715,16 +717,17 @@ function HabitRow({
             },
         {
           label: w.menu.archive,
-          onClick: () =>
-            window.confirm(t.native.archiveConfirm(habit.name)) &&
+          onClick: async () =>
+            (await confirm({ title: t.native.archiveConfirm(habit.name), destructive: true })) &&
             act("habits.archive", { habit: habit.id }),
         },
       ];
   menu.push({
     label: w.menu.delete,
     danger: true,
-    onClick: () =>
-      window.confirm(w.deleteConfirm(habit.name)) && act("habits.delete", { habit: habit.id }),
+    onClick: async () =>
+      (await confirm({ title: w.deleteConfirm(habit.name), destructive: true })) &&
+      act("habits.delete", { habit: habit.id }),
   } as (typeof menu)[number]);
   const months =
     range.view === "year" || (range.view === "custom" && stats.days.length > 62)

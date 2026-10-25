@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Input } from "@/components/ui/input";
 import { plainText, type Note, type NoteTag } from "@/core/capabilities/notes";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
@@ -148,6 +149,7 @@ function Editor({
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const n = t.native.notes;
   const { act, pending } = useNative();
   const [title, setTitle] = useState(note?.title ?? "");
@@ -214,8 +216,10 @@ function Editor({
               variant="ghost"
               className="hover:text-danger-text"
               disabled={pending}
-              onClick={() => {
-                if (window.confirm(t.native.archiveConfirm(note.title)))
+              onClick={async () => {
+                if (
+                  await confirm({ title: t.native.archiveConfirm(note.title), destructive: true })
+                )
                   act("notes.archive", { note: note.id }, onClose);
               }}
             >

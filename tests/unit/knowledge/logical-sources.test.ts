@@ -87,6 +87,9 @@ describe("attention reasons", () => {
       attentionReason("NOT_FOUND", "That page or database is no longer shared with ELISE"),
     ).toBe("access_lost");
     expect(attentionReason("AUTH_EXPIRED", null)).toBe("reconnect");
+    // A failed upload says so in the user's words, and only re-uploading helps.
+    expect(attentionReason("INTERNAL_ERROR", "The upload did not finish")).toBe("upload_failed");
+    expect(attentionActions("upload_failed")).toEqual(["open"]);
     expect(attentionReason("BACKGROUND_STALLED", null)).toBe("stalled");
     expect(
       attentionReason("VALIDATION_ERROR", "No text was found, even with text recognition"),

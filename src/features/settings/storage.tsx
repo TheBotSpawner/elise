@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { useConfirm } from "@/components/ui/confirm";
 import { formatBytes, type StoredFile } from "@/core/storage/accounting";
 import { errorText } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -18,6 +19,7 @@ import { deleteStoredFileAction } from "./actions";
  */
 export function StoredFiles({ files }: { files: StoredFile[] }) {
   const { t, locale } = useI18n();
+  const confirm = useConfirm();
   const s = t.settingsHub.storage;
   const [sort, setSort] = useState<"size" | "date">("size");
   const [query, setQuery] = useState("");
@@ -28,8 +30,9 @@ export function StoredFiles({ files }: { files: StoredFile[] }) {
     .filter((f) => !needle || `${f.name} ${f.where.label}`.toLowerCase().includes(needle))
     .sort((a, b) => (sort === "size" ? b.bytes - a.bytes : b.createdAt.localeCompare(a.createdAt)));
 
-  function remove(f: StoredFile) {
-    if (!f.sourceId || !window.confirm(s.deleteConfirm(f.name))) return;
+  async function remove(f: StoredFile) {
+    if (!f.sourceId || !(await confirm({ title: s.deleteConfirm(f.name), destructive: true })))
+      return;
     start(async () => {
       const r = await deleteStoredFileAction(f.sourceId!);
       if (!r.ok) toast.error(errorText(t, r.error));

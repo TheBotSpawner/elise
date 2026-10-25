@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronUp, ExternalLink, Plus, Trash2, X } from "lu
 import { useEffect, useRef, useState } from "react";
 
 import type { TasksOverview } from "@/application/tasks-service";
+import { useConfirm } from "@/components/ui/confirm";
 import { Input, Select } from "@/components/ui/input";
 import {
   taskCapabilities,
@@ -59,6 +60,7 @@ export function TaskDetail({
   onOpenTask: (id: string) => void;
 }) {
   const { t, locale } = useI18n();
+  const confirm = useConfirm();
   const w = t.tasks.ws;
   const caps = taskCapabilities(task.provenance.providerKey);
   const google = task.provenance.providerKey === "google";
@@ -431,8 +433,11 @@ export function TaskDetail({
             )}
             <button
               type="button"
-              onClick={() => {
-                if (!window.confirm(t.tasks.deleteConfirm(task.title))) return;
+              onClick={async () => {
+                if (
+                  !(await confirm({ title: t.tasks.deleteConfirm(task.title), destructive: true }))
+                )
+                  return;
                 void mutate("delete", { taskId: task.id }, { kind: "remove", id: task.id });
                 onDeleted();
               }}

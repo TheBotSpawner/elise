@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthContext } from "@/application/auth-context";
+import { ConfirmProvider } from "@/components/ui/confirm";
 import { recentThreads, type KnowledgeNode } from "@/core/history/links";
 import { HistoryOrganizer, ThreadItem, ThreadMenu } from "@/features/history/organize";
 import { I18nProvider } from "@/lib/i18n/client";
@@ -189,21 +190,23 @@ function board(over: { primary?: string | null; archived?: boolean; voice?: bool
   const thread = over.voice ? { kind: "session" as const, id: C1 } : C;
   return render(
     <I18nProvider locale="es">
-      <HistoryOrganizer nodes={NODES}>
-        <ul>
-          <ThreadItem thread={thread} rowKey="k1" title="Ajuste de un timer" place={null}>
-            <span>Ajuste de un timer</span>
-            <ThreadMenu
-              thread={thread}
-              rowKey="k1"
-              title="Ajuste de un timer"
-              primary={over.primary ?? null}
-              pinned={false}
-              archived={over.archived ?? false}
-            />
-          </ThreadItem>
-        </ul>
-      </HistoryOrganizer>
+      <ConfirmProvider>
+        <HistoryOrganizer nodes={NODES}>
+          <ul>
+            <ThreadItem thread={thread} rowKey="k1" title="Ajuste de un timer" place={null}>
+              <span>Ajuste de un timer</span>
+              <ThreadMenu
+                thread={thread}
+                rowKey="k1"
+                title="Ajuste de un timer"
+                primary={over.primary ?? null}
+                pinned={false}
+                archived={over.archived ?? false}
+              />
+            </ThreadItem>
+          </ul>
+        </HistoryOrganizer>
+      </ConfirmProvider>
     </I18nProvider>,
   );
 }
@@ -317,10 +320,12 @@ describe("the … menu", () => {
     });
     expect(actions.archiveConversationAction).toHaveBeenCalledWith(C1, true);
 
-    window.confirm = vi.fn().mockReturnValue(false);
     openMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: "Eliminar" }));
-    expect(window.confirm).toHaveBeenCalled();
+    // ELISE's own confirmation, never the native one: cancelling deletes nothing.
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+    });
     expect(actions.deleteConversationAction).not.toHaveBeenCalled();
   });
 

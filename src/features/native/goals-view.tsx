@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { GoalsWorkspace } from "@/application/native-service";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Input, Select } from "@/components/ui/input";
 import { FilterButton, FilterSheet } from "@/components/ui/sheet-menu";
 import type { Goal, Vision } from "@/core/capabilities/goals";
@@ -150,6 +151,7 @@ function GoalDetailPanel({
   version: unknown;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const g = t.native.goals;
   const d = g.detail;
   const m = g.menu;
@@ -183,16 +185,16 @@ function GoalDetailPanel({
               },
         {
           label: m.archive,
-          onClick: () =>
-            window.confirm(t.native.archiveConfirm(goal.title)) &&
+          onClick: async () =>
+            (await confirm({ title: t.native.archiveConfirm(goal.title), destructive: true })) &&
             act("goals.archive", { goal: goal.id }, onClose),
         },
       ];
   menu.push({
     label: m.delete,
     danger: true,
-    onClick: () =>
-      window.confirm(g.deleteConfirm(goal.title)) &&
+    onClick: async () =>
+      (await confirm({ title: g.deleteConfirm(goal.title), destructive: true })) &&
       act("goals.delete", { goal: goal.id }, onClose),
   } as (typeof menu)[number]);
 
@@ -428,6 +430,7 @@ function VisionDetailPanel({
   onOpenGoal: (id: string) => void;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const g = t.native.goals;
   const d = g.detail;
   const m = g.menu;
@@ -494,9 +497,11 @@ function VisionDetailPanel({
             {
               label: m.delete,
               danger: true,
-              onClick: () =>
-                window.confirm(g.deleteVisionConfirm(vision.title)) &&
-                act("goals.deleteVision", { vision: vision.id }, onClose),
+              onClick: async () =>
+                (await confirm({
+                  title: g.deleteVisionConfirm(vision.title),
+                  destructive: true,
+                })) && act("goals.deleteVision", { vision: vision.id }, onClose),
             },
           ]}
         />

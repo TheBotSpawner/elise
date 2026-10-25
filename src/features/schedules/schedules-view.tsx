@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import type { RunView, ScheduleView } from "@/application/schedules-service";
 import { EmptyState } from "@/components/shared/page";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { ChipRail, OverflowMenu, type MenuAction } from "@/components/ui/sheet-menu";
 import { PRESETS, presetOf } from "@/core/schedules/presets";
 import type { BriefBlock, ScheduleInput } from "@/core/schedules/schedule";
@@ -296,6 +297,7 @@ function ScheduleCard({
   onEdit: () => void;
 }) {
   const { t, locale } = useI18n();
+  const confirm = useConfirm();
   const [pending, startTransition] = useTransition();
   const [history, setHistory] = useState<RunView[] | null>(null);
   const router = useRouter();
@@ -334,8 +336,9 @@ function ScheduleCard({
           const result = await historyAction(s.id);
           if (result.ok) setHistory(result.value);
         });
-  const remove = () => {
-    if (window.confirm(t.schedules.deleteConfirm(s.name))) act(() => deleteScheduleAction(s.id));
+  const remove = async () => {
+    if (await confirm({ title: t.schedules.deleteConfirm(s.name), destructive: true }))
+      act(() => deleteScheduleAction(s.id));
   };
 
   function act<T>(fn: () => Promise<ScheduleActionResult<T>>, success?: string) {

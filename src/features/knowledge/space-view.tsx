@@ -23,9 +23,11 @@ import type {
 import { BackLink } from "@/components/shared/back-link";
 import { InfoTip } from "@/components/shared/info-tip";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/input";
 import { OverflowMenu } from "@/components/ui/sheet-menu";
+import { attentionReason } from "@/core/knowledge/attention";
 import { GENERAL_DEFAULT_DESCRIPTION } from "@/core/knowledge/model";
 import { useRealtimeRefresh } from "@/hooks/use-realtime-refresh";
 import { errorText } from "@/lib/i18n";
@@ -120,6 +122,7 @@ export function SpaceView({
   initialAttention?: boolean;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const router = useRouter();
   const relative = useRelative();
   const [pending, startTransition] = useTransition();
@@ -537,8 +540,10 @@ export function SpaceView({
                     disabled={pending}
                     when={relative}
                     onSyncNow={() => syncSource(s.id)}
-                    onRemove={() => {
-                      if (window.confirm(t.knowledge.removeSourceConfirm))
+                    onRemove={async () => {
+                      if (
+                        await confirm({ title: t.knowledge.removeSourceConfirm, destructive: true })
+                      )
                         act(() => removeSourceAction(s.id));
                     }}
                   />
@@ -620,8 +625,15 @@ export function SpaceView({
                           className={cn("size-1.5 rounded-full", DOT[item.status] ?? "bg-faint")}
                         />
                         {detail}
-                        {attention && item.statusDetail && (
-                          <span className="text-approval-text">· {item.statusDetail}</span>
+                        {attention && (item.statusDetail || item.errorCode) && (
+                          <span className="text-approval-text">
+                            ·{" "}
+                            {
+                              t.knowledge.attention.reasons[
+                                attentionReason(item.errorCode, item.statusDetail)
+                              ]
+                            }
+                          </span>
                         )}
                         <span className="text-faint">
                           · {relative(item.updatedAt)}
@@ -671,8 +683,10 @@ export function SpaceView({
                         variant="ghost"
                         className="hover:text-danger-text"
                         disabled={pending}
-                        onClick={() => {
-                          if (window.confirm(t.knowledge.deleteConfirm))
+                        onClick={async () => {
+                          if (
+                            await confirm({ title: t.knowledge.deleteConfirm, destructive: true })
+                          )
                             act(() => deleteItemAction(item.id));
                         }}
                       >
@@ -735,8 +749,9 @@ export function SpaceView({
         source={sources.find((s) => s.id === inspecting) ?? null}
         onClose={() => setInspecting(null)}
         onSync={(id) => syncSource(id)}
-        onRemove={(id) => {
-          if (!window.confirm(t.knowledge.removeSourceConfirm)) return;
+        onRemove={async (id) => {
+          if (!(await confirm({ title: t.knowledge.removeSourceConfirm, destructive: true })))
+            return;
           setInspecting(null);
           act(() => removeSourceAction(id));
         }}
@@ -768,6 +783,7 @@ function SpaceSettingsDialog({
   space: SpaceSummary;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   return (
@@ -777,8 +793,11 @@ function SpaceSettingsDialog({
           variant="ghost"
           className="hover:text-danger-text"
           disabled={pending}
-          onClick={() => {
-            if (!window.confirm(t.knowledge.archiveConfirm(space.name))) return;
+          onClick={async () => {
+            if (
+              !(await confirm({ title: t.knowledge.archiveConfirm(space.name), destructive: true }))
+            )
+              return;
             startTransition(async () => {
               const r = await archiveSpaceAction(space.id);
               if (r.ok) router.push("/knowledge");

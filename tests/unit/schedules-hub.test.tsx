@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ScheduleView } from "@/application/schedules-service";
+import { ConfirmProvider } from "@/components/ui/confirm";
 import { morningBriefConfigSchema } from "@/core/schedules/schedule";
 import { SchedulesView } from "@/features/schedules/schedules-view";
 import { I18nProvider } from "@/lib/i18n/client";
@@ -49,14 +50,16 @@ const legacyBrief: ScheduleView = {
 function view(schedules: ScheduleView[] = [legacyBrief]) {
   return render(
     <I18nProvider locale="es">
-      <SchedulesView
-        schedules={schedules}
-        workspaceId="ws"
-        timezone={TZ}
-        spaces={[{ id: SPACE, path: "Firbot Marketing" }]}
-        backgroundAvailable
-        draft={null}
-      />
+      <ConfirmProvider>
+        <SchedulesView
+          schedules={schedules}
+          workspaceId="ws"
+          timezone={TZ}
+          spaces={[{ id: SPACE, path: "Firbot Marketing" }]}
+          backgroundAvailable
+          draft={null}
+        />
+      </ConfirmProvider>
     </I18nProvider>,
   );
 }
@@ -299,9 +302,11 @@ describe("Programados editor and cards (ADR-067)", () => {
       fireEvent.click(screen.getByRole("button", { name: "Ejecutar ahora" }));
     });
     expect(actions.runNowAction).toHaveBeenCalledWith(legacyBrief.id);
-    window.confirm = vi.fn().mockReturnValue(false);
     fireEvent.click(menuItem("Eliminar"));
-    expect(window.confirm).toHaveBeenCalled();
+    // ELISE's own confirmation, never the native one: cancelling deletes nothing.
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "Cancelar" }));
+    });
     expect(actions.deleteScheduleAction).not.toHaveBeenCalled();
   });
 

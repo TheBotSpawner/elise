@@ -961,7 +961,9 @@ export async function deleteItem(auth: AuthContext, itemId: string) {
     .eq("id", itemId)
     .eq("workspace_id", auth.workspaceId)
     .maybeSingle();
-  if (!item) throw new AppError("NOT_FOUND", "Document not found");
+  // Already gone (replaced by a retry, or deleted elsewhere while the list was open): deleting
+  // it again is done, not an error — the list refreshes without it.
+  if (!item) return;
   await createAdminClient()
     .from("knowledge_items")
     .delete()

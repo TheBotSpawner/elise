@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/shared/page";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useConfirm } from "@/components/ui/confirm";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { THEMES } from "@/core/capabilities/settings";
@@ -67,6 +68,7 @@ export function ShortcutsView({
   contexts: { id: string; name: string }[];
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const sc = t.shortcuts;
   const [draft, setDraft] = useState<Draft | null>(null);
   const [pending, start] = useTransition();
@@ -214,8 +216,8 @@ export function ShortcutsView({
                   variant="ghost"
                   size="sm"
                   disabled={pending}
-                  onClick={() => {
-                    if (window.confirm(sc.deleteConfirm(s.name)))
+                  onClick={async () => {
+                    if (await confirm({ title: sc.deleteConfirm(s.name), destructive: true }))
                       act(() => deleteShortcutAction(s.id));
                   }}
                 >

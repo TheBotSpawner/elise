@@ -178,6 +178,12 @@ export function DesktopWake({ children }: { children: ReactNode }) {
      * leave her listening again with no answer.
      */
     let overPreparing = false;
+    /**
+     * The detector was cautious about this word (after false alarms, or with music). Only then may
+     * a bare or unreadable "ELISE" over a reply being prepared be let go: a confident one is a
+     * call, and the person expects her to stop and listen.
+     */
+    let guardedCall = false;
     /** ADR-109: this capture is her own voice saying her name: dropped. */
     let ignoring = false;
     /** The paused reply continues (it wasn't a call, or the request didn't need it to stop). */
@@ -227,6 +233,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
             // voice freezes at once while the words are checked.
             interrupting = deviceMayInterrupt(phase);
             overPreparing = interrupting && phase !== "speaking";
+            guardedCall = decision.guarded;
             if (interrupting && saidOwnName()) {
               logSound("wake:candidate", "own name in her reply, ignored");
               ignoring = true;
@@ -284,12 +291,14 @@ export function DesktopWake({ children }: { children: ReactNode }) {
         detector.outcome("rejected");
         return finishHandOff();
       };
-      // Over a reply still being prepared, a bare "ELISE" (or one that can't be read) is let go:
-      // the reply continues. Not evidence of a false alarm, so detection isn't guarded for it.
-      if (overPreparing && !capture.speechAfter) return finishHandOff();
+      // Over a reply still being prepared, a doubtful bare "ELISE" (or one that can't be read) is
+      // let go: the reply continues. Not evidence of a false alarm, so detection isn't guarded for
+      // it. A confident one interrupts, like over her voice.
+      const letGo = overPreparing && guardedCall;
+      if (letGo && !capture.speechAfter) return finishHandOff();
       if (capture.speechAfter) {
         const text = await transcribe(wav(capture.audio, capture.sampleRate));
-        if (overPreparing && text === null) return finishHandOff();
+        if (letGo && text === null) return finishHandOff();
         if (text !== null) {
           // Over her reply, the capture may begin with her own voice: the name is found where
           // it is (ADR-109); otherwise it must open what was said.
@@ -300,7 +309,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
           });
           // The words didn't start with "ELISE" (someone said it mid-sentence, or it wasn't
           // the word): no conversation starts, and the next candidates need more evidence.
-          if (!m.matched && (text.trim() || overPreparing)) return reject();
+          if (!m.matched && (text.trim() || letGo)) return reject();
           remainder = m.remainder;
         }
       }

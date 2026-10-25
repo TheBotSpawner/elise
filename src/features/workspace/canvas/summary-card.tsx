@@ -370,7 +370,9 @@ export function SummaryCard({ p, title, large }: { p: Summary; title: string; la
                   </span>
                   <div className="min-w-0">
                     <dt className="text-[11.5px] text-muted">{f.label}</dt>
-                    <dd className="truncate text-[14px] font-semibold text-fg">{f.value}</dd>
+                    <dd className="text-[14px] leading-snug font-semibold [overflow-wrap:anywhere] text-fg">
+                      {f.value}
+                    </dd>
                   </div>
                 </div>
               );

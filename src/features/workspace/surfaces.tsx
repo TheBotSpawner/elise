@@ -1267,7 +1267,7 @@ function SourceLine({
         href={url}
         target="_blank"
         rel="noopener noreferrer nofollow"
-        className="min-w-0 truncate text-[14px] font-medium text-accent-text hover:underline"
+        className="line-clamp-2 min-w-0 text-[14px] leading-snug font-medium text-accent-text hover:underline"
       >
         {title}
       </a>

@@ -16,6 +16,7 @@ export type AttentionReason =
   | "stalled"
   | "timeout"
   | "unreachable"
+  | "upload_failed"
   | "unknown";
 
 export type AttentionAction = "retry" | "reconnect" | "open";
@@ -41,6 +42,8 @@ export function attentionReason(code: string | null, detail: string | null): Att
   )
     return "stalled";
   if (code === "TIMEOUT") return "timeout";
+  // The file never arrived: only uploading it again helps.
+  if (detail && /upload did not finish/i.test(detail)) return "upload_failed";
   if (code === "PROVIDER_UNAVAILABLE" || code === "RATE_LIMITED") return "unreachable";
   for (const [pattern, reason] of BY_MESSAGE) if (detail && pattern.test(detail)) return reason;
   return "unknown";
@@ -66,6 +69,7 @@ export function attentionActions(reason: AttentionReason): AttentionAction[] {
     case "unsupported":
     case "mismatch":
     case "corrupt":
+    case "upload_failed":
       return ["open"];
   }
 }

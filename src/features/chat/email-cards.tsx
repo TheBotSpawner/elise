@@ -4,6 +4,7 @@ import { motion, type MotionProps } from "motion/react";
 import { useState, useTransition } from "react";
 
 import { ExternalIcon } from "@/components/elise/icons";
+import { useConfirm } from "@/components/ui/confirm";
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { EmailAddress, EmailMessage, EmailProvenance } from "@/core/capabilities/email";
 import { discardDraftAction, sendDraftAction } from "@/features/email/actions";
@@ -260,6 +261,7 @@ export function DraftCard({
   embedded?: boolean;
 }) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const [pending, startTransition] = useTransition();
   const [state, setState] = useState(display);
   const [error, setError] = useState<string | null>(null);
@@ -341,8 +343,9 @@ export function DraftCard({
           <button
             type="button"
             disabled={pending}
-            onClick={() => {
-              if (window.confirm(t.email.discardConfirm)) act(() => discardDraftAction(draft.id));
+            onClick={async () => {
+              if (await confirm({ title: t.email.discardConfirm, destructive: true }))
+                act(() => discardDraftAction(draft.id));
             }}
             className="h-10 rounded-full px-4 text-sm text-muted hover:text-danger-text disabled:opacity-60"
           >
