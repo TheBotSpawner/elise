@@ -3748,6 +3748,7 @@ export const es: Dictionary = {
       memory: "Memoria",
     },
     applied: "Aplicado",
+    summarySources: (n: number) => (n === 1 ? "1 fuente" : `${n} fuentes`),
     summaryKinds: {
       facts: "Hechos",
       context: "Contexto",
@@ -3766,6 +3767,9 @@ export const es: Dictionary = {
     web: {
       read: "leída",
       snippet: "resumen del buscador",
+      bestMatch: "Mejor coincidencia",
+      readChip: "Leída",
+      snippetChip: "Resumen del buscador",
       retrieved: (when: string) => `Consultado ${when}`,
       truncated: "Página larga: se leyó solo una parte.",
       outlets: (n: number) => `${n} medios`,

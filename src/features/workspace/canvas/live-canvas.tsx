@@ -707,9 +707,16 @@ function Zones({
       );
     if (mobile) return center;
     return (
+      // A click on the empty space around the focused widget is "Volver" (never one inside a
+      // widget, its controls or a dialog).
       <div
+        onClick={(e) => {
+          const at = e.target as HTMLElement;
+          if (!at.closest("article, button, a, input, textarea, select, [role='dialog']"))
+            handlers.onUnfocus();
+        }}
         className={cn(
-          "grid items-start gap-6",
+          "grid min-h-[60vh] items-start gap-6",
           device === "tablet"
             ? "grid-cols-[minmax(0,1fr)_200px]"
             : "grid-cols-[200px_minmax(0,1fr)_200px]",

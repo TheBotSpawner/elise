@@ -21,6 +21,7 @@ import {
   type WorkspaceState,
 } from "./model";
 import { musicPayload } from "./music";
+import { SUMMARY_ICONS } from "./summary-icons";
 import { clockPayload, timerFromPayload, timerPayload, type TimerPayload } from "./time";
 import { visualizationSpec, type VisualizationSpec } from "./visualization";
 import { weatherPayload, type WeatherPayload } from "./weather";
@@ -733,11 +734,30 @@ export const PAYLOADS = {
           ]),
           heading: text(120),
           // Room for a markdown source link ([site](url)), rendered as a safe link.
+          // "Title: text" gives an item a bold title; **bold** works inside the text.
           items: z.array(text(600)).min(1).max(8),
+          /** One icon per item, in order (shown in its bubble); the section's own otherwise. */
+          icons: z.array(z.enum(SUMMARY_ICONS)).max(8).optional(),
         }),
       )
       .min(1)
       .max(7),
+    /** One line under the title ("Según el contexto, IAFS puede referirse a:"). */
+    lead: text(200).optional(),
+    /** A short tag next to the title ("2 significados", "3 opciones"). */
+    badge: text(40).optional(),
+    /** Chips under the title: where, what, a status ("Nueva Zelanda", "Licenciada por FMA"). */
+    tags: z
+      .array(z.object({ label: text(48), icon: z.enum(SUMMARY_ICONS).optional() }))
+      .max(6)
+      .optional(),
+    /** Key facts at a glance, label → value ("Director" → "Rod Schubert"). */
+    facts: z
+      .array(
+        z.object({ label: text(40), value: text(120), icon: z.enum(SUMMARY_ICONS).optional() }),
+      )
+      .max(8)
+      .optional(),
   }),
   web_results: z.object({
     query: text(300),

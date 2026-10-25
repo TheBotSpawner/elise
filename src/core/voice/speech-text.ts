@@ -118,15 +118,49 @@ function clauseEnd(text: string): number {
 
 const OPEN = "<spoken>";
 const CLOSE = "</spoken>";
-/** The model sometimes writes "< spoken>" or "</ Spoken >": the same tag. */
-const LOOSE_OPEN = /<\s*spoken\s*>/gi;
-const LOOSE_CLOSE = /<\s*\/\s*spoken\s*>/gi;
-/** A tag that may still be arriving at the end of a delta ("<", "< spo", "</ spoken "). */
-const PARTIAL_TAG = /<\s*\/?\s*(?:s(?:p(?:o(?:k(?:e(?:n\s*)?)?)?)?)?)?$/i;
+/**
+ * Markup the model may leak into a voice reply, however it writes it — never shown or said:
+ * - the spoken part's tag and its stand-ins: <spoken>, <speak lang="es">, </ Speak >, <speech>,
+ *   <spoke>, <aloud>, and the same in brackets ([spoken] … [/spoken]);
+ * - a tag it invents for the screen part (<display>, <screen>, <on_screen>), only the tag;
+ * - SSML (<break time="1s"/>, <emphasis>, <prosody>, <say-as>…), only the tag.
+ */
+const SPOKEN_WORD = "(?:spoken|speak|speech|spoke|aloud)";
+const LOOSE_OPEN = new RegExp(
+  String.raw`[<\[]\s*${SPOKEN_WORD}(?:\s+[^<>\[\]]{0,80})?\s*[>\]]`,
+  "gi",
+);
+const LOOSE_CLOSE = new RegExp(String.raw`[<\[]\s*\/\s*${SPOKEN_WORD}\s*[>\]]`, "gi");
+const SELF_CLOSING = new RegExp(String.raw`<\s*${SPOKEN_WORD}(?:\s+[^<>]{0,80})?\s*\/\s*>`, "gi");
+const SCREEN_TAG =
+  /[<\[]\s*\/?\s*(?:display|screen|on[_-]?screen)(?:\s+[^<>\[\]]{0,80})?\s*\/?\s*[>\]]/gi;
+const SSML_TAG =
+  /<\s*\/?\s*(?:break|emphasis|prosody|say-as|phoneme|audio|mark|lang|voice|amazon:[\w-]+)(?:\s+[^<>]{0,120})?\s*\/?\s*>/gi;
+/**
+ * A tag that may still be arriving at the end of a delta ("<", "< spo", "</ speak ", "[spok",
+ * "<break time="): held until the next delta decides it (released at the end either way).
+ */
+const PARTIAL_TAG = /[<\[]\s*\/?\s*[a-z:_-]{0,12}(?:\s+[^<>\[\]]{0,80})?$/i;
 
-/** Any leftover spoken tag, however it was written: never shown or said. */
+/** Every leaked tag removed, the spoken ones normalized to <spoken> / </spoken>. */
+const normalizeTags = (text: string) =>
+  text
+    .replace(SELF_CLOSING, "")
+    .replace(SCREEN_TAG, "")
+    .replace(SSML_TAG, "")
+    .replace(LOOSE_OPEN, OPEN)
+    .replace(LOOSE_CLOSE, CLOSE);
+
+/** Any leftover tag, however it was written: never shown or said. */
 export const stripSpokenTags = (text: string) =>
-  text.replace(LOOSE_OPEN, "").replace(LOOSE_CLOSE, "");
+  normalizeTags(text)
+    .split(OPEN)
+    .join("")
+    .split(CLOSE)
+    .join("")
+    // A tag cut short at either end ("<speakLa última…", "…Buenos Aires.</spe").
+    .replace(/^\s*[<\[]\s*\/?\s*(?:spoken|speak|speech|spoke|aloud)(?=\s|[A-ZÁÉÍÓÚÑ¿¡]|$)/i, "")
+    .replace(/[<\[]\s*\/?\s*s(?:p(?:o(?:k(?:e(?:n)?)?)?|e(?:a(?:k)?|e(?:c(?:h)?)?)?)?)?\s*$/i, "");
 
 /**
  * Separates a voice turn's two expressions of the same answer (ADR-019 §spoken vs display):
@@ -141,7 +175,7 @@ export class SpokenSplitter {
   private inside = false;
 
   push(delta: string): { spoken: string; display: string } {
-    this.buffer = (this.buffer + delta).replace(LOOSE_OPEN, OPEN).replace(LOOSE_CLOSE, CLOSE);
+    this.buffer = normalizeTags(this.buffer + delta);
     const out = { spoken: "", display: "" };
     for (;;) {
       const tag = this.inside ? CLOSE : OPEN;
@@ -154,7 +188,7 @@ export class SpokenSplitter {
       }
       // Hold back a possible start of a tag ("<spo", "< sp", "</ spoken ") until the next
       // delta decides it.
-      const partial = PARTIAL_TAG.exec(this.buffer.slice(-16));
+      const partial = PARTIAL_TAG.exec(this.buffer.slice(-100));
       const keep = partial ? partial[0].length : 0;
       this.take(out, this.buffer.slice(0, this.buffer.length - keep));
       this.buffer = this.buffer.slice(this.buffer.length - keep);

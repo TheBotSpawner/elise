@@ -9,6 +9,7 @@ import { Orb } from "@/components/elise/orb/orb";
 import { ORB_LAYOUT_ID } from "@/components/elise/orb/orb-presence";
 import type { OrbState } from "@/components/elise/orb/orb-states";
 import { isHearing, type VoiceState } from "@/core/voice/session";
+import { stripSpokenTags } from "@/core/voice/speech-text";
 import { DraftAttachmentChips, usePasteImages } from "@/features/chat/attachments-ui";
 import { composerDraft } from "@/features/chat/continuity";
 import { AttachToKnowledge } from "@/features/knowledge/attach-dialog";
@@ -196,7 +197,7 @@ export function Dock({
           </>
         ) : controlsOnly ? (
           <span className="flex-1 truncate font-mono text-[10px] tracking-[0.14em] text-faint uppercase">
-            {caption.text || t.canvas.ask}
+            {stripSpokenTags(caption.text) || t.canvas.ask}
           </span>
         ) : (
           <button
@@ -231,7 +232,7 @@ export function Dock({
                     : "text-faint",
               )}
             >
-              {caption.text || (mobile ? t.canvas.askMobile : t.canvas.ask)}
+              {stripSpokenTags(caption.text) || (mobile ? t.canvas.askMobile : t.canvas.ask)}
             </span>
           </button>
         )}

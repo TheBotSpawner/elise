@@ -953,7 +953,8 @@ export function surfacesFromOutcome(
                 : opts.locale === "es"
                   ? "Mercados"
                   : "Markets",
-          source: { capability: "markets", label: m.provider },
+          // The data provider's code name ("fmp") means nothing to the person: no label.
+          source: { capability: "markets", label: null },
           ref: null,
         }),
       );

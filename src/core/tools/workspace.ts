@@ -95,8 +95,28 @@ const presentInput = z
       .max(7)
       .optional()
       .describe(
-        "summary only. kinds: facts (verified data, e.g. from the calendar), context (retrieved from email/recall/documents — say where from), changes, open_items, questions, suggestions (your own ideas, clearly), material.",
+        'summary only. kinds: facts (verified data, e.g. from the calendar), context (retrieved from email/recall/documents — say where from), changes, open_items, questions, suggestions (your own ideas, clearly), material. Write each item as "Short title: one or two sentences" (the title shows in bold; **bold** a key figure), sources as markdown links [site](url) at its end, and give `icons` (one per item, by meaning: scale, dumbbell, building, money, calendar, map-pin, users, globe, chart, alert, check, lightbulb…) so each point is recognizable at a glance.',
       ),
+    lead: z
+      .string()
+      .trim()
+      .max(200)
+      .optional()
+      .describe(
+        'summary only. One line under the title: "Según el contexto, IAFS puede referirse a:".',
+      ),
+    badge: z
+      .string()
+      .trim()
+      .max(40)
+      .optional()
+      .describe('summary only. A short tag by the title: "2 significados", "3 opciones", "Hoy".'),
+    tags: PAYLOADS.summary.shape.tags.describe(
+      'summary only. 2–4 chips that place the subject: where, what kind, a status ("Nueva Zelanda" map-pin, "Asesoramiento financiero" briefcase, "Licenciada por FMA" shield).',
+    ),
+    facts: PAYLOADS.summary.shape.facts.describe(
+      'summary only. Key facts at a glance for a person, company, place or product: label → short value ("Director" → "Rod Schubert", user; "Fundada" → "1957", calendar). Only facts from your sources.',
+    ),
     links: z
       .array(z.object({ title: z.string().trim().min(1).max(200), url: z.string().max(2000) }))
       .min(1)
@@ -199,7 +219,13 @@ export const presentTool: ToolDefinition = {
     if (q.type === "summary") {
       if (!q.sections)
         throw new AppError("VALIDATION_ERROR", "A summary needs sections", { recovery: "review" });
-      const payload = PAYLOADS.summary.parse({ sections: q.sections });
+      const payload = PAYLOADS.summary.parse({
+        sections: q.sections,
+        ...(q.lead ? { lead: q.lead } : {}),
+        ...(q.badge ? { badge: q.badge } : {}),
+        ...(q.tags?.length ? { tags: q.tags } : {}),
+        ...(q.facts?.length ? { facts: q.facts } : {}),
+      });
       w.apply([
         {
           op: "present",

@@ -286,6 +286,12 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     ]),
   );
 
+  // Earlier replies saved with leaked tag markup (<speak>…</speak>) are given back clean: the
+  // model imitates what it sees, and one leaked tag otherwise repeats on every next turn.
+  for (const [i, m] of history.entries())
+    if (m.role === "assistant" && /[<[]/.test(m.content))
+      history[i] = { ...m, content: stripSpokenTags(m.content) };
+
   // Earlier images this turn refers to ("los de la imagen", "agregalos"), shown again on their
   // own turn — bounded, never every image of the conversation (ADR-060).
   const imageRefs = resolveImageContext(history, input.message, Boolean(attached?.images.length));
@@ -717,7 +723,10 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
         let finalText = "";
         let failure: ReturnType<typeof toPublicError> | null = null;
         let usage: { inputTokens: number; outputTokens: number } | null = null;
-        const splitter = modality === "voice" ? new SpokenSplitter() : null;
+        // Every turn goes through it: a typed turn can imitate a spoken one's tags too (the
+        // history has them), and nothing of that markup may reach the screen.
+        const splitter = new SpokenSplitter();
+        const speaks = modality === "voice";
         let displayStarted = false;
         let model: string | null = null;
         // The turn's tool context, kept so a Surface's own read can be replayed (ADR-029).
@@ -856,17 +865,14 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
                 break;
               }
               case "text": {
-                // Voice: the spoken synthesis and the on-screen answer travel separately.
-                if (!splitter) {
-                  send(event);
-                  break;
-                }
+                // Voice: the spoken synthesis and the on-screen answer travel separately; any
+                // tag markup is removed for every turn.
                 const part = splitter.push(event.delta);
                 // The answer is always on screen too: what she says first, then what only the
                 // screen adds (details, sources). A screen part with nothing but the sources
                 // used to leave the thread without the answer itself.
                 if (part.spoken) {
-                  send({ type: "spoken", delta: part.spoken });
+                  if (speaks) send({ type: "spoken", delta: part.spoken });
                   send({ type: "text", delta: part.spoken });
                 }
                 if (part.display) {
@@ -1090,10 +1096,9 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
          * adds. Nothing she said is missing from the thread.
          */
         function finishSpoken(text: string): string {
-          if (!splitter) return stripSpokenTags(text);
           const rest = splitter.flush();
           if (rest.spoken) {
-            send({ type: "spoken", delta: rest.spoken });
+            if (speaks) send({ type: "spoken", delta: rest.spoken });
             send({ type: "text", delta: rest.spoken });
           }
           if (rest.display)
@@ -1103,7 +1108,8 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
             });
           const spoken = stripSpokenTags(splitter.spoken).trim();
           const display = stripSpokenTags(splitter.display).trim();
-          return [spoken, display].filter(Boolean).join("\n\n");
+          // A reply that never streamed (written at the end) is kept as is, clean.
+          return [spoken, display].filter(Boolean).join("\n\n") || stripSpokenTags(text).trim();
         }
 
         /** A request's first tool sets a lightweight intent when there is none yet. */

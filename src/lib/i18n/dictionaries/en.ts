@@ -3714,6 +3714,7 @@ export const en = {
       memory: "Memory",
     },
     applied: "Applied",
+    summarySources: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
     summaryKinds: {
       facts: "Facts",
       context: "Context",
@@ -3732,6 +3733,9 @@ export const en = {
     web: {
       read: "read",
       snippet: "search summary",
+      bestMatch: "Best match",
+      readChip: "Read",
+      snippetChip: "Search summary",
       retrieved: (when: string) => `Retrieved ${when}`,
       truncated: "Long page: only part of it was read.",
       outlets: (n: number) => `${n} outlets`,

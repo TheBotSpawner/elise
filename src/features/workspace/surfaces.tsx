@@ -19,7 +19,10 @@ import {
   Sparkles,
   User,
   Video,
+  BookOpen,
   Globe,
+  Search,
+  Star,
   Newspaper,
   ShoppingBag,
   Telescope,
@@ -53,7 +56,7 @@ import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 import type { ToolDisplay } from "@/core/agents/tools";
 import type { CalendarChange } from "@/core/workspace/calendar";
-import { isSafeHref, type ActionId, type Surface, type SurfaceType } from "@/core/workspace/model";
+import { type ActionId, type Surface, type SurfaceType } from "@/core/workspace/model";
 import { isOpen } from "@/core/workspace/model";
 import type { SurfacePayloads } from "@/core/workspace/registry";
 import { ApprovalCard, type ApprovalPhase } from "@/features/chat/approval-card";
@@ -78,6 +81,7 @@ import type { VisualSize } from "./canvas/composition";
 import { ImageGalleryBody } from "./canvas/image-gallery";
 import { MapBody, PlaceBody } from "./canvas/map";
 import { MediaBody } from "./canvas/media";
+import { SummaryCard } from "./canvas/summary-card";
 import { WeatherView } from "./canvas/weather";
 import { DayPlanBody, useDayLabel } from "./day-plan-view";
 import { EconomyBody } from "./economy-view";
@@ -991,73 +995,6 @@ function SettingsBody({ p }: { p: SurfacePayloads["settings"] }) {
   );
 }
 
-const MD_LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
-
-/** `[site](url)` in a summary item becomes a link when the URL is safe; text otherwise. */
-function withLinks(item: string) {
-  const parts: ReactNode[] = [];
-  let last = 0;
-  for (const m of item.matchAll(MD_LINK)) {
-    parts.push(item.slice(last, m.index));
-    parts.push(
-      isSafeHref(m[2]!) ? (
-        <a
-          key={m.index}
-          href={m[2]}
-          target="_blank"
-          rel="noopener noreferrer nofollow"
-          className="text-accent-text underline underline-offset-2"
-        >
-          {m[1]}
-        </a>
-      ) : (
-        m[1]
-      ),
-    );
-    last = m.index + m[0].length;
-  }
-  parts.push(item.slice(last));
-  return parts;
-}
-
-function SummaryBody({ p, large }: { p: SurfacePayloads["summary"]; large: boolean }) {
-  const { t } = useI18n();
-  return (
-    <div className={cn("grid gap-4", large && "md:grid-cols-2")}>
-      {p.sections.map((s, i) => (
-        <section key={`${s.kind}-${i}`} className="flex flex-col gap-1.5">
-          <h3
-            className={cn(
-              "type-label",
-              s.kind === "suggestions"
-                ? "text-accent-text"
-                : s.kind === "facts"
-                  ? "text-fg"
-                  : "text-faint",
-            )}
-          >
-            {s.heading || t.workspace.summaryKinds[s.kind]}
-          </h3>
-          <ul className="flex flex-col gap-1">
-            {s.items.map((item, j) => (
-              <li
-                key={j}
-                className={cn(TEXT, "flex gap-2", s.kind === "suggestions" && "text-muted italic")}
-              >
-                <span
-                  aria-hidden
-                  className="mt-[9px] size-1 shrink-0 rounded-full bg-border-strong"
-                />
-                <span>{withLinks(item)}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-    </div>
-  );
-}
-
 /** Surface content by type. */
 export function SurfaceBody({
   surface,
@@ -1135,7 +1072,7 @@ export function SurfaceBody({
     case "settings":
       return <SettingsBody p={p} />;
     case "summary":
-      return <SummaryBody p={p} large={large} />;
+      return <SummaryCard p={p} title={surface.title} large={large} />;
     case "answer":
       return <AnswerBody p={p} large={large} />;
     case "market":
@@ -1323,7 +1260,6 @@ function SourceLine({
   inspected?: boolean;
   timezone: string;
 }) {
-  const { t } = useI18n();
   const f = useFormat(timezone);
   return (
     <span className="flex min-w-0 flex-col">
@@ -1331,18 +1267,39 @@ function SourceLine({
         href={url}
         target="_blank"
         rel="noopener noreferrer nofollow"
-        className="min-w-0 truncate text-[14px] hover:text-accent-text hover:underline"
+        className="min-w-0 truncate text-[14px] font-medium text-accent-text hover:underline"
       >
         {title}
       </a>
-      <span className="flex min-w-0 items-center gap-1.5 truncate text-[12px] text-faint">
-        <Globe className="size-3 shrink-0" aria-hidden />
-        <span className="truncate">{domain}</span>
+      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <Globe className="size-3.5 shrink-0" aria-hidden />
+          <span className="truncate">{domain}</span>
+        </span>
         {publishedAt && <span className="font-mono">· {f.date(publishedAt)}</span>}
-        {inspected !== undefined && (
-          <span>· {inspected ? t.workspace.web.read : t.workspace.web.snippet}</span>
-        )}
+        {inspected !== undefined && <ReadChip inspected={inspected} />}
       </span>
+    </span>
+  );
+}
+
+/** Whether ELISE read the page itself or only saw the search engine's summary. */
+function ReadChip({ inspected }: { inspected: boolean }) {
+  const { t } = useI18n();
+  const w = t.workspace.web;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px]",
+        inspected ? "bg-accent-soft text-accent-text" : "bg-surface-2 text-muted",
+      )}
+    >
+      {inspected ? (
+        <BookOpen className="size-3" aria-hidden />
+      ) : (
+        <Search className="size-3" aria-hidden />
+      )}
+      {inspected ? w.readChip : w.snippetChip}
     </span>
   );
 }
@@ -1351,7 +1308,8 @@ function RetrievedAt({ at, timezone }: { at: string; timezone: string }) {
   const { t } = useI18n();
   const f = useFormat(timezone);
   return (
-    <p className="text-[11.5px] text-faint">
+    <p className="flex items-center gap-1.5 border-t border-border pt-2.5 text-[11.5px] text-faint">
+      <Clock className="size-3.5" aria-hidden />
       {t.workspace.web.retrieved(`${f.date(at)} ${f.time(at)}`)}
     </p>
   );
@@ -1366,17 +1324,58 @@ function WebResultsBody({
   timezone: string;
   large: boolean;
 }) {
+  const { t } = useI18n();
+  const f = useFormat(timezone);
+  const w = t.workspace.web;
   return (
     <div className="flex flex-col gap-3">
-      <ol className="flex flex-col gap-2.5">
-        {p.results.slice(0, large ? 8 : 5).map((r) => (
-          <li key={r.url} className="flex flex-col gap-1">
-            <SourceLine {...r} timezone={timezone} />
-            {(r.passages[0] ?? r.snippet) && (
-              <p className={cn(TEXT, "line-clamp-2 text-muted")}>{r.passages[0] ?? r.snippet}</p>
-            )}
-          </li>
-        ))}
+      <ol className="flex flex-col divide-y divide-border">
+        {p.results.slice(0, large ? 8 : 5).map((r, i) => {
+          // The first result is the ranked best match: it stands out, the rest follow.
+          const best = i === 0 && p.results.length > 1;
+          const text = r.passages[0] ?? r.snippet;
+          return (
+            <li
+              key={r.url}
+              className={cn(
+                "flex flex-col gap-1.5 py-3 first:pt-0 last:pb-0",
+                best &&
+                  "mb-1 rounded-2xl border border-accent-line/50 bg-accent-soft/25 px-3.5 py-3 first:pt-3",
+              )}
+            >
+              {best && (
+                <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-[color-mix(in_oklab,#16a36a_14%,transparent)] px-2.5 py-0.5 text-[12px] font-medium text-[#127a51] dark:text-[#5fd39f]">
+                  <Star className="size-3 fill-current" aria-hidden />
+                  {w.bestMatch}
+                </span>
+              )}
+              <a
+                href={r.url}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                className={cn(
+                  "min-w-0 font-medium text-accent-text hover:underline",
+                  best ? "text-[16px] leading-snug" : "line-clamp-2 text-[14.5px] leading-snug",
+                )}
+              >
+                {r.title}
+              </a>
+              <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
+                <span className="inline-flex min-w-0 items-center gap-1.5">
+                  <Globe className="size-3.5 shrink-0" aria-hidden />
+                  <span className="truncate">{r.domain}</span>
+                </span>
+                {r.publishedAt && <span className="font-mono">· {f.date(r.publishedAt)}</span>}
+                <ReadChip inspected={r.inspected} />
+              </span>
+              {text && (
+                <p className={cn(TEXT, "text-muted", best ? "line-clamp-3" : "line-clamp-2")}>
+                  {text}
+                </p>
+              )}
+            </li>
+          );
+        })}
       </ol>
       <RetrievedAt at={p.retrievedAt} timezone={timezone} />
     </div>
@@ -1563,30 +1562,32 @@ function WebResearchBody({
   const { t } = useI18n();
   return (
     <div className="flex flex-col gap-4">
-      <ol className="flex flex-col gap-3">
+      <ol className="flex flex-col gap-4">
         {p.subquestions.map((s) => (
-          <li key={s.question} className="flex flex-col gap-1.5">
-            <p className="flex items-center gap-2 text-[14px]">
+          <li key={s.question} className="flex flex-col gap-2">
+            <p className="flex items-center gap-2.5 text-[14px] font-semibold">
               <span
                 aria-hidden
                 className={cn(
-                  "size-1.5 shrink-0 rounded-full",
+                  "grid size-7 shrink-0 place-items-center rounded-full",
                   s.status === "searching"
-                    ? "animate-pulse bg-accent"
+                    ? "animate-pulse bg-accent-soft text-accent-text"
                     : s.status === "done"
-                      ? "bg-accent/60"
-                      : "bg-approval",
+                      ? "bg-accent-soft text-accent-text"
+                      : "bg-approval/15 text-approval",
                 )}
-              />
+              >
+                <Search className="size-3.5" />
+              </span>
               <span className="min-w-0">{s.question}</span>
-              <span className="ml-auto shrink-0 text-[12px] text-faint">
+              <span className="ml-auto shrink-0 text-[12px] font-normal text-faint">
                 {t.workspace.web.status[s.status]}
               </span>
             </p>
             {s.sources.length > 0 && (
-              <ul className="flex flex-col gap-1.5 pl-3.5">
+              <ul className="ml-3.5 flex flex-col divide-y divide-border rounded-xl border border-border bg-surface-2/40 px-3 py-1">
                 {s.sources.map((src) => (
-                  <li key={src.url}>
+                  <li key={src.url} className="py-2">
                     <SourceLine {...src} timezone={timezone} />
                   </li>
                 ))}

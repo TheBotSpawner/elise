@@ -255,3 +255,16 @@ test("images come on their own when they help: a person, two places, a logo", as
   expect(person.tools.map((t) => t.tool_name)).toContain("web.images");
   expect(two.galleries.some((g) => g.groups.length >= 2)).toBe(true);
 });
+
+test("summary and web cards look the part (screenshots)", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await signIn(page);
+  const iafs = await ask(page, "¿Qué es IAFS?");
+  await page.screenshot({ path: `${OUT}/card-iafs.png` });
+  const company = await ask(page, "¿Qué es OpenAI? Contame quién la dirige y desde cuándo existe");
+  await page.screenshot({ path: `${OUT}/card-company.png` });
+  report.cards = {
+    iafs: iafs.tools.map((t) => t.tool_name),
+    company: company.tools.map((t) => t.tool_name),
+  };
+});

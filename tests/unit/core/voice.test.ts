@@ -1944,3 +1944,64 @@ describe("cut phrases and loose spoken tags", () => {
     expect(s.display).toBe("Detalle en pantalla.");
   });
 });
+
+describe("spoken tag variants", () => {
+  it("<speak>, <speech> and <spoke> are the spoken tag too, even split across deltas", async () => {
+    const { SpokenSplitter, stripSpokenTags } = await import("@/core/voice/speech-text");
+    const s = new SpokenSplitter();
+    let spoken = "";
+    let display = "";
+    for (const d of [
+      "<spe",
+      "ak>La última cotización",
+      " es 524,51.</sp",
+      "eak>",
+      "Fuentes: FMP",
+    ]) {
+      const o = s.push(d);
+      spoken += o.spoken;
+      display += o.display;
+    }
+    const f = s.flush();
+    spoken += f.spoken;
+    display += f.display;
+    expect(spoken).toBe("La última cotización es 524,51.");
+    expect(display).toBe("Fuentes: FMP");
+    expect(stripSpokenTags("<speech>hola</ Speech >")).toBe("hola");
+  });
+});
+
+describe("no tag markup ever reaches the screen or the voice", () => {
+  it("strips every variant the model has been seen (or could) write", async () => {
+    const { stripSpokenTags } = await import("@/core/voice/speech-text");
+    const cases: [string, string][] = [
+      ["<speak>Hola</speak>", "Hola"],
+      ['<speak lang="es-AR">Hola</speak>', "Hola"],
+      ["[spoken]Hola[/spoken]", "Hola"],
+      ["<SPOKEN >Hola</ Spoken>", "Hola"],
+      ["Hola<spoken/>", "Hola"],
+      ['Te cuento.<break time="1s"/> Listo', "Te cuento. Listo"],
+      ["<emphasis>Hoy</emphasis> no", "Hoy no"],
+      ["<display>Fuentes: FMP</display>", "Fuentes: FMP"],
+      ["<speakLa última cotización", "La última cotización"],
+      ["Buenos Aires.</spe", "Buenos Aires."],
+      // Ordinary text and links are untouched.
+      ["Ver [Amazon](https://a.co) y 3 < 5", "Ver [Amazon](https://a.co) y 3 < 5"],
+    ];
+    for (const [input, want] of cases) expect(stripSpokenTags(input), input).toBe(want);
+  });
+
+  it("a typed reply that imitates the tags is cleaned while streaming too", async () => {
+    const { SpokenSplitter } = await import("@/core/voice/speech-text");
+    const s = new SpokenSplitter();
+    let out = "";
+    for (const d of ["[spo", "ken]Respuesta", " corta[/spoken]\n<display>Fuentes</display>"]) {
+      const o = s.push(d);
+      out += o.spoken + o.display;
+    }
+    const f = s.flush();
+    out += f.spoken + f.display;
+    expect(out).not.toMatch(/spoken|display|[<[]/);
+    expect(out).toContain("Respuesta corta");
+  });
+});

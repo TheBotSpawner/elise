@@ -7,6 +7,7 @@ import Markdown from "react-markdown";
 
 import { stripCitationMarkers } from "@/core/agents/citation-markers";
 import type { ToolDisplay } from "@/core/agents/tools";
+import { stripSpokenTags } from "@/core/voice/speech-text";
 import { isPlumbing } from "@/core/workspace/presentation";
 import { activityLabel } from "@/features/workspace/activity-labels";
 import { useI18n } from "@/lib/i18n/client";
@@ -188,7 +189,8 @@ function AssistantMessage({
                 ),
               }}
             >
-              {stripCitationMarkers(message.content)}
+              {/* Replies saved before a tag was recognized still show without it. */}
+              {stripCitationMarkers(stripSpokenTags(message.content))}
             </Markdown>
           </div>
         )}
