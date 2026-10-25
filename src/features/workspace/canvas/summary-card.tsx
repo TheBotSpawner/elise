@@ -9,6 +9,7 @@ import {
   Car,
   ChartLine,
   Check,
+  ChefHat,
   CircleDot,
   CircleHelp,
   Clock,
@@ -18,6 +19,7 @@ import {
   ExternalLink,
   File,
   FileText,
+  Flame,
   Globe,
   GraduationCap,
   Heart,
@@ -26,8 +28,10 @@ import {
   Leaf,
   Lightbulb,
   Link2,
+  List,
   Mail,
   MapPin,
+  Package,
   Paperclip,
   Phone,
   Plane,
@@ -39,6 +43,7 @@ import {
   User,
   Users,
   Utensils,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -52,7 +57,7 @@ import { cn } from "@/lib/utils";
 type Summary = SurfacePayloads["summary"];
 type Kind = Summary["sections"][number]["kind"];
 
-const ICONS: Record<SummaryIcon, LucideIcon> = {
+export const ICONS: Record<SummaryIcon, LucideIcon> = {
   info: Info,
   check: Check,
   alert: AlertTriangle,
@@ -85,6 +90,11 @@ const ICONS: Record<SummaryIcon, LucideIcon> = {
   file: File,
   link: Link2,
   question: CircleHelp,
+  wrench: Wrench,
+  package: Package,
+  chef: ChefHat,
+  flame: Flame,
+  list: List,
 };
 
 /** Each kind of section: its own icon and tint, so a glance tells facts from suggestions. */
@@ -98,10 +108,10 @@ const KIND: Record<Kind, { icon: LucideIcon; tone: Tone }> = {
   material: { icon: Paperclip, tone: "slate" },
 };
 
-type Tone = "teal" | "blue" | "amber" | "orange" | "violet" | "accent" | "slate" | "green";
+export type Tone = "teal" | "blue" | "amber" | "orange" | "violet" | "accent" | "slate" | "green";
 /** Item bubbles cycle through these so two options never look alike. */
-const CYCLE: Tone[] = ["teal", "green", "blue", "violet", "amber", "orange"];
-const TONE: Record<Tone, { bubble: string; number: string; line: string }> = {
+export const CYCLE: Tone[] = ["teal", "green", "blue", "violet", "amber", "orange"];
+export const TONE: Record<Tone, { bubble: string; number: string; line: string }> = {
   teal: {
     bubble: "bg-[color-mix(in_oklab,#0e9fb0_14%,transparent)] text-[#0b7f8c] dark:text-[#5fd3df]",
     number: "bg-[color-mix(in_oklab,#0e9fb0_16%,transparent)] text-[#0b7f8c] dark:text-[#5fd3df]",
@@ -223,39 +233,7 @@ export function SummaryCard({ p, title, large }: { p: Summary; title: string; la
   // squeezed beside another stacks instead of crushing its text.
   return (
     <div className="@container flex flex-col gap-4">
-      {(title || p.badge || p.lead) && (
-        <header className="flex flex-col gap-1.5">
-          <div className="flex flex-wrap items-center gap-2.5">
-            {title && (
-              <h2 className="text-[22px] leading-tight font-semibold tracking-tight text-fg">
-                {title}
-              </h2>
-            )}
-            {p.badge && (
-              <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[12.5px] font-medium text-accent-text">
-                {p.badge}
-              </span>
-            )}
-          </div>
-          {p.lead && <p className="text-[14px] text-muted">{p.lead}</p>}
-          {p.tags && p.tags.length > 0 && (
-            <ul className="mt-1.5 flex flex-wrap gap-2">
-              {p.tags.map((tag, i) => {
-                const Icon = tag.icon ? ICONS[tag.icon] : null;
-                return (
-                  <li
-                    key={i}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-accent-line/50 bg-accent-soft/40 px-3 py-1 text-[12.5px] text-accent-text"
-                  >
-                    {Icon && <Icon className="size-3.5" aria-hidden />}
-                    {tag.label}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </header>
-      )}
+      <SummaryHeader title={title} p={p} />
       <div
         className={cn("grid gap-5", side && "@2xl:grid-cols-[minmax(0,1fr)_minmax(240px,0.7fr)]")}
       >
@@ -391,6 +369,70 @@ export function SummaryCard({ p, title, large }: { p: Summary; title: string; la
         </footer>
       )}
     </div>
+  );
+}
+
+/**
+ * The card's head: title with its tag, the one-line lead, and the chips that place the subject.
+ * `icon` puts a large bubble beside it (a guide's wrench, a recipe's hat).
+ */
+export function SummaryHeader({
+  title,
+  p,
+  icon: Icon,
+}: {
+  title: string;
+  p: Pick<Summary, "badge" | "lead" | "tags">;
+  icon?: LucideIcon;
+}) {
+  if (!title && !p.badge && !p.lead && !p.tags?.length) return null;
+  return (
+    <header className="flex gap-3.5">
+      {Icon && (
+        <span
+          aria-hidden
+          className="grid size-14 shrink-0 place-items-center rounded-2xl bg-accent-soft text-accent-text"
+        >
+          <Icon className="size-7" />
+        </span>
+      )}
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {title && (
+            <h2 className="text-[22px] leading-tight font-semibold tracking-tight text-fg">
+              {title}
+            </h2>
+          )}
+          {p.badge && (
+            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[12.5px] font-medium text-accent-text">
+              {p.badge}
+            </span>
+          )}
+        </div>
+        {p.lead && <p className="text-[14px] text-muted">{p.lead}</p>}
+        {p.tags && p.tags.length > 0 && <Chips chips={p.tags} />}
+      </div>
+    </header>
+  );
+}
+
+/** Rounded chips with an icon ("25 min", "2 porciones", "Vegetariana"). */
+export function Chips({ chips }: { chips: { label: string; icon?: SummaryIcon | LucideIcon }[] }) {
+  return (
+    <ul className="mt-1.5 flex flex-wrap gap-2">
+      {chips.map((chip, i) => {
+        const Icon = typeof chip.icon === "string" ? ICONS[chip.icon] : chip.icon;
+        return (
+          <li
+            key={i}
+            className="inline-flex items-center gap-1.5 rounded-full border border-accent-line/50 bg-accent-soft/40 px-3 py-1 text-[12.5px] text-accent-text"
+          >
+            {Icon && <Icon className="size-3.5" aria-hidden />}
+            {chip.label}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

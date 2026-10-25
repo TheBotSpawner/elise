@@ -81,6 +81,7 @@ import type { VisualSize } from "./canvas/composition";
 import { ImageGalleryBody } from "./canvas/image-gallery";
 import { MapBody, PlaceBody } from "./canvas/map";
 import { MediaBody } from "./canvas/media";
+import { GuideCard, RecipeCard } from "./canvas/practical-cards";
 import { SummaryCard } from "./canvas/summary-card";
 import { WeatherView } from "./canvas/weather";
 import { DayPlanBody, useDayLabel } from "./day-plan-view";
@@ -1071,8 +1072,13 @@ export function SurfaceBody({
       return <LinksBody p={p} />;
     case "settings":
       return <SettingsBody p={p} />;
-    case "summary":
-      return <SummaryCard p={p} title={surface.title} large={large} />;
+    case "summary": {
+      const sp = surface.payload as SurfacePayloads["summary"];
+      // A recipe or a how-to gets its own layout; any other summary, the summary card.
+      if (sp.recipe) return <RecipeCard p={{ ...sp, recipe: sp.recipe }} title={surface.title} />;
+      if (sp.guide) return <GuideCard p={{ ...sp, guide: sp.guide }} title={surface.title} />;
+      return <SummaryCard p={sp} title={surface.title} large={large} />;
+    }
     case "answer":
       return <AnswerBody p={p} large={large} />;
     case "market":

@@ -91,7 +91,6 @@ const presentInput = z
     title: z.string().trim().min(1).max(120),
     sections: z
       .array(section)
-      .min(1)
       .max(7)
       .optional()
       .describe(
@@ -113,6 +112,12 @@ const presentInput = z
       .describe('summary only. A short tag by the title: "2 significados", "3 opciones", "Hoy".'),
     tags: PAYLOADS.summary.shape.tags.describe(
       'summary only. 2–4 chips that place the subject: where, what kind, a status ("Nueva Zelanda" map-pin, "Asesoramiento financiero" briefcase, "Licenciada por FMA" shield).',
+    ),
+    recipe: PAYLOADS.summary.shape.recipe.describe(
+      'summary only, for a recipe ("¿cómo se hace el pollo al verdeo?"): times (prep, cook, total: "10 min"), servings ("2 porciones"), difficulty ("Fácil"), ingredients with amounts ("200 g pasta"), steps one action each, an optional tip. Diet or style as tags ("Vegetariana" leaf). image: only a photo already shown by web.images in this workspace (its url, alt and credit) — omit it otherwise. sections may then be empty.',
+    ),
+    guide: PAYLOADS.summary.shape.guide.describe(
+      "summary only, for step-by-step instructions (assembling, installing, setting up, a how-to): icon (wrench, package, list…), duration, difficulty, materials/tools, steps as {title: short action, text: one detail line}, an optional tip. sections may then be empty.",
     ),
     facts: PAYLOADS.summary.shape.facts.describe(
       'summary only. Key facts at a glance for a person, company, place or product: label → short value ("Director" → "Rod Schubert", user; "Fundada" → "1957", calendar). Only facts from your sources.',
@@ -192,6 +197,19 @@ function knownUrls(state: WorkspaceState): Set<string> {
   return urls;
 }
 
+/** Photos already shown in this workspace's galleries (a recipe may use one of them). */
+function knownImages(state: WorkspaceState): Set<string> {
+  const urls = new Set<string>();
+  for (const s of state.surfaces)
+    if (s.type === "image_gallery")
+      for (const g of (s.payload as SurfacePayloads["image_gallery"]).groups)
+        for (const im of g.images) {
+          urls.add(im.thumbnailUrl);
+          if (im.imageUrl) urls.add(im.imageUrl);
+        }
+  return urls;
+}
+
 const domainOf = (url: string) => {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -217,10 +235,19 @@ export const presentTool: ToolDefinition = {
     const intentKey = state.intent?.id ?? "none";
     const at = now(env);
     if (q.type === "summary") {
-      if (!q.sections)
+      if (!q.sections?.length && !q.recipe && !q.guide)
         throw new AppError("VALIDATION_ERROR", "A summary needs sections", { recovery: "review" });
+      // A recipe's photo is one ELISE already showed (a gallery), never a URL from nowhere.
+      if (q.recipe?.image && !knownImages(state).has(q.recipe.image.url))
+        throw new AppError(
+          "VALIDATION_ERROR",
+          "The recipe photo must be one already shown by web.images in this workspace — or omit it.",
+          { recovery: "review" },
+        );
       const payload = PAYLOADS.summary.parse({
-        sections: q.sections,
+        sections: q.sections ?? [],
+        ...(q.recipe ? { recipe: q.recipe } : {}),
+        ...(!q.recipe && q.guide ? { guide: q.guide } : {}),
         ...(q.lead ? { lead: q.lead } : {}),
         ...(q.badge ? { badge: q.badge } : {}),
         ...(q.tags?.length ? { tags: q.tags } : {}),

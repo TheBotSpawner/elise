@@ -101,7 +101,14 @@ export const SurfaceView = memo(function SurfaceView({
   const { t } = useI18n();
   const reduced = Boolean(useReducedMotion());
   const Icon = SURFACE_ICONS[surface.type];
-  const typeLabel = t.workspace.types[surface.type];
+  const sp =
+    surface.type === "summary" ? (surface.payload as { recipe?: unknown; guide?: unknown }) : null;
+  // A summary laid out as a recipe or a how-to says so in its header.
+  const typeLabel = sp?.recipe
+    ? t.workspace.recipe.label
+    : sp?.guide
+      ? t.workspace.guide.label
+      : t.workspace.types[surface.type];
   const name = surface.title || typeLabel;
   const motionProps = surfaceMotion(reduced);
   const attention = surface.state === "attention";

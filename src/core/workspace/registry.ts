@@ -740,7 +740,6 @@ export const PAYLOADS = {
           icons: z.array(z.enum(SUMMARY_ICONS)).max(8).optional(),
         }),
       )
-      .min(1)
       .max(7),
     /** One line under the title ("Según el contexto, IAFS puede referirse a:"). */
     lead: text(200).optional(),
@@ -757,6 +756,37 @@ export const PAYLOADS = {
         z.object({ label: text(40), value: text(120), icon: z.enum(SUMMARY_ICONS).optional() }),
       )
       .max(8)
+      .optional(),
+    /**
+     * A recipe, laid out as one: times, ingredients to tick off, numbered steps, a tip. Its photo
+     * only from an image ELISE already showed (a gallery), never an invented URL.
+     */
+    recipe: z
+      .object({
+        prep: text(24).optional(),
+        cook: text(24).optional(),
+        total: text(24).optional(),
+        servings: text(32).optional(),
+        difficulty: text(32).optional(),
+        ingredients: z.array(text(120)).min(1).max(20),
+        steps: z.array(text(300)).min(1).max(12),
+        tip: text(240).optional(),
+        image: z.object({ url: href, alt: text(160), credit: text(160).nullable() }).optional(),
+      })
+      .optional(),
+    /** Step-by-step instructions (assembling, setting up, a how-to): materials and steps to tick. */
+    guide: z
+      .object({
+        icon: z.enum(SUMMARY_ICONS).optional(),
+        duration: text(32).optional(),
+        difficulty: text(32).optional(),
+        materials: z.array(text(100)).max(15).optional(),
+        steps: z
+          .array(z.object({ title: text(80), text: text(300).optional() }))
+          .min(1)
+          .max(12),
+        tip: text(240).optional(),
+      })
       .optional(),
   }),
   web_results: z.object({
@@ -1505,7 +1535,15 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     size: "large",
     priority: 90,
     actions: () => [],
-    describe: (p) => p.sections.map((s) => s.heading).join(" · "),
+    describe: (p) =>
+      [
+        p.recipe &&
+          `recipe: ${p.recipe.ingredients.length} ingredients, ${p.recipe.steps.length} steps`,
+        p.guide && `step-by-step: ${p.guide.steps.map((s) => s.title).join(" → ")}`,
+        ...p.sections.map((s) => s.heading),
+      ]
+        .filter(Boolean)
+        .join(" · "),
   },
   web_results: {
     sizes: ["small", "medium", "large", "expanded"],

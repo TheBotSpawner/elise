@@ -35,5 +35,10 @@ export const SUMMARY_ICONS = [
   "file",
   "link",
   "question",
+  "wrench",
+  "package",
+  "chef",
+  "flame",
+  "list",
 ] as const;
 export type SummaryIcon = (typeof SUMMARY_ICONS)[number];

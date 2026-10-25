@@ -393,6 +393,49 @@ describe("ui tools for the Live Canvas", () => {
     expect(viz?.payload).toMatchObject({ spec: { type: "hbar", title: "Chart" } });
   });
 
+  it("a recipe or a how-to is a summary of its own shape; a recipe photo only from a gallery shown", async () => {
+    const ws = new FakeWorkspace();
+    const { ports } = makePorts([]);
+    const ctx = makeCtx({ workspace: ws });
+    const call = (args: object) => executeToolCall(ports, ctx, { name: "ui.present", args });
+    const recipe = {
+      total: "25 min",
+      servings: "2 porciones",
+      ingredients: ["200 g pasta", "150 g champiñones"],
+      steps: ["Herví la pasta.", "Salteá los champiñones."],
+      tip: "Reservá agua de cocción.",
+    };
+    expect(await call({ type: "summary", title: "Pasta cremosa", recipe })).toMatchObject({
+      status: "succeeded",
+    });
+    const card = ws.value.surfaces.find((s) => s.type === "summary");
+    expect(card?.payload).toMatchObject({ sections: [], recipe: { total: "25 min" } });
+
+    expect(
+      await call({
+        type: "summary",
+        title: "Pasta cremosa",
+        recipe: {
+          ...recipe,
+          image: { url: "https://example.org/pasta.jpg", alt: "x", credit: null },
+        },
+      }),
+    ).toMatchObject({ status: "failed", error: { code: "VALIDATION_ERROR" } });
+
+    expect(
+      await call({
+        type: "summary",
+        title: "Armar un escritorio",
+        guide: {
+          icon: "wrench",
+          materials: ["Tablero", "Tornillos"],
+          steps: [{ title: "Prepará las piezas", text: "Separá tornillos." }],
+        },
+      }),
+    ).toMatchObject({ status: "succeeded" });
+    expect(await call({ type: "summary", title: "Nada" })).toMatchObject({ status: "failed" });
+  });
+
   it("present media only from URLs the workspace already holds", async () => {
     const ws = new FakeWorkspace();
     const yt = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";

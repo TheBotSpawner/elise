@@ -268,3 +268,18 @@ test("summary and web cards look the part (screenshots)", async ({ page }) => {
     company: company.tools.map((t) => t.tool_name),
   };
 });
+
+test("a recipe and a how-to get their own cards (screenshots)", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await signIn(page);
+  const recipe = await ask(page, "¿Cómo se hace una pasta cremosa de champiñones para dos?");
+  await expect(page.getByText("Ingredientes").first()).toBeVisible();
+  await page.screenshot({ path: `${OUT}/card-recipe.png` });
+  const guide = await ask(page, "¿Cómo armo un escritorio de trabajo? Paso a paso");
+  await expect(page.getByText(/de \d+ completados/).first()).toBeVisible();
+  await page.screenshot({ path: `${OUT}/card-guide.png` });
+  report.practical = {
+    recipe: recipe.tools.map((t) => t.tool_name),
+    guide: guide.tools.map((t) => t.tool_name),
+  };
+});
