@@ -13,6 +13,7 @@ import {
   termScore,
   TtlCache,
   wantsRecent,
+  withSpellings,
   type LiveCandidate,
   type LiveRoot,
 } from "@/core/knowledge/live";
@@ -243,7 +244,7 @@ export function liveKnowledge(auth: AuthContext) {
       const terms = searchTerms(q.text);
       const { data: spaceRows } = await auth.db
         .from("knowledge_spaces")
-        .select("id, name, parent_space_id, description")
+        .select("id, name, parent_space_id")
         .eq("workspace_id", auth.workspaceId);
       const spaceName = new Map(
         spacePaths(
@@ -265,12 +266,13 @@ export function liveKnowledge(auth: AuthContext) {
           : [],
       );
       const chosen = rankRoots(roots, terms);
-      // Stage 3 searches the subject, not the words that only say where to look.
+      // Stage 3 searches the subject, not the words that only say where to look. Names only:
+      // a Space's description is prose that often holds the very subject ("cronograma, clases").
       const scopeNames = [
         ...chosen.map((r) => r.name),
         ...(spaceRows ?? [])
           .filter((s) => chosen.some((r) => r.spaceId === s.id))
-          .flatMap((s) => [s.name, s.description ?? ""]),
+          .map((s) => s.name),
       ];
       const subject = subjectTerms(terms, scopeNames);
       // Nothing left to match ("¿qué hay en la Pipeline?"): the newest is the useful answer.
@@ -282,7 +284,9 @@ export function liveKnowledge(auth: AuthContext) {
       };
       const perRoot = await Promise.all(
         chosen.map((r) =>
-          candidates(r, config.get(r.sourceId), subject, recent).catch(fail(r.name)),
+          candidates(r, config.get(r.sourceId), withSpellings(q.text, subject), recent).catch(
+            fail(r.name),
+          ),
         ),
       );
       const picked = pickCandidates(perRoot.map((l) => l ?? []));

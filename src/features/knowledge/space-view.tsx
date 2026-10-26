@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import {
   archiveSpaceAction,
   deleteItemAction,
+  describeItemAction,
   moveItemAction,
   removeSourceAction,
   retryItemAction,
@@ -136,6 +137,7 @@ export function SpaceView({
   const [editingSpace, setEditingSpace] = useState(false);
   const [creatingSection, setCreatingSection] = useState(false);
   const [moving, setMoving] = useState<ItemView | null>(null);
+  const [describing, setDescribing] = useState<ItemView | null>(null);
   const isSection = Boolean(space.parentId);
   const parent = isSection ? allSpaces.find((s) => s.id === space.parentId) : undefined;
   // Where an uploaded document can go: within this Space and its Sections, never elsewhere.
@@ -619,6 +621,9 @@ export function SpaceView({
                       >
                         {item.title}
                       </Link>
+                      {item.description && (
+                        <p className="line-clamp-2 text-[12.5px] text-muted">{item.description}</p>
+                      )}
                       <p className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
                         <span
                           aria-hidden
@@ -651,6 +656,16 @@ export function SpaceView({
                         onClick={() => act(() => retryItemAction(item.id))}
                       >
                         {t.knowledge.retry}
+                      </Button>
+                    )}
+                    {item.status !== "removed" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={pending}
+                        onClick={() => setDescribing(item)}
+                      >
+                        {t.knowledge.describe.action}
                       </Button>
                     )}
                     {item.sourceType === "upload" && moveTargets.length > 0 && (
@@ -706,6 +721,15 @@ export function SpaceView({
         )}
       </section>
 
+      <DescribeItemDialog
+        key={describing?.id ?? "none"}
+        item={describing}
+        onClose={() => setDescribing(null)}
+        onSaved={() => {
+          setDescribing(null);
+          router.refresh();
+        }}
+      />
       <MoveItemDialog
         item={moving}
         targets={moveTargets}
@@ -807,6 +831,62 @@ function SpaceSettingsDialog({
         >
           {t.knowledge.archive}
         </Button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** The user's own words about a document: what it is and when it's useful (ADR-122). */
+function DescribeItemDialog({
+  item,
+  onClose,
+  onSaved,
+}: {
+  item: ItemView | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { t } = useI18n();
+  const [text, setText] = useState(item?.description ?? "");
+  const [pending, startTransition] = useTransition();
+  return (
+    <Dialog
+      open={Boolean(item)}
+      onClose={onClose}
+      busy={pending}
+      title={t.knowledge.describe.title(item?.title ?? "")}
+    >
+      <div className="flex flex-col gap-3">
+        <textarea
+          aria-label={t.knowledge.describe.action}
+          rows={4}
+          className="min-h-24 w-full resize-none rounded-xl border border-border bg-surface px-3 py-2.5 text-sm text-fg transition-colors hover:border-border-strong focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:outline-none"
+          maxLength={1000}
+          value={text}
+          placeholder={t.knowledge.describe.placeholder}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <p className="text-[12.5px] text-muted">{t.knowledge.describe.hint}</p>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} disabled={pending}>
+            {t.knowledge.cancel}
+          </Button>
+          <Button
+            disabled={pending || !item}
+            onClick={() =>
+              startTransition(async () => {
+                const r = await describeItemAction(item!.id, text);
+                if (!r.ok) toast.error(errorText(t, r.error));
+                else {
+                  toast.success(t.knowledge.describe.saved);
+                  onSaved();
+                }
+              })
+            }
+          >
+            {t.knowledge.describe.save}
+          </Button>
+        </div>
       </div>
     </Dialog>
   );

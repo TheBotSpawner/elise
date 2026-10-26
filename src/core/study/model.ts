@@ -52,6 +52,11 @@ export interface StudyScope {
   units: string[];
   /** Concepts this session draws from (null: all of the context). */
   conceptIds: string[] | null;
+  /**
+   * Question banks this session asks from, as written (ADR-122): the user's real exam
+   * questions are never replaced by invented ones. Absent: questions are written per concept.
+   */
+  bankItemIds?: string[];
 }
 
 export interface StudyPreferences {
@@ -341,4 +346,67 @@ export function progressCounts(concepts: StudyConcept[]): Record<ConceptStatus, 
   };
   for (const c of concepts) out[c.status]++;
   return out;
+}
+
+// ── Question banks (ADR-122) ─────────────────────────────────────────────────
+
+const BANK =
+  /\b(consignas?|preguntas?|cuestionarios?|banco de preguntas|ejercicios|simulacros?|modelos? de (examen|parcial|final)|questions?|question bank|quiz)\b/;
+
+/** A document of exam questions ("100 CONSIGNAS del EPI"), by its name or the user's description. */
+export function isQuestionBank(doc: { title: string; description?: string | null }): boolean {
+  return BANK.test(nameKey(`${doc.title} ${doc.description ?? ""}`));
+}
+
+/** "12) ¿Qué es…?", "Pregunta 3: …", "Consigna N° 7 - …" — not "a) …" options or bare page numbers. */
+const QUESTION_START =
+  /^\s*(?:(?:pregunta|consigna|ejercicio|question)\s*)?(?:n\s*[°º.]?\s*)?(\d{1,3})\s*[.)\-–:]\s*(\S.*)$/i;
+
+/** The numbered questions of a question bank, as written (with their options, if any). */
+export function bankQuestions(text: string): string[] {
+  const out: string[] = [];
+  let current: string[] | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(QUESTION_START);
+    if (m) {
+      if (current) out.push(current.join("\n"));
+      current = [m[2]!.trim()];
+    } else if (current && line.trim()) current.push(line.trim());
+  }
+  if (current) out.push(current.join("\n"));
+  return [...new Set(out.map((q) => q.slice(0, 600).trim()).filter((q) => q.length >= 12))];
+}
+
+const sameQuestion = (a: string, b: string) =>
+  nameKey(a).slice(0, 120) === nameKey(b).slice(0, 120);
+
+/** A bank question not asked yet in this session (random, so sessions don't repeat in order). */
+export function pickBankQuestion(
+  questions: readonly string[],
+  asked: readonly string[],
+  random: () => number = Math.random,
+): string | null {
+  const left = questions.filter((q) => !asked.some((a) => sameQuestion(a, q)));
+  return left.length ? left[Math.floor(random() * left.length)]! : null;
+}
+
+/** The concept a bank question is about: the one sharing most words with it. */
+export function conceptForQuestion(
+  concepts: readonly StudyConcept[],
+  question: string,
+): StudyConcept | null {
+  const words = new Set(
+    nameKey(question)
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 4),
+  );
+  let best: StudyConcept | null = null;
+  let bestScore = 0;
+  for (const c of concepts) {
+    const score = nameKey(`${c.label} ${c.summary ?? ""}`)
+      .split(/[^a-z0-9]+/)
+      .filter((w) => words.has(w)).length;
+    if (score > bestScore) [best, bestScore] = [c, score];
+  }
+  return best;
 }

@@ -58,6 +58,7 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-119 | Smart Life / Tuya multiusuario: cada persona conecta SU cuenta por el OAuth oficial de Tuya (H5, su centro de datos), tokens cifrados por conexión, dispositivos de nube sin hub (migración 067), aislamiento por workspace |
 | ADR-120 | Imágenes reales con créditos: Wikimedia Commons (gratis), fotos de Places opcionales (pago, apagado), una galería por sujeto, web.images |
 | ADR-121 | OCR sin claves: Workload Identity Federation desde Vercel (OIDC) y broker de tokens de 1 h para los jobs de Trigger.dev |
+| ADR-122 | Descripciones de documentos, búsqueda por nombre/descripción y sin acentos, y bancos de preguntas en Estudio (preguntas textuales, nunca inventadas) |
 
 ## roadmap/
 

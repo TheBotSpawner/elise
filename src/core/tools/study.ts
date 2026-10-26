@@ -13,7 +13,11 @@ import {
   STUDY_MODES,
   angleFor,
   applyAssessment,
+  bankQuestions,
+  conceptForQuestion,
+  isQuestionBank,
   namesUnit,
+  pickBankQuestion,
   pickNextConcept,
   progressCounts,
   summarizeSession,
@@ -61,7 +65,7 @@ interface Material {
   /** Searched: the subject's Spaces and Sections, plus a Section's parent (inherited). */
   spaceIds: string[] | null;
   itemIds: string[] | null;
-  documents: { itemId: string; title: string }[];
+  documents: { itemId: string; title: string; description?: string | null }[];
 }
 
 /**
@@ -83,7 +87,7 @@ async function material(env: ToolRunEnv, profile: ContextProfile): Promise<Mater
     spaceIds: spaces,
     itemIds: itemLinks.length ? itemLinks : null,
     documents: [
-      ...overview.map((i) => ({ itemId: i.itemId, title: i.title })),
+      ...overview.map((i) => ({ itemId: i.itemId, title: i.title, description: i.description })),
       ...items.filter((i) => i !== null).map((i) => ({ itemId: i!.id, title: i!.title })),
     ],
   };
@@ -289,6 +293,11 @@ async function prepareQuestion(
   asked: string[],
   previous: string[],
 ): Promise<CurrentQuestion | null> {
+  const banks = session.scope.bankItemIds ?? [];
+  if (banks.length) {
+    const fixed = await bankQuestion(env, profile, session, m, pool, asked, previous, banks);
+    if (fixed !== undefined) return fixed;
+  }
   const concept = pickNextConcept(pool, asked);
   if (!concept) return null;
   const evidence = await evidenceFor(env, concept, m, session.scope);
@@ -314,6 +323,62 @@ async function prepareQuestion(
     revealed: false,
     evidence,
     ...(q.options ? { options: q.options, correctOption: q.correctOption } : {}),
+    askedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * The next question from the user's question bank, exactly as written; its answer key comes
+ * from the whole material. undefined: the bank can't be read as numbered questions, so the
+ * session writes its own (null: every bank question was already asked).
+ */
+async function bankQuestion(
+  env: ToolRunEnv,
+  profile: ContextProfile,
+  session: StudySession,
+  m: Material,
+  pool: StudyConcept[],
+  asked: string[],
+  previous: string[],
+  banks: string[],
+): Promise<CurrentQuestion | null | undefined> {
+  const texts = await Promise.all(
+    banks.slice(0, 6).map((id) =>
+      knowledge(env)
+        .versionText(id, null)
+        .catch(() => null),
+    ),
+  );
+  const questions = texts.flatMap((t) => (t ? bankQuestions(t.text) : []));
+  if (questions.length < 3) return undefined;
+  const question = pickBankQuestion(questions, previous);
+  if (!question) return null;
+  const concept = conceptForQuestion(pool, question) ?? pickNextConcept(pool, asked);
+  if (!concept) return undefined;
+  const { hits } = await search(env, clip(question, 400), m, null);
+  const evidence = toEvidence(hits.slice(0, STUDY_LIMITS.evidencePerQuestion));
+  const q = await generateQuestion(study(env).ai, {
+    subject: profile.name,
+    concept,
+    angle: angleFor(concept),
+    mode: session.mode,
+    difficulty: session.preferences.difficulty,
+    evidence,
+    previous,
+    locale: env.ctx.locale,
+    verbatim: question,
+  });
+  return {
+    number: session.questionCount + 1,
+    conceptId: concept.id,
+    conceptLabel: concept.label,
+    question: q.question,
+    angle: angleFor(concept),
+    keyPoints: q.keyPoints,
+    hints: q.hints,
+    hintsShown: 0,
+    revealed: false,
+    evidence,
     askedAt: new Date().toISOString(),
   };
 }
@@ -416,6 +481,12 @@ const startInput = z
         '"tomame oral" → oral_exam; "quiz me" / "multiple choice" → quiz; "repasemos" → review.',
       ),
     scope: scopeInput.optional(),
+    fromQuestionBank: z
+      .boolean()
+      .optional()
+      .describe(
+        '"Tomame las preguntas del EPI", "dictame las consignas", "preguntas de examen": true asks the real questions of the user\'s question-bank documents as written. Omit to use them automatically when the material has them and no unit/topic was asked; false to write new questions about concepts.',
+      ),
     preferences: z
       .object({
         feedback: z
@@ -493,6 +564,32 @@ export const startStudyTool: ToolDefinition = {
             "The material doesn't cover what the user asked for. Say which part wasn't found and offer what is available (by document name).",
         },
       };
+    // Question banks (ADR-122): the user's real exam questions, asked as written.
+    const detected = m.documents.filter(isQuestionBank).map((d) => d.itemId);
+    const wantsBank =
+      q.fromQuestionBank ?? (detected.length > 0 && !scope.units.length && !scope.topics.length);
+    const banks = !wantsBank
+      ? []
+      : scope.itemIds.length
+        ? q.fromQuestionBank
+          ? scope.itemIds
+          : scope.itemIds.filter((id) => detected.includes(id))
+        : detected;
+    if (q.fromQuestionBank && !banks.length)
+      return {
+        output: {
+          started: false,
+          subject: profile.name,
+          reason: "no_question_bank",
+          available: m.documents.slice(0, 12).map((d) => d.title),
+          instructions:
+            "No document of this subject looks like a list of exam questions. Ask which document has them (by name), then call study.start again with scope.documents and fromQuestionBank. Never invent exam questions.",
+        },
+      };
+    if (banks.length) {
+      scope.itemIds = banks;
+      scope.bankItemIds = banks;
+    }
     const pool = await conceptsFor(env, profile, m, scope);
     if (!pool.length)
       return {
@@ -550,6 +647,11 @@ export const startStudyTool: ToolDefinition = {
         scope: scope.label,
         ...(missing.length ? { notFound: missing } : {}),
         concepts: pool.length,
+        ...(banks.length
+          ? {
+              questionBank: m.documents.filter((d) => banks.includes(d.itemId)).map((d) => d.title),
+            }
+          : {}),
         question: forModel(current),
         instructions: `${missing.length ? "First say briefly which requested part wasn't found in the material. " : ""}${ASK}`,
       },

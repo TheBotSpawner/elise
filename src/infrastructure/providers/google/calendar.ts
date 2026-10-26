@@ -170,6 +170,17 @@ export class GoogleCalendarProvider implements CalendarProvider {
       .slice(0, MAX_CALENDARS);
   }
 
+  /** Every calendar the user keeps, shown or not: a search must not miss the one it is in. */
+  private async searchableCalendars(): Promise<GCalendarListEntry[]> {
+    return (await this.calendarList())
+      .filter((c) => !c.hidden && c.accessRole !== "freeBusyReader")
+      .sort(
+        (a, b) =>
+          Number(Boolean(b.primary || b.selected)) - Number(Boolean(a.primary || a.selected)),
+      )
+      .slice(0, MAX_CALENDARS);
+  }
+
   /** Validates that a canonical calendar/event id belongs to this connection. */
   private parse(ref: string, kind: "cal" | "evt"): string[] {
     const parsed = parseExternalRef(ref);
@@ -204,10 +215,12 @@ export class GoogleCalendarProvider implements CalendarProvider {
             return { id: id!, name: await this.calendarName(id!) };
           }),
         )
-      : (await this.visibleCalendars()).map((c) => ({
-          id: c.id,
-          name: c.summaryOverride ?? c.summary ?? c.id,
-        }));
+      : (query.search ? await this.searchableCalendars() : await this.visibleCalendars()).map(
+          (c) => ({
+            id: c.id,
+            name: c.summaryOverride ?? c.summary ?? c.id,
+          }),
+        );
 
     const perCalendar = await Promise.all(
       targets.map(async (cal) => {
@@ -218,7 +231,6 @@ export class GoogleCalendarProvider implements CalendarProvider {
           orderBy: "startTime",
           maxResults: String(Math.min(query.limit, 250)),
         });
-        if (query.search) params.set("q", query.search);
         const res = await this.http.request<{ items?: GEvent[] }>(
           "GET",
           `${API}/calendars/${encodeURIComponent(cal.id)}/events?${params}`,

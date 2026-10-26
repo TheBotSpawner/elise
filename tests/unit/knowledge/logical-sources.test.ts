@@ -94,6 +94,10 @@ describe("attention reasons", () => {
     expect(
       attentionReason("VALIDATION_ERROR", "No text was found, even with text recognition"),
     ).toBe("ocr_failed");
+    // Google refusing a file is not "unreachable", even as stored by older runs.
+    expect(attentionReason("PROVIDER_UNAVAILABLE", "The OCR service couldn't read this file")).toBe(
+      "ocr_rejected",
+    );
     expect(attentionReason("WEIRD", "boom")).toBe("unknown");
   });
 

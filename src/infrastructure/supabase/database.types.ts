@@ -876,6 +876,8 @@ export type KnowledgeItemRow = {
     | "note";
   external_id: string;
   title: string;
+  /** The user's description of the document (migration 068). */
+  description: string | null;
   source_url: string | null;
   mime_type: string | null;
   status: "queued" | "processing" | "ready" | "needs_attention" | "failed" | "removed" | "archived";

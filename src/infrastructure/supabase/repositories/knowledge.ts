@@ -13,7 +13,7 @@ import {
   type SpaceInfo,
   type VersionText,
 } from "@/core/knowledge/model";
-import { keywordQuery } from "@/core/knowledge/retrieval";
+import { accentInsensitive, keywordQuery } from "@/core/knowledge/retrieval";
 import { logger } from "@/infrastructure/observability/logger";
 
 import type { Database } from "../database.types";
@@ -76,7 +76,7 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
     }
     const { data, error } = await this.db.rpc("search_knowledge_chunks", {
       p_workspace_id: this.workspaceId,
-      p_keywords: keywordQuery(q.text),
+      p_keywords: accentInsensitive(keywordQuery(q.text)),
       p_embedding: embedding,
       p_embedding_model: model,
       p_space_ids: q.spaceIds,
@@ -112,6 +112,7 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
             .in("knowledge_item_id", itemIds)
         : { data: [] },
     ]);
+    const described = await this.descriptions(itemIds);
     const membersOf = Map.groupBy(members.data ?? [], (m) => m.knowledge_item_id);
     const itemById = new Map((items.data ?? []).map((i) => [i.id, i]));
     const versionById = new Map((versions.data ?? []).map((v) => [v.id, v.version_number]));
@@ -130,6 +131,7 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
           versionId: r.version_id,
           versionNumber: versionById.get(r.version_id) ?? 1,
           title: item.title,
+          description: described.get(r.knowledge_item_id) ?? null,
           itemType: item.item_type,
           sourceType: source?.source_type ?? "upload",
           sourceUrl: item.source_url,
@@ -347,6 +349,23 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
     };
   }
 
+  /**
+   * The user's descriptions of these documents (ADR-122). Read on their own and never fatal:
+   * a database without the column yet (migration 068) still searches, without descriptions.
+   */
+  private async descriptions(itemIds: string[]): Promise<Map<string, string>> {
+    if (!itemIds.length) return new Map();
+    const { data, error } = await this.db
+      .from("knowledge_items")
+      .select("id, description")
+      .eq("workspace_id", this.workspaceId)
+      .in("id", itemIds);
+    if (error) return new Map();
+    return new Map(
+      (data ?? []).filter((d) => d.description).map((d) => [d.id, d.description as string]),
+    );
+  }
+
   async overview(spaceIds: string[] | null, limit: number) {
     let items = this.db
       .from("knowledge_items")
@@ -374,11 +393,13 @@ export class SupabaseKnowledgeReader implements KnowledgeReader {
           .eq("chunk_index", 0)
       : { data: [] };
     const preview = new Map((firsts ?? []).map((c) => [c.version_id, c.content]));
+    const described = await this.descriptions((data ?? []).map((i) => i.id));
     return {
       total: count ?? data?.length ?? 0,
       items: (data ?? []).map((i) => ({
         itemId: i.id,
         title: i.title,
+        description: described.get(i.id) ?? null,
         preview: (i.current_version_id && preview.get(i.current_version_id)) || "",
       })),
     };

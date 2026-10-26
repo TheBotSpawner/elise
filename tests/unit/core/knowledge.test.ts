@@ -21,7 +21,7 @@ import {
   type KnowledgeReader,
   type NormalizedDocument,
 } from "@/core/knowledge/model";
-import { keywordQuery, selectEvidence } from "@/core/knowledge/retrieval";
+import { accentInsensitive, keywordQuery, selectEvidence } from "@/core/knowledge/retrieval";
 import {
   planSync,
   syncSource,
@@ -116,6 +116,12 @@ describe("retrieval policy", () => {
   it("builds an OR keyword query without stopwords", () => {
     expect(keywordQuery("What does the Initech documentation say about email filing?")).toBe(
       "initech | documentation | email | filing",
+    );
+  });
+
+  it("also searches each keyword without accents", () => {
+    expect(accentInsensitive(keywordQuery("cronograma de Análisis de Sistemas"))).toBe(
+      "cronograma | análisis | analisis | sistemas",
     );
   });
 

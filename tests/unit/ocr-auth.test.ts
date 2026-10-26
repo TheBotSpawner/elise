@@ -149,6 +149,30 @@ describe("OCR without keys (ADR-121)", () => {
     });
   });
 
+  it("Google refusing a file is a needs-attention error with its reason, not 'unreachable'", async () => {
+    vi.stubEnv("VERCEL", "");
+    env.value = {
+      GOOGLE_DOCUMENT_AI_PROCESSOR: PROCESSOR,
+      OCR_TOKEN_BROKER_URL: "https://elise.example.org/api/internal/ocr-token",
+      OCR_BROKER_SECRET: SECRET,
+    };
+    google();
+    vi.mocked(fetch).mockImplementation(async (url) =>
+      String(url).includes("/api/internal/ocr-token")
+        ? Response.json({ accessToken: "brokered", expiresAt: Date.now() + 3600_000 })
+        : Response.json(
+            { error: { status: "INVALID_ARGUMENT", message: "Unsupported input" } },
+            { status: 400 },
+          ),
+    );
+    const mod = await load();
+    await expect(ocrOnce(mod.getOcrProvider() as never)).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      message: "The OCR service couldn't read this file (INVALID_ARGUMENT: Unsupported input)",
+      details: { knowledge: "needs_attention" },
+    });
+  });
+
   it("the broker refuses a wrong secret, a forged signature and an old request", async () => {
     const { signBrokerRequest, verifyBrokerRequest } = await load();
     const now = Date.now();

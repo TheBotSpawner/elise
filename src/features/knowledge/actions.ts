@@ -11,6 +11,7 @@ import {
   completeUploads,
   createSpace,
   deleteItem,
+  describeItem,
   listSpaces,
   prepareNewVersion,
   prepareUploads,
@@ -110,6 +111,17 @@ export async function updateSpaceContextAction(spaceId: string, context: string)
       await requireAuthContext(),
       id.parse(spaceId),
       z.string().max(4000).parse(context),
+    ),
+  );
+}
+
+/** What the user says a document is (ADR-122); validated and bounded by the service. */
+export async function describeItemAction(itemId: string, description: string) {
+  return run(async () =>
+    describeItem(
+      await requireAuthContext(),
+      id.parse(itemId),
+      z.string().max(2000).parse(description),
     ),
   );
 }

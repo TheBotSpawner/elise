@@ -1,4 +1,5 @@
 import { AppError } from "@/core/errors";
+import { termScore } from "@/core/knowledge/live";
 import type { KnowledgeItemType } from "@/core/knowledge/model";
 import type { ExternalItem } from "@/core/knowledge/sync";
 import { EXTRACTORS } from "@/infrastructure/knowledge/parsers";
@@ -123,7 +124,7 @@ export class GoogleDriveClient {
   /**
    * Drive's own search inside what the user connected (ADR-046): files directly in any of
    * `folderIds` (the selected folder and its subfolders, from the catalog), matching the terms
-   * by name or by Drive's full-text index. Newest first when asked for the latest, or when there
+   * by name or by Drive's full-text index, files named by the terms first. Newest first when asked for the latest, or when there
    * is nothing to match; otherwise Drive's relevance. Metadata only — nothing is downloaded.
    */
   async search(q: {
@@ -150,7 +151,8 @@ export class GoogleDriveClient {
       const params = new URLSearchParams({
         q: `trashed = false and mimeType != '${FOLDER}' and (${parents})${terms ? ` and (${terms})` : ""}`,
         fields: `files(${FIELDS})`,
-        pageSize: String(Math.min(q.limit * 2, 50)),
+        // Metadata is cheap: a wide page lets the file the question names rank first below.
+        pageSize: "50",
         supportsAllDrives: "true",
         includeItemsFromAllDrives: "true",
         corpora: "allDrives",
@@ -165,6 +167,17 @@ export class GoogleDriveClient {
     const files = [...out.values()];
     if (q.recent || !terms)
       files.sort((a, b) => (b.modifiedTime ?? "").localeCompare(a.modifiedTime ?? ""));
+    // Terms are ORed, so full text alone matches most of a subject's folder ("clase"): the file
+    // whose name says what was asked ("Cronograma …") goes first. A term many names share says
+    // little, so each counts 1/(names with it); Drive's order breaks ties.
+    else {
+      const named = (f: GDriveFile) => q.terms.filter((t) => termScore(f.name, [t]) > 0);
+      const share = new Map(
+        q.terms.map((t) => [t, files.filter((f) => named(f).includes(t)).length]),
+      );
+      const score = (f: GDriveFile) => named(f).reduce((n, t) => n + 1 / share.get(t)!, 0);
+      files.sort((a, b) => score(b) - score(a));
+    }
     return files.slice(0, q.limit);
   }
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { fold } from "./music-match";
 import { destinationField } from "../providers/destination";
 import type { ProviderKey } from "../providers/types";
 import {
@@ -77,6 +78,10 @@ export interface EventQuery {
   timeMax: Date;
   /** Canonical calendar ids; omitted = the calendars the user shows in their calendar app. */
   calendarIds?: string[];
+  /**
+   * Set when the caller will run `matchEvents` itself: providers then read every calendar the
+   * user has (not only the shown ones) and skip their own exact-word search.
+   */
   search?: string;
   limit: number;
 }
@@ -298,4 +303,74 @@ export function freeSlots(
 /** Events that overlap a given interval (conflict detection). */
 export function overlaps(a: { start: Date; end: Date }, b: { start: Date; end: Date }): boolean {
   return a.start < b.end && b.start < a.end;
+}
+
+// ── Event search ─────────────────────────────────────────────────────────────
+
+/** Words that never identify an event ("la meeting con Juan de Acme"). */
+const EVENT_FILLER = new Set(
+  (
+    "de del la el los las un una y e en con mi mis al a para por sobre the with of and an to for " +
+    "meeting meet reunion call llamada evento event cita turno"
+  ).split(" "),
+);
+
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(
+        prev[j]! + 1,
+        cur[j - 1]! + 1,
+        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    prev = cur;
+  }
+  return prev[b.length]!;
+}
+
+/** Same word, a prefix of it ("proce" → "procesamiento") or a small typo ("ricrdo"). */
+function wordMatches(token: string, word: string): boolean {
+  if (word === token || word.startsWith(token)) return true;
+  if (token.length >= 4 && word.length >= 4 && token.startsWith(word)) return true;
+  if (token.length < 4) return false;
+  return editDistance(token, word) <= (token.length >= 7 ? 2 : 1);
+}
+
+/**
+ * Similarity search over what a person remembers about an event: title, people, place, notes,
+ * calendar. Any meaningful word is enough; events matching more words (title counts double)
+ * come first. Never an exact-phrase match: the model rarely knows the exact title.
+ */
+export function matchEvents(events: CalendarEvent[], search: string): CalendarEvent[] {
+  const all = fold(search)
+    .split(" ")
+    .filter((t) => t.length >= 2);
+  const meaningful = all.filter((t) => !EVENT_FILLER.has(t));
+  const tokens = meaningful.length ? meaningful : all;
+  if (!tokens.length) return events;
+  const words = (...texts: (string | null | undefined)[]) =>
+    texts.flatMap((t) => (t ? fold(t).split(" ") : []));
+  return events
+    .map((e, i) => {
+      const title = words(e.title);
+      const rest = words(
+        e.description,
+        e.location,
+        e.calendarName,
+        ...e.attendees.flatMap((a) => [a.name, a.email.replace(/[@.]/g, " ")]),
+      );
+      const score = tokens.reduce(
+        (sum, t) =>
+          sum +
+          (title.some((w) => wordMatches(t, w)) ? 2 : rest.some((w) => wordMatches(t, w)) ? 1 : 0),
+        0,
+      );
+      return { e, i, score };
+    })
+    .filter((m) => m.score > 0)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map((m) => m.e);
 }

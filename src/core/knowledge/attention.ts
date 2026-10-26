@@ -9,6 +9,7 @@ export type AttentionReason =
   | "no_text"
   | "scanned_no_ocr"
   | "ocr_failed"
+  | "ocr_rejected"
   | "too_large"
   | "unsupported"
   | "mismatch"
@@ -44,6 +45,8 @@ export function attentionReason(code: string | null, detail: string | null): Att
   if (code === "TIMEOUT") return "timeout";
   // The file never arrived: only uploading it again helps.
   if (detail && /upload did not finish/i.test(detail)) return "upload_failed";
+  // Google refused the file (earlier runs stored this as PROVIDER_UNAVAILABLE): not unreachable.
+  if (detail && /OCR service couldn't read this file/i.test(detail)) return "ocr_rejected";
   if (code === "PROVIDER_UNAVAILABLE" || code === "RATE_LIMITED") return "unreachable";
   for (const [pattern, reason] of BY_MESSAGE) if (detail && pattern.test(detail)) return reason;
   return "unknown";
@@ -63,6 +66,7 @@ export function attentionActions(reason: AttentionReason): AttentionAction[] {
       return ["retry"];
     case "no_text":
     case "ocr_failed":
+    case "ocr_rejected":
     case "scanned_no_ocr":
       return ["open", "retry"];
     case "too_large":

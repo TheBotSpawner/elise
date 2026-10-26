@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { executeToolCall } from "@/core/agents/executor";
 import {
   freeSlots,
+  matchEvents,
   resolveEventTimes,
   resolveRange,
   type BusyBlock,
@@ -267,5 +268,32 @@ describe("calendar tools", () => {
       args: { title: "X", start: "2026-09-30T18:00", end: "2026-09-30T17:00" },
     });
     expect(out).toMatchObject({ status: "failed", error: { code: "VALIDATION_ERROR" } });
+  });
+});
+
+describe("event search", () => {
+  const ctdi = makeEvent(PERSONAL, "Personal", "c1", "Meeting CTDI app procesamiento de Excel", []);
+  const gym = makeEvent(PERSONAL, "Personal", "g1", "Gym", []);
+  const ricardo = makeEvent(NORTHWIND, "Northwind", "r1", "Sync", ["ricardo@acme.com"]);
+
+  it("matches by any meaningful word, accents and typos aside, title matches first", () => {
+    expect(matchEvents([gym, ricardo, ctdi], "la meeting con Ricardo de CTDI")).toEqual([
+      ctdi,
+      ricardo,
+    ]);
+    expect(matchEvents([gym, ctdi], "reunión procesamiento excell")).toEqual([ctdi]);
+    expect(matchEvents([gym, ctdi], "dentista")).toEqual([]);
+  });
+
+  it("searches every account by similarity, not exact title", async () => {
+    const { ports } = setup();
+    const out = await executeToolCall(ports, makeCtx(), {
+      name: "calendar.listEvents",
+      args: { from: "2026-09-30", search: "reunion con el cliente" },
+    });
+    expect(out).toMatchObject({
+      status: "succeeded",
+      output: { count: 1, events: [{ title: "Client meeting", source: "Northwind" }] },
+    });
   });
 });

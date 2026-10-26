@@ -12,6 +12,7 @@ import {
   subjectTerms,
   TtlCache,
   wantsRecent,
+  withSpellings,
   type LiveCandidate,
   type LiveRoot,
 } from "@/core/knowledge/live";
@@ -224,6 +225,31 @@ describe("provider-native discovery", () => {
     expect(q).toContain("trashed = false");
     // Nothing is downloaded or exported while searching.
     expect(urls[0]).not.toMatch(/alt=media|\/export/);
+  });
+
+  it("Drive ranks the file the question names first, and asks for it as the user spelled it", async () => {
+    const urls: string[] = [];
+    const http = new GoogleHttp(
+      { accessToken: async () => "t" },
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        const files = ["Apunte clase 3.pdf", "TP clase 2.pdf", "Cronograma 2026.pdf"].map(
+          (name, i) => ({ id: `f${i}`, name, mimeType: "application/pdf", version: "1" }),
+        );
+        return new Response(JSON.stringify({ files }), { status: 200 });
+      }),
+    );
+    const text = "fijate en el cronograma de análisis si la clase de hoy es virtual";
+    const terms = withSpellings(text, ["cronograma", "analisis", "clase", "virtual"]);
+    expect(terms).toEqual(["cronograma", "analisis", "clase", "virtual", "análisis"]);
+    const files = await new GoogleDriveClient(http).search({
+      folderIds: ["root"],
+      terms,
+      recent: false,
+      limit: 2,
+    });
+    expect(files.map((f) => f.name)).toEqual(["Cronograma 2026.pdf", "Apunte clase 3.pdf"]);
+    expect(new URL(urls[0]!).searchParams.get("q")).toContain("name contains 'análisis'");
   });
 
   it("Drive 'the latest' is newest first; quotes in terms are escaped", async () => {

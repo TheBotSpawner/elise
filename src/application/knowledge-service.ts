@@ -499,6 +499,8 @@ export interface ItemView {
   sourceUrl: string | null;
   updatedAt: string;
   versions: number;
+  /** What the user says the document is (ADR-122): helps ELISE find and use it. */
+  description: string | null;
 }
 
 /** The kind of root a connected source follows (one per source since ADR-037; "mixed" before). */
@@ -593,6 +595,10 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
         .is("archived_at", null)
     : { data: [] };
   const items = [...(ownItems ?? []), ...(sharedItems ?? [])];
+  const descriptions = await itemDescriptions(
+    auth,
+    items.map((i) => i.id),
+  );
   const sourceIds = (sources ?? []).map((s) => s.id);
   const runs = new SupabaseKnowledgeStore(createAdminClient());
   const [active, last] = await Promise.all([
@@ -676,8 +682,44 @@ export async function getSpace(auth: AuthContext, spaceId: string) {
       sourceUrl: i.source_url,
       updatedAt: i.updated_at,
       versions: ((i.knowledge_versions as unknown as unknown[]) ?? []).length,
+      description: descriptions.get(i.id) ?? null,
     })),
   };
+}
+
+/**
+ * Descriptions read on their own, so a database without the column yet (migration 068 not
+ * applied) still lists its documents — just without descriptions.
+ */
+async function itemDescriptions(auth: AuthContext, ids: string[]) {
+  if (!ids.length) return new Map<string, string>();
+  const { data, error } = await auth.db
+    .from("knowledge_items")
+    .select("id, description")
+    .eq("workspace_id", auth.workspaceId)
+    .in("id", ids);
+  if (error) return new Map<string, string>();
+  return new Map(
+    (data ?? []).filter((r) => r.description).map((r) => [r.id, r.description as string]),
+  );
+}
+
+export const ITEM_DESCRIPTION_MAX = 1000;
+
+/** The user's own words about a document; empty clears it. */
+export async function describeItem(auth: AuthContext, itemId: string, description: string) {
+  const text = description.trim().slice(0, ITEM_DESCRIPTION_MAX) || null;
+  const { data, error } = await auth.db
+    .from("knowledge_items")
+    .update({ description: text })
+    .eq("id", itemId)
+    .eq("workspace_id", auth.workspaceId)
+    .select("id")
+    .maybeSingle();
+  if (error)
+    throw new AppError("INTERNAL_ERROR", "The description could not be saved", { cause: error });
+  if (!data) throw new AppError("NOT_FOUND", "Document not found", { recovery: "review" });
+  await audit(auth, "knowledge.item_described", "knowledge_item", itemId);
 }
 
 // ── Uploads ──────────────────────────────────────────────────────────────────

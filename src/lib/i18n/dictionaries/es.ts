@@ -1708,6 +1708,8 @@ export const es: Dictionary = {
         scanned_no_ocr:
           "Es un documento escaneado y el reconocimiento de texto todavía no está configurado.",
         ocr_failed: "El reconocimiento de texto (OCR) no encontró texto en este documento.",
+        ocr_rejected:
+          "El servicio de reconocimiento de texto (OCR) rechazó este archivo. Probá exportarlo como PDF o JPG y volver a subirlo.",
         too_large: "Es demasiado grande para que ELISE lo lea.",
         unsupported: "Este tipo de archivo no es compatible.",
         mismatch: "El contenido del archivo no coincide con su tipo.",
@@ -1830,6 +1832,14 @@ export const es: Dictionary = {
     uploaded: (n: number) =>
       `${n} ${n === 1 ? "archivo agregado" : "archivos agregados"}. ELISE los está leyendo.`,
     newVersion: "Subir nueva versión",
+    describe: {
+      action: "Describir",
+      title: (name: string) => `¿Qué es “${name}”?`,
+      placeholder: "Ej.: las 100 preguntas exactas del final",
+      hint: "Con tus palabras: qué es y para qué sirve. ELISE lo usa para encontrar este documento y saber cómo usarlo.",
+      save: "Guardar",
+      saved: "Descripción guardada",
+    },
     connectDrive: "Conectar Google Drive",
     connectNotion: "Conectar Notion",
     counts: (ready: number, processing: number, attention: number) =>

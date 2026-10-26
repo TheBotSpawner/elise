@@ -59,6 +59,20 @@ export function searchTerms(text: string): string[] {
   return all.filter((w) => keep.has(w));
 }
 
+/**
+ * The terms plus how the user spelled them ("análisis" for "analisis"): providers match names
+ * literally, so a folded term alone misses "Análisis de Sistemas.pdf".
+ */
+export function withSpellings(text: string, terms: readonly string[]): string[] {
+  const words =
+    text
+      .toLowerCase()
+      .normalize("NFC")
+      .match(/[\p{L}\p{N}]+/gu) ?? [];
+  const spelled = words.filter((w) => w !== matchKey(w) && terms.includes(matchKey(w)));
+  return [...new Set([...terms, ...spelled])];
+}
+
 /** A word matches a term exactly or by a shared stem ("proyecto" ~ "proyectos"). */
 function wordMatches(word: string, term: string): boolean {
   if (word === term) return true;

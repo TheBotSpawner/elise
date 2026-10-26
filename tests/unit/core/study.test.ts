@@ -8,7 +8,11 @@ import type { KnowledgeHit, KnowledgeReader } from "@/core/knowledge/model";
 import { generateQuestion, quizChoice } from "@/core/study/ai";
 import {
   applyAssessment,
+  bankQuestions,
+  conceptForQuestion,
+  isQuestionBank,
   namesUnit,
+  pickBankQuestion,
   pickNextConcept,
   summarizeSession,
   unitNumbers,
@@ -295,22 +299,44 @@ const HITS = [
   hit(U1, "Unidad 1 — Introducción", "Intro", "Qué es la administración."),
 ];
 
-function reader(): KnowledgeReader {
+const BANK_ID = "b0000000-0000-4000-8000-000000000009";
+const BANK_TEXT = [
+  "100 CONSIGNAS DEL EPI",
+  "1) ¿Qué propuso Weber con la burocracia?",
+  "a) Reglas impersonales",
+  "b) Liderazgo carismático",
+  "2. ¿Qué mostró el experimento Hawthorne?",
+  "3 - ¿Qué es la administración?",
+].join("\n");
+
+function reader(opts: { bank?: boolean } = {}): KnowledgeReader {
+  const docs = opts.bank
+    ? [...HITS, hit(BANK_ID, "100 CONSIGNAS del EPI.pdf", "Consignas", BANK_TEXT)]
+    : HITS;
   return {
     spaces: async () => [
       { id: SPACE, name: "Administración", parentId: null, path: "Administración" },
     ],
     search: async (q: { itemIds: string[] | null }) => ({
-      hits: HITS.filter((h) => !q.itemIds || q.itemIds.includes(h.itemId)),
+      hits: docs.filter((h) => !q.itemIds || q.itemIds.includes(h.itemId)),
       semantic: true,
     }),
     getItem: async () => null,
     listSources: async () => [],
     recentChanges: async () => [],
-    versionText: async () => null,
+    versionText: async (id: string) =>
+      id === BANK_ID
+        ? {
+            itemId: id,
+            title: "100 CONSIGNAS del EPI.pdf",
+            versionNumber: 1,
+            createdAt: "",
+            text: BANK_TEXT,
+          }
+        : null,
     overview: async () => ({
-      total: 3,
-      items: HITS.map((h) => ({ itemId: h.itemId, title: h.title, preview: "" })),
+      total: docs.length,
+      items: docs.map((h) => ({ itemId: h.itemId, title: h.title, preview: "" })),
     }),
   } as unknown as KnowledgeReader;
 }
@@ -341,7 +367,13 @@ const ADMIN: ContextProfile = {
 };
 
 function setup(
-  opts: { noMaterial?: boolean; noAI?: boolean; untyped?: boolean; activeContext?: boolean } = {},
+  opts: {
+    noMaterial?: boolean;
+    noAI?: boolean;
+    untyped?: boolean;
+    activeContext?: boolean;
+    bank?: boolean;
+  } = {},
 ) {
   const store = new FakeStudyStore();
   const ai = new RouterAI();
@@ -360,7 +392,7 @@ function setup(
   const byCapability: Record<string, unknown> = {
     study: { store, ai: opts.noAI ? null : ai },
     contexts,
-    knowledge: reader(),
+    knowledge: reader({ bank: opts.bank }),
   };
   ports.providers = { get: ((c: string) => byCapability[c]) as ProviderFactory["get"] };
   const ws = new FakeWorkspace();
@@ -378,6 +410,42 @@ function setup(
       SurfacePayloads["study_question"] | undefined;
   return { store, ai, ws, call, question, associations };
 }
+
+describe("question banks (ADR-122)", () => {
+  it("recognizes question banks by name or description and reads their numbered questions", () => {
+    expect(isQuestionBank({ title: "100 CONSIGNAS del EPI.pdf" })).toBe(true);
+    expect(
+      isQuestionBank({ title: "doc.pdf", description: "Las preguntas exactas del final" }),
+    ).toBe(true);
+    expect(isQuestionBank({ title: "PROTOCOLO 2026.pdf" })).toBe(false);
+    expect(bankQuestions(BANK_TEXT)).toEqual([
+      "¿Qué propuso Weber con la burocracia?\na) Reglas impersonales\nb) Liderazgo carismático",
+      "¿Qué mostró el experimento Hawthorne?",
+      "¿Qué es la administración?",
+    ]);
+  });
+
+  it("never repeats a question and ties it to the closest concept", () => {
+    const qs = bankQuestions(BANK_TEXT);
+    expect(pickBankQuestion(qs, [qs[0]!, qs[1]!])).toBe(qs[2]);
+    expect(pickBankQuestion(qs, qs)).toBeNull();
+    const concept = (label: string) => ({ id: label, label, summary: null }) as StudyConcept;
+    expect(
+      conceptForQuestion([concept("Relaciones humanas"), concept("Burocracia de Weber")], qs[0]!)
+        ?.label,
+    ).toBe("Burocracia de Weber");
+  });
+
+  it("asks the bank's questions as written instead of inventing them", async () => {
+    const { call } = setup({ bank: true });
+    const out = await call("study.start", { context: "Administración", mode: "oral_exam" });
+    expect(out.status).toBe("succeeded");
+    if (out.status !== "succeeded") return;
+    const o = out.output as { questionBank: string[]; question: { question: string } };
+    expect(o.questionBank).toEqual(["100 CONSIGNAS del EPI.pdf"]);
+    expect(bankQuestions(BANK_TEXT)).toContain(o.question.question);
+  });
+});
 
 describe("study sessions", () => {
   it("studies an untyped Section: by name, or as the active context (ADR-020)", async () => {

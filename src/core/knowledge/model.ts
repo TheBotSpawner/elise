@@ -113,6 +113,8 @@ export interface KnowledgeHit {
   versionId: string;
   versionNumber: number;
   title: string;
+  /** What the user says the document is (ADR-122), when they described it. */
+  description?: string | null;
   itemType: KnowledgeItemType;
   sourceType: KnowledgeSourceType;
   sourceUrl: string | null;
@@ -214,7 +216,10 @@ export interface KnowledgeReader {
   overview(
     spaceIds: string[] | null,
     limit: number,
-  ): Promise<{ total: number; items: { itemId: string; title: string; preview: string }[] }>;
+  ): Promise<{
+    total: number;
+    items: { itemId: string; title: string; description?: string | null; preview: string }[];
+  }>;
 }
 
 /** Space plus all its descendants: searching "Work" includes "Work › Acme". */

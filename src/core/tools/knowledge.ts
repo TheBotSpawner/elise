@@ -331,6 +331,8 @@ export const searchKnowledgeTool: ToolDefinition = {
           ref: i + 1,
           itemId: h.itemId,
           document: citationLabel(h),
+          // The user's own words about the document: what it is and how to use it.
+          ...(h.description ? { documentDescription: clip(h.description, 400) } : {}),
           source: SOURCE_NAMES[h.sourceType] ?? h.sourceType,
           space: h.spaceName,
           ...(h.live
@@ -530,6 +532,7 @@ export const overviewTool: ToolDefinition = {
           : {}),
         documents: items.map((i) => ({
           ...i,
+          description: i.description ?? undefined,
           preview: undefined,
           untrustedPreview: clip(i.preview, 500),
         })),

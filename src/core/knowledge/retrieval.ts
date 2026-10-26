@@ -49,6 +49,17 @@ export function keywordQuery(question: string): string {
   return unique.join(" | ");
 }
 
+const unaccent = (w: string) => w.normalize("NFD").replace(/\p{M}/gu, "").normalize("NFC");
+
+/**
+ * The keyword query with each word also without accents ("analisis" ↔ "análisis"): documents
+ * and transcriptions disagree on them, and the index keeps them as written (ADR-122).
+ */
+export function accentInsensitive(query: string): string {
+  const words = query.split(" | ").filter(Boolean);
+  return [...new Set(words.flatMap((w) => [w, unaccent(w)]))].join(" | ");
+}
+
 /** A hit counts as evidence when it shares key terms or is semantically close enough. */
 export function isEvidence(hit: KnowledgeHit): boolean {
   return hit.keywordMatched || (hit.similarity ?? 0) >= RETRIEVAL.minSimilarity;

@@ -6,6 +6,7 @@ import {
   freeSlots,
   listCalendarsInput,
   listEventsInput,
+  matchEvents,
   overlaps,
   resolveEventTimes,
   resolveRange,
@@ -152,7 +153,7 @@ export const listEventsTool: ToolDefinition = {
   capability: "calendar",
   operation: "listEvents",
   description:
-    "List calendar events in a date/time range (user's local time) across the user's visible calendars, or one calendar. Use for agendas, \"what do I have tomorrow\", meetings and conflicts.",
+    'List calendar events in a date/time range (user\'s local time) across the user\'s visible calendars, or one calendar. Use for agendas, "what do I have tomorrow", meetings and conflicts. `search` matches by similarity (any word of the title, people, place or notes) across every calendar of every account: pass the distinctive words ("Juan Acme") and omit `calendar` when looking for one event.',
   input: listEventsInput,
   route: (input) => routeByRef(listEventsInput.parse(input).calendar),
   async describe() {
@@ -161,13 +162,25 @@ export const listEventsTool: ToolDefinition = {
   async run(input, env) {
     const q = listEventsInput.parse(input);
     const range = withRange(() => resolveRange(q.from, q.to, env.ctx.timezone));
-    const events = await provider(env).listEvents({
-      ...range,
-      calendarIds: q.calendar ? [q.calendar] : undefined,
-      search: q.search,
-      limit: q.limit,
-    });
-    return eventsResult(events, range, env.ctx.timezone, q.limit);
+    const cal = provider(env);
+    if (!q.search) {
+      const events = await cal.listEvents({
+        ...range,
+        calendarIds: q.calendar ? [q.calendar] : undefined,
+        limit: q.limit,
+      });
+      return eventsResult(events, range, env.ctx.timezone, q.limit);
+    }
+    // Search matches by similarity here, over every calendar of the account; a named calendar
+    // with no match falls back to the others (the model often guesses the wrong one).
+    const search = q.search;
+    const find = (calendarIds?: string[]) =>
+      cal
+        .listEvents({ ...range, calendarIds, search, limit: 250 })
+        .then((events) => matchEvents(events, search));
+    let events = await find(q.calendar ? [q.calendar] : undefined);
+    if (!events.length && q.calendar) events = await find();
+    return eventsResult(events, range, env.ctx.timezone, q.limit, false);
   },
   merge(results, input, ctx) {
     const q = listEventsInput.parse(input);
@@ -175,7 +188,9 @@ export const listEventsTool: ToolDefinition = {
     const events = results.flatMap(({ result }) =>
       result.display?.kind === "event_list" ? result.display.events : [],
     );
-    return eventsResult(events, range, ctx.timezone, q.limit);
+    return q.search
+      ? eventsResult(matchEvents(events, q.search), range, ctx.timezone, q.limit, false)
+      : eventsResult(events, range, ctx.timezone, q.limit);
   },
 };
 
@@ -184,8 +199,10 @@ function eventsResult(
   range: { timeMin: Date; timeMax: Date },
   timezone: string,
   limit: number,
+  /** Search results stay ranked by relevance; a filtered list is never a complete range. */
+  chronological = true,
 ): ToolRunResult<unknown> {
-  const sorted = sortEvents(events).slice(0, limit);
+  const sorted = (chronological ? sortEvents(events) : events).slice(0, limit);
   return {
     output: {
       from: toLocalDateTime(range.timeMin, timezone),
@@ -199,7 +216,7 @@ function eventsResult(
       from: range.timeMin.toISOString(),
       to: range.timeMax.toISOString(),
       // A read that hit its limit may have left events out: never a complete range.
-      complete: events.length < limit,
+      complete: chronological && events.length < limit,
     },
   };
 }

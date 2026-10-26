@@ -1678,6 +1678,8 @@ export const en = {
         no_text: "There's no text ELISE can read in this item.",
         scanned_no_ocr: "It's a scanned document and text recognition isn't set up yet.",
         ocr_failed: "Text recognition (OCR) found no text in this document.",
+        ocr_rejected:
+          "The text recognition (OCR) service rejected this file. Try exporting it as PDF or JPG and uploading it again.",
         too_large: "It's too large for ELISE to read.",
         unsupported: "This file type isn't supported.",
         mismatch: "The file's content doesn't match its type.",
@@ -1799,6 +1801,14 @@ export const en = {
     uploadHint: (mb: number) => `PDF, Word, text, Markdown or CSV · up to ${mb} MB each`,
     uploaded: (n: number) => `${n} ${n === 1 ? "file" : "files"} added. ELISE is reading them.`,
     newVersion: "Upload new version",
+    describe: {
+      action: "Describe",
+      title: (name: string) => `What is “${name}”?`,
+      placeholder: "E.g. the 100 exact final exam questions",
+      hint: "In your own words: what it is and when it's useful. ELISE uses it to find this document and to know how to use it.",
+      save: "Save",
+      saved: "Description saved",
+    },
     connectDrive: "Connect Google Drive",
     connectNotion: "Connect Notion",
     counts: (ready: number, processing: number, attention: number) =>

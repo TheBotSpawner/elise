@@ -295,11 +295,12 @@ export class GoogleDocumentAiOcr implements OcrProvider {
             content: Buffer.from(input.data).toString("base64"),
             mimeType: input.mimeType,
           },
+          // Only what's set: an empty ocrConfig is one more field a processor can reject.
           processOptions: {
             ...(input.pages ? { individualPageSelector: { pages: input.pages } } : {}),
-            ocrConfig: input.languageHints?.length
-              ? { hints: { languageHints: input.languageHints } }
-              : {},
+            ...(input.languageHints?.length
+              ? { ocrConfig: { hints: { languageHints: input.languageHints } } }
+              : {}),
           },
           fieldMask: "text,pages.pageNumber,pages.layout.textAnchor",
         }),
@@ -319,16 +320,25 @@ export class GoogleDocumentAiOcr implements OcrProvider {
         reason: reason?.status,
         message: reason?.message?.slice(0, 300),
       });
+      // A 400 is Google refusing this file: retrying the same bytes won't help, and it is not
+      // "unreachable". Its reason is kept (status_detail) so the cause is visible afterwards.
+      if (status === 400)
+        throw new AppError(
+          "VALIDATION_ERROR",
+          `The OCR service couldn't read this file${reason?.status ? ` (${reason.status}: ${reason.message?.slice(0, 200) ?? ""})` : ""}`,
+          {
+            recovery: "review",
+            details: { status, knowledge: "needs_attention", reason: "ocr_rejected" },
+          },
+        );
       throw new AppError(
         status === 429
           ? "RATE_LIMITED"
           : status === 401 || status === 403
             ? "AI_NOT_CONFIGURED"
             : "PROVIDER_UNAVAILABLE",
-        status === 400
-          ? "The OCR service couldn't read this file"
-          : "The OCR service is unavailable",
-        { details: { status }, ...(status === 400 ? { recovery: "review" as const } : {}) },
+        "The OCR service is unavailable",
+        { details: { status } },
       );
     }
     const body = (await res.json()) as { document?: { text?: string; pages?: DocAiPage[] } };
