@@ -275,6 +275,19 @@ describe("context selection", () => {
     ]);
   });
 
+  it("a short name in the message brings what Memory knows about that person", () => {
+    const rod = fact({
+      key: "contacto.principal",
+      value: "Rod (R-O-D) dirige RSFA y es el contacto principal del usuario.",
+      category: "relationship",
+    });
+    const chosen = selectContextFacts(
+      [...noise, ...relevant, rod],
+      "¿Cuándo era la meeting con Rod?",
+    );
+    expect(chosen.map((f) => f.key)).toContain("contacto.principal");
+  });
+
   it("with nothing relevant, only standing stated preferences go (never unrelated projects)", () => {
     const chosen = selectContextFacts([...noise, ...relevant], "Contame un chiste");
     expect(chosen.map((f) => f.key).sort()).toEqual(["reuniones.duracion", "reuniones.horario"]);

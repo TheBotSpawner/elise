@@ -276,7 +276,10 @@ export const CONTEXT_LIMITS: ContextLimits = {
 };
 
 const STOP = new Set(
+  // Three-letter words that never name anything ("Ana", "Leo", "IBM" do, and stay).
   (
+    "que con los las del por una uno uns hay era fue son ser mis tus sus ese esa eso muy mas " +
+    "hoy ayer dia ver dar sea vos les nos sin the and for you are was has not but all can " +
     "para como cuando este esta esto estos estas porque sobre tengo quiero puedo necesito " +
     "hacer donde desde hasta entre todo todos todas mucho poco algo nada cual cuales quien " +
     "that this with have from what when where which would could should about there their " +
@@ -292,7 +295,8 @@ export function stems(s: string): Set<string> {
       .replace(/[̀-ͯ]/g, "")
       .toLowerCase()
       .split(/[^a-z0-9ñ]+/)
-      .filter((w) => w.length > 3 && !STOP.has(w))
+      // Short names count ("la meeting con Leo" must bring what Memory knows about Leo).
+      .filter((w) => w.length >= 3 && !STOP.has(w))
       .map((w) => w.slice(0, 5)),
   );
 }

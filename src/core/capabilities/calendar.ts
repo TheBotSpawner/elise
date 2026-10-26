@@ -339,17 +339,49 @@ function wordMatches(token: string, word: string): boolean {
   return editDistance(token, word) <= (token.length >= 7 ? 2 : 1);
 }
 
-/**
- * Similarity search over what a person remembers about an event: title, people, place, notes,
- * calendar. Any meaningful word is enough; events matching more words (title counts double)
- * come first. Never an exact-phrase match: the model rarely knows the exact title.
- */
-export function matchEvents(events: CalendarEvent[], search: string): CalendarEvent[] {
+/** The words of a search that identify an event (filler dropped unless nothing else is left). */
+function searchTokens(search: string): string[] {
   const all = fold(search)
     .split(" ")
     .filter((t) => t.length >= 2);
   const meaningful = all.filter((t) => !EVENT_FILLER.has(t));
-  const tokens = meaningful.length ? meaningful : all;
+  return meaningful.length ? meaningful : all;
+}
+
+/**
+ * Names the user's Memory ties to the searched words: "la meeting con Juan" + "Juan dirige Acme"
+ * → ["acme"], so "Meeting Acme" is found. Only capitalized names (people, companies, acronyms)
+ * of facts that mention a searched word; never the words themselves.
+ * ponytail: capitalization heuristic, a fact's sentence-initial word can slip in; ranking keeps
+ * it below direct matches.
+ */
+export function relatedTerms(search: string, facts: readonly { value: string }[]): string[] {
+  const tokens = searchTokens(search).filter((t) => t.length >= 3);
+  if (!tokens.length) return [];
+  const out = new Set<string>();
+  for (const f of facts) {
+    const words = fold(f.value).split(" ");
+    if (!tokens.some((t) => words.includes(t))) continue;
+    for (const name of f.value.match(/\p{Lu}[\p{L}\p{N}]+/gu) ?? []) {
+      const w = fold(name);
+      if (w.length >= 3 && !EVENT_FILLER.has(w) && !tokens.includes(w)) out.add(w);
+    }
+  }
+  return [...out].slice(0, 8);
+}
+
+/**
+ * Similarity search over what a person remembers about an event: title, people, place, notes,
+ * calendar. Any meaningful word is enough; events matching more words (title counts double)
+ * come first. Never an exact-phrase match: the model rarely knows the exact title. `related`
+ * (names Memory ties to the search) count half: they find events, direct words rank first.
+ */
+export function matchEvents(
+  events: CalendarEvent[],
+  search: string,
+  related: readonly string[] = [],
+): CalendarEvent[] {
+  const tokens = searchTokens(search);
   if (!tokens.length) return events;
   const words = (...texts: (string | null | undefined)[]) =>
     texts.flatMap((t) => (t ? fold(t).split(" ") : []));
@@ -362,12 +394,11 @@ export function matchEvents(events: CalendarEvent[], search: string): CalendarEv
         e.calendarName,
         ...e.attendees.flatMap((a) => [a.name, a.email.replace(/[@.]/g, " ")]),
       );
-      const score = tokens.reduce(
-        (sum, t) =>
-          sum +
-          (title.some((w) => wordMatches(t, w)) ? 2 : rest.some((w) => wordMatches(t, w)) ? 1 : 0),
-        0,
-      );
+      const weigh = (t: string) =>
+        title.some((w) => wordMatches(t, w)) ? 2 : rest.some((w) => wordMatches(t, w)) ? 1 : 0;
+      const score =
+        tokens.reduce((sum, t) => sum + weigh(t), 0) +
+        related.reduce((sum, t) => sum + weigh(t) / 2, 0);
       return { e, i, score };
     })
     .filter((m) => m.score > 0)

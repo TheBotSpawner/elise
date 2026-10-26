@@ -8,6 +8,7 @@ import {
   listEventsInput,
   matchEvents,
   overlaps,
+  relatedTerms,
   resolveEventTimes,
   resolveRange,
   toEventTime,
@@ -172,15 +173,37 @@ export const listEventsTool: ToolDefinition = {
       return eventsResult(events, range, env.ctx.timezone, q.limit);
     }
     // Search matches by similarity here, over every calendar of the account; a named calendar
-    // with no match falls back to the others (the model often guesses the wrong one).
+    // with no match falls back to the others (the model often guesses the wrong one). Names the
+    // user's Memory ties to the search join it ("Juan" → "Acme").
     const search = q.search;
-    const find = (calendarIds?: string[]) =>
-      cal
-        .listEvents({ ...range, calendarIds, search, limit: 250 })
-        .then((events) => matchEvents(events, search));
-    let events = await find(q.calendar ? [q.calendar] : undefined);
-    if (!events.length && q.calendar) events = await find();
-    return eventsResult(events, range, env.ctx.timezone, q.limit, false);
+    const related = await memoryTerms(env, search);
+    const read = (window: typeof range, calendarIds?: string[]) =>
+      cal.listEvents({ ...window, calendarIds, search, limit: SEARCH_READ });
+    let all = await read(range, q.calendar ? [q.calendar] : undefined);
+    let matches = matchEvents(all, search, related);
+    if (!matches.length && q.calendar) {
+      all = await read(range);
+      matches = matchEvents(all, search, related);
+    }
+    // Not in the asked window: look around it before saying it doesn't exist.
+    const nearbyWindow = {
+      timeMin: new Date(range.timeMin.getTime() - 30 * 86_400_000),
+      timeMax: new Date(range.timeMax.getTime() + 60 * 86_400_000),
+    };
+    const nearby = matches.length
+      ? []
+      : sortEvents(matchEvents(await read(nearbyWindow).catch(() => []), search, related))
+          .slice(0, 5)
+          .map((e) => forModel(e, env.ctx.timezone));
+    return searchResult({
+      all,
+      matches,
+      nearby,
+      related,
+      range,
+      timezone: env.ctx.timezone,
+      limit: q.limit,
+    });
   },
   merge(results, input, ctx) {
     const q = listEventsInput.parse(input);
@@ -188,21 +211,98 @@ export const listEventsTool: ToolDefinition = {
     const events = results.flatMap(({ result }) =>
       result.display?.kind === "event_list" ? result.display.events : [],
     );
-    return q.search
-      ? eventsResult(matchEvents(events, q.search), range, ctx.timezone, q.limit, false)
-      : eventsResult(events, range, ctx.timezone, q.limit);
+    if (!q.search) return eventsResult(events, range, ctx.timezone, q.limit);
+    // Each account already searched: its matches (best first), nearby finds and Memory names.
+    const lists = results.flatMap(({ result }) =>
+      result.display?.kind === "event_list" ? [result.display] : [],
+    );
+    const outputs = results.map(({ result }) => (result.output ?? {}) as Partial<SearchOutput>);
+    const ids = lists.flatMap((d) => d.matches ?? []);
+    const byId = new Map(events.map((e) => [e.id, e]));
+    return searchResult({
+      all: events,
+      matches: ids.flatMap((id) => byId.get(id) ?? []),
+      nearby: outputs.flatMap((o) => o.nearby ?? []).slice(0, 5),
+      related: [...new Set(outputs.flatMap((o) => o.relatedFromMemory ?? []))],
+      range,
+      timezone: ctx.timezone,
+      limit: q.limit,
+      complete: lists.every((d) => d.complete !== false),
+    });
   },
 };
+
+/** Events read per account for a search, before matching (a range's events, not a page). */
+const SEARCH_READ = 250;
+
+/** The names Memory ties to a search; never fatal (Memory off or unreadable → none). */
+async function memoryTerms(env: ToolRunEnv, search: string): Promise<string[]> {
+  try {
+    const m = await env.providers.get("settings", env.binding).memory();
+    return m.enabled ? relatedTerms(search, m.facts) : [];
+  } catch {
+    return [];
+  }
+}
+
+type ModelEvent = ReturnType<typeof forModel>;
+type SearchOutput = { nearby: ModelEvent[]; relatedFromMemory: string[] };
+
+/**
+ * A search: the model gets the matching events, best first; the Surface gets the whole range
+ * it was read from (complete, so the calendar on screen is the real one, not a filtered view).
+ */
+function searchResult(r: {
+  all: CalendarEvent[];
+  matches: CalendarEvent[];
+  /** Matches just outside the range, already in the model's shape. */
+  nearby: ModelEvent[];
+  related: string[];
+  range: { timeMin: Date; timeMax: Date };
+  timezone: string;
+  limit: number;
+  complete?: boolean;
+}): ToolRunResult<unknown> {
+  const matches = r.matches.slice(0, r.limit);
+  return {
+    output: {
+      from: toLocalDateTime(r.range.timeMin, r.timezone),
+      to: toLocalDateTime(r.range.timeMax, r.timezone),
+      count: matches.length,
+      events: matches.map((e) => forModel(e, r.timezone)),
+      ...(r.related.length
+        ? {
+            relatedFromMemory: r.related,
+            relatedNote:
+              "Also matched names the user's Memory ties to the search (e.g. a person's company): say why an event matched when it isn't literal.",
+          }
+        : {}),
+      ...(r.nearby.length
+        ? {
+            nearby: r.nearby,
+            nearbyNote:
+              "Nothing matched in the asked range, but these matching events are close to it: answer with them (say when), don't say it doesn't exist.",
+          }
+        : {}),
+    },
+    display: {
+      kind: "event_list",
+      events: sortEvents(r.all),
+      from: r.range.timeMin.toISOString(),
+      to: r.range.timeMax.toISOString(),
+      complete: r.complete ?? r.all.length < SEARCH_READ,
+      matches: matches.map((e) => e.id),
+    },
+  };
+}
 
 function eventsResult(
   events: CalendarEvent[],
   range: { timeMin: Date; timeMax: Date },
   timezone: string,
   limit: number,
-  /** Search results stay ranked by relevance; a filtered list is never a complete range. */
-  chronological = true,
 ): ToolRunResult<unknown> {
-  const sorted = (chronological ? sortEvents(events) : events).slice(0, limit);
+  const sorted = sortEvents(events).slice(0, limit);
   return {
     output: {
       from: toLocalDateTime(range.timeMin, timezone),
@@ -216,7 +316,7 @@ function eventsResult(
       from: range.timeMin.toISOString(),
       to: range.timeMax.toISOString(),
       // A read that hit its limit may have left events out: never a complete range.
-      complete: chronological && events.length < limit,
+      complete: events.length < limit,
     },
   };
 }

@@ -234,6 +234,8 @@ export type ToolDisplay =
       to: string;
       /** False when the read stopped at its limit: more events exist in the range. */
       complete?: boolean;
+      /** A search: the ids of the matching events, best first (`events` is the whole range). */
+      matches?: string[];
     }
   | { kind: "calendars"; calendars: CalendarInfo[] }
   | {

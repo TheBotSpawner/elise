@@ -4,6 +4,7 @@ import { executeToolCall } from "@/core/agents/executor";
 import {
   freeSlots,
   matchEvents,
+  relatedTerms,
   resolveEventTimes,
   resolveRange,
   type BusyBlock,
@@ -283,6 +284,38 @@ describe("event search", () => {
     ]);
     expect(matchEvents([gym, ctdi], "reunión procesamiento excell")).toEqual([ctdi]);
     expect(matchEvents([gym, ctdi], "dentista")).toEqual([]);
+  });
+
+  it("finds an event by the names Memory ties to a person (Rod → RSFA)", () => {
+    const rsfa = makeEvent(PERSONAL, "Personal", "x1", "Meeting RSFA", []);
+    const invoice = makeEvent(PERSONAL, "Personal", "x2", "Enviar factura a Rod", []);
+    const related = relatedTerms("la meeting con Rod", [
+      { value: "Rod (R-O-D) dirige RSFA y es el contacto principal del usuario." },
+      { value: "Su amiga se llama Delfi." },
+    ]);
+    expect(related).toEqual(["rsfa"]);
+    expect(matchEvents([gym, rsfa], "la meeting con Rod")).toEqual([]);
+    // A direct match ranks before one found through Memory.
+    expect(matchEvents([gym, rsfa, invoice], "la meeting con Rod", related)).toEqual([
+      invoice,
+      rsfa,
+    ]);
+  });
+
+  it("shows the whole range on screen and gives the model only the matches", async () => {
+    const { ports } = setup();
+    const out = await executeToolCall(ports, makeCtx(), {
+      name: "calendar.listEvents",
+      args: { from: "2026-09-30", search: "gym" },
+    });
+    expect(out.status).toBe("succeeded");
+    if (out.status !== "succeeded" || out.display?.kind !== "event_list") return;
+    expect(out.output).toMatchObject({ count: 1, events: [{ title: "Gym" }] });
+    expect(out.display.events.map((e) => e.title).sort()).toEqual(["Client meeting", "Gym"]);
+    expect(out.display).toMatchObject({
+      complete: true,
+      matches: [out.display.events.find((e) => e.title === "Gym")!.id],
+    });
   });
 
   it("searches every account by similarity, not exact title", async () => {
