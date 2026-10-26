@@ -709,16 +709,21 @@ export const ITEM_DESCRIPTION_MAX = 1000;
 /** The user's own words about a document; empty clears it. */
 export async function describeItem(auth: AuthContext, itemId: string, description: string) {
   const text = description.trim().slice(0, ITEM_DESCRIPTION_MAX) || null;
-  const { data, error } = await auth.db
+  // Visible to the user (RLS) first; items are written server-side only (migration 009).
+  const { data: item } = await auth.db
+    .from("knowledge_items")
+    .select("id")
+    .eq("id", itemId)
+    .eq("workspace_id", auth.workspaceId)
+    .maybeSingle();
+  if (!item) throw new AppError("NOT_FOUND", "Document not found", { recovery: "review" });
+  const { error } = await createAdminClient()
     .from("knowledge_items")
     .update({ description: text })
     .eq("id", itemId)
-    .eq("workspace_id", auth.workspaceId)
-    .select("id")
-    .maybeSingle();
+    .eq("workspace_id", auth.workspaceId);
   if (error)
     throw new AppError("INTERNAL_ERROR", "The description could not be saved", { cause: error });
-  if (!data) throw new AppError("NOT_FOUND", "Document not found", { recovery: "review" });
   await audit(auth, "knowledge.item_described", "knowledge_item", itemId);
 }
 
