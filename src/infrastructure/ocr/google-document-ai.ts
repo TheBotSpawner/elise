@@ -302,7 +302,8 @@ export class GoogleDocumentAiOcr implements OcrProvider {
               ? { ocrConfig: { hints: { languageHints: input.languageHints } } }
               : {}),
           },
-          fieldMask: "text,pages.pageNumber,pages.layout.textAnchor",
+          // Document AI accepts only document and page fields here (not pages.layout.textAnchor).
+          fieldMask: "text,pages.pageNumber,pages.layout",
         }),
         signal: AbortSignal.timeout(120_000),
       },
