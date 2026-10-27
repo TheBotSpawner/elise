@@ -214,7 +214,7 @@ export const addItemTool: ToolDefinition = {
   capability: "lists",
   operation: "addItem",
   description:
-    'Add one or more items to ONE existing list in ONE call ("agregá leche, café y arroz a compras" → items ["leche", "café", "arroz"]). `list` is the list the USER named ("compras" → "🛍️ Compras"; "aprendizajes" → "📚 Aprendizaje"), never a title read from an image or file. An item may carry a description or already be done: {content, notes, checked} (e.g. ticked on a whiteboard in a photo). Write to one list only, unless the user asks for several. If no list or several match, ask — do not create one.',
+    'Add one or more items to ONE existing list in ONE call ("agregá leche, café y arroz a compras" → items ["leche", "café", "arroz"]). `list` is the list the USER named ("compras" → "🛍️ Compras"; "aprendizajes" → "📚 Aprendizaje"), never a title read from an image or file. An item may carry a description or already be done: {content, notes, checked} (e.g. ticked on a whiteboard in a photo). Write to one list only, unless the user asks for several. If no list or several match, ask — do not create one. Read the items by what the list is for, not word by word (spoken requests have no punctuation): "a la lista de regalos cucharón Ana y espátula Ana" → [{content: "Cucharón", notes: "Para Ana"}, {content: "Espátula", notes: "Para Ana"}], never an item "Ana". A word that is not plausibly an item of that list (a person, a store, a quantity, a date) qualifies the item next to it — in its notes or its text ("2 kg de harina") — and is never an item of its own.',
   input: addItemsInput,
   async describe(raw) {
     return { summary: `Add to “${addItemsInput.parse(raw).list}”` };

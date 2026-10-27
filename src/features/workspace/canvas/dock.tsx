@@ -115,13 +115,17 @@ export function Dock({
   // Phones (ADR-066): persistent activities (timer, music) sit above the docked composer.
   const docked = !inline;
   const withTranscript = Boolean(transcript);
+  const stacked = mobile && typingMode && docked && !controlsOnly;
   useEffect(() => {
     // Only where the bottom navigation is (< lg); wide screens have room beside the dock.
     if (!docked || window.matchMedia("(min-width: 1024px)").matches) return;
     const root = document.documentElement;
-    root.style.setProperty("--dock-space", mobile ? (withTranscript ? "104px" : "80px") : "104px");
+    root.style.setProperty(
+      "--dock-space",
+      mobile ? (stacked ? "128px" : withTranscript ? "104px" : "80px") : "104px",
+    );
     return () => root.style.setProperty("--dock-space", "0px");
-  }, [docked, withTranscript, mobile]);
+  }, [docked, withTranscript, mobile, stacked]);
 
   return (
     <div
@@ -164,9 +168,12 @@ export function Dock({
               ? "min-h-14 rounded-[28px] pl-5 md:w-[620px]"
               : "md:w-[760px] md:max-w-[calc(100vw-48px)]",
           !showOrb && !controlsOnly && "pl-5",
+          // Phones, typing: the text gets the whole first row and the buttons wrap under it —
+          // in one row they squeezed it to a letter wide.
+          stacked && "flex-wrap gap-y-0 rounded-[28px] pt-1.5 pl-4",
         )}
       >
-        {showOrb && !controlsOnly && (
+        {showOrb && !controlsOnly && !stacked && (
           <motion.div
             layoutId={ORB_LAYOUT_ID}
             transition={ORB_MOVE}
@@ -192,7 +199,10 @@ export function Dock({
               maxLength={8000}
               autoComplete="off"
               placeholder={mobile ? t.home.placeholderMobile : t.chat.replyPlaceholder}
-              className="[field-sizing:content] max-h-40 min-h-11 min-w-0 flex-1 resize-none bg-transparent py-[11px] text-[15.5px] leading-[22px] caret-accent outline-none placeholder:text-faint focus-visible:shadow-none"
+              className={cn(
+                "[field-sizing:content] max-h-40 min-h-11 min-w-0 flex-1 resize-none bg-transparent py-[11px] text-[15.5px] leading-[22px] caret-accent outline-none placeholder:text-faint focus-visible:shadow-none",
+                stacked && "basis-full",
+              )}
             />
           </>
         ) : controlsOnly ? (
@@ -236,7 +246,7 @@ export function Dock({
             </span>
           </button>
         )}
-        <span className="flex shrink-0 items-center gap-1">
+        <span className={cn("flex shrink-0 items-center gap-1", stacked && "ml-auto")}>
           <AttachToKnowledge />
           {voice && (
             <button
