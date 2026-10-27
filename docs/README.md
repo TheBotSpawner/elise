@@ -59,6 +59,7 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-120 | Imágenes reales con créditos: Wikimedia Commons (gratis), fotos de Places opcionales (pago, apagado), una galería por sujeto, web.images |
 | ADR-121 | OCR sin claves: Workload Identity Federation desde Vercel (OIDC) y broker de tokens de 1 h para los jobs de Trigger.dev |
 | ADR-122 | Descripciones de documentos, búsqueda por nombre/descripción y sin acentos, y bancos de preguntas en Estudio (preguntas textuales, nunca inventadas) |
+| ADR-123 | Lecturas rápidas: preguntas simples de Mi ELISE (alarmas, timers) se responden sin el modelo; "hoy" incluye alarmas que ya sonaron |
 
 ## roadmap/
 

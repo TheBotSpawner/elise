@@ -181,4 +181,19 @@ describe("alarm tools (ADR-100)", () => {
     await call("time.deleteAlarm", { alarm: "facultad" });
     expect(store.alarms).toEqual([]);
   });
+
+  it("'¿tengo alarmas hoy?' counts one that already rang today, and the screen shows them all", async () => {
+    const { store, call } = setup([DESKTOP]);
+    await call("time.setAlarm", { time: "13:00", day: "today", label: "Llamar a Félix" });
+    await call("time.setAlarm", { time: "07:00", day: "tomorrow", label: "Facultad" });
+    // It rang at 13:00 and, as a one-off, is now off (15:00 now).
+    Object.assign(store.alarms[0]!, { enabled: false, state: "off", nextFireAt: null });
+    const r = await call("time.listAlarms", { day: "today" });
+    expect(out(r)).toMatchObject({
+      count: 1,
+      alarms: [{ label: "Llamar a Félix", alreadyRang: true }],
+    });
+    const shown = (r as { display: { alarms: { alarms: unknown[] } } }).display.alarms.alarms;
+    expect(shown).toHaveLength(2);
+  });
 });

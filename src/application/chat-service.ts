@@ -5,6 +5,7 @@ import { serverEnv } from "@/config/server-env";
 import { buildContextPackage } from "@/core/agents/context";
 import { executeToolCall, type ToolCallOutcome } from "@/core/agents/executor";
 import { escalateAfter, MODEL_POLICY, routeTurn } from "@/core/agents/model-policy";
+import { quickRead } from "@/core/agents/quick-reads";
 import {
   canonicalHint,
   detectRepair,
@@ -22,6 +23,7 @@ import {
   selectTools,
   toolsInNotes,
   wantsPracticalCard,
+  wantsToRemember,
   wantsWebSearch,
 } from "@/core/agents/tool-selection";
 import type { ToolContext } from "@/core/agents/tools";
@@ -410,6 +412,11 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
   // Conversational repair (ADR-065): a correction of what ELISE just wrote fixes that same
   // object; which object is decided here, from the previous turn's references.
   const repairIntent = shortcut.kind === "none" ? detectRepair(input.message) : null;
+  // A plain question about the user's own ELISE data is answered without the model (ADR-123).
+  const quick =
+    shortcut.kind === "none" && approval.kind === "none" && !repairIntent && !attached
+      ? quickRead(input.message)
+      : null;
   const repairTarget = repairIntent
     ? resolveRepairTarget(history, input.message)
     : ({ kind: "none" } as const);
@@ -470,6 +477,10 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     // "Investigá…", "buscá en internet…": the user wants the answer from the web, not memory.
     wantsWebSearch(input.message)
       ? 'The user explicitly asked to search the web for this ("investigá" / "buscá en internet"): answer ONLY from web tools called in this turn (web.search; web.research for a broad topic), citing the sources — never from your general knowledge, even if you think you know.'
+      : null,
+    // "Recordá que Ana es mi socia": a fact to keep, never turned into a task (ADR-107).
+    wantsToRemember(input.message)
+      ? 'The user asked you to REMEMBER something ("recordá que…", "acordate que…"): save it with memory.remember (stated: true) and confirm in one short line. It is not a reminder: never create a task, list item, event or alarm for it. ("Recordame…" / "acordame…" / "avisame…" — remind ME — would be a reminder; this is not.)'
       : null,
     // "¿Cómo hago un pollo al verdeo?": the steps go on screen, to follow while doing them.
     wantsPracticalCard(input.message)
@@ -841,6 +852,13 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
             input: adaptive ? context.cached.input : context.input,
             // A Shortcut's steps run first, through the same executor and policy (ADR-017 §12).
             ...(preset ? { preset } : {}),
+            ...(!preset && quick
+              ? {
+                  preset: [quick.call],
+                  presetAnswer: ([outcome]) =>
+                    outcome ? quick.answer(outcome, auth.profile.locale) : null,
+                }
+              : {}),
             ...route,
             ...(adaptive ? { escalate: escalateAfter } : {}),
             ...(signal ? { signal } : {}),

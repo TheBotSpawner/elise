@@ -79,6 +79,16 @@ const alarmRef = z
   );
 
 const label = (a: Pick<Alarm, "label" | "time">) => a.label ?? a.time;
+
+/**
+ * Does it ring on this local day — including earlier today, when it already rang and a one-off
+ * is now off (its next ring is gone, the day's answer isn't)?
+ */
+function ringsOn(a: Alarm, day: string, tz: string): boolean {
+  if (a.nextFireAt && toLocalDateTime(new Date(a.nextFireAt), tz).slice(0, 10) === day) return true;
+  if (a.date) return a.date === day;
+  return a.enabled && a.weekdays.includes(new Date(`${day}T12:00:00Z`).getUTCDay());
+}
 const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").trim();
 
 /** The day a one-off alarm rings: the one asked, else the next time that hour comes. */
@@ -337,20 +347,21 @@ export const listAlarmsTool: ToolDefinition = {
     const today = todayIn(tz, env.ctx.now);
     const wanted =
       q.date ?? (q.day === "today" ? today : q.day === "tomorrow" ? addDays(today, 1) : null);
-    const alarms = wanted
-      ? all.filter(
-          (a) =>
-            a.nextFireAt && toLocalDateTime(new Date(a.nextFireAt), tz).slice(0, 10) === wanted,
-        )
-      : all;
-    const shown = await surface(env, alarms);
+    const alarms = wanted ? all.filter((a) => ringsOn(a, wanted, tz)) : all;
+    const nowLocal = toLocalDateTime(env.ctx.now, tz).slice(11, 16);
+    // The whole set on screen (as in Tiempos): the day's answer is in the output.
+    const shown = await surface(env, all);
     return {
       output: {
         ...(wanted ? { day: wanted } : {}),
         count: alarms.length,
-        alarms: alarms.map((a) => forModel(a, env, shown.known)),
+        alarms: alarms.map((a) => ({
+          ...forModel(a, env, shown.known),
+          // One that already rang today still counts for "¿tengo alarmas hoy?".
+          ...(wanted === today && a.time <= nowLocal ? { alreadyRang: true } : {}),
+        })),
         instructions: alarms.length
-          ? "Say them briefly (time, label, where it rings); they are on screen."
+          ? "Say them briefly (time, label, where it rings; say which already rang); they are on screen."
           : "There are none for that: say it positively in one line and offer to set one.",
       },
       display: shown.display,

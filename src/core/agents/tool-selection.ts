@@ -57,6 +57,13 @@ const WEB_REQUEST =
   /(?<!\p{L})(investig[aá]\p{L}*|averigu[aá]\p{L}*|busc[aá](lo|la|me)? (en|por) (internet|la web|la red|google|la internet)|fijate (en|por) (internet|la web|google)|search (the web|online|the internet)|look (it )?up online|google it|googlealo|gugleal[oa])(?!\p{L})/iu;
 export const wantsWebSearch = (message: string) => WEB_REQUEST.test(message);
 /**
+ * "Recordá que…", "acordate que…", "tené en cuenta que…": a fact for Memory, not a reminder.
+ * "Recordame / acordame / avisame…" (remind ME) never match: those are tasks.
+ */
+const REMEMBER_FACT =
+  /(?<!\p{L})(record[aá]|recuerd[ae]|acord[aá]te|acu[eé]rdate|no te olvides|ten[eé] en cuenta|ten[eé] presente|guard[aá] en (tu )?memoria|remember)(?!\p{L}),?\s+(de\s+)?(que|that)(?!\p{L})/iu;
+export const wantsToRemember = (message: string) => REMEMBER_FACT.test(message);
+/**
  * A recipe or instructions to follow ("¿cómo hago un pollo al verdeo?", "paso a paso para armar…"):
  * the answer belongs on screen as a card too (decided before the model, every turn).
  */

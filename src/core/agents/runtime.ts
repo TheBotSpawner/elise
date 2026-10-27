@@ -66,6 +66,11 @@ export interface RunInput {
    * the model had asked; the model then only writes the answer from their results.
    */
   preset?: { name: string; args: unknown }[];
+  /**
+   * A quick read's answer from the preset results (ADR-123): when it returns text, that is the
+   * answer and no model is called. Null hands the turn to the model as usual.
+   */
+  presetAnswer?: (outcomes: ToolCallOutcome[]) => string | null;
   /** A latency hint for reasoning models (spoken turns favour speed, ADR-017 §18). */
   reasoning?: AITurnRequest["reasoning"];
   /**
@@ -113,6 +118,12 @@ export async function* runElise(run: RunInput): AsyncGenerator<RuntimeEvent> {
         traces.push({ callId, name: call.name, outcome });
         items.push({ type: "tool_result", callId, output: JSON.stringify(forModel(outcome)) });
         yield { type: "tool_finished", callId, name: call.name, outcome, args: call.args };
+      }
+      const quick = run.presetAnswer?.(traces.map((t) => t.outcome)) ?? null;
+      if (quick) {
+        yield { type: "text", delta: quick };
+        yield { type: "done", text: quick, tools: traces, usage, model };
+        return;
       }
     }
     for (let turn = 0; turn < limits.maxModelTurns; turn++) {
