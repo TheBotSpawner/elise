@@ -257,10 +257,16 @@ export function selectMethods(
 ): MethodSelection {
   const scoped = inScope(index, input.chain);
   const words = [...new Set(tokens(input.message))];
-  const fields = scoped.map((m) => ({
-    strong: [...tokens(m.name), ...m.hints.flatMap(tokens)],
-    weak: tokens(m.description),
-  }));
+  // A hint is a phrase: it is strong evidence only when all of it is in the message ("organizar
+  // tareas y calendario" must not fire on "¿qué tareas tengo?"); its words alone are weak.
+  const fields = scoped.map((m) => {
+    const hints = m.hints.map(tokens).filter((h) => h.length);
+    const whole = hints.filter((h) => h.every((t) => words.some((w) => same(w, t))));
+    return {
+      strong: [...tokens(m.name), ...whole.flat()],
+      weak: [...tokens(m.description), ...hints.flat()],
+    };
+  });
   // How many candidates each message word matches (rarer = more telling).
   const df = new Map(
     words.map((w) => [

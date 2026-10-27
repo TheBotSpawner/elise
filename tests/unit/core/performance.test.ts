@@ -4,7 +4,7 @@ import { z } from "zod";
 import { buildContextPackage } from "@/core/agents/context";
 import { escalateAfter, routeTurn } from "@/core/agents/model-policy";
 import { runElise, type RuntimeEvent } from "@/core/agents/runtime";
-import { CORE_GROUPS, selectTools, toolsInNotes } from "@/core/agents/tool-selection";
+import { ALWAYS_TOOLS, CORE_GROUPS, selectTools, toolsInNotes } from "@/core/agents/tool-selection";
 import { ToolRegistry, type ToolDefinition } from "@/core/agents/tools";
 import { CAPABILITY_KEYS } from "@/core/capabilities/registry";
 import { percentile, TurnPerf } from "@/core/perf";
@@ -79,7 +79,9 @@ describe("tool exposure", () => {
 
   it("a settings change sees the core, not finance, email, web or study", () => {
     const s = selectTools(all, { message: "Cambiá tu color a verde." });
-    const groups = new Set(s.tools.map((t) => t.name.split(".")[0]));
+    // The few always-on tools (ADR-123) aside: only their single tool, never their group.
+    const tools = s.tools.filter((t) => !ALWAYS_TOOLS.has(t.name));
+    const groups = new Set(tools.map((t) => t.name.split(".")[0]));
     expect(groups.has("appearance")).toBe(true);
     for (const g of ["finance", "email", "web", "study", "structured"])
       expect(groups.has(g)).toBe(false);
@@ -216,6 +218,28 @@ describe("runtime", () => {
       "start:tasks.complete",
       "end:tasks.complete",
     ]);
+  });
+
+  it("a quick read answers from its preset result without calling the model (ADR-123)", async () => {
+    const log: string[] = [];
+    const read = delayTool("history.search", "history", "search", 1, log);
+    const { ports } = makePorts();
+    ports.registry = new ToolRegistry().register(read);
+    const ai = new ScriptedAI([]);
+    const events = await collect(
+      runElise({
+        ai,
+        ports,
+        ctx: makeCtx(),
+        instructions: "x",
+        input: [],
+        tools: [read],
+        preset: [{ name: "history.search", args: {} }],
+        presetAnswer: ([o]) => (o?.status === "succeeded" ? "Listo." : null),
+      }),
+    );
+    expect(ai.requests).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({ type: "done", text: "Listo." });
   });
 
   it("loads a missing tool group on demand and uses it in the same answer", async () => {

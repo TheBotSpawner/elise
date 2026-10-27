@@ -854,9 +854,9 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
             ...(preset ? { preset } : {}),
             ...(!preset && quick
               ? {
-                  preset: [quick.call],
-                  presetAnswer: ([outcome]) =>
-                    outcome ? quick.answer(outcome, auth.profile.locale) : null,
+                  preset: quick.calls,
+                  presetAnswer: (outcomes) =>
+                    quick.answer(outcomes, auth.profile.locale, todayIn(auth.profile.timezone)),
                 }
               : {}),
             ...route,

@@ -98,6 +98,19 @@ export const LOCATION_SIGNAL =
 export const WEATHER_HERE_SIGNAL =
   /(?<!\p{L})(llov\p{L}*|lluev\p{L}*|lluvia|clima|tiempo hace|temperatura|pron[oó]stico|fr[ií]o|calor|weather|rain\p{L}*|forecast)(?!\p{L})[^.?!]*(?<!\p{L})(ac[aá]|aqu[ií]|donde estoy|here|where i am)(?!\p{L})/iu;
 
+/**
+ * Single tools every turn keeps, outside their groups: the ones most often loaded late with
+ * tools.more (one extra model round trip, ~2.5 s) in real turns — a general question for the
+ * web, a route, a song, a quote. Each costs a few hundred cached tokens; the rest of their
+ * group still comes with its signal (ADR-123).
+ */
+export const ALWAYS_TOOLS: ReadonlySet<string> = new Set([
+  "web.search",
+  "location.getRoute",
+  "music.play",
+  "markets.getQuote",
+]);
+
 /** Words that point to a group (Spanish and English). Deliberately generous: a false positive
  * costs a few hundred tokens, a false negative an extra round trip. */
 const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
@@ -130,7 +143,7 @@ const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   ["shortcuts", /\b(atajos?|shortcuts?|rutinas?|routines?|cuando (te )?diga|when i say)\b/i],
   [
     "study",
-    /\b(estudi\w*|study|quiz|ex[aá]men\w*|exams?|oral|repas\w*|tomame|preguntame|practic\w*|flashcards?|parcial\w*|evaluame)\b/i,
+    /\b(estudi\w*|study|quiz|ex[aá]men\w*|exams?|oral|repas\w*|tomame|preguntame|practic\w*|flashcards?|parcial\w*|evaluame|consignas?|preguntas (de|del|para)|tirame (una|otra|alguna))\b/i,
   ],
   // "¿Cómo vengo con Vida saludable?" names a Vision, not the word "objetivo" (ADR-055).
   [
@@ -259,9 +272,10 @@ export function selectTools(
   const held = (t: AnyToolDefinition) => structured && t.name === "knowledge.search";
   // Core groups first, in registry order, then the rest in registry order: the stable part of
   // the list stays a stable prefix for prompt caching.
-  const core = all.filter((t) => CORE_GROUPS.has(groupOf(t)) && !held(t));
-  const extra = all.filter((t) => !CORE_GROUPS.has(groupOf(t)) && groups.has(groupOf(t)));
-  const rest = all.filter((t) => !groups.has(groupOf(t)) || held(t));
+  const always = (t: AnyToolDefinition) => CORE_GROUPS.has(groupOf(t)) || ALWAYS_TOOLS.has(t.name);
+  const core = all.filter((t) => always(t) && !held(t));
+  const extra = all.filter((t) => !always(t) && groups.has(groupOf(t)));
+  const rest = all.filter((t) => (!groups.has(groupOf(t)) && !always(t)) || held(t));
   return { tools: [...core, ...extra], rest, groups: [...groups] };
 }
 

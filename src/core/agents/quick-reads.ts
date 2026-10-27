@@ -8,10 +8,30 @@ import type { ToolCallOutcome } from "./executor";
  */
 
 export interface QuickRead {
-  call: { name: string; args: Record<string, unknown> };
-  /** The spoken answer from the read's result; null hands the turn to the model. */
-  answer: (outcome: ToolCallOutcome, locale: "es" | "en") => string | null;
+  calls: { name: string; args: Record<string, unknown> }[];
+  /** The spoken answer from the reads' results; null hands the turn to the model. */
+  answer: (outcomes: ToolCallOutcome[], locale: "es" | "en", today: string) => string | null;
 }
+
+/** The whole message, plain: lowercase, no accents or punctuation, no "Elis," in front. */
+const plain = (m: string) =>
+  m
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(elis|elise|eli)\s+/, "");
+
+/**
+ * "¿Qué tareas tengo hoy?", "mis tareas pendientes", "¿tengo tareas para hoy?" — the whole
+ * question, nothing more: a specific task ("la tarea de Félix") is a search, the model's.
+ */
+const TASKS_QUESTION = [
+  /^(que |cuales )?(son )?(mis )?tareas( tengo| hay| me quedan| quedan)?( pendientes)?( (para|de) hoy| hoy)?$/,
+  /^(tengo|hay)( alguna)? tareas?( pendientes)?( (para|de) hoy| hoy)?$/,
+];
 
 const ALARM = /(?<!\p{L})(alarmas?|alarms?)(?!\p{L})/iu;
 const TIMER =
@@ -29,6 +49,16 @@ const TOMORROW = /(?<!\p{L})(ma[ñn]ana|tomorrow)(?!\p{L})/iu;
 const short = (m: string) => m.trim().split(/\s+/).length <= 10;
 
 export function quickRead(message: string): QuickRead | null {
+  const q = plain(message);
+  if (TASKS_QUESTION.some((re) => re.test(q))) {
+    // One read of what's open (the same list the Tasks screen shows); today's and the overdue
+    // ones are told apart by date, as the model would mention both.
+    const forToday = / hoy$/.test(q);
+    return {
+      calls: [{ name: "tasks.list", args: { limit: 100 } }],
+      answer: ([o], locale, today) => (o ? tasksAnswer(o, locale, forToday ? today : null) : null),
+    };
+  }
   if (!short(message) || NOT_A_READ.test(message)) return null;
   if (ALARM.test(message) && !TIMER.test(message)) {
     // "a la mañana" is a time of day, not tomorrow: only a bare "mañana" asks for tomorrow.
@@ -37,11 +67,64 @@ export function quickRead(message: string): QuickRead | null {
       : TOMORROW.test(message) && !/a la ma[ñn]ana/iu.test(message)
         ? "tomorrow"
         : undefined;
-    return { call: { name: "time.listAlarms", args: day ? { day } : {} }, answer: alarmsAnswer };
+    return {
+      calls: [{ name: "time.listAlarms", args: day ? { day } : {} }],
+      answer: ([o], locale) => (o ? alarmsAnswer(o, locale) : null),
+    };
   }
   if (TIMER.test(message) && !ALARM.test(message))
-    return { call: { name: "time.list", args: {} }, answer: timersAnswer };
+    return {
+      calls: [{ name: "time.list", args: {} }],
+      answer: ([o], locale) => (o ? timersAnswer(o, locale) : null),
+    };
   return null;
+}
+
+/** At most this many titles are said aloud; the rest are on screen. */
+const SAID = 6;
+
+interface TaskLine {
+  title: string;
+  dueDate: string | null;
+}
+
+function tasksAnswer(
+  outcome: ToolCallOutcome,
+  locale: "es" | "en",
+  today: string | null,
+): string | null {
+  if (outcome.status !== "succeeded") return null;
+  const open = (outcome.output as { tasks?: TaskLine[] }).tasks;
+  if (!Array.isArray(open)) return null;
+  const es = locale === "es";
+  const titles = (ts: TaskLine[]) => {
+    const said = ts.slice(0, SAID).map((t) => t.title);
+    const more = ts.length - said.length;
+    return list(more ? [...said, es ? `${more} más` : `${more} more`] : said, locale);
+  };
+  const count = (n: number) =>
+    es ? (n === 1 ? "una tarea" : `${n} tareas`) : n === 1 ? "one task" : `${n} tasks`;
+  if (!today) {
+    if (!open.length) return es ? "No tenés tareas pendientes." : "You have no open tasks.";
+    return es
+      ? `Tenés ${count(open.length)} ${open.length === 1 ? "pendiente" : "pendientes"}: ${titles(open)}.`
+      : `You have ${count(open.length)} open: ${titles(open)}.`;
+  }
+  const due = open.filter((t) => t.dueDate === today);
+  const late = open.filter((t) => t.dueDate !== null && t.dueDate < today);
+  const head = due.length
+    ? es
+      ? `Para hoy tenés ${count(due.length)}: ${titles(due)}.`
+      : `Today you have ${count(due.length)}: ${titles(due)}.`
+    : es
+      ? "Para hoy no tenés tareas."
+      : "No tasks for today.";
+  const overdue = late.length
+    ? es
+      ? ` Además, ${late.length === 1 ? "una vencida" : `${late.length} vencidas`}: ${titles(late)}.`
+      : ` Also ${late.length} overdue: ${titles(late)}.`
+    : "";
+  return head + overdue;
 }
 
 interface AlarmLine {

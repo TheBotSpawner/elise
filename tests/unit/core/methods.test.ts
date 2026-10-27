@@ -128,6 +128,20 @@ describe("Method selection", () => {
   });
   const daily = summary({ name: "Plan del día", description: "Cómo armar mi plan del día." });
 
+  it("a hint is a phrase: one of its words doesn't load the Method", () => {
+    const blocks = summary({
+      name: "Planificación diaria en bloques",
+      description: "Planificar el día en bloques, teniendo en cuenta calendario y tareas.",
+      hints: ["planificar mi día", "armar bloques para mañana", "organizar tareas y calendario"],
+    });
+    const pick = (message: string) =>
+      selectMethods([blocks], { message, chain: [], parents: PARENTS }).selected?.method.id ?? null;
+    expect(pick("¿Qué tareas tengo para hoy?")).toBeNull();
+    expect(pick("¿Qué tengo mañana en el calendario?")).toBeNull();
+    expect(pick("Planificame el día de mañana")).toBe(blocks.id);
+    expect(pick("Ayudame a organizar mis tareas y el calendario")).toBe(blocks.id);
+  });
+
   it("finds the Method a request needs without its name", () => {
     const sel = selectMethods([proposal, meeting, daily], {
       message: "Preparame una propuesta para Acme Retail",
