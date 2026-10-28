@@ -101,6 +101,11 @@ export class TurnDetector {
     return this.floor;
   }
 
+  /** Voiced time so far (ms). */
+  get voiced() {
+    return this.voicedMs;
+  }
+
   get heard() {
     return this.voicedMs >= this.cfg.minSpeechMs;
   }

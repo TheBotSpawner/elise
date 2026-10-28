@@ -114,6 +114,10 @@ const startInput = z
     longBreakMinutes: z.number().min(0).max(90).optional(),
     cycles: z.number().int().min(1).max(12).optional(),
     autoStart: z.enum(AUTO_START).optional(),
+    allowDuplicate: z
+      .boolean()
+      .optional()
+      .describe("true only after the user confirmed they want a second identical timer."),
   })
   .strict();
 
@@ -155,6 +159,25 @@ export const startTimeTool: ToolDefinition = {
     // Studying inside a Section: its name labels the Pomodoro (labeling only, never access).
     const label =
       s.label ?? (s.kind === "pomodoro" && env.ctx.context ? env.ctx.context.name : null);
+    // The same request again within a minute (said twice, heard twice): ask, never two timers.
+    const same = s.allowDuplicate
+      ? undefined
+      : active.find(
+          (t) =>
+            t.kind === s.kind &&
+            (s.kind === "stopwatch" || t.durationMs === durationMs) &&
+            (t.label ?? null) === (label ?? null) &&
+            env.ctx.now.getTime() - Date.parse(t.createdAt) < 60_000,
+        );
+    if (same)
+      return {
+        output: {
+          started: false,
+          alreadyRunning: describe(same, env),
+          instructions:
+            "An identical one was started less than a minute ago: nothing new was started. Say so in one line and ask if they want a second one (then call again with allowDuplicate).",
+        },
+      };
     const t = await st.create({
       kind: s.kind,
       label: label?.slice(0, TIME_LIMITS.maxLabel) ?? null,

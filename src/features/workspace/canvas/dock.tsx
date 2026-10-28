@@ -76,6 +76,7 @@ export function Dock({
   const onPaste = usePasteImages();
   const [restoredAt, setRestoredAt] = useState(restore?.at ?? 0);
   const input = useRef<HTMLTextAreaElement>(null);
+  const form = useRef<HTMLFormElement>(null);
   if (restore && restore.at !== restoredAt) {
     setRestoredAt(restore.at);
     if (!draft.trim()) setDraft(restore.text);
@@ -86,6 +87,16 @@ export function Dock({
   useEffect(() => {
     if (typing && voice) input.current?.focus();
   }, [typing, voice]);
+  // Opened by mistake: a tap anywhere else closes the keyboard again (nothing typed is lost —
+  // with a draft it stays open).
+  useEffect(() => {
+    if (!typing || !voice || draft.trim()) return;
+    const away = (e: PointerEvent) => {
+      if (form.current && !form.current.contains(e.target as Node)) setTyping(false);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [typing, voice, draft]);
   // New Chat reads what is typed; once this dock is gone, there is no draft to protect.
   useEffect(() => {
     composerDraft.text = draft;
@@ -150,6 +161,7 @@ export function Dock({
       )}
       <DraftAttachmentChips />
       <motion.form
+        ref={form}
         layout
         transition={ORB_MOVE}
         onSubmit={(e) => {

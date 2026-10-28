@@ -213,14 +213,18 @@ describe("workspace lifecycle", () => {
     expect(s.surfaces.some((x) => x.id === "summary:1")).toBe(false);
   });
 
-  it("untouched Surfaces decay after a few turns; transient ones leave on the next turn", () => {
+  it("chat alone never empties the Canvas; untouched Surfaces make room when new ones come", () => {
     let s = present(emptyWorkspace(), summaryDraft("summary:old"));
     s = present(s, summaryDraft("summary:toast", { transient: true }));
     s = applyOp(s, { op: "turn", at: AT });
     expect(s.surfaces.map((x) => x.id)).toEqual(["summary:old"]);
-    for (let i = 0; i < WORKSPACE_LIMITS.decayTurns; i++) s = applyOp(s, { op: "turn", at: AT });
-    expect(s.surfaces).toEqual([]);
-    expect(s.intent).toBeNull();
+    // "muy bien", "gracias"… many turns with nothing new: the Canvas stays as it was.
+    for (let i = 0; i < WORKSPACE_LIMITS.decayTurns + 3; i++)
+      s = applyOp(s, { op: "turn", at: AT });
+    expect(s.surfaces.map((x) => x.id)).toEqual(["summary:old"]);
+    // Something new arrives: what nobody touched for a while leaves for it.
+    s = present(s, summaryDraft("summary:new"));
+    expect(s.surfaces.map((x) => x.id)).toEqual(["summary:new"]);
   });
 
   it("restores after a reload: confirmations gone, old snapshots marked stale", () => {

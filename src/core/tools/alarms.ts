@@ -265,6 +265,12 @@ const setInput = z
       .max(ALARM_LIMITS.maxSnooze)
       .optional(),
     destinations,
+    allowDuplicate: z
+      .boolean()
+      .optional()
+      .describe(
+        "true only after the user confirmed they want another alarm at a time one already rings.",
+      ),
   })
   .strict();
 
@@ -293,10 +299,31 @@ export const setAlarmTool: ToolDefinition = {
       ? [...new Set(q.weekdays.map((w) => WEEKDAYS.indexOf(w)))]
       : [];
     const { chosen, missing } = resolveDestinations(q.destinations, known, prefs.alarmDestinations);
+    // The same alarm again (a repeated request, a phrase said twice): ask, never stack copies.
+    const date = repeat.length ? null : resolveDay(env, q);
+    const same = q.allowDuplicate
+      ? undefined
+      : (await s.listAlarms()).find(
+          (a) =>
+            a.enabled &&
+            a.time === q.time &&
+            (repeat.length
+              ? a.weekdays.length === repeat.length && repeat.every((d) => a.weekdays.includes(d))
+              : a.date === date),
+        );
+    if (same)
+      return {
+        output: {
+          created: false,
+          alreadyExists: forModel(same, env, known),
+          instructions:
+            "An alarm for that same time and day already exists: nothing was created. Say so in one line and ask if they want a second one (then call again with allowDuplicate).",
+        },
+      };
     const alarm = await s.createAlarm({
       label: q.label ?? null,
       time: q.time,
-      date: repeat.length ? null : resolveDay(env, q),
+      date,
       weekdays: repeat,
       timezone: env.ctx.timezone,
       sound: resolveSound(q.sound, sounds),

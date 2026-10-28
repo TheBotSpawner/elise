@@ -7,6 +7,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Trash2,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
@@ -647,7 +648,7 @@ export function SpaceView({
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex items-center gap-1">
                     {attention && (
                       <Button
                         size="sm"
@@ -658,45 +659,49 @@ export function SpaceView({
                         {t.knowledge.retry}
                       </Button>
                     )}
-                    {item.status !== "removed" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={pending}
-                        onClick={() => setDescribing(item)}
-                      >
-                        {t.knowledge.describe.action}
-                      </Button>
-                    )}
-                    {item.sourceType === "upload" && moveTargets.length > 0 && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={pending}
-                        onClick={() => setMoving(item)}
-                      >
-                        <FolderInput />
-                        {t.knowledge.sections.move}
-                      </Button>
-                    )}
-                    {item.sourceType === "upload" && item.status !== "processing" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={uploading}
-                        onClick={() => {
-                          setVersionFor(item.id);
-                          versionInput.current?.click();
-                        }}
-                      >
-                        {t.knowledge.newVersion}
-                      </Button>
-                    )}
+                    <OverflowMenu
+                      label={t.common.moreActions}
+                      items={[
+                        ...(item.status !== "removed"
+                          ? [
+                              {
+                                label: t.knowledge.describe.action,
+                                icon: Pencil,
+                                disabled: pending,
+                                onClick: () => setDescribing(item),
+                              },
+                            ]
+                          : []),
+                        ...(item.sourceType === "upload" && moveTargets.length > 0
+                          ? [
+                              {
+                                label: t.knowledge.sections.move,
+                                icon: FolderInput,
+                                disabled: pending,
+                                onClick: () => setMoving(item),
+                              },
+                            ]
+                          : []),
+                        ...(item.sourceType === "upload" && item.status !== "processing"
+                          ? [
+                              {
+                                label: t.knowledge.newVersion,
+                                icon: Upload,
+                                disabled: uploading,
+                                onClick: () => {
+                                  setVersionFor(item.id);
+                                  versionInput.current?.click();
+                                },
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
                     {item.sourceType === "upload" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="hover:text-danger-text"
+                      <button
+                        type="button"
+                        aria-label={`${t.knowledge.delete}: ${item.title}`}
+                        title={t.knowledge.delete}
                         disabled={pending}
                         onClick={async () => {
                           if (
@@ -704,9 +709,10 @@ export function SpaceView({
                           )
                             act(() => deleteItemAction(item.id));
                         }}
+                        className="grid size-11 place-items-center rounded-full text-muted transition-colors hover:bg-active hover:text-danger-text disabled:opacity-50 md:size-9"
                       >
-                        {t.knowledge.delete}
-                      </Button>
+                        <Trash2 className="size-4" aria-hidden />
+                      </button>
                     )}
                   </div>
                 </li>

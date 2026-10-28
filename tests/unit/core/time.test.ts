@@ -308,6 +308,20 @@ describe("time.* tools", () => {
     expect(display(paused)).toMatchObject({ timer: { state: "paused", remainingMs: 22 * MIN } });
   });
 
+  it("the same timer asked twice within a minute is not started twice: ELISE asks", async () => {
+    const { call, store, advance } = setup();
+    await call("time.start", { minutes: 120 });
+    const again = await call("time.start", { minutes: 120 });
+    expect(out(again)).toMatchObject({ started: false });
+    expect((await store.list()).length).toBe(1);
+    // Confirmed — or later, or a different one — it starts.
+    await call("time.start", { minutes: 120, allowDuplicate: true });
+    await call("time.start", { minutes: 30 });
+    advance(2 * MIN);
+    await call("time.start", { minutes: 120 });
+    expect((await store.list()).length).toBe(4);
+  });
+
   it("several timers: by name, else a question (never the wrong one)", async () => {
     const { call } = setup();
     await call("time.start", { minutes: 8, label: "Pasta" });

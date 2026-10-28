@@ -172,6 +172,17 @@ describe("alarm tools (ADR-100)", () => {
     expect(store.alarms[0]!.destinations).toEqual([{ kind: "desktop", id: DESKTOP.id }]);
   });
 
+  it("the same alarm asked twice is not created twice: ELISE asks first", async () => {
+    const { store, call } = setup([DESKTOP]);
+    await call("time.setAlarm", { time: "14:30", day: "tomorrow" });
+    const again = await call("time.setAlarm", { time: "14:30", day: "tomorrow" });
+    expect(out(again)).toMatchObject({ created: false });
+    expect(store.alarms).toHaveLength(1);
+    await call("time.setAlarm", { time: "14:30", day: "tomorrow", allowDuplicate: true });
+    await call("time.setAlarm", { time: "15:00", day: "tomorrow" });
+    expect(store.alarms).toHaveLength(3);
+  });
+
   it("turns off and deletes by label", async () => {
     const { store, call } = setup([DESKTOP]);
     await call("time.setAlarm", { time: "07:00", day: "tomorrow", label: "Facultad" });

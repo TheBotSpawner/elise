@@ -100,6 +100,7 @@ test("setup: a Space with a stored PDF and two document Surfaces", async () => {
       .select("id")
       .single()
   ).data!;
+  ids.space = space.id as string;
   const source = (
     await admin!
       .from("knowledge_sources")
@@ -258,4 +259,19 @@ test("widgets quote the passages and open the whole document in the viewer", asy
   await page.getByText("Abrir documento completo").first().click();
   await expect(frame).toBeVisible({ timeout: 30_000 });
   expect(await frame.getAttribute("src")).not.toMatch(/#page=/);
+});
+
+test("a document's actions: a ⋯ menu and a trash button", async ({ page }, info) => {
+  await signIn(page);
+  await page.goto(`/knowledge/spaces/${ids.space}`);
+  const row = page.getByRole("listitem").filter({ hasText: "PROTOCOLO 2026.pdf" });
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  // The actions are no longer spelled out on the row…
+  await expect(row.getByRole("button", { name: "Subir nueva versión" })).toHaveCount(0);
+  await expect(row.getByRole("button", { name: /^Eliminar/ })).toBeVisible();
+  // …they're in its menu.
+  await row.getByRole("button", { name: "Más acciones" }).click();
+  await expect(page.getByRole("menuitem", { name: "Describir" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Subir nueva versión" })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("space-actions.png") });
 });

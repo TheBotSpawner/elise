@@ -1461,7 +1461,7 @@ describe("voice turn latency (ADR-036)", () => {
     await say();
     expect(sent[0]!.text).toBe("Creá una tarea.");
     expect(micCapturing(controller.state)).toBe(true); // the indicator tells the truth
-    await hear(300, 0.1); // the user goes on
+    await hear(700, 0.1); // the user goes on (real speech, not a cough)
     expect(cancels).toHaveLength(1);
     expect(controller.state.phase).toBe("user_speaking");
     await hear(500, 0.1);
@@ -1494,7 +1494,7 @@ describe("voice turn latency (ADR-036)", () => {
     // Well past the first seconds (which would continue the request), she's still working…
     await hear(6_000, 0.002);
     expect(micCapturing(controller.state)).toBe(true);
-    await hear(400, 0.1); // …and the user talks over the search
+    await hear(700, 0.1); // …and the user talks over the search
     expect(cancels).toHaveLength(1);
     await hear(400, 0.1);
     await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
@@ -1524,10 +1524,33 @@ describe("voice turn latency (ADR-036)", () => {
     const { controller, sent, hear, say } = setup({ transcripts: ["Creá una tarea.", ""] });
     await controller.start();
     await say();
-    await hear(400, 0.1);
+    await hear(700, 0.1);
     await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
     await settle();
     expect(sent.map((x) => x.text)).toEqual(["Creá una tarea.", "Creá una tarea."]);
+  });
+
+  it("noise in the window never loops: a short sound is ignored, a resent request isn't cut again", async () => {
+    const { controller, sent, hear, say, cancels } = setup({
+      transcripts: ["Muy bien.", ""],
+    });
+    await controller.start();
+    await say();
+    // A cough-length sound doesn't cut the request…
+    await hear(400, 0.1);
+    await hear(300, 0.002);
+    expect(cancels).toHaveLength(0);
+    // …real-length noise does, but transcribes to nothing: the request goes again, once…
+    await hear(700, 0.1);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    expect(sent.map((x) => x.text)).toEqual(["Muy bien.", "Muy bien."]);
+    // …and that resend has no window to be cut by the same noise.
+    await hear(700, 0.1);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    expect(cancels).toHaveLength(1);
+    expect(sent).toHaveLength(2);
   });
 
   it("an interruption after the answer started is a new turn, not a continuation", async () => {

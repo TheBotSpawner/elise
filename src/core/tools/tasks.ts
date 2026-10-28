@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import {
   createTaskInput,
@@ -143,21 +145,61 @@ export const listTaskListsTool: ToolDefinition = {
   },
 };
 
+/** Creating: the task, plus the confirmation that a second identical one is really wanted. */
+const createTaskToolInput = createTaskInput.extend({
+  allowDuplicate: z
+    .boolean()
+    .optional()
+    .describe("true only after the user confirmed they want a second open task with that title."),
+});
+
+const titleKey = (t: string) =>
+  t
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+const sameTitle = (a: string, b: string) => titleKey(a) === titleKey(b);
+
 export const createTaskTool: ToolDefinition = {
   name: "tasks.create",
   capability: "tasks",
   operation: "create",
   description:
     'Create a task. The title is the action as the user meant it, written cleanly — from a voice transcript, apply spelling instructions instead of copying them ("llamar a Ana, con doble n" → "Llamar a Anna") and drop fillers and request words. `dueDate` must be an explicit YYYY-MM-DD date resolved from the current date in the user\'s timezone; tasks have no time of day. Only set priority/category when the user implies them. `parentTaskId` makes it a subtask; `labels` adds ELISE labels. Set `destination` only when the user says which account ("Personal", "Acme"), and `list` when they name a list ("my Acme Clients list" → destination "Acme", list "Clients"). If the tool says a list is ambiguous or missing, ask. A recurring task ("todos los lunes sacar la basura", "pagar el alquiler el 10 de cada mes") is ONE task with `repeat` — never several tasks, and not a Schedule (Programados run ELISE actions; a task is something the user does).',
-  input: createTaskInput,
+  input: createTaskToolInput,
   route: routeList,
   async describe(input, env) {
     return {
-      summary: `Create task “${createTaskInput.parse(input).title}” in ${env.binding.label}`,
+      summary: `Create task “${createTaskToolInput.parse(input).title}” in ${env.binding.label}`,
     };
   },
   async run(input, env) {
-    const task = await provider(env).create(createTaskInput.parse(input), {
+    const { allowDuplicate, ...fields } = createTaskToolInput.parse(input);
+    // The same task again (a repeated request, a phrase said twice): ask, never stack copies.
+    if (!allowDuplicate && !fields.parentTaskId) {
+      const open = await provider(env)
+        .list(
+          toTaskQuery(
+            listTasksInput.parse({ search: fields.title, limit: 20 }),
+            env.ctx.timezone,
+            env.ctx.now,
+          ),
+        )
+        .catch(() => []);
+      const same = open.find((t) => sameTitle(t.title, fields.title));
+      if (same)
+        return {
+          output: {
+            created: false,
+            alreadyExists: forModel(same),
+            instructions:
+              "An open task with that same title already exists: nothing was created. Say so in one line and ask if they want another one (then call again with allowDuplicate).",
+          },
+        };
+    }
+    const task = await provider(env).create(fields, {
       userId: env.ctx.userId,
       source: env.ctx.origin === "user_ui" ? "user_ui" : env.ctx.origin === "ai" ? "ai" : "system",
     });

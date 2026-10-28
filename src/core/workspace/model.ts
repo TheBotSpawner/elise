@@ -301,7 +301,7 @@ export type WorkspaceOp =
    * context's Surfaces leave, pending approvals stay); null clears it (Surfaces stay).
    */
   | { op: "context"; context: Omit<ActiveContext, "turn"> | null; at: string }
-  /** A new user turn: Surfaces nobody has touched for a while decay away. */
+  /** A new user turn: transient confirmations leave (untouched Surfaces decay on the next present). */
   | { op: "turn"; at: string };
 
 export const WORKSPACE_LIMITS = {
@@ -393,12 +393,26 @@ function reduce(state: WorkspaceState, op: WorkspaceOp): WorkspaceState {
         createdAt: op.at,
         updatedAt: op.at,
       };
-      const gone = new Set(replaced.map((s) => s.id));
+      // Something new arrives: what nobody touched for a few turns makes room for it. Chat alone
+      // ("muy bien", "gracias") never empties the Canvas — it only moves on with new content.
+      const decayed = state.surfaces.filter(
+        (s) => !kept(s) && state.turn - s.turn >= WORKSPACE_LIMITS.decayTurns,
+      );
+      const gone = new Set([...replaced, ...decayed].map((s) => s.id));
       // It takes the old one's place in order, so the Canvas reflows instead of reshuffling.
-      const at = heir ? state.surfaces.findIndex((s) => s.id === heir.id) : -1;
-      const kept = state.surfaces.filter((s) => !gone.has(s.id));
+      const at = heir
+        ? state.surfaces
+            .slice(
+              0,
+              state.surfaces.findIndex((s) => s.id === heir.id),
+            )
+            .filter((s) => !gone.has(s.id)).length
+        : -1;
+      const remaining = state.surfaces.filter((s) => !gone.has(s.id));
       const surfaces =
-        at >= 0 ? [...kept.slice(0, at), surface, ...kept.slice(at)] : [...kept, surface];
+        at >= 0
+          ? [...remaining.slice(0, at), surface, ...remaining.slice(at)]
+          : [...remaining, surface];
       return evict({
         ...state,
         surfaces,
@@ -533,9 +547,8 @@ function reduce(state: WorkspaceState, op: WorkspaceOp): WorkspaceState {
     }
     case "turn": {
       const turn = state.turn + 1;
-      const left = state.surfaces.filter(
-        (s) => !s.transient && (kept(s) || turn - s.turn < WORKSPACE_LIMITS.decayTurns),
-      );
+      // Only confirmations leave with a turn; untouched Surfaces decay when new ones come in.
+      const left = state.surfaces.filter((s) => !s.transient);
       return {
         ...state,
         turn,

@@ -79,7 +79,9 @@ describe("view operations", () => {
     s = applyOp(s, { op: "pin", id: "keep", pinned: true, at: AT });
     for (let i = 0; i < WORKSPACE_LIMITS.decayTurns + 1; i++)
       s = applyOp(s, { op: "turn", at: AT });
-    expect(s.surfaces.map((x) => x.id)).toEqual(["keep"]);
+    s = present(s, "fresh");
+    expect(s.surfaces.map((x) => x.id)).toEqual(["keep", "fresh"]);
+    s = applyOp(s, { op: "dismiss", id: "fresh", at: AT });
     s = applyOp(s, {
       op: "intent",
       intent: { id: "i2", kind: "research", description: "x", startedAt: AT },

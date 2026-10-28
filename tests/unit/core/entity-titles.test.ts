@@ -142,3 +142,18 @@ describe("chat and the UI store the same title", () => {
     },
   );
 });
+
+describe("duplicates", () => {
+  it("the same open task asked twice is not created twice: ELISE asks first", async () => {
+    const { ports, tasks } = makePorts();
+    const create = (args: object) =>
+      executeToolCall(ports, makeCtx(), { name: "tasks.create", args });
+    await create({ title: "Comprar yerba" });
+    const again = await create({ title: "comprar  yerba" });
+    expect(again).toMatchObject({ status: "succeeded", output: { created: false } });
+    expect(tasks.tasks.size).toBe(1);
+    await create({ title: "Comprar yerba", allowDuplicate: true });
+    await create({ title: "Comprar pan" });
+    expect(tasks.tasks.size).toBe(3);
+  });
+});

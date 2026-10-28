@@ -793,7 +793,15 @@ describe("the Music Surface on the Live Canvas", () => {
     expect(state.surfaces.map((s) => s.type)).toEqual(["music"]);
     let paused = applyOps(emptyWorkspace(), [{ op: "present", surface: surface(false), at: "t" }]);
     for (let i = 0; i < 6; i++) paused = applyOps(paused, [{ op: "turn", at: `t${i}` }]);
-    expect(paused.surfaces).toHaveLength(0);
+    // Paused music makes room as soon as something new is shown (chat alone keeps it).
+    paused = applyOps(paused, [
+      {
+        op: "present",
+        surface: { ...surface(false), id: "summary:new", type: "summary" },
+        at: "t9",
+      },
+    ]);
+    expect(paused.surfaces.map((s) => s.type)).toEqual(["summary"]);
   });
 
   it("focus and back on the Music Surface", () => {

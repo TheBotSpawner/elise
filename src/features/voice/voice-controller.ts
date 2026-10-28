@@ -263,6 +263,11 @@ export const VOICE_PREFS_EVENT = "elise:voice-prefs";
  * was cut too early: what is said next continues it instead of replacing it (ADR-036).
  */
 const CONTINUATION_MS = 4_000;
+/**
+ * Voice needed to cut a request already sent: more than a cough, a chair or a word of room
+ * noise (a quarter second cancelled requests over and over, each sent again — a loop).
+ */
+const TAIL_SPEECH_MS = 600;
 
 /** Longest wait for a transcript before the turn is treated as not understood. */
 const TRANSCRIBE_TIMEOUT_MS = 25_000;
@@ -700,6 +705,9 @@ export class VoiceController {
     if (this.state.phase !== "finalizing_input") return; // ended meanwhile
     // A continuation that can't be read never loses the request it continued: that goes again.
     if (!result && this.carry) result = { text: "", language: null };
+    // Nothing new was said after all: the cut request goes again, and that one isn't cut again
+    // by the same window (noise doing it repeatedly sent the same request over and over).
+    const resent = Boolean(this.carry) && !result?.text.trim();
     if (!result) {
       if (this.deps.online && !this.deps.online()) return this.network(false);
       // Never invent what the user said: say so and listen again.
@@ -736,7 +744,8 @@ export class VoiceController {
       if (this.state.phase !== phase) return; // ended meanwhile
     }
     this.beginTurn(text, result.language, utterance.durationMs);
-    this.startTail();
+    if (resent) this.trace("resent_without_tail");
+    else this.startTail();
   }
 
   /**
@@ -1162,7 +1171,7 @@ export class VoiceController {
     if (!turn || turn.speech.resultQueued || now >= this.tailUntil) return this.endTail();
     // Real speech (a quarter second of voice), not a cough or a chair, continues the turn.
     this.detector?.frame(rms, now);
-    if (!this.detector?.heard) return;
+    if (!this.detector?.heard || this.detector.voiced < TAIL_SPEECH_MS) return;
     // In the first seconds the user hadn't finished: their words continue that request. Later
     // (continuous conversation), it's a new request that replaces the one being worked on.
     const continues = now - this.tailStart <= CONTINUATION_MS;
