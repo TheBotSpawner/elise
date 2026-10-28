@@ -2180,9 +2180,6 @@ function StudyQuestionBody({
   const { t } = useI18n();
   const s = t.workspace.study;
   const w = s.widget;
-  const busy = handlers.pending !== null || handlers.busy;
-  const act = (id: ActionId) => () => handlers.onAction(surface, id, null);
-  const has = (id: ActionId) => surface.actions.some((a) => a.id === id);
 
   // The session so far; an older Surface (no history) is just its own question.
   const current: StudyEntry = {
@@ -2331,31 +2328,6 @@ function StudyQuestionBody({
             <ExternalLink className="size-3.5" aria-hidden />
             {w.seeInDocument}
           </DocumentLink>
-        </div>
-      )}
-
-      {isCurrent && (
-        <div className="flex flex-wrap gap-2">
-          {has("hint") && (
-            <ActionButton disabled={busy} onClick={act("hint")}>
-              {t.workspace.actions.hint}
-            </ActionButton>
-          )}
-          {has("reveal") && (
-            <ActionButton disabled={busy} onClick={act("reveal")}>
-              {t.workspace.actions.reveal}
-            </ActionButton>
-          )}
-          {has("next") && (
-            <ActionButton disabled={busy} onClick={act("next")}>
-              {t.workspace.actions.next}
-            </ActionButton>
-          )}
-          {has("end_session") && (
-            <ActionButton disabled={busy} onClick={act("end_session")}>
-              {t.workspace.actions.end_session}
-            </ActionButton>
-          )}
         </div>
       )}
 

@@ -651,10 +651,6 @@ export const startStudyTool: ToolDefinition = {
       status: "succeeded",
       display: { kind: "study_question", question },
     });
-    show(env, "study.progress", {
-      status: "succeeded",
-      display: { kind: "study_progress", progress: await progressPayload(env, profile, 0) },
-    });
     return {
       output: {
         started: true,
@@ -811,13 +807,6 @@ export const answerStudyTool: ToolDefinition = {
     show(env, "study.answer", {
       status: "succeeded",
       display: { kind: "study_question", question },
-    });
-    show(env, "study.progress", {
-      status: "succeeded",
-      display: {
-        kind: "study_progress",
-        progress: await progressPayload(env, profile, attempts.length + 1),
-      },
     });
     const cited = current.evidence.filter((e) => evaluation.refs.includes(e.ref));
     return {
@@ -1103,13 +1092,6 @@ export const endStudyTool: ToolDefinition = {
       status: "succeeded",
       display: { kind: "study_summary", summary: payload },
     });
-    show(env, "study.progress", {
-      status: "succeeded",
-      display: {
-        kind: "study_progress",
-        progress: await progressPayload(env, profile, summary.questions),
-      },
-    });
     return {
       output: {
         ended: true,
@@ -1161,10 +1143,6 @@ export const progressStudyTool: ToolDefinition = {
       s.lastSession(profile.id),
       s.recentAttempts(profile.id, 12),
     ]);
-    show(env, "study.progress", {
-      status: "succeeded",
-      display: { kind: "study_progress", progress },
-    });
     const struggled = [
       ...new Set(recent.filter((a) => a.assessment !== "strong").map((a) => a.conceptLabel)),
     ].slice(0, 6);
@@ -1189,7 +1167,6 @@ export const progressStudyTool: ToolDefinition = {
         instructions:
           "Answer from this structured progress — it's the reliable record. Say it plainly (no percentages). If the user asks what was said, history.search can add the conversation.",
       },
-      display: { kind: "study_progress", progress },
     };
   },
 };
