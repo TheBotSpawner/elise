@@ -45,6 +45,11 @@ interface Active {
 }
 
 const HEARTBEAT_MS = 60_000;
+/**
+ * Realtime can miss an event (a socket dropped, a laptop asleep, an app just started), and an
+ * alarm must never depend on one: the alarms are read again this often, and on focus/online.
+ */
+const REFRESH_MS = 30_000;
 
 export function AlarmController({ workspaceId }: { workspaceId: string }) {
   const s = useAlarms();
@@ -57,9 +62,27 @@ export function AlarmController({ workspaceId }: { workspaceId: string }) {
   const reload = useCallback(() => void loadAlarms(), []);
   useEffect(() => {
     void resolveMe().then((me) => alarmsStore.set({ me }));
-    reload();
-  }, [reload]);
+    // The first read can fail while the app is still connecting (Desktop at startup): retry,
+    // or this device would keep an empty list until something else changed.
+    let tries = 0;
+    let retry: number | undefined;
+    const first = async () => {
+      if (!(await loadAlarms()) && ++tries < 6) retry = window.setTimeout(first, 2_000 * tries);
+    };
+    void first();
+    return () => window.clearTimeout(retry);
+  }, []);
   useRealtimeRefresh(workspaceId, ["alarms", "alarm_occurrences"], reload);
+  useEffect(() => {
+    const t = window.setInterval(reload, REFRESH_MS);
+    window.addEventListener("focus", reload);
+    window.addEventListener("online", reload);
+    return () => {
+      window.clearInterval(t);
+      window.removeEventListener("focus", reload);
+      window.removeEventListener("online", reload);
+    };
+  }, [reload]);
 
   // A chosen browser says it's here while ELISE is open (Desktop has its own heartbeat).
   useEffect(() => {
@@ -122,8 +145,12 @@ export function AlarmController({ workspaceId }: { workspaceId: string }) {
     }
     const key = `${mine.alarmId}|${mine.fireAt}|${mine.ringingSince}`;
     if (cur && cur.alarmId === mine.alarmId && cur.fireAt === mine.fireAt) {
-      // A local Desktop firing adopts its occurrence: one ring, never two.
-      if (!cur.occurrence) setActive({ ...cur, occurrence: mine, key });
+      // A local Desktop firing adopts its occurrence: one ring, never two — and says it rang.
+      if (!cur.occurrence) {
+        setActive({ ...cur, occurrence: mine, key });
+        report(mine, "received");
+        report(mine, cur.playing ? "playing" : "blocked");
+      }
       if (cur.key === key || !cur.occurrence) return;
     }
     cur?.handle?.stop();
