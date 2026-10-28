@@ -56,6 +56,7 @@ import {
   originalPath,
   removeOriginals,
   signedDownloadUrl,
+  signedViewUrl,
   uploadedSize,
   uploadOriginal,
 } from "@/infrastructure/supabase/storage";
@@ -1021,6 +1022,66 @@ export async function deleteItem(auth: AuthContext, itemId: string) {
     (versions ?? []).map((v) => v.storage_path).filter((p): p is string => Boolean(p)),
   );
   await audit(auth, "knowledge.item_deleted", "knowledge_item", itemId);
+}
+
+// ── Document viewer ──────────────────────────────────────────────────────────
+
+/**
+ * How a cited document opens in ELISE's viewer: a PDF or an image in place, anything else
+ * uploaded as a download, a Drive/Notion document in its own app. Short-lived signed URLs; the
+ * item is read through RLS first, so only the workspace's own documents open.
+ */
+export interface DocumentView {
+  itemId: string;
+  title: string;
+  space: string | null;
+  kind: "pdf" | "image" | "file" | "external";
+  viewUrl: string | null;
+  downloadUrl: string | null;
+  externalUrl: string | null;
+  sourceType: KnowledgeSourceRow["source_type"];
+}
+
+export async function documentView(auth: AuthContext, itemId: string): Promise<DocumentView> {
+  const { data: item } = await auth.db
+    .from("knowledge_items")
+    .select(
+      "id, title, mime_type, source_url, space_id, current_version_id, knowledge_sources(source_type)",
+    )
+    .eq("id", itemId)
+    .eq("workspace_id", auth.workspaceId)
+    .maybeSingle();
+  if (!item) throw new AppError("NOT_FOUND", "Document not found", { recovery: "review" });
+  const sourceType =
+    (item.knowledge_sources as unknown as { source_type: KnowledgeSourceRow["source_type"] } | null)
+      ?.source_type ?? "upload";
+  const { data: version } = item.current_version_id
+    ? await auth.db
+        .from("knowledge_versions")
+        .select("storage_path, mime_type")
+        .eq("id", item.current_version_id)
+        .eq("workspace_id", auth.workspaceId)
+        .maybeSingle()
+    : { data: null };
+  const spaces = await listSpaces(auth);
+  const space = spaces.find((s) => s.id === item.space_id)?.path ?? null;
+  const base = { itemId: item.id, title: item.title, space, sourceType };
+  const stored = sourceType === "upload" ? version?.storage_path : null;
+  if (!stored)
+    return {
+      ...base,
+      kind: item.source_url ? "external" : "file",
+      viewUrl: null,
+      downloadUrl: null,
+      externalUrl: item.source_url,
+    };
+  const mime = version?.mime_type ?? item.mime_type ?? "";
+  const kind = mime === "application/pdf" ? "pdf" : mime.startsWith("image/") ? "image" : "file";
+  const [viewUrl, downloadUrl] = await Promise.all([
+    kind === "file" ? null : signedViewUrl(auth.workspaceId, stored),
+    signedDownloadUrl(auth.workspaceId, stored, item.title),
+  ]);
+  return { ...base, kind, viewUrl, downloadUrl, externalUrl: null };
 }
 
 // ── Item preview ─────────────────────────────────────────────────────────────

@@ -210,6 +210,7 @@ class FakeStudyStore implements StudyStore {
       lastActivityAt: NOW.toISOString(),
       endedAt: null,
       summary: null,
+      log: [],
     };
     this.sessions.set(s.id, s);
     return s;
@@ -553,6 +554,32 @@ describe("study sessions", () => {
     });
     expect(q.previous?.sources.length).toBeGreaterThan(0);
     expect(q.sources).toEqual([]);
+  });
+
+  it("the Study widget logs every question with its mark, and the user can correct a mark (ADR-124)", async () => {
+    const { call, question } = setup();
+    const start = await call("study.start", { mode: "oral_exam" });
+    // Entering is announced once; a later question is not.
+    expect(JSON.stringify(start.status === "succeeded" && start.output)).toContain("Modo Estudio.");
+    expect(question()?.history).toMatchObject([{ number: 1, mark: "unanswered" }]);
+    expect(question()?.source?.title).toBeTruthy();
+
+    const answered = await call("study.answer", { answer: "Quería organizar con reglas." });
+    expect(JSON.stringify(answered.status === "succeeded" && answered.output)).not.toContain(
+      "Modo Estudio",
+    );
+    // "partial" is not right: it counts as wrong until the user says otherwise.
+    expect(question()?.history).toMatchObject([
+      { number: 1, mark: "wrong" },
+      { number: 2, mark: "unanswered" },
+    ]);
+
+    const s = question()!.sessionId;
+    const marked = await call("study.mark", { session: s, number: 1, mark: "correct" });
+    expect(marked.status).toBe("succeeded");
+    expect(question()?.history?.map((h) => h.mark)).toEqual(["correct", "unanswered"]);
+    const missing = await call("study.mark", { session: s, number: 9, mark: "wrong" });
+    expect(missing.status).toBe("failed");
   });
 
   it("showing the source counts as help; quiz answers are checked deterministically", async () => {

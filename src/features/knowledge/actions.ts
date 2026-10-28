@@ -12,6 +12,7 @@ import {
   createSpace,
   deleteItem,
   describeItem,
+  documentView,
   listSpaces,
   prepareNewVersion,
   prepareUploads,
@@ -113,6 +114,18 @@ export async function updateSpaceContextAction(spaceId: string, context: string)
       z.string().max(4000).parse(context),
     ),
   );
+}
+
+/** How a cited document opens in the viewer (a read: nothing to revalidate). */
+export async function documentViewAction(itemId: string) {
+  try {
+    return {
+      ok: true as const,
+      value: await documentView(await requireAuthContext(), id.parse(itemId)),
+    };
+  } catch (error) {
+    return { ok: false as const, error: toPublicError(error) };
+  }
 }
 
 /** What the user says a document is (ADR-122); validated and bounded by the service. */

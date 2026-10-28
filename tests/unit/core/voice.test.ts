@@ -22,6 +22,7 @@ import {
   pickAcknowledgement,
   predictIntent,
   progressLine,
+  CONTINUOUS_PROGRESS_AFTER_MS,
   PROGRESS_MAX_PER_TURN,
   PROGRESS_AFTER_MS,
   PROGRESS_TTL_MS,
@@ -1267,7 +1268,7 @@ describe("acknowledgements: short, varied, honest", () => {
   });
 
   it("progress after a real silence, counted from the end of the last audio (ADR-104)", async () => {
-    const { controller, player, say, wait } = setup();
+    const { controller, player, say, wait } = setup({ prefs: { continuous: false } });
     await controller.start();
     await say();
     controller.onStream({ type: "tool_started", name: "meeting.prepare" });
@@ -1296,7 +1297,9 @@ describe("acknowledgements: short, varied, honest", () => {
   });
 
   it("silence before any tool: the model is still deciding — a general line, not 10 s of nothing", async () => {
-    const { controller, player, say, wait } = setup({ prefs: { instantAck: false } });
+    const { controller, player, say, wait } = setup({
+      prefs: { instantAck: false, continuous: false },
+    });
     await controller.start();
     await say();
     expect(player.spoken).toEqual([]);
@@ -1305,7 +1308,9 @@ describe("acknowledgements: short, varied, honest", () => {
   });
 
   it("tools done, answer still being written: says so; a result cancels every pending line", async () => {
-    const { controller, player, say, wait } = setup({ prefs: { instantAck: false } });
+    const { controller, player, say, wait } = setup({
+      prefs: { instantAck: false, continuous: false },
+    });
     await controller.start();
     await say();
     controller.onStream({ type: "tool_started", name: "email.search" });
@@ -1468,6 +1473,7 @@ describe("voice turn latency (ADR-036)", () => {
   it("a cough after the turn doesn't cancel it; the tail ends on its own", async () => {
     const { controller, sent, hear, say, cancels } = setup({
       transcripts: ["¿Cómo viene mi día?"],
+      prefs: { continuous: false },
     });
     await controller.start();
     await say();
@@ -1477,6 +1483,41 @@ describe("voice turn latency (ADR-036)", () => {
     expect(sent).toHaveLength(1);
     expect(controller.state.tail).toBe(false);
     expect(micCapturing(controller.state)).toBe(false);
+  });
+
+  it("continuous conversation: talking while she searches interrupts it, as a new request", async () => {
+    const { controller, sent, hear, say, cancels } = setup({
+      transcripts: ["¿Cómo viene mi día?", "No, mejor decime el clima."],
+    });
+    await controller.start();
+    await say();
+    // Well past the first seconds (which would continue the request), she's still working…
+    await hear(6_000, 0.002);
+    expect(micCapturing(controller.state)).toBe(true);
+    await hear(400, 0.1); // …and the user talks over the search
+    expect(cancels).toHaveLength(1);
+    await hear(400, 0.1);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    // A new request, not glued to the one it replaced.
+    expect(sent[1]!.text).toBe("No, mejor decime el clima.");
+  });
+
+  it("continuous conversation talks less while working: no instant line, one progress line at most", async () => {
+    const { controller, player, say, wait } = setup({ prefs: { instantAck: true } });
+    await controller.start();
+    await say();
+    expect(player.spoken).toEqual([]);
+    controller.onStream({ type: "tool_started", name: "meeting.prepare" });
+    expect(player.spoken).toEqual(["Preparo la reunión."]);
+    player.finishPlaying();
+    wait(CONTINUOUS_PROGRESS_AFTER_MS - 500);
+    expect(player.spoken).toHaveLength(1);
+    for (let i = 0; i < 4; i++) {
+      wait(CONTINUOUS_PROGRESS_AFTER_MS + 100);
+      player.finishPlaying();
+    }
+    expect(player.spoken).toHaveLength(2);
   });
 
   it("a continuation that can't be transcribed sends the original request again", async () => {
@@ -1720,8 +1761,23 @@ describe("adaptive delivery never changes voice halfway through a reply (ADR-049
     expect(player.log).not.toContain("delivery:normal");
     expect(controller.state.delivery).toBe("whisper");
     player.finishPlaying();
-    await hear(DELIVERY.holdMs - 1_000, 0.002);
+    // Still awake (it sleeps after 8 s of silence): the whisper window restarted after her reply.
+    await hear(VOICE_TURN.sleepAfterMs - 1_000, 0.002);
     expect(controller.state.delivery).toBe("whisper");
+  });
+
+  it("falling asleep ends an automatic whisper (a requested one would stay)", async () => {
+    const { controller, player, say, hear } = setup({
+      heard: { mode: "whisper", confidence: 0.85, level: 0.01 },
+    });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "finished", failed: false });
+    player.finishPlaying();
+    expect(controller.state.delivery).toBe("whisper");
+    await hear(VOICE_TURN.sleepAfterMs + VOICE_TURN.noSpeechMs + 1_000, 0.002);
+    expect(controller.state.phase).toBe("sleeping");
+    expect(controller.state.delivery).toBe("normal");
   });
 });
 
@@ -1864,7 +1920,7 @@ describe("instant acknowledgement", () => {
   it("an action that names no lookup is still acknowledged the moment it ends", async () => {
     const { controller, player, say } = setup({
       transcripts: ["Apagá la tele del living"],
-      prefs: { instantAck: true },
+      prefs: { instantAck: true, continuous: false },
     });
     await controller.start();
     await say();
@@ -1887,7 +1943,7 @@ describe("instant acknowledgement", () => {
   });
 
   it("“ELISE, …” from the device's wake word is acknowledged too", async () => {
-    const { controller, player, hear } = setup({ prefs: { instantAck: true } });
+    const { controller, player, hear } = setup({ prefs: { instantAck: true, continuous: false } });
     await controller.deviceWake("poné música tranquila");
     await hear(VOICE_TURN.calibrateMs, 0.002);
     await settle();

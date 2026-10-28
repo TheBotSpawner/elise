@@ -54,7 +54,8 @@ export function contentSecurityPolicy(dev: boolean) {
     "font-src 'self' data: https://fonts.gstatic.com",
     "media-src 'self' data: blob: https:",
     `connect-src 'self' ${[...supabase, "https://*.googleapis.com", "https://*.gstatic.com", "https://*.google.com", ...devServer].join(" ")}`,
-    "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://sdk.scdn.co",
+    // Plus Knowledge originals in ELISE's document viewer (signed Storage URLs).
+    `frame-src https://www.youtube-nocookie.com https://www.youtube.com https://sdk.scdn.co ${supabase[0] ?? ""}`.trim(),
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'none'",

@@ -52,6 +52,17 @@ import { readDocument } from "./extraction-service";
  */
 
 const contentCache = new TtlCache<NormalizedDocument>();
+
+/** Files listed per connected root for "¿qué hay en la carpeta…?" (metadata only). */
+const LISTING_LIMIT = 50;
+
+export interface LiveListing {
+  sourceId: string;
+  root: string;
+  files: { title: string; type: string; modifiedAt: string | null; url: string | null }[];
+  /** Why it couldn't be read now (AUTH_EXPIRED → reconnect). */
+  error?: string;
+}
 /**
  * Structure, not content: which databases sit on a Notion page and which data sources a database
  * has. It changes rarely, and remembering it for a few minutes saves sequential round trips.
@@ -117,14 +128,42 @@ export function liveKnowledge(auth: AuthContext) {
     return drive.get(id)!;
   };
 
+  /** Stage 1: the connected (live) sources in these Spaces and the roots they follow. */
+  async function rootsIn(spaceIds: string[] | null) {
+    let query = auth.db
+      .from("knowledge_sources")
+      .select("id, space_id, source_type, connection_id, display_name, configuration, status")
+      .eq("workspace_id", auth.workspaceId)
+      .eq("access_mode", "external_live")
+      .is("archived_at", null)
+      .neq("status", "disconnected");
+    if (spaceIds) query = query.in("space_id", spaceIds);
+    const { data } = await query;
+    const sources = data ?? [];
+    const roots = sources.flatMap((s): LiveRoot[] =>
+      s.connection_id && (s.source_type === "notion" || s.source_type === "google_drive")
+        ? selectionOf(s.configuration).map((r) => ({
+            sourceId: s.id,
+            spaceId: s.space_id,
+            sourceType: s.source_type as LiveRoot["sourceType"],
+            connectionId: s.connection_id!,
+            id: r.id,
+            kind: r.kind,
+            name: r.name,
+          }))
+        : [],
+    );
+    return { sources, roots };
+  }
+
   /** Stage 3: what this root's provider says could answer. */
   async function candidates(
     root: LiveRoot,
     configuration: unknown,
     terms: string[],
     recent: boolean,
+    limit: number = LIVE.candidatesPerRoot,
   ): Promise<LiveCandidate[]> {
-    const limit = LIVE.candidatesPerRoot;
     if (root.sourceType === "notion") {
       const client = notionFor(root.connectionId);
       const remembered = async (key: string, read: () => Promise<string[]>) => {
@@ -224,23 +263,43 @@ export function liveKnowledge(auth: AuthContext) {
   }
 
   return {
+    /**
+     * What each connected source in these Spaces holds right now — names, types, dates and
+     * links, read from the provider (subfolders included), never content. "¿Qué hay en la
+     * carpeta…?" is answered from this: a live source is never "indexed", and that is normal.
+     */
+    async listing(spaceIds: string[]): Promise<LiveListing[]> {
+      const { sources, roots } = await rootsIn(spaceIds);
+      const config = new Map(sources.map((s) => [s.id, s.configuration]));
+      return Promise.all(
+        roots.map(async (r): Promise<LiveListing> => {
+          try {
+            const files = await candidates(r, config.get(r.sourceId), [], true, LISTING_LIMIT);
+            return {
+              sourceId: r.sourceId,
+              root: r.name,
+              files: files.map((c) => ({
+                title: c.title,
+                type: c.itemType,
+                modifiedAt: c.modifiedAt,
+                url: c.url,
+              })),
+            };
+          } catch (error) {
+            return { sourceId: r.sourceId, root: r.name, files: [], error: toAppError(error).code };
+          }
+        }),
+      );
+    },
+
     async liveSearch(q: {
       text: string;
       spaceIds: string[] | null;
       recent: boolean;
     }): Promise<LiveSearchOutcome> {
       const started = Date.now();
-      let query = auth.db
-        .from("knowledge_sources")
-        .select("id, space_id, source_type, connection_id, display_name, configuration, status")
-        .eq("workspace_id", auth.workspaceId)
-        .eq("access_mode", "external_live")
-        .is("archived_at", null)
-        .neq("status", "disconnected");
-      if (q.spaceIds) query = query.in("space_id", q.spaceIds);
-      const { data: sources } = await query;
-      if (!sources?.length) return { hits: [], consulted: [], unavailable: [] };
-
+      const { sources, roots } = await rootsIn(q.spaceIds);
+      if (!sources.length) return { hits: [], consulted: [], unavailable: [] };
       const terms = searchTerms(q.text);
       const { data: spaceRows } = await auth.db
         .from("knowledge_spaces")
@@ -252,19 +311,6 @@ export function liveKnowledge(auth: AuthContext) {
         ).map((s) => [s.id, s.path]),
       );
       const config = new Map(sources.map((s) => [s.id, s.configuration]));
-      const roots = sources.flatMap((s): LiveRoot[] =>
-        s.connection_id && (s.source_type === "notion" || s.source_type === "google_drive")
-          ? selectionOf(s.configuration).map((r) => ({
-              sourceId: s.id,
-              spaceId: s.space_id,
-              sourceType: s.source_type as LiveRoot["sourceType"],
-              connectionId: s.connection_id!,
-              id: r.id,
-              kind: r.kind,
-              name: r.name,
-            }))
-          : [],
-      );
       const chosen = rankRoots(roots, terms);
       // Stage 3 searches the subject, not the words that only say where to look. Names only:
       // a Space's description is prose that often holds the very subject ("cronograma, clases").

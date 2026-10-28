@@ -1398,6 +1398,8 @@ export type StudySessionRow = {
   current: Json | null;
   question_count: number;
   summary: Json | null;
+  /** The question log (migration 069); absent on a database without it. */
+  log?: Json;
   started_at: Ts;
   last_activity_at: Ts;
   ended_at: Ts | null;

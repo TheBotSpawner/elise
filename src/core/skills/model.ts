@@ -339,8 +339,12 @@ export const INDEX_LINES = 8;
 
 /** The lightweight index for this turn: every in-scope Method when few, else the best few. */
 export function indexFor(selection: MethodSelection): ScoredMethod[] {
-  const rest = selection.candidates.filter((c) => c !== selection.selected);
-  return rest.length <= INDEX_LINES ? rest : rest.filter((c) => c.score > 0).slice(0, INDEX_LINES);
+  // Only Methods the message relates to: an unrelated one listed as "applies here" got loaded
+  // for nothing ("tirame una pregunta del EPI" → a day-planning Method). The rest stay
+  // findable with methods.search (counted in `more`).
+  return selection.candidates
+    .filter((c) => c !== selection.selected && c.score > 0)
+    .slice(0, INDEX_LINES);
 }
 
 export interface TurnMethods {

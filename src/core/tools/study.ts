@@ -16,6 +16,9 @@ import {
   bankQuestions,
   conceptForQuestion,
   isQuestionBank,
+  logQuestion,
+  markOf,
+  markQuestion,
   namesUnit,
   pickBankQuestion,
   pickNextConcept,
@@ -417,6 +420,19 @@ function questionPayload(
     previous,
     feedbackMode: session.preferences.feedback,
     scope: clip(session.scope.label, 200),
+    // Every question so far, to page through and correct (document and page only).
+    history: session.log.map((h) => ({
+      ...h,
+      question: clip(h.question, 600),
+      source: h.source ? { ...h.source, title: clip(h.source.title, 300) } : null,
+    })),
+    source: current.evidence[0]
+      ? {
+          itemId: current.evidence[0].itemId,
+          title: clip(current.evidence[0].title, 300),
+          page: current.evidence[0].page,
+        }
+      : null,
   };
 }
 
@@ -627,8 +643,9 @@ export const startStudyTool: ToolDefinition = {
     const current = await prepareQuestion(env, profile, session, m, pool, [], []);
     if (!current)
       throw new AppError("NOT_FOUND", "Nothing to ask in that scope", { recovery: "review" });
-    await studyStore.saveSession(session.id, { current, questionCount: current.number });
-    session = { ...session, current, questionCount: current.number };
+    const log = logQuestion(session.log, current);
+    await studyStore.saveSession(session.id, { current, questionCount: current.number, log });
+    session = { ...session, current, questionCount: current.number, log };
     const question = questionPayload(profile, session, current);
     show(env, "study.start", {
       status: "succeeded",
@@ -653,7 +670,8 @@ export const startStudyTool: ToolDefinition = {
             }
           : {}),
         question: forModel(current),
-        instructions: `${missing.length ? "First say briefly which requested part wasn't found in the material. " : ""}${ASK}`,
+        // Entering the mode is announced once, out loud, before the first question.
+        instructions: `Start your reply with exactly "Modo Estudio." (in English: "Study mode."), once, as its own sentence. ${missing.length ? "Then say briefly which requested part wasn't found in the material. " : ""}${ASK}`,
       },
       display: { kind: "study_question", question },
     };
@@ -772,12 +790,18 @@ export const answerStudyTool: ToolDefinition = {
         : null,
       sources: each ? sourcesOf(current.evidence, evaluation.refs) : [],
     };
+    const marked = markQuestion(session.log, current.number, markOf(assessment));
     const updated: StudySession = {
       ...session,
       current: next,
       questionCount: next?.number ?? current.number,
+      log: next ? logQuestion(marked, next) : marked,
     };
-    await store.saveSession(session.id, { current: next, questionCount: updated.questionCount });
+    await store.saveSession(session.id, {
+      current: next,
+      questionCount: updated.questionCount,
+      log: updated.log,
+    });
     const question: QuestionPayload = next
       ? questionPayload(profile, updated, next, previous)
       : {
@@ -968,13 +992,19 @@ export const nextStudyTool: ToolDefinition = {
       return {
         output: { next: null, instructions: "Nothing left to ask in this scope: offer study.end." },
       };
+    const log = logQuestion(session.log, next);
     await store.saveSession(session.id, {
       current: next,
       questionCount: next.number,
       scope: session.scope,
       preferences: session.preferences,
+      log,
     });
-    const question = questionPayload(profile, { ...session, questionCount: next.number }, next);
+    const question = questionPayload(
+      profile,
+      { ...session, questionCount: next.number, log },
+      next,
+    );
     show(env, "study.next", { status: "succeeded", display: { kind: "study_question", question } });
     return {
       output: { next: forModel(next), scope: session.scope.label, instructions: ASK },
@@ -1164,6 +1194,51 @@ export const progressStudyTool: ToolDefinition = {
   },
 };
 
+// ── study.mark ───────────────────────────────────────────────────────────────
+
+const markInput = z
+  .object({
+    number: z.number().int().min(1).describe("The question's number in the session."),
+    mark: z.enum(["correct", "wrong", "unanswered"]),
+    session: sessionRef,
+  })
+  .strict();
+
+/**
+ * The user corrects how a question went (the widget's tick / cross / dot): the session's log
+ * changes; the evaluator's assessment and the concept's progress stay as they were.
+ */
+export const markStudyTool: ToolDefinition = {
+  name: "study.mark",
+  capability: "study",
+  operation: "mark",
+  description:
+    '"Esa la tenía bien", "marcá la 3 como mal": changes how a question of the session is marked (correct, wrong, unanswered) in the study widget.',
+  input: markInput,
+  async describe() {
+    return { summary: "Mark question" };
+  },
+  async run(raw, env) {
+    const q = markInput.parse(raw);
+    const session = await sessionFor(env, q.session);
+    if (!session.log.some((h) => h.number === q.number))
+      throw new AppError("NOT_FOUND", `There is no question ${q.number} in this session`, {
+        recovery: "review",
+      });
+    const log = markQuestion(session.log, q.number, q.mark);
+    await study(env).store.saveSession(session.id, { log });
+    const marked = { ...session, log };
+    const profile = await findProfile(contexts(env), session.contextId);
+    if (!session.current) return { output: { number: q.number, mark: q.mark } };
+    const question = questionPayload(profile, marked, session.current);
+    show(env, "study.mark", { status: "succeeded", display: { kind: "study_question", question } });
+    return {
+      output: { number: q.number, mark: q.mark },
+      display: { kind: "study_question", question },
+    };
+  },
+};
+
 export const STUDY_TOOLS = [
   startStudyTool,
   answerStudyTool,
@@ -1173,4 +1248,5 @@ export const STUDY_TOOLS = [
   configureStudyTool,
   endStudyTool,
   progressStudyTool,
+  markStudyTool,
 ];

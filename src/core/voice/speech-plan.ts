@@ -263,6 +263,12 @@ export function predictIntent(text: string): AckIntent | null {
 export const PROGRESS_AFTER_MS = 3_500;
 /** A few truthful updates for genuinely long work, never a talking spinner. */
 export const PROGRESS_MAX_PER_TURN = 3;
+/**
+ * Continuous conversation (owner's decision, 2026-10-28): it should feel like talking, not like
+ * a spinner — no "Un segundo." on every request, and at most one progress line, later.
+ */
+export const CONTINUOUS_PROGRESS_AFTER_MS = 6_000;
+export const CONTINUOUS_PROGRESS_MAX = 1;
 
 /**
  * What is going on, by stage. Each line only states the work that is really running (the tool's

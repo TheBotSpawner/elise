@@ -103,7 +103,7 @@ export const getSpaceTool: ToolDefinition = {
   capability: "knowledge",
   operation: "getSpace",
   description:
-    '"¿Qué tengo cargado en X?", "¿qué es X?", "¿por qué no aparece este libro?", "¿qué está conectado de Drive?": one Space or Section — its description and context (the user\'s own words about what it is), its Sections, documents with their status (ready, processing, needs attention and why) and connected sources. A Section also gets its parent Space\'s description and general documents. Use it for structure and status; knowledge.search for what documents say.',
+    '"¿Qué tengo cargado en X?", "¿qué es X?", "¿por qué no aparece este libro?", "¿qué está conectado de Drive?": one Space or Section — its description and context (the user\'s own words about what it is), its Sections, documents with their status (ready, processing, needs attention and why) and connected sources — a connected Drive folder or Notion page with the files it holds right now, read live ("¿qué hay en la carpeta de Drive de X?"). A Section also gets its parent Space\'s description and general documents. Use it for structure and status; knowledge.search for what documents say.',
   input: getSpaceInput,
   async describe() {
     return { summary: "Open Space" };
@@ -142,7 +142,7 @@ export const getSpaceTool: ToolDefinition = {
         ...(c.documents.length > 60 ? { moreDocuments: c.documents.length - 60 } : {}),
         connectedSources: c.sources,
         instructions:
-          "Answer structure questions from this. When the description/context answers what the Space is, say so (it's what the user wrote about it). Never claim document contents from it.",
+          "Answer structure questions from this. When the description/context answers what the Space is, say so (it's what the user wrote about it). Never claim document contents from it. A connected source with `live` (Drive folder, Notion page) is read from the provider when needed: its `live.files` is what it holds right now — list them when asked what it contains, and never call it empty or \"not indexed\" (live sources are never indexed, and that is normal). To answer from one of those files, use knowledge.search. If `live.error` says it couldn't be read, say it's an access problem (AUTH_EXPIRED → reconnect it in Connections).",
       },
     };
   },

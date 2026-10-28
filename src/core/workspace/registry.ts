@@ -1073,6 +1073,25 @@ export const PAYLOADS = {
       .nullable(),
     feedbackMode: z.enum(["each", "end"]),
     scope: text(200),
+    /** Every question of the session so far, with its mark (absent on older Surfaces). */
+    history: z
+      .array(
+        z.object({
+          number: z.number().int().min(1),
+          question: text(600),
+          mark: z.enum(["correct", "wrong", "unanswered"]),
+          source: z
+            .object({ itemId: text(100), title: text(300), page: z.number().int().nullable() })
+            .nullable(),
+        }),
+      )
+      .max(50)
+      .optional(),
+    /** Where the current question comes from (document and page — never the answer). */
+    source: z
+      .object({ itemId: text(100), title: text(300), page: z.number().int().nullable() })
+      .nullable()
+      .optional(),
   }),
   study_progress: z.object({
     contextId: text(100),
@@ -1714,15 +1733,17 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
             ...(p.sources.length ? [] : [{ id: "reveal" as const, kind: "tool" as const }]),
             { id: "next", kind: "tool" },
             { id: "end_session", kind: "tool" },
+            { id: "mark", kind: "tool" },
           ]
         : [
             { id: "next", kind: "tool" },
             { id: "end_session", kind: "tool" },
+            { id: "mark", kind: "tool" },
           ],
     // The model gets the question, never the key points or hints it hasn't shown.
     describe: (p) =>
       `Study session ${p.sessionId} · ${q(p.contextName)} · ${p.mode} · question ${p.number} [${p.state}${p.assessment ? `: ${p.assessment}` : ""}] about ${q(p.conceptLabel)}: ${q(p.question)}`,
-    tool: (p, action) => {
+    tool: (p, action, itemId) => {
       const session = { session: p.sessionId };
       switch (action) {
         case "hint":
@@ -1733,6 +1754,16 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
           return { name: "study.next", args: session };
         case "end_session":
           return { name: "study.end", args: session };
+        case "mark": {
+          // "3:correct" — the question's number and its new mark, from the widget's status chip.
+          const [n, mark] = (itemId ?? "").split(":");
+          const number = Number(n);
+          return Number.isInteger(number) &&
+            number > 0 &&
+            ["correct", "wrong", "unanswered"].includes(mark ?? "")
+            ? { name: "study.mark", args: { ...session, number, mark } }
+            : null;
+        }
         default:
           return null;
       }

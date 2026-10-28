@@ -38,8 +38,11 @@ export const VOICE_TURN = {
   /** Nothing said for this long: the utterance ends empty. */
   noSpeechMs: 8_000,
   maxUtteranceMs: VOICE_LIMITS.maxUtteranceMs,
-  /** Listening this long with nobody speaking puts the session to sleep. */
-  sleepAfterMs: 30_000,
+  /**
+   * Listening this long with nobody speaking (counted from the end of ELISE's reply) puts the
+   * session to sleep: the mic closes on its own, no tap needed (owner's decision, 2026-10-28).
+   */
+  sleepAfterMs: 8_000,
   barge: {
     /** While ELISE speaks, this long estimates how much of her voice leaks into the mic. */
     calibrateMs: 600,
@@ -245,6 +248,7 @@ export function endVerdict(text: string): EndVerdict {
  */
 export class BargeInDetector {
   private start = -1;
+  private ratios: number[] = [];
   private coupling = 0;
   private floor = 0;
   private floorN = 0;
@@ -255,11 +259,19 @@ export class BargeInDetector {
   frame(mic: number, out: number, now: number): boolean {
     if (this.start < 0) this.start = now;
     if (now - this.start < this.cfg.calibrateMs) {
-      if (out > 0.01) this.coupling = Math.max(this.coupling, mic / out);
+      if (out > 0.01) this.ratios.push(mic / out);
       else {
         this.floor = (this.floor * this.floorN + mic) / ++this.floorN;
       }
       return false;
+    }
+    // The typical leak (median), not the worst frame: echo cancellation leaks most in the first
+    // instants of playback, and the maximum of that transient set a bar no voice ever cleared —
+    // talking over ELISE didn't interrupt her.
+    if (this.ratios.length) {
+      const sorted = [...this.ratios].sort((a, b) => a - b);
+      this.coupling = sorted[Math.floor(sorted.length / 2)]!;
+      this.ratios = [];
     }
     const predicted = this.coupling * out * this.cfg.echoFactor;
     const threshold = Math.max(this.floor * this.cfg.floorFactor, this.cfg.margin) + predicted;

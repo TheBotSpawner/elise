@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import type { SurfacePayloads } from "@/core/workspace/registry";
+import { DocumentLink } from "@/features/knowledge/document-viewer";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -228,9 +229,18 @@ function Sources({ sources }: { sources: Answer["sources"] }) {
             </>
           );
           const cls = "flex items-baseline gap-2 text-[12.5px]";
+          const item = s.url?.match(/^\/knowledge\/items\/([0-9a-f-]{36})$/)?.[1];
           return (
             <li key={`${s.title}-${n}`}>
-              {s.url?.startsWith("/") ? (
+              {item ? (
+                <DocumentLink
+                  itemId={item}
+                  title={s.title}
+                  className={cn(cls, "hover:text-accent-text")}
+                >
+                  {label}
+                </DocumentLink>
+              ) : s.url?.startsWith("/") ? (
                 <Link href={s.url} className={cn(cls, "hover:text-accent-text")}>
                   {label}
                 </Link>

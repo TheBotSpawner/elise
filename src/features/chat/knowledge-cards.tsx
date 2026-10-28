@@ -4,6 +4,7 @@ import { motion, type MotionProps } from "motion/react";
 import Link from "next/link";
 
 import type { ToolDisplay } from "@/core/agents/tools";
+import { DocumentLink } from "@/features/knowledge/document-viewer";
 import { useI18n } from "@/lib/i18n/client";
 
 type Evidence = Extract<ToolDisplay, { kind: "knowledge_evidence" }>;
@@ -31,8 +32,11 @@ export function KnowledgeSourcesCard({ display, rise }: { display: Evidence; ris
           {display.evidence.map((e) => (
             <li key={e.chunkId} className="grid grid-cols-[28px_minmax(0,1fr)] gap-2 text-[14px]">
               <span className="font-mono text-[12.5px] text-accent-text">[{e.ref}]</span>
-              <Link
-                href={`/knowledge/items/${e.itemId}?chunk=${e.chunkId}`}
+              <DocumentLink
+                itemId={e.itemId}
+                chunkId={e.chunkId}
+                page={e.page}
+                title={e.title}
                 className="min-w-0 hover:text-accent-text"
               >
                 <span className="block truncate">
@@ -50,7 +54,7 @@ export function KnowledgeSourcesCard({ display, rise }: { display: Evidence; ris
                     e.sourceType}
                   {e.versionNumber > 1 && ` · v${e.versionNumber}`} · {e.snippet}
                 </span>
-              </Link>
+              </DocumentLink>
             </li>
           ))}
         </ol>

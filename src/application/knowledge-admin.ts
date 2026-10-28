@@ -6,6 +6,7 @@ import type { KnowledgeManager, SpaceOverview } from "@/core/knowledge/admin";
 import { downloadChatAttachment } from "@/infrastructure/supabase/storage";
 
 import type { AuthContext } from "./auth-context";
+import { liveKnowledge } from "./knowledge-live";
 import {
   archiveSpace,
   createSpace,
@@ -49,7 +50,20 @@ export function knowledgeManager(auth: AuthContext): KnowledgeManager {
     },
 
     async contents(spaceId) {
-      const [view, all] = await Promise.all([getSpace(auth, spaceId), listSpaces(auth)]);
+      const [view, all, listing] = await Promise.all([
+        getSpace(auth, spaceId),
+        listSpaces(auth),
+        // Connected folders and pages are listed live: they are never "indexed" (ADR-046).
+        liveKnowledge(auth)
+          .listing([spaceId])
+          .catch(() => []),
+      ]);
+      const liveOf = (sourceId: string) => {
+        const roots = listing.filter((l) => l.sourceId === sourceId);
+        if (!roots.length) return undefined;
+        const error = roots.find((r) => r.error)?.error;
+        return { files: roots.flatMap((r) => r.files), ...(error ? { error } : {}) };
+      };
       const parent = view.space.parentId ? all.find((s) => s.id === view.space.parentId) : null;
       return {
         space: overview(view.space as SpaceSummary, all),
@@ -71,6 +85,7 @@ export function knowledgeManager(auth: AuthContext): KnowledgeManager {
             documents: s.counts,
             lastSyncedAt: s.lastSyncedAt,
             lastError: s.lastErrorCode,
+            ...(s.live ? { live: liveOf(s.id) ?? { files: [] } } : {}),
           })),
         documents: view.items.map((i) => ({
           id: i.id,

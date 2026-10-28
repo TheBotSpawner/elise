@@ -60,6 +60,8 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-121 | OCR sin claves: Workload Identity Federation desde Vercel (OIDC) y broker de tokens de 1 h para los jobs de Trigger.dev |
 | ADR-122 | Descripciones de documentos, búsqueda por nombre/descripción y sin acentos, y bancos de preguntas en Estudio (preguntas textuales, nunca inventadas) |
 | ADR-123 | Lecturas rápidas: preguntas simples de Mi ELISE (alarmas, timers) se responden sin el modelo; "hoy" incluye alarmas que ya sonaron |
+| ADR-124 | Widget de Modo Estudio: registro de preguntas con su estado (bien/mal/sin responder) editable, navegación entre preguntas, "Modo Estudio" al entrar, evaluar = Modo Estudio, índice de Métodos solo con Métodos relacionados |
+| ADR-125 | Conversación continua que se siente conversación: menos rellenos, escucha durante la búsqueda (interrumpible), calibración de interrupción por mediana, reposo a los 8 s, ELISE explica el modo |
 
 ## roadmap/
 

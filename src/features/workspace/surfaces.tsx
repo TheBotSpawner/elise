@@ -5,6 +5,10 @@ import {
   CalendarDays,
   CalendarClock,
   Check,
+  ArrowUpRight,
+  ChevronDown,
+  ChevronLeft,
+  X,
   ChevronRight,
   ExternalLink,
   FileText,
@@ -63,6 +67,7 @@ import { ApprovalCard, type ApprovalPhase } from "@/features/chat/approval-card"
 import { DisplayCard } from "@/features/chat/result-cards";
 import { EmailReaderDialog, EmailThreadReader } from "@/features/email/email-reader";
 import { completionFeedback } from "@/features/feedback/completion";
+import { DocumentLink } from "@/features/knowledge/document-viewer";
 import { MusicSurfaceBody } from "@/features/music/music-view";
 import {
   GoalSurfaceBody,
@@ -581,59 +586,133 @@ const PROVIDER_NAMES: Record<string, string> = {
   google_drive: "Google Drive",
 };
 
-/**
- * One document, as an answer (ADR-114): what it is, where it lives, what it says, and the way
- * to open it in its own app — the link is the most useful thing on the card.
- */
-function KnowledgeArticle({
+/** A stored excerpt reads as a quote: the "[truncated]" marker becomes an ellipsis. */
+const excerptText = (text: string) => text.replace(/[.,;:\s]*…?\s*\[truncated\]\s*$/, "…").trim();
+
+/** "páginas 12 y 18" from the cited passages' pages (none: nothing to say). */
+function pageList(pages: number[], locale: string) {
+  const unique = [...new Set(pages)].sort((a, b) => a - b);
+  if (!unique.length) return null;
+  const es = locale === "es";
+  const word = es
+    ? unique.length > 1
+      ? "páginas"
+      : "página"
+    : unique.length > 1
+      ? "pages"
+      : "page";
+  const list =
+    unique.length > 1
+      ? `${unique.slice(0, -1).join(", ")} ${es ? "y" : "and"} ${unique.at(-1)}`
+      : `${unique[0]}`;
+  return `${word} ${list}`;
+}
+
+/** One cited passage: a quote, where it is, and the way to see it in the whole document. */
+function PassageQuote({
   s,
-  compact = false,
+  p,
+  n,
 }: {
   s: SurfacePayloads["knowledge_source"];
-  compact?: boolean;
+  p: SurfacePayloads["knowledge_source"]["passages"][number];
+  n: number;
 }) {
   const { t } = useI18n();
   const k = t.workspace.knowledge;
-  const provider = PROVIDER_NAMES[s.sourceType];
-  const passages = compact ? s.passages.slice(0, 2) : s.passages;
+  return (
+    <section className="flex gap-3 rounded-xl border border-border bg-surface px-3.5 py-3">
+      <span
+        aria-hidden
+        className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft font-serif text-[22px] leading-none text-accent-text"
+      >
+        “
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
+          <span className="rounded-full bg-accent-soft px-2 py-0.5 font-medium text-accent-text">
+            {k.fragment(n)}
+          </span>
+          {p.page ? <span>{k.page(p.page)}</span> : null}
+          {p.section ? <span className="min-w-0 truncate">{p.section}</span> : null}
+        </p>
+        <blockquote className={cn(TEXT, "whitespace-pre-line text-fg2")}>
+          “{excerptText(p.excerpt)}”
+        </blockquote>
+        <DocumentLink
+          itemId={s.itemId}
+          chunkId={p.chunkId}
+          page={p.page}
+          title={s.title}
+          className="inline-flex items-center gap-1 self-end text-[12.5px] font-medium text-accent-text hover:underline"
+        >
+          {k.seeInDocument}
+          <ArrowUpRight className="size-3.5" aria-hidden />
+        </DocumentLink>
+      </div>
+    </section>
+  );
+}
+
+/** "Fuente original disponible" and the button that opens the whole document in the viewer. */
+function OpenFull({ s }: { s: SurfacePayloads["knowledge_source"] }) {
+  const { t } = useI18n();
+  const k = t.workspace.knowledge;
+  return (
+    <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+      <span className="flex items-center gap-1.5 text-[12.5px] text-muted">
+        <BookOpen className="size-4" aria-hidden />
+        {k.originalAvailable}
+      </span>
+      <DocumentLink
+        itemId={s.itemId}
+        title={s.title}
+        className="inline-flex h-9 items-center gap-1.5 rounded-full bg-accent px-4 text-[13px] font-medium text-accent-fg hover:opacity-90"
+      >
+        <ExternalLink className="size-3.5" aria-hidden />
+        {k.openFull}
+      </DocumentLink>
+    </footer>
+  );
+}
+
+const sourceLine = (s: SurfacePayloads["knowledge_source"]) =>
+  [PROVIDER_NAMES[s.sourceType], s.spaceName].filter(Boolean).join(" · ");
+
+/**
+ * One document, as an answer (ADR-114): what it is, where it lives, the passages it was cited
+ * for as quotes, and the whole document one click away in ELISE's viewer.
+ */
+function KnowledgeArticle({ s }: { s: SurfacePayloads["knowledge_source"] }) {
+  const { t } = useI18n();
+  const k = t.workspace.knowledge;
   return (
     <article className="flex flex-col gap-3">
-      {!compact && (
-        <header className="flex items-start gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
-            <FileText className="size-5" aria-hidden />
-          </span>
-          <span className="flex min-w-0 flex-col gap-0.5">
-            <span className={TITLE}>{s.title}</span>
-            <span className="text-[12.5px] text-muted">
-              {[provider, s.spaceName].filter(Boolean).join(" · ")}
+      <header className="flex items-start gap-3 border-b border-border pb-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
+          <FileText className="size-5" aria-hidden />
+        </span>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className={TITLE}>{s.title}</span>
+          <span className="text-[12.5px] text-muted">{sourceLine(s)}</span>
+        </span>
+      </header>
+      {s.passages.length > 0 && (
+        <>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[14px] font-medium">{k.relevant}</p>
+            <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[12px] text-accent-text">
+              {k.matches(s.passages.length)}
             </span>
-          </span>
-        </header>
+          </div>
+          <div className="flex flex-col gap-2">
+            {s.passages.map((p, i) => (
+              <PassageQuote key={p.chunkId} s={s} p={p} n={i + 1} />
+            ))}
+          </div>
+        </>
       )}
-      {passages.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {passages.map((p) => (
-            <section key={p.chunkId} className="rounded-xl bg-surface-2 px-3.5 py-2.5">
-              {p.section && <p className="mb-1 type-label text-faint">{p.section}</p>}
-              <p className={cn(TEXT, "whitespace-pre-line", compact && "line-clamp-4")}>
-                {p.excerpt}
-              </p>
-            </section>
-          ))}
-        </div>
-      )}
-      {s.url && (
-        <a
-          href={s.url}
-          target="_blank"
-          rel="noopener noreferrer nofollow"
-          className="inline-flex h-9 w-fit items-center gap-1.5 rounded-full bg-fg px-4 text-[13px] font-medium text-bg hover:opacity-90"
-        >
-          {provider ? k.openIn(provider) : k.open}
-          <ExternalLink className="size-3.5" aria-hidden />
-        </a>
-      )}
+      <OpenFull s={s} />
     </article>
   );
 }
@@ -643,37 +722,60 @@ function KnowledgeSourceBody({ p }: { p: SurfacePayloads["knowledge_source"] }) 
 }
 
 /**
- * Several documents: a short list, each opening in place to what it says and its link. One
- * document (the answer cited only it) is that document's card.
+ * Several documents: one row each; a row opens in place to its quoted passages and the button
+ * that opens the whole document. One document (the answer cited only it) is that document's card.
  */
 function KnowledgeResultBody({ p }: { p: SurfacePayloads["knowledge_result"] }) {
+  const { t, locale } = useI18n();
+  const k = t.workspace.knowledge;
   if (p.sources.length === 1) return <KnowledgeArticle s={p.sources[0]!} />;
   return (
-    <ul className="-mx-2 flex flex-col">
-      {p.sources.map((s, i) => (
-        <li key={s.itemId}>
-          <details className="group rounded-xl px-2 open:bg-surface-2/60" open={i === 0}>
-            <summary className="flex cursor-pointer list-none items-center gap-3 py-2.5 [&::-webkit-details-marker]:hidden">
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent-text">
-                <FileText className="size-4" aria-hidden />
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-[14px] font-medium">{s.title}</span>
-                <span className="truncate text-[12px] text-muted">
-                  {[PROVIDER_NAMES[s.sourceType], s.spaceName].filter(Boolean).join(" · ")}
+    <ul className="flex flex-col gap-2">
+      {p.sources.map((s, i) => {
+        const pages = pageList(
+          s.passages.flatMap((x) => (x.page ? [x.page] : [])),
+          locale,
+        );
+        return (
+          <li key={s.itemId}>
+            <details
+              className="group rounded-2xl border border-border open:border-accent-line open:bg-surface-2/40"
+              open={i === 0}
+            >
+              <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
+                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent-text">
+                  <FileText className="size-4" aria-hidden />
                 </span>
-              </span>
-              <ChevronRight
-                className="size-4 shrink-0 text-faint transition-transform group-open:rotate-90"
-                aria-hidden
-              />
-            </summary>
-            <div className="pb-3 pl-11">
-              <KnowledgeArticle s={s} compact />
-            </div>
-          </details>
-        </li>
-      ))}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-[14px] font-medium">{s.title}</span>
+                  <span className="truncate text-[12px] text-muted">{sourceLine(s)}</span>
+                </span>
+                {s.passages.length > 0 && (
+                  <span className="hidden shrink-0 rounded-full bg-accent-soft px-2.5 py-0.5 text-[12px] text-accent-text sm:inline">
+                    {k.cited(s.passages.length)}
+                  </span>
+                )}
+                <ChevronDown
+                  className="size-4 shrink-0 text-faint transition-transform group-open:rotate-180"
+                  aria-hidden
+                />
+              </summary>
+              <div className="flex flex-col gap-2 px-3 pb-3">
+                {s.passages.length > 0 && (
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                    <p className="text-[13.5px] font-medium">{k.relevant}</p>
+                    {pages && <span className="text-[12px] text-muted">{k.pages(pages)}</span>}
+                  </div>
+                )}
+                {s.passages.map((x, n) => (
+                  <PassageQuote key={x.chunkId} s={s} p={x} n={n + 1} />
+                ))}
+                <OpenFull s={s} />
+              </div>
+            </details>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -1987,14 +2089,16 @@ function SourceExcerpts({ sources }: { sources: SurfacePayloads["study_question"
       <ul className="flex flex-col gap-2">
         {sources.map((s, i) => (
           <li key={`${s.itemId}:${i}`} className="flex flex-col gap-0.5">
-            <Link
-              href={`/knowledge/items/${s.itemId}`}
+            <DocumentLink
+              itemId={s.itemId}
+              page={s.page}
+              title={s.title}
               className="truncate text-[12.5px] text-accent-text hover:underline"
             >
               {s.title}
               {s.section ? ` · ${s.section}` : ""}
               {s.page ? ` · p. ${s.page}` : ""}
-            </Link>
+            </DocumentLink>
             <p className={cn(TEXT, "line-clamp-4 text-muted")}>{s.excerpt}</p>
           </li>
         ))}
@@ -2038,6 +2142,32 @@ function FeedbackLists({
   );
 }
 
+type StudyMark = "correct" | "wrong" | "unanswered";
+type StudyEntry = NonNullable<SurfacePayloads["study_question"]["history"]>[number];
+
+const NEXT_MARK: Record<StudyMark, StudyMark> = {
+  unanswered: "correct",
+  correct: "wrong",
+  wrong: "unanswered",
+};
+
+const MARK_TONE: Record<StudyMark, string> = {
+  correct: "border-success/30 bg-success/12 text-success",
+  wrong: "border-danger/30 bg-danger/10 text-danger-text",
+  unanswered: "border-border bg-surface-2 text-faint",
+};
+
+function MarkIcon({ mark }: { mark: StudyMark }) {
+  if (mark === "correct") return <Check className="size-5" strokeWidth={2.5} aria-hidden />;
+  if (mark === "wrong") return <X className="size-5" strokeWidth={2.5} aria-hidden />;
+  return <span aria-hidden className="size-2.5 rounded-full bg-current" />;
+}
+
+/**
+ * Study mode (ADR-124): the question being asked, every question of the session to page through
+ * with the arrows, and each one's mark — tick, cross or dot — which the user corrects by tapping
+ * the status of the question on screen. Answers stay in the conversation; the key never shows.
+ */
 function StudyQuestionBody({
   surface,
   p,
@@ -2049,18 +2179,73 @@ function StudyQuestionBody({
 }) {
   const { t } = useI18n();
   const s = t.workspace.study;
+  const w = s.widget;
   const busy = handlers.pending !== null || handlers.busy;
   const act = (id: ActionId) => () => handlers.onAction(surface, id, null);
   const has = (id: ActionId) => surface.actions.some((a) => a.id === id);
+
+  // The session so far; an older Surface (no history) is just its own question.
+  const current: StudyEntry = {
+    number: p.number,
+    question: p.question,
+    mark:
+      p.state === "answered" && p.assessment
+        ? p.assessment === "strong"
+          ? "correct"
+          : "wrong"
+        : "unanswered",
+    source: p.source ?? null,
+  };
+  const logged = p.history?.length ? p.history : [current];
+  const history = logged.some((h) => h.number === p.number) ? logged : [...logged, current];
+  // Marks changed here show at once; the next payload confirms them.
+  const [marks, setMarks] = useState<Record<number, StudyMark>>({});
+  const [picked, setPicked] = useState<number | null>(null);
+  const [seen, setSeen] = useState(p.number);
+  if (seen !== p.number) {
+    // A new question arrived: show it.
+    setSeen(p.number);
+    setPicked(null);
+  }
+  const shown = picked ?? p.number;
+  const index = Math.max(
+    0,
+    history.findIndex((h) => h.number === shown),
+  );
+  const entry = history[index]!;
+  const isCurrent = entry.number === p.number;
+  const markOf = (h: StudyEntry) => marks[h.number] ?? h.mark;
+
+  const onChip = (h: StudyEntry) => {
+    if (h.number !== entry.number) return setPicked(h.number);
+    const next = NEXT_MARK[markOf(h)];
+    setMarks((m) => ({ ...m, [h.number]: next }));
+    handlers.onAction(surface, "mark", `${h.number}:${next}`);
+  };
+  const go = (step: number) => setPicked(history[index + step]?.number ?? entry.number);
+
   return (
     <div className="flex flex-col gap-4">
-      {p.previous && (
-        <section
-          aria-label={s.previous}
-          className="flex flex-col gap-2 rounded-2xl border border-border bg-surface-2/60 p-3"
-        >
-          <p className="flex flex-wrap items-center gap-2">
-            <span className="type-label text-faint">{s.previous}</span>
+      <header className="flex items-center gap-3">
+        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
+          <GraduationCap className="size-5" aria-hidden />
+        </span>
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="truncate font-mono text-[12px] tracking-[0.14em] text-muted uppercase">
+            {w.mode} · {w.position(entry.number, history.length)}
+          </span>
+          <span className="truncate text-[13px] text-muted">
+            {[p.contextName, p.scope !== p.contextName ? p.scope : null]
+              .filter(Boolean)
+              .join(" › ")}
+          </span>
+        </span>
+      </header>
+
+      {isCurrent && p.previous && (
+        <details className="group rounded-xl border border-border bg-surface-2/60 px-3 py-2">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-[12.5px] text-muted [&::-webkit-details-marker]:hidden">
+            <span>{s.previous}</span>
             {p.previous.assessment && (
               <span
                 className={cn(
@@ -2071,42 +2256,29 @@ function StudyQuestionBody({
                 {s.assessment[p.previous.assessment]}
               </span>
             )}
-          </p>
-          <p className="line-clamp-2 text-[12.5px] text-faint">{p.previous.question}</p>
-          <p className={cn(TEXT, "italic")}>“{p.previous.answer}”</p>
-          {p.previous.feedback ? (
-            <FeedbackLists feedback={p.previous.feedback} />
-          ) : (
-            <p className="text-[12.5px] text-faint">{s.feedbackAtEnd}</p>
-          )}
-          {p.previous.sources.length > 0 && (
-            <details className="group">
-              <summary className="cursor-pointer text-[12.5px] text-accent-text">
-                {s.sources}
-              </summary>
-              <div className="pt-2">
-                <SourceExcerpts sources={p.previous.sources} />
-              </div>
-            </details>
-          )}
-        </section>
+            <ChevronDown
+              className="ml-auto size-4 transition-transform group-open:rotate-180"
+              aria-hidden
+            />
+          </summary>
+          <div className="flex flex-col gap-2 pt-2">
+            <p className="line-clamp-2 text-[12.5px] text-faint">{p.previous.question}</p>
+            <p className={cn(TEXT, "italic")}>“{p.previous.answer}”</p>
+            {p.previous.feedback ? (
+              <FeedbackLists feedback={p.previous.feedback} />
+            ) : (
+              <p className="text-[12.5px] text-faint">{s.feedbackAtEnd}</p>
+            )}
+            {p.previous.sources.length > 0 && <SourceExcerpts sources={p.previous.sources} />}
+          </div>
+        </details>
       )}
-      <div className="flex flex-col gap-2">
-        <p className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-faint">
-          <span className="font-mono text-accent-text">{s.question(p.number)}</span>
-          <span aria-hidden>·</span>
-          <span>{s.modes[p.mode]}</span>
-          <span aria-hidden>·</span>
-          <span className="truncate">{p.scope}</span>
-        </p>
-        <p className="text-[22px] leading-[1.3] font-light tracking-[-0.02em] text-pretty md:text-[26px]">
-          {p.question}
-        </p>
-        <p className="text-[12.5px] text-faint">
-          {s.about} {p.conceptLabel}
-        </p>
-      </div>
-      {p.options && (
+
+      <p className="rounded-2xl bg-surface-2 px-5 py-4 text-[20px] leading-[1.35] font-light tracking-[-0.015em] text-pretty md:text-[24px]">
+        {entry.question}
+      </p>
+
+      {isCurrent && p.options && (
         <ol className="flex flex-col gap-1.5">
           {p.options.map((o, i) => (
             <li
@@ -2119,7 +2291,7 @@ function StudyQuestionBody({
           ))}
         </ol>
       )}
-      {p.hints.length > 0 && (
+      {isCurrent && p.hints.length > 0 && (
         <div className="flex flex-col gap-1">
           <p className="type-label text-faint">{s.hints}</p>
           <ol className="flex flex-col gap-1">
@@ -2132,34 +2304,114 @@ function StudyQuestionBody({
           </ol>
         </div>
       )}
-      {p.state === "answered" && p.feedback && <FeedbackLists feedback={p.feedback} />}
-      {p.sources.length ? (
-        <SourceExcerpts sources={p.sources} />
-      ) : (
-        p.state === "asking" && <p className="text-[12px] text-faint">{s.sourcesHidden}</p>
+      {isCurrent && p.state === "answered" && p.feedback && <FeedbackLists feedback={p.feedback} />}
+      {isCurrent && p.sources.length > 0 && <SourceExcerpts sources={p.sources} />}
+
+      {entry.source && (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent-text">
+            <FileText className="size-5" aria-hidden />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-[13.5px] text-fg2">
+              {w.source}: {entry.source.title}
+            </span>
+            <span className="truncate text-[12.5px] text-muted">
+              {[p.contextName, entry.source.page ? w.page(entry.source.page) : null]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </span>
+          <DocumentLink
+            itemId={entry.source.itemId}
+            page={entry.source.page}
+            title={entry.source.title}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-accent-line px-3.5 text-[13px] text-accent-text hover:bg-accent-soft"
+          >
+            <ExternalLink className="size-3.5" aria-hidden />
+            {w.seeInDocument}
+          </DocumentLink>
+        </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        {has("hint") && (
-          <ActionButton disabled={busy} onClick={act("hint")}>
-            {t.workspace.actions.hint}
-          </ActionButton>
-        )}
-        {has("reveal") && (
-          <ActionButton disabled={busy} onClick={act("reveal")}>
-            {t.workspace.actions.reveal}
-          </ActionButton>
-        )}
-        {has("next") && (
-          <ActionButton disabled={busy} onClick={act("next")}>
-            {t.workspace.actions.next}
-          </ActionButton>
-        )}
-        {has("end_session") && (
-          <ActionButton disabled={busy} onClick={act("end_session")}>
-            {t.workspace.actions.end_session}
-          </ActionButton>
-        )}
-      </div>
+
+      {isCurrent && (
+        <div className="flex flex-wrap gap-2">
+          {has("hint") && (
+            <ActionButton disabled={busy} onClick={act("hint")}>
+              {t.workspace.actions.hint}
+            </ActionButton>
+          )}
+          {has("reveal") && (
+            <ActionButton disabled={busy} onClick={act("reveal")}>
+              {t.workspace.actions.reveal}
+            </ActionButton>
+          )}
+          {has("next") && (
+            <ActionButton disabled={busy} onClick={act("next")}>
+              {t.workspace.actions.next}
+            </ActionButton>
+          )}
+          {has("end_session") && (
+            <ActionButton disabled={busy} onClick={act("end_session")}>
+              {t.workspace.actions.end_session}
+            </ActionButton>
+          )}
+        </div>
+      )}
+
+      <nav
+        aria-label={w.mode}
+        className="flex items-center gap-2 border-t border-border pt-4"
+        title={w.markHint}
+      >
+        <button
+          type="button"
+          aria-label={w.previous}
+          disabled={index === 0}
+          onClick={() => go(-1)}
+          className="grid size-11 shrink-0 place-items-center rounded-xl border border-border text-muted hover:text-fg disabled:opacity-40"
+        >
+          <ChevronLeft className="size-5" aria-hidden />
+        </button>
+        <ol className="flex min-w-0 flex-1 justify-center-safe gap-2 overflow-x-auto px-1 py-1">
+          {history.map((h) => {
+            const mark = markOf(h);
+            const here = h.number === entry.number;
+            return (
+              <li key={h.number} className="flex shrink-0 flex-col items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onChip(h)}
+                  aria-current={here ? "step" : undefined}
+                  aria-label={here ? `${w.marks[mark]} · ${w.markHint}` : w.go(h.number)}
+                  title={w.marks[mark]}
+                  className={cn(
+                    "grid size-10 place-items-center rounded-xl border transition-colors",
+                    MARK_TONE[mark],
+                    here && "ring-2 ring-accent ring-offset-2 ring-offset-bg",
+                  )}
+                >
+                  <MarkIcon mark={mark} />
+                </button>
+                <span
+                  className={cn("font-mono text-[12px]", here ? "text-accent-text" : "text-faint")}
+                >
+                  {h.number}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+        <button
+          type="button"
+          aria-label={w.next}
+          disabled={index >= history.length - 1}
+          onClick={() => go(1)}
+          className="grid size-11 shrink-0 place-items-center rounded-xl border border-border text-muted hover:text-fg disabled:opacity-40"
+        >
+          <ChevronRight className="size-5" aria-hidden />
+        </button>
+      </nav>
     </div>
   );
 }

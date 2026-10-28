@@ -37,9 +37,19 @@ export interface SpaceContents {
     name: string;
     type: string;
     status: string;
+    /** Indexed documents; a connected (live) source has none — it is read when needed. */
     documents: DocumentCounts;
     lastSyncedAt: string | null;
     lastError: string | null;
+    /**
+     * A connected Drive/Notion source: what it holds right now, read live from the provider
+     * (ADR-046) — never "indexed", and that is normal. Absent for indexed sources.
+     */
+    live?: {
+      files: { title: string; type: string; modifiedAt: string | null; url: string | null }[];
+      /** It couldn't be read now (AUTH_EXPIRED → reconnect it in Connections). */
+      error?: string;
+    };
   }[];
   documents: {
     id: string;

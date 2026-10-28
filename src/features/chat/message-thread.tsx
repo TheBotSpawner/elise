@@ -9,6 +9,7 @@ import { stripCitationMarkers } from "@/core/agents/citation-markers";
 import type { ToolDisplay } from "@/core/agents/tools";
 import { stripSpokenTags } from "@/core/voice/speech-text";
 import { isPlumbing } from "@/core/workspace/presentation";
+import { DocumentLink } from "@/features/knowledge/document-viewer";
 import { activityLabel } from "@/features/workspace/activity-labels";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -320,9 +321,9 @@ function SurfaceChips({ message, handlers }: { message: ChatMessage; handlers: T
             <ul className="mt-1.5 flex flex-col gap-1 pl-3 text-[12.5px]">
               {docs.map(([id, d]) => (
                 <li key={id}>
-                  <a href={`/knowledge/items/${id}`} className="hover:text-accent-text">
+                  <DocumentLink itemId={id} title={d.title} className="hover:text-accent-text">
                     {d.title}
-                  </a>
+                  </DocumentLink>
                   <span className="text-faint"> · {d.space}</span>
                 </li>
               ))}

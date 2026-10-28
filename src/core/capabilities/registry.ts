@@ -416,6 +416,7 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
       reveal: WRITE,
       configure: WRITE,
       end: WRITE,
+      mark: WRITE,
     },
   },
   voice: { key: "voice", status: "planned", operations: {} },

@@ -142,6 +142,18 @@ function fakeKnowledge() {
             lastSyncedAt: null,
             lastError: null,
           },
+          {
+            id: "src-live",
+            name: "Cálculo 2026",
+            type: "google_drive",
+            status: "ok",
+            documents: { ready: 0, processing: 0, attention: 0 },
+            lastSyncedAt: null,
+            lastError: null,
+            live: {
+              files: [{ title: "Guía TP1.pdf", type: "drive_file", modifiedAt: null, url: null }],
+            },
+          },
         ],
         documents: docs
           .filter((d) => d.spaceId === id)
@@ -213,6 +225,18 @@ describe("inspecting Knowledge (structure, not search)", () => {
     });
   });
 
+  it("a connected folder lists what it holds now, never 'not indexed' (ADR-046)", async () => {
+    const k = fakeKnowledge();
+    const o = out(await k.call("knowledge.getSpace", { space: "Calculus II" }));
+    expect(o.connectedSources).toContainEqual(
+      expect.objectContaining({
+        name: "Cálculo 2026",
+        live: { files: [expect.objectContaining({ title: "Guía TP1.pdf" })] },
+      }),
+    );
+    expect(o.instructions).toMatch(/never call it empty or \"not indexed\"/);
+  });
+
   it("a Section shows its own context, its parent's, inheritance, documents with status and Drive", async () => {
     const k = fakeKnowledge();
     const o = out(await k.call("knowledge.getSpace", { space: "Calculus II" }));
@@ -230,7 +254,7 @@ describe("inspecting Knowledge (structure, not search)", () => {
         detail: expect.stringMatching(/no readable text/),
       }),
     ]);
-    expect(o.connectedSources).toEqual([expect.objectContaining({ type: "google_drive" })]);
+    expect(o.connectedSources).toContainEqual(expect.objectContaining({ type: "google_drive" }));
   });
 });
 

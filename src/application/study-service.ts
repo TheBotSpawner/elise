@@ -14,6 +14,7 @@ import {
   type StudyScope,
   type StudySession,
   type StudyStore,
+  type LoggedQuestion,
 } from "@/core/study/model";
 import { logger } from "@/infrastructure/observability/logger";
 import type {
@@ -69,6 +70,8 @@ const toSession = (r: StudySessionRow): StudySession => ({
   lastActivityAt: r.last_activity_at,
   endedAt: r.ended_at,
   summary: (r.summary as unknown as SessionSummary | null) ?? null,
+  // Absent until migration 069: the session works, the widget just has no history.
+  log: Array.isArray(r.log) ? (r.log as unknown as LoggedQuestion[]) : [],
 });
 
 const toAttempt = (r: StudyAttemptRow): Attempt => ({
@@ -196,6 +199,13 @@ export function studyStore(auth: AuthContext): StudyStore {
       ).eq("id", id);
       if (error)
         throw new AppError("INTERNAL_ERROR", "Could not save the study session", { cause: error });
+      // The question log on its own: a database without the column (migration 069) still studies.
+      if (patch.log) {
+        const { error: logError } = await scoped(
+          db.from("study_sessions").update({ log: json(patch.log) }),
+        ).eq("id", id);
+        if (logError) logger.warn("study.log_unavailable", { code: logError.code });
+      }
       if (patch.status === "completed") logger.info("study.session_completed", {});
     },
     async addAttempt(sessionId, a) {

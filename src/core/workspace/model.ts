@@ -132,6 +132,8 @@ export const ACTION_IDS = [
   "uncheck",
   /** A day plan's proposed blocks → the calendar (asked in the conversation, approval rules apply). */
   "save_plan",
+  /** Study widget: a question's mark, corrected by the user (correct / wrong / unanswered). */
+  "mark",
 ] as const;
 export type ActionId = (typeof ACTION_IDS)[number];
 

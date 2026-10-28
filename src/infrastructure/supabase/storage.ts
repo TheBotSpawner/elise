@@ -92,6 +92,17 @@ export async function signedDownloadUrl(workspaceId: string, path: string, filen
   return data.signedUrl;
 }
 
+/** A signed URL that opens the original in place (PDF viewer, image) instead of downloading. */
+export async function signedViewUrl(workspaceId: string, path: string) {
+  assertOwned(workspaceId, path);
+  const { data, error } = await createAdminClient()
+    .storage.from(KNOWLEDGE_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_SECONDS);
+  if (error || !data)
+    throw new AppError("INTERNAL_ERROR", "Could not open the file", { cause: error });
+  return data.signedUrl;
+}
+
 export async function removeOriginals(workspaceId: string, paths: string[]) {
   paths.forEach((p) => assertOwned(workspaceId, p));
   if (paths.length) await createAdminClient().storage.from(KNOWLEDGE_BUCKET).remove(paths);

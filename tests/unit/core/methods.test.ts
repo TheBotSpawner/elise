@@ -142,6 +142,19 @@ describe("Method selection", () => {
     expect(pick("Ayudame a organizar mis tareas y el calendario")).toBe(blocks.id);
   });
 
+  it("the index lists only Methods the message relates to", () => {
+    const blocks = summary({ name: "Planificación diaria en bloques" });
+    const plan = planTurnMethods({
+      index: [blocks],
+      spaces: SPACES,
+      message: "tirame una pregunta del EPI de legislación",
+      spaceIds: [],
+    });
+    expect(plan.load).toBeNull();
+    expect(plan.index).toEqual([]);
+    expect(plan.more).toBe(1);
+  });
+
   it("finds the Method a request needs without its name", () => {
     const sel = selectMethods([proposal, meeting, daily], {
       message: "Preparame una propuesta para Acme Retail",

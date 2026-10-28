@@ -320,6 +320,11 @@ export class DeliverySession {
     if (this.source === "auto") this.until = Math.max(this.until, now + DELIVERY.holdMs);
   }
 
+  /** The conversation paused (the session slept): an automatic quiet/whisper ends with it. */
+  endAuto() {
+    if (this.source === "auto") this.reset();
+  }
+
   /** "Susurrame" / "hablá normal": wins over detection for a while (not forever). */
   command(mode: VoiceDelivery, now: number): VoiceDelivery {
     this.mode = mode;

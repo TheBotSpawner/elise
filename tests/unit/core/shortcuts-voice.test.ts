@@ -140,6 +140,16 @@ describe("barge-in", () => {
     expect(run(d, VOICE_TURN.barge.holdMs + 50, 0.3, 0.1, c)).toBe(true);
   });
 
+  it("an echo burst as playback starts doesn't make her impossible to interrupt", () => {
+    const d = new BargeInDetector();
+    const c = { now: 0 };
+    // Echo cancellation still converging: a loud leak for the first frames, then the usual one.
+    run(d, 100, 0.25, 0.1, c);
+    run(d, VOICE_TURN.barge.calibrateMs - 100, 0.01, 0.1, c);
+    expect(run(d, 2000, 0.012, 0.1, c)).toBe(false); // her voice still doesn't trigger it
+    expect(run(d, VOICE_TURN.barge.holdMs + 50, 0.12, 0.1, c)).toBe(true); // the user does
+  });
+
   it("with headphones (no coupling) a clear voice interrupts", () => {
     const d = new BargeInDetector();
     const c = { now: 0 };

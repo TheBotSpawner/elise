@@ -121,6 +121,45 @@ export interface SessionSummary {
   at: string;
 }
 
+/** How a question went, as the study widget shows it — and the user can correct it. */
+export type QuestionMark = "correct" | "wrong" | "unanswered";
+
+/** One question asked in a session, in order: what the widget pages through. */
+export interface LoggedQuestion {
+  number: number;
+  question: string;
+  mark: QuestionMark;
+  /** Where it comes from in the material (document and page only — never the answer). */
+  source: { itemId: string; title: string; page: number | null } | null;
+}
+
+export const LOG_LIMIT = 50;
+
+/** The evaluator's verdict as a mark: only a strong answer counts as right. */
+export const markOf = (a: Assessment): QuestionMark => (a === "strong" ? "correct" : "wrong");
+
+/** The session's log with this question in it (asked again: kept once, unanswered). */
+export function logQuestion(log: readonly LoggedQuestion[], q: CurrentQuestion): LoggedQuestion[] {
+  const e = q.evidence[0];
+  const entry: LoggedQuestion = {
+    number: q.number,
+    question: q.question.slice(0, 600),
+    mark: "unanswered",
+    source: e ? { itemId: e.itemId, title: e.title.slice(0, 300), page: e.page } : null,
+  };
+  return [...log.filter((x) => x.number !== q.number), entry]
+    .sort((a, b) => a.number - b.number)
+    .slice(-LOG_LIMIT);
+}
+
+export function markQuestion(
+  log: readonly LoggedQuestion[],
+  number: number,
+  mark: QuestionMark,
+): LoggedQuestion[] {
+  return log.map((x) => (x.number === number ? { ...x, mark } : x));
+}
+
 export interface StudySession {
   id: string;
   contextId: string;
@@ -134,6 +173,8 @@ export interface StudySession {
   lastActivityAt: string;
   endedAt: string | null;
   summary: SessionSummary | null;
+  /** Every question asked, with its mark (migration 069; empty before it). */
+  log: LoggedQuestion[];
 }
 
 export type StudyThread = { kind: "conversation" | "session"; id: string };
@@ -168,7 +209,14 @@ export interface StudyStore {
     patch: Partial<
       Pick<
         StudySession,
-        "current" | "questionCount" | "preferences" | "status" | "summary" | "endedAt" | "scope"
+        | "current"
+        | "questionCount"
+        | "preferences"
+        | "status"
+        | "summary"
+        | "endedAt"
+        | "scope"
+        | "log"
       >
     >,
   ): Promise<void>;

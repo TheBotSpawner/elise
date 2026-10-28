@@ -10,7 +10,7 @@ import type { VoiceDelivery } from "./delivery";
  *                    reply done ───────┤                                         ↓
  *        speaking ←─ first audio ── thinking ⇄ executing (a tool runs)        thinking
  *           │ user speaks (barge-in) → interrupted → user_speaking
- *   listening ─30 s silence / page hidden→ sleeping ─wake phrase / tap→ arming
+ *   listening ─8 s silence / page hidden→ sleeping ─wake phrase / tap→ arming
  *   any active ─network lost→ offline ─back online→ sleeping
  *   reply done with an approval pending → waiting_approval (listening for "sí" / "no")
  *   thinking/executing + tail: for a few seconds after a turn ends, the mic keeps listening —

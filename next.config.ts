@@ -31,7 +31,8 @@ const csp = [
   `connect-src 'self' ${supabase} ${supabaseWs}${maps.connect}`.trim(),
   "media-src 'self' blob:",
   // Video Surfaces (ADR-021): only these players, only by id (core/workspace/media.ts).
-  "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
+  // Plus Knowledge originals in ELISE's document viewer: short-lived signed Storage URLs.
+  `frame-src https://www.youtube-nocookie.com https://player.vimeo.com ${supabase}`.trim(),
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",

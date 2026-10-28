@@ -26,6 +26,8 @@ import {
   predictIntent,
   wantsInstantAck,
   progressLine,
+  CONTINUOUS_PROGRESS_AFTER_MS,
+  CONTINUOUS_PROGRESS_MAX,
   PROGRESS_AFTER_MS,
   PROGRESS_MAX_PER_TURN,
   PROGRESS_TTL_MS,
@@ -312,6 +314,8 @@ export class VoiceController {
   /** A turn cut too early: its words lead the next utterance (premature-close recovery). */
   private carry: string | null = null;
   private tailUntil = 0;
+  /** When the tail began (its first CONTINUATION_MS continue the request; later replaces it). */
+  private tailStart = 0;
   /** ADR-049: this utterance's delivery evidence, and the session's delivery (hysteresis). */
   private deliveryDetector: VoiceDeliveryDetector;
   private delivery: DeliverySession;
@@ -823,7 +827,12 @@ export class VoiceController {
         language ?? this.prefs.language,
         prepared?.intent === predicted ? prepared.line : undefined,
       );
-    } else if (this.prefs.speak && this.prefs.instantAck && wantsInstantAck(text)) {
+    } else if (
+      this.prefs.speak &&
+      this.prefs.instantAck &&
+      !this.prefs.continuous &&
+      wantsInstantAck(text)
+    ) {
       // Every other request is still heard at once ("Un segundo."), before any tool: a reply
       // that's faster drops it (stillSayable), a slow one isn't silence (ADR-098).
       this.turn.acked = true;
@@ -837,7 +846,12 @@ export class VoiceController {
     // ADR-104: from the request on, a long silence gets a truthful progress line.
     const turn = this.turn;
     turn.quietSince = this.now;
-    if (this.prefs.speak && !fresh) this.later(PROGRESS_AFTER_MS, () => this.progress(turn));
+    if (this.prefs.speak && !fresh) this.later(this.progressAfter(), () => this.progress(turn));
+  }
+
+  /** Continuous conversation talks less while working (fewer, later progress lines). */
+  private progressAfter() {
+    return this.prefs.continuous ? CONTINUOUS_PROGRESS_AFTER_MS : PROGRESS_AFTER_MS;
   }
 
   // ── Delivery (ADR-049) ─────────────────────────────────────────────────────
@@ -993,13 +1007,14 @@ export class VoiceController {
       turn.textDone ||
       turn.capped ||
       turn.speech.resultQueued ||
-      turn.progressSaid.length >= PROGRESS_MAX_PER_TURN;
+      turn.progressSaid.length >=
+        (this.prefs.continuous ? CONTINUOUS_PROGRESS_MAX : PROGRESS_MAX_PER_TURN);
     if (done) return this.trace("progress_stopped", { ms: Math.round(this.now - turn.t0) });
     // Speaking now (an acknowledgement, a line the model wrote): count from when it ends.
     if (this.player?.speaking) return this.later(1_000, () => this.progress(turn));
     const quiet = this.now - turn.quietSince;
-    if (quiet < PROGRESS_AFTER_MS)
-      return this.later(PROGRESS_AFTER_MS - quiet, () => this.progress(turn));
+    const after = this.progressAfter();
+    if (quiet < after) return this.later(after - quiet, () => this.progress(turn));
     const lang = turn.language ?? this.prefs.language;
     const composing = turn.speech.started && turn.speech.running === 0;
     const line = progressLine(
@@ -1016,7 +1031,7 @@ export class VoiceController {
       composing,
     });
     this.say(turn, line, "progress", true);
-    this.later(PROGRESS_AFTER_MS, () => this.progress(turn));
+    this.later(this.progressAfter(), () => this.progress(turn));
   }
 
   private later(ms: number, fn: () => void) {
@@ -1125,7 +1140,10 @@ export class VoiceController {
     const mic = this.mic;
     if (!mic || !this.state.bargeIn || !this.turn) return this.stopTicker();
     mic.begin();
-    this.tailUntil = this.now + CONTINUATION_MS;
+    this.tailStart = this.now;
+    // Continuous conversation: listening never stops while she works — the user can interrupt a
+    // search at any moment (owner's decision, 2026-10-28). Otherwise only the first seconds.
+    this.tailUntil = this.prefs.continuous ? Infinity : this.now + CONTINUATION_MS;
     this.detector = new TurnDetector(VOICE_TURN, { floor: this.floor });
     this.act({ type: "tail", on: true });
     this.startTicker();
@@ -1145,8 +1163,13 @@ export class VoiceController {
     // Real speech (a quarter second of voice), not a cough or a chair, continues the turn.
     this.detector?.frame(rms, now);
     if (!this.detector?.heard) return;
-    this.trace("premature_close", { sinceEnd: Math.round(now - turn.t0) });
-    this.carry = turn.text;
+    // In the first seconds the user hadn't finished: their words continue that request. Later
+    // (continuous conversation), it's a new request that replaces the one being worked on.
+    const continues = now - this.tailStart <= CONTINUATION_MS;
+    this.trace(continues ? "premature_close" : "interrupted_work", {
+      sinceEnd: Math.round(now - turn.t0),
+    });
+    this.carry = continues ? turn.text : null;
     this.deps.cancel?.();
     this.player?.stop();
     this.superseded = true;
@@ -1374,6 +1397,9 @@ export class VoiceController {
     if (this.state.phase === "idle" || this.state.phase === "offline") return;
     this.act({ type: "sleep", reason });
     this.afterSleep();
+    // A whisper that was detected, not asked for, doesn't outlive the conversation.
+    this.delivery.endAuto();
+    this.applyDelivery();
   }
 
   private afterSleep() {

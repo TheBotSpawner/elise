@@ -146,6 +146,8 @@ function createWindow(path = "/", opts: { hidden?: boolean } = {}) {
       sandbox: true,
       webSecurity: true,
       spellcheck: true,
+      // Chromium's built-in PDF viewer, for Knowledge documents in ELISE's viewer.
+      plugins: true,
     },
   });
   // Hidden (ADR-095: started at login to listen for "ELISE"): never shown, never focused, until
