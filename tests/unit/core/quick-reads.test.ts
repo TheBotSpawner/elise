@@ -26,6 +26,13 @@ describe("quick reads (ADR-123)", () => {
 
   it("changes, details, specific searches and long requests go to the model", () => {
     for (const m of [
+      // Setting one, said tersely: never a read (the model sets it).
+      "timer dos horas",
+      "timer de 10 minutos",
+      "un temporizador de media hora para la pasta",
+      "alarma a las 7",
+      "alarma mañana a las ocho",
+      "pomodoro",
       "poneme una alarma a las 7",
       "apagá la alarma de las 13",
       "desactivá todas las alarmas",

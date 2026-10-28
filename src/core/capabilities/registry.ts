@@ -556,6 +556,8 @@ const CAPABILITIES: Record<CapabilityKey, CapabilityDefinition> = {
     operations: {
       listSurfaces: READ,
       present: READ,
+      // A goal's progress bar (ADR-126): presentation only.
+      progress: READ,
       // Charts planned from sourced evidence (ADR-027).
       visualize: READ,
       timeline: READ,

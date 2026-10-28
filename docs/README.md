@@ -62,6 +62,7 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-123 | Lecturas rápidas: preguntas simples de Mi ELISE (alarmas, timers) se responden sin el modelo; "hoy" incluye alarmas que ya sonaron |
 | ADR-124 | Widget de Modo Estudio: registro de preguntas con su estado (bien/mal/sin responder) editable, navegación entre preguntas, "Modo Estudio" al entrar, evaluar = Modo Estudio, índice de Métodos solo con Métodos relacionados |
 | ADR-125 | Conversación continua que se siente conversación: menos rellenos, escucha durante la búsqueda (interrumpible), calibración de interrupción por mediana, reposo a los 8 s, ELISE explica el modo |
+| ADR-126 | Barra de progreso para objetivos que la conversación recorre paso a paso (ui.progress), solo cuando ELISE la ve útil |
 
 ## roadmap/
 

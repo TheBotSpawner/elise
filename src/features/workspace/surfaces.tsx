@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   ChevronDown,
   ChevronLeft,
+  Flag,
   X,
   ChevronRight,
   ExternalLink,
@@ -106,6 +107,7 @@ import { Visualization } from "./viz/visualization";
  */
 
 export const SURFACE_ICONS: Record<SurfaceType, LucideIcon> = {
+  progress: Flag,
   meeting: Video,
   calendar_event: CalendarDays,
   calendar: CalendarDays,
@@ -1174,6 +1176,10 @@ export function SurfaceBody({
       return <LinksBody p={p} />;
     case "settings":
       return <SettingsBody p={p} />;
+    case "progress":
+      return (
+        <ProgressBody p={surface.payload as SurfacePayloads["progress"]} title={surface.title} />
+      );
     case "summary": {
       const sp = surface.payload as SurfacePayloads["summary"];
       // A recipe or a how-to gets its own layout; any other summary, the summary card.
@@ -2138,6 +2144,80 @@ function FeedbackLists({
         </div>
       ))}
       {feedback.explanation && <p className={cn(TEXT, "text-muted")}>{feedback.explanation}</p>}
+    </div>
+  );
+}
+
+/**
+ * Progress toward a goal the conversation works through (ADR-126): how far, what's on now, and
+ * the steps when they're known. ELISE updates it as each step is done.
+ */
+function ProgressBody({ p, title }: { p: SurfacePayloads["progress"]; title: string }) {
+  const { t } = useI18n();
+  const b = t.workspace.progressBar;
+  const pct = Math.round((p.done / p.total) * 100);
+  return (
+    <div className="flex flex-col gap-3">
+      <p className={TITLE}>{title}</p>
+      <div className="flex items-baseline justify-between gap-3">
+        {p.current ? (
+          <p className="min-w-0 truncate text-[14px]">
+            <span className="text-muted">{b.now}: </span>
+            {p.current}
+          </p>
+        ) : (
+          <span />
+        )}
+        <span className="shrink-0 font-mono text-[12.5px] text-muted">
+          {b.of(p.done, p.total, p.unit)}
+        </span>
+      </div>
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={p.total}
+        aria-valuenow={p.done}
+        aria-valuetext={b.of(p.done, p.total, p.unit)}
+        className="h-2 overflow-hidden rounded-full bg-surface-2"
+      >
+        <div
+          className="h-full rounded-full bg-accent transition-[width] duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {p.steps.length > 0 && (
+        <ol className="flex flex-col gap-1">
+          {p.steps.map((s, i) => (
+            <li
+              key={`${i}-${s.label}`}
+              className={cn(
+                "flex items-center gap-2 text-[13.5px]",
+                s.state === "pending" && "text-faint",
+                s.state === "current" && "font-medium",
+              )}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "grid size-5 shrink-0 place-items-center rounded-full border text-[10px]",
+                  s.state === "done"
+                    ? "border-accent bg-accent text-accent-fg"
+                    : s.state === "current"
+                      ? "border-accent text-accent-text"
+                      : "border-border",
+                )}
+              >
+                {s.state === "done" ? <Check className="size-3" strokeWidth={3} /> : null}
+                {s.state === "current" ? (
+                  <span className="size-1.5 rounded-full bg-accent" />
+                ) : null}
+              </span>
+              <span className="min-w-0 truncate">{s.label}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {p.note && <p className="text-[12.5px] text-muted">{p.note}</p>}
     </div>
   );
 }

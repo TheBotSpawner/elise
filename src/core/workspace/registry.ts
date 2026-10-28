@@ -732,6 +732,18 @@ export const PAYLOADS = {
     /** Approved work that continues in the background (e.g. a bulk change). */
     background: z.enum(["running", "done", "failed"]).optional(),
   }),
+  progress: z.object({
+    done: z.number().int().min(0).max(500),
+    total: z.number().int().min(1).max(500),
+    /** What is counted, plural: "capítulos", "pasos", "temas". */
+    unit: text(40),
+    /** What's being worked on now ("Capítulo 2 — Las personas"). */
+    current: text(160).nullable(),
+    steps: z
+      .array(z.object({ label: text(120), state: z.enum(["done", "current", "pending"]) }))
+      .max(30),
+    note: text(200).nullable(),
+  }),
   summary: z.object({
     sections: z
       .array(
@@ -1573,6 +1585,14 @@ const DEFINITIONS: { [K in SurfaceType]: SurfaceDefinition<K> } = {
     priority: 95,
     actions: () => [],
     describe: (p) => `${q(p.summary)} — ${p.decision ?? "waiting for the user's approval"}`,
+  },
+  progress: {
+    sizes: ["small", "medium"],
+    size: "medium",
+    priority: 70,
+    actions: () => [],
+    describe: (p) =>
+      `progress ${p.done}/${p.total} ${q(p.unit)}${p.current ? ` · now: ${q(p.current)}` : ""}`,
   },
   summary: {
     sizes: ["medium", "large", "expanded"],

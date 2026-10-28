@@ -3539,6 +3539,7 @@ export const es: Dictionary = {
       email_list: "Comunicación",
       knowledge_source: "Documento",
       knowledge_result: "Documentos",
+      progress: "Progreso",
       document: "Documento",
       recall: "Conversación anterior",
       task_list: "Pendientes",
@@ -3924,6 +3925,10 @@ export const es: Dictionary = {
           record: "Registro",
         },
       },
+    },
+    progressBar: {
+      of: (done: number, total: number, unit: string) => `${done} de ${total} ${unit}`,
+      now: "Ahora",
     },
     study: {
       widget: {

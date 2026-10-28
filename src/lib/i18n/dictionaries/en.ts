@@ -3503,6 +3503,7 @@ export const en = {
       email_list: "Communication",
       knowledge_source: "Document",
       knowledge_result: "Documents",
+      progress: "Progress",
       document: "Document",
       recall: "Previous discussion",
       task_list: "Open items",
@@ -3894,6 +3895,10 @@ export const en = {
           record: "Record",
         },
       },
+    },
+    progressBar: {
+      of: (done: number, total: number, unit: string) => `${done} of ${total} ${unit}`,
+      now: "Now",
     },
     study: {
       widget: {

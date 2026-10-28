@@ -22,6 +22,8 @@ export const SURFACE_TYPES = [
   "settings",
   "approval",
   "summary",
+  /** Progress toward a goal the conversation works through (ADR-126). */
+  "progress",
   "web_results",
   "web_source",
   "web_news",

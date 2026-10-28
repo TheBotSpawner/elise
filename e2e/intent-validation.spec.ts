@@ -64,6 +64,14 @@ async function say(page: Page, text: string) {
   await box.press("Enter");
   // Done when ELISE's answer to this message is stored (the UI's busy state can lag).
   await expect.poll(answers, { timeout: 180_000, intervals: [2_000] }).toBeGreaterThan(before);
+  const last = await admin!
+    .from("messages")
+    .select("content")
+    .eq("workspace_id", workspaceId)
+    .eq("role", "assistant")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  console.log("ELISE:", JSON.stringify(text), "→", JSON.stringify(last.data?.[0]?.content ?? ""));
   await page.waitForTimeout(1_500);
 }
 
@@ -112,6 +120,36 @@ test("requests are read by meaning", async ({ page }) => {
     expect(
       got.some((i) => /harina/i.test(i.content) && /(2|dos)/i.test(`${i.content} ${i.notes}`)),
     ).toBe(true);
+  });
+
+  await test.step("a dictated spelling is applied, not copied into the task", async () => {
+    await say(page, "Agregame las tareas, por favor. Replicar sitio web espacio psi, con doble i.");
+    await say(page, "anotá la tarea llamar a Delfi con F no con PH");
+    await say(page, "agregá la tarea comprar leche, no, perdón, comprar yerba");
+    const titles = (
+      (await admin!.from("tasks").select("title").eq("workspace_id", workspaceId)).data ?? []
+    ).map((t) => String(t.title));
+    console.log("tasks:", JSON.stringify(titles));
+    expect(titles).toHaveLength(3);
+    expect(titles.some((t) => /psii/i.test(t) && !/doble/i.test(t))).toBe(true);
+    expect(titles.some((t) => /delfi/i.test(t) && !/ph|con f/i.test(t))).toBe(true);
+    expect(titles.some((t) => /yerba/i.test(t) && !/leche|perd[oó]n/i.test(t))).toBe(true);
+    // Leave Tasks empty for the next step, which checks nothing lands there.
+    await admin!.from("tasks").delete().eq("workspace_id", workspaceId);
+  });
+
+  await test.step("terse commands are done, not asked about", async () => {
+    await say(page, "timer dos horas.");
+    await say(page, "alarma 7");
+    const timers = ((
+      await admin!.from("timers").select("duration_ms, kind").eq("workspace_id", workspaceId)
+    ).data ?? []) as { duration_ms: number | null; kind: string }[];
+    const alarms = ((
+      await admin!.from("alarms").select("local_time").eq("workspace_id", workspaceId)
+    ).data ?? []) as { local_time: string }[];
+    console.log("timers:", JSON.stringify(timers), "alarms:", JSON.stringify(alarms));
+    expect(timers.some((t) => t.duration_ms === 2 * 60 * 60 * 1000)).toBe(true);
+    expect(alarms.some((a) => a.local_time === "07:00")).toBe(true);
   });
 
   await test.step("'recordá que…' goes to Memory, never to Tasks", async () => {

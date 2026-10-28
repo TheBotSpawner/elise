@@ -370,6 +370,38 @@ describe("ui tools for the Live Canvas", () => {
     expect(await call("ui.arrange", { order: "x" })).toMatchObject({ status: "failed" });
   });
 
+  it("a goal's progress bar updates in place as steps are done (ADR-126)", async () => {
+    const ws = new FakeWorkspace();
+    const { ports } = makePorts([]);
+    const ctx = makeCtx({ workspace: ws });
+    const call = (args: object) => executeToolCall(ports, ctx, { name: "ui.progress", args });
+    const plan = {
+      title: "Repaso de Legislación",
+      total: 3,
+      unit: "capítulos",
+      steps: ["El Derecho", "Las personas", "Los contratos"],
+    };
+    expect(await call({ ...plan, done: 0 })).toMatchObject({ status: "succeeded" });
+    expect(await call({ ...plan, done: 1 })).toMatchObject({ status: "succeeded" });
+    const bars = ws.value.surfaces.filter((s) => s.type === "progress");
+    expect(bars).toHaveLength(1);
+    expect(bars[0]!.payload).toMatchObject({
+      done: 1,
+      total: 3,
+      current: "Las personas",
+      steps: [
+        { label: "El Derecho", state: "done" },
+        { label: "Las personas", state: "current" },
+        { label: "Los contratos", state: "pending" },
+      ],
+    });
+    // Never past the end.
+    await call({ ...plan, done: 9 });
+    expect(ws.value.surfaces.find((s) => s.type === "progress")!.payload).toMatchObject({
+      done: 3,
+    });
+  });
+
   it("present a chart only as a valid template grounded in visible Surfaces", async () => {
     const ws = new FakeWorkspace();
     ws.apply([{ op: "present", surface: draft("a"), at: AT }]);

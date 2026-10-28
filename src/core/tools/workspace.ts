@@ -943,6 +943,91 @@ export const showTool: ToolDefinition = {
   },
 };
 
+// ── ui.progress (ADR-126) ────────────────────────────────────────────────────
+
+const progressInput = z
+  .object({
+    title: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .describe(
+        'The goal, stable across updates ("Repaso de Legislación"): the same title updates the same bar.',
+      ),
+    done: z.number().int().min(0).max(500),
+    total: z.number().int().min(1).max(500),
+    unit: z
+      .string()
+      .trim()
+      .min(1)
+      .max(40)
+      .describe('What is counted, plural: "capítulos", "pasos", "temas".'),
+    current: z.string().trim().max(160).optional().describe("What's being worked on now."),
+    steps: z
+      .array(z.string().trim().min(1).max(120))
+      .max(30)
+      .optional()
+      .describe("The steps by name, in order, when they're known (done ones first)."),
+    note: z.string().trim().max(200).optional(),
+  })
+  .strict();
+
+export const progressTool: ToolDefinition = {
+  name: "ui.progress",
+  capability: "workspace",
+  operation: "progress",
+  description:
+    "A progress bar toward a goal the conversation works through step by step — reviewing 13 chapters, going through a setup checklist, practicing a list of topics. Use it only when such a goal is explicit and tracking it helps; never for ordinary answers or chats. Show it when the plan starts (done 0) and call it again with the same title each time a step is completed, so the bar advances.",
+  input: progressInput,
+  async describe() {
+    return { summary: "Show progress" };
+  },
+  async run(raw, env) {
+    const q = progressInput.parse(raw);
+    const done = Math.min(q.done, q.total);
+    const w = port(env);
+    const state = w.state();
+    const steps = (q.steps ?? []).slice(0, q.total).map((label, i) => ({
+      label,
+      state:
+        i < done ? ("done" as const) : i === done ? ("current" as const) : ("pending" as const),
+    }));
+    const payload = PAYLOADS.progress.parse({
+      done,
+      total: q.total,
+      unit: q.unit,
+      current: q.current ?? steps[done]?.label ?? null,
+      steps,
+      note: q.note ?? null,
+    });
+    w.apply([
+      {
+        op: "present",
+        at: now(env),
+        surface: {
+          id: surfaceId("progress", q.title.toLowerCase()),
+          type: "progress",
+          title: q.title,
+          state: "ready",
+          source: { capability: "workspace", label: "ELISE" },
+          ref: null,
+          payload,
+          intentId: state.intent?.id ?? null,
+          ...draftDefaults("progress", payload),
+        },
+      },
+    ]);
+    return {
+      output: {
+        shown: true,
+        progress: `${done}/${q.total} ${q.unit}`,
+        instructions: "It's on screen: don't read the numbers back unless asked.",
+      },
+    };
+  },
+};
+
 export const WORKSPACE_TOOLS = [
   listSurfacesTool,
   answerTool,
@@ -956,4 +1041,5 @@ export const WORKSPACE_TOOLS = [
   dismissTool,
   updateTool,
   clearTool,
+  progressTool,
 ];

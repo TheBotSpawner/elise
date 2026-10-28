@@ -45,6 +45,13 @@ const NOT_A_READ =
 const TODAY = /(?<!\p{L})(hoy|today)(?!\p{L})/iu;
 const TOMORROW = /(?<!\p{L})(ma[ñn]ana|tomorrow)(?!\p{L})/iu;
 
+/** Words that make it a question about what exists ("¿tengo…?", "mis alarmas", "¿cuánto le queda?"). */
+const ASKS =
+  /\?|(?<!\p{L})(qu[eé]|cu[aá]nt[oa]s?|cu[aá]l(es)?|c[oó]mo (va|van|viene|vienen|est[aá]n?)|tengo|hay|mis|mostrame|mostr[aá]|decime|list[aá]|queda|quedan|falta|sigue|which|what|how|any|my|do i)(?!\p{L})/iu;
+/** A duration or a time of day: setting a timer or an alarm, never a read. */
+const SETS_TIME =
+  /\d|(?<!\p{L})(un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|quince|veinte|treinta|cuarenta|media|cuarto|one|two|three|five|ten|fifteen|twenty|thirty|half)(?!\p{L})\s*(y media\s*)?(minutos?|min|horas?|hs?|segundos?|seg|minutes?|hours?|seconds?)(?!\p{L})|(?<!\p{L})(a las|para las|at \d)(?!\p{L})/iu;
+
 /** A short question, not a request with conditions ("…y si no, …"). */
 const short = (m: string) => m.trim().split(/\s+/).length <= 10;
 
@@ -60,6 +67,8 @@ export function quickRead(message: string): QuickRead | null {
     };
   }
   if (!short(message) || NOT_A_READ.test(message)) return null;
+  // Only a question is a read: "timer dos horas" or "alarma a las 7" is a request to set one.
+  if (!ASKS.test(message) || SETS_TIME.test(message)) return null;
   if (ALARM.test(message) && !TIMER.test(message)) {
     // "a la mañana" is a time of day, not tomorrow: only a bare "mañana" asks for tomorrow.
     const day = TODAY.test(message)
