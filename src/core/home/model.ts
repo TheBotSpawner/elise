@@ -641,7 +641,15 @@ const capabilityFor = (t: HomeActionType): HomeCapabilityType =>
   t === "media" ? "media" : (t as HomeCapabilityType);
 
 /** One line of state, for the model and compact surfaces ("Encendida · 30%"). */
-export function describeState(d: HomeDevice, locale: "es" | "en"): string {
+/**
+ * A device's state in a few words. The assistant says when it's an estimate (ADR-110); Hogar's
+ * screens pass `{ estimate: false }` and show the state plainly (ADR-128).
+ */
+export function describeState(
+  d: HomeDevice,
+  locale: "es" | "en",
+  opts: { estimate?: boolean } = {},
+): string {
   const es = locale === "es";
   const s = d.state;
   if (!d.available) return es ? "No responde" : "Not responding";
@@ -675,7 +683,8 @@ export function describeState(d: HomeDevice, locale: "es" | "en"): string {
   if (s.currentTemperature !== undefined && d.type === "climate")
     parts.push(es ? `${s.currentTemperature} °C actual` : `${s.currentTemperature} °C now`);
   // ADR-110: infrared can't be read back — what ELISE last sent, said as such.
-  if (s.estimated && parts.length) parts.push(es ? "estimado" : "estimated");
+  if (s.estimated && parts.length && opts.estimate !== false)
+    parts.push(es ? "estimado" : "estimated");
   const buttons = has(d, "ir")?.commands ?? has(d, "tuya_ir")?.keys;
   if (buttons && !parts.length && s.lastSent) {
     const label = buttons.find((c) => c.key === s.lastSent!.command)?.label;

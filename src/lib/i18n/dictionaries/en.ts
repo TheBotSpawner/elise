@@ -4590,39 +4590,24 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
         scan: "Find devices",
         // ADR-128
         modalTitle: "Add devices",
-        subtitle: "Find nearby devices or connect your services.",
         networkTitle: "On this network",
         servicesTitle: "Connected services",
         scanAgain: "Search again",
         scanning: "Searching your network…",
-        scanHint: "It can take a few seconds. Devices need to be on.",
         scanFailed: "Couldn't search your network. Try again.",
         foundNow: (n: number) => (n === 1 ? "1 found now" : `${n} found now`),
         noneNow: "No new devices found",
-        noneHint: "Check they're on and on the same Wi-Fi as this computer.",
         showAll: (n: number) => `See all ${n}`,
         previously: (n: number) => `Found before (${n})`,
-        previouslyHint: "ELISE saw them in another search: they aren't confirmed now.",
         showMore: (n: number) => `Show ${n} more`,
         irTitle: "TV, AC or fan by infrared",
         irHint: "Through your Broadlink: pick the brand and we test it.",
         tuya: {
           title: "Smart Life / Tuya Smart",
-          hint: "Import the remotes you already set up in Smart Life.",
-          notYetShort: "Connecting customer accounts isn't enabled yet.",
-          moreInfo: "More info",
-          linked: (n: number) => (n === 1 ? "1 linked account" : `${n} linked accounts`),
-          testLink: "Link test account",
-          testHint:
-            "Development only: uses the Smart Life account linked in Tuya's console. Not the customer connection.",
-          testBadge: "Test account",
-          relink: "Link again",
-          connectIntro:
-            "You'll authorize your own account on Tuya's official page (your login or the app's QR). ELISE never sees your password.",
-          another: "Another Smart Life account?",
+          brand: "Smart Life",
+          hint: "Import your Smart Life remotes.",
+          notYetShort: "Not available yet",
           region: "Your account's data center",
-          regionHint:
-            "The one for the region you created your Smart Life account in. If you pick another, Tuya says so and you try the right one.",
           regions: {
             us: "Americas (West)",
             "us-e": "Americas (East)",
@@ -4635,19 +4620,13 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
           connect: "Connect",
           reconnect: "Reconnect",
           disconnect: "Disconnect",
-          disconnectConfirm:
-            "ELISE stops using this account: its authorization is deleted and its remotes leave your home. Nothing changes in Smart Life.",
-          connected: "Smart Life connected. Choose which remotes to add.",
+          disconnectConfirm: "Its remotes leave your home. Nothing changes in Smart Life.",
           connectedState: "Connected",
-          showRemotes: "Show remotes",
           sync: "Sync",
-          notYet:
-            "Tuya's project still needs OAuth 2.0 authorization set up (an App Authorization key, callback and data center) and confirmation that it accepts Smart Life accounts. We'll never ask for your password.",
           problems: {
             token: "The authorization expired or was revoked: reconnect.",
             wrong_region: "Your account is in another data center: connect choosing the other one.",
-            permission:
-              "Tuya didn't authorize this access (infrared service or permission not enabled for ELISE).",
+            permission: "Smart Life didn't authorize this access.",
             quota: "ELISE used up its Smart Life quota for now. Try later.",
             project: "Tuya refused ELISE's setup. Let us know.",
             rate_limited: "Smart Life is busy. Try in a moment.",
@@ -4660,16 +4639,10 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
           },
           loading: "Looking in Smart Life…",
           noHubs: "Your Smart Life account has no infrared hubs.",
-          others: (n: number) =>
-            n === 1
-              ? "1 more device in your account can't be controlled from ELISE yet."
-              : `${n} more devices in your account can't be controlled from ELISE yet.`,
           offline: "offline",
           hubFailed: "We couldn't read its remotes. Try again in a while.",
           noRemotes: "No remotes set up in Smart Life.",
           kinds: { tv: "TV", ac: "AC", fan: "Fan", other: "Remote" },
-          room: (name: string) => `Room for ${name}`,
-          noRoom: "No room",
           inHome: "In your home",
           sameAs: (name: string) =>
             `You already have “${name}” with that name: use Smart Life instead, or add both.`,
@@ -4685,7 +4658,7 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
           send: "Send",
           sending: "Sending…",
           cancel: "Cancel",
-          sent: "Tuya accepted the command. Infrared doesn't confirm: check the device reacted (if not, try it from Smart Life).",
+          sent: "Sent. Did the device react?",
         },
         locked:
           "It is locked in the BroadLink app: unlock it there (device settings → “Lock device”: off) and tap Add again.",
@@ -4846,7 +4819,21 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
     turnOff: "Turn off",
     toggle: (name: string) => `Turn ${name} on or off`,
     cloudHome: "Connected through the cloud (Smart Life)",
-    tuya: { on: "Turn on", off: "Turn off" },
+    // ADR-128: a remote, laid out like one.
+    remote: {
+      power: "Power",
+      on: "Turn on",
+      off: "Turn off",
+      temperature: "Temperature",
+      tempUp: "Raise temperature",
+      tempDown: "Lower temperature",
+      mode: "Mode",
+      fan: "Fan",
+      volume: "Vol",
+      channel: "Channel",
+      input: "Input",
+      more: (n: number) => `More buttons (${n})`,
+    },
     ir: {
       profile: {
         noImport:
@@ -4898,8 +4885,8 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       onlyDesktop:
         "Adding a Broadlink and teaching it buttons happens in ELISE Desktop, on the computer that runs your home.",
       manual: {
-        title: "Add a Broadlink by IP",
-        hint: "The IP is in the Broadlink app or your router (for example 192.168.1.40).",
+        title: "Add a device by IP",
+        hint: "For now, Broadlink controllers. The IP is in its app or your router (for example 192.168.1.40).",
         host: "IP or name on your network",
         add: "Add",
         already:
@@ -4974,8 +4961,6 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       custom: { title: "Another button", label: "Button name" },
       toggleNote:
         "If your remote has a single button to turn on and off, ELISE can't know which state the device is in: when you ask it to turn it off, it will ask before pressing it.",
-      estimated:
-        "Estimated state: it's what ELISE last sent. Infrared doesn't report whether the device changed.",
       lastSent: (label: string, when: string) => `Last button: ${label} · ${when}`,
       manage: "Manage buttons",
       noButtons: "It has no working buttons yet.",
@@ -5000,10 +4985,10 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       play: "Play",
       pause: "Pause",
       source: "Source",
-      settings: "In ELISE",
-      name: "Name in ELISE",
+      settings: "Settings",
+      name: "Name",
       aliases: "Aliases",
-      aliasesHint: "Separated by commas. ELISE understands them when you talk.",
+      aliasesPlaceholder: "Other names, separated by commas",
       room: "Room",
       favorite: "Favorite",
       remove: "Remove device",
@@ -5012,6 +4997,7 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
         "It leaves Hogar and your Home Hub, and any modes. To use it again, find it with Add › Find devices.",
       removed: (name: string) => `${name} was removed from Hogar.`,
       save: "Save",
+      openRemote: "Remote",
       stale: (when: string) => `Last known state ${when}`,
     },
     result: {

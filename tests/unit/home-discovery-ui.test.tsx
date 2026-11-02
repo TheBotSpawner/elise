@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { DiscoveredDevice } from "@/core/home/discovery";
-import type { HomeDevice } from "@/core/home/model";
+import { describeState, type HomeDevice } from "@/core/home/model";
 import * as actions from "@/features/home/actions";
 import { DeviceDiscovery } from "@/features/home/device-discovery";
+import { RemoteControl } from "@/features/home/remote-control";
 import { HomeRuntimeProvider, type HomeRuntimeControls } from "@/features/home/runtime-context";
 import { I18nProvider } from "@/lib/i18n/client";
 
@@ -24,7 +25,7 @@ vi.mock("@/features/home/actions", () => ({
   })),
   connectTuyaAction: vi.fn(),
   linkTuyaTestAction: vi.fn(async () => ({ ok: true, value: "c1" })),
-  tuyaOverviewAction: vi.fn(),
+  tuyaOverviewAction: vi.fn(async () => ({ ok: true, value: { hubs: [], otherDevices: 0 } })),
   tuyaImportAction: vi.fn(),
   tuyaSyncAction: vi.fn(),
   disconnectTuyaAction: vi.fn(),
@@ -209,7 +210,7 @@ describe("this search vs before", () => {
       found: [seen("d1", "FlowBox-Z3"), seen("d2", "FlowBox-Z3"), seen("d3", "TV Living")],
     });
     expect(
-      await screen.findByText("No encontramos dispositivos nuevos", {}, { timeout: 4000 }),
+      await screen.findByText("No se encontraron dispositivos nuevos", {}, { timeout: 4000 }),
     ).toBeTruthy();
     expect(screen.queryByText(/encontrados? ahora/)).toBeNull();
     expect(screen.queryByText(/seguimos buscando/)).toBeNull();
@@ -227,7 +228,7 @@ describe("this search vs before", () => {
   it("current results are counted alone; the history isn't part of the count", async () => {
     wrap(runtime(), vi.fn(), { found: [seen("d1", "Android TV")] });
     expect(await screen.findByText("2 encontrados ahora", {}, { timeout: 4000 })).toBeTruthy();
-    expect(screen.queryByText("No encontramos dispositivos nuevos")).toBeNull();
+    expect(screen.queryByText("No se encontraron dispositivos nuevos")).toBeNull();
     expect(screen.getByText("Encontrados anteriormente (1)")).toBeTruthy();
   });
 
@@ -246,7 +247,7 @@ describe("this search vs before", () => {
     expect(screen.getByText("Encontrados anteriormente (1)")).toBeTruthy();
     next.resolve([]);
     expect(
-      await screen.findByText("No encontramos dispositivos nuevos", {}, { timeout: 4000 }),
+      await screen.findByText("No se encontraron dispositivos nuevos", {}, { timeout: 4000 }),
     ).toBeTruthy();
   });
 
@@ -310,56 +311,200 @@ describe("this search vs before", () => {
   });
 });
 
-/** ADR-119/128: the Smart Life row shows what the server can really do, nothing more. */
+/** ADR-119/128: the Smart Life row shows what the server can really do, plainly. */
 describe("Smart Life row", () => {
   const status = vi.mocked(actions.tuyaStatusAction);
   const value = (v: object) =>
     ({ ok: true, value: v }) as unknown as Awaited<ReturnType<typeof actions.tuyaStatusAction>>;
+  const linked = (over: object = {}) => ({
+    availability: { state: "unavailable" },
+    testLink: true,
+    connections: [
+      {
+        id: "c1",
+        region: "us",
+        label: "Smart Life · US",
+        status: "connected",
+        problem: null,
+        test: true,
+        ...over,
+      },
+    ],
+  });
 
-  it("no customer OAuth and no test link: a disabled Conectar and what's missing", async () => {
+  it("nothing to connect with: a disabled Conectar, short and plain", async () => {
     status.mockResolvedValueOnce(
       value({ availability: { state: "unavailable" }, testLink: false, connections: [] }),
     );
     wrap(null);
-    const connect = await screen.findByRole("button", { name: "Conectar" });
-    expect(connect).toBeDisabled();
-    expect(screen.getByText("La conexión para clientes todavía no está habilitada.")).toBeTruthy();
-    expect(screen.queryByText(/esperando la habilitación/)).toBeNull();
-    expect(screen.getByText("Más información").closest("details")!.open).toBe(false);
-    expect(screen.queryByRole("button", { name: "Vincular cuenta de prueba" })).toBeNull();
+    expect(await screen.findByRole("button", { name: "Conectar" })).toBeDisabled();
+    expect(screen.getByText("Todavía no disponible")).toBeTruthy();
+    expect(screen.queryByText(/habilitaci|OAuth|prueba|desarrollo/i)).toBeNull();
   });
 
-  it("the owner's workspace gets the test link, labeled as development only", async () => {
-    const linked = {
-      availability: { state: "unavailable" },
-      testLink: true,
-      connections: [
-        {
-          id: "c1",
-          region: "us",
-          label: "Smart Life · US",
-          status: "connected",
-          problem: null,
-          test: true,
-        },
-      ],
-    };
+  it("the owner's account connects with a normal Conectar; no test wording anywhere", async () => {
+    vi.mocked(actions.tuyaOverviewAction).mockResolvedValue({
+      ok: true,
+      value: {
+        hubs: [
+          {
+            id: "hub1",
+            name: "Infrarrojo Habitación",
+            online: true,
+            failed: false,
+            remotes: [
+              {
+                infraredId: "hub1",
+                remoteId: "rm1",
+                name: "Aire Acondicionado Pieza",
+                brand: "Fedders",
+                kind: "ac",
+                deviceId: null,
+                sameAs: null,
+              },
+            ],
+          },
+        ],
+        otherDevices: 2,
+      },
+    } as never);
     status
       .mockResolvedValueOnce(
         value({ availability: { state: "unavailable" }, testLink: true, connections: [] }),
       )
-      .mockResolvedValue(value(linked));
+      .mockResolvedValue(value(linked()));
     wrap(null);
-    const link = await screen.findByRole("button", { name: "Vincular cuenta de prueba" });
-    expect(screen.getByText(/Solo desarrollo/)).toBeTruthy();
-    // Not offered as a customer connection: no enabled Conectar.
-    expect(screen.queryByRole("button", { name: "Conectar" })).toBeNull();
-    await act(async () => fireEvent.click(link));
+    const connect = await screen.findByRole("button", { name: "Conectar" });
+    expect(connect).not.toBeDisabled();
+    await act(async () => fireEvent.click(connect));
     expect(actions.linkTuyaTestAction).toHaveBeenCalled();
-    await waitFor(() => expect(screen.getByText("Cuenta de prueba")).toBeTruthy());
-    expect(screen.getByText("1 cuenta vinculada")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Vincular cuenta de prueba" })).toBeNull();
+    // Connected: "Smart Life" and "Conectado", the region out of the name; remotes listed at once.
+    expect(await screen.findByText("Smart Life")).toBeTruthy();
+    expect(screen.getByText("Conectado")).toBeTruthy();
+    expect(screen.queryByText(/US/)).toBeNull();
+    const name = await screen.findByText("Aire Acondicionado Pieza");
+    expect(name).toHaveAttribute("title", "Aire Acondicionado Pieza");
+    expect(screen.queryByText(/prueba|desarrollo|todavía no se pueden controlar/i)).toBeNull();
+    // Sync and disconnect are icons, named for screen readers; disconnecting asks first.
+    expect(screen.getByRole("button", { name: "Sincronizar" })).toHaveAttribute("title");
+    fireEvent.click(screen.getByRole("button", { name: "Desconectar" }));
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    expect(actions.disconnectTuyaAction).not.toHaveBeenCalled();
     status.mockReset();
     status.mockResolvedValue(value({ availability: { state: "off" }, connections: [] }));
+  });
+});
+
+/** ADR-128: a remote laid out like one — never every button loose in a box. */
+describe("remote control", () => {
+  const remote = (cap: object, state = {}) =>
+    ({
+      id: "d1",
+      name: "Tele",
+      aliases: [],
+      roomId: null,
+      type: "media_player",
+      capabilities: [cap],
+      state,
+      available: true,
+      stateUpdatedAt: null,
+      favorite: false,
+    }) as unknown as HomeDevice;
+  const tuya = (kind: string, keys: [string, string][], ac?: object) => ({
+    type: "tuya_ir",
+    connectionId: "33333333-3333-4333-8333-333333333333",
+    infraredId: "hub1",
+    remoteId: "rm1",
+    categoryId: kind === "ac" ? 5 : 2,
+    kind,
+    keys: keys.map(([key, label]) => ({ key, label, tuya: key })),
+    ...(ac ? { ac } : {}),
+  });
+  const show = (device: HomeDevice, send = vi.fn()) => {
+    render(
+      <I18nProvider locale="es">
+        <RemoteControl device={device} disabled={false} send={send} />
+      </I18nProvider>,
+    );
+    return send;
+  };
+
+  it("a TV: power, volume and channel rockers, navigation icons; extras folded", () => {
+    const send = show(
+      remote(
+        tuya("tv", [
+          ["power_toggle", "Encendido"],
+          ["volume_up", "Subir volumen"],
+          ["volume_down", "Bajar volumen"],
+          ["channel_up", "Canal +"],
+          ["channel_down", "Canal −"],
+          ["back", "Back"],
+          ["home", "Home"],
+          ["menu", "Menu"],
+          ["netflix", "Netflix"],
+        ]),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Encendido" }));
+    expect(send).toHaveBeenLastCalledWith([{ type: "button", value: "power_toggle" }]);
+    expect(within(screen.getByRole("group", { name: "Vol" })).getAllByRole("button")).toHaveLength(
+      2,
+    );
+    expect(
+      within(screen.getByRole("group", { name: "Canal" })).getAllByRole("button"),
+    ).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(send).toHaveBeenLastCalledWith([{ type: "button", value: "back" }]);
+    // What has no place on a remote is one tap away, folded.
+    const more = screen.getByText("Más botones (1)").closest("details")!;
+    expect(more.open).toBe(false);
+  });
+
+  it("an AC: power, a temperature stepper within its range, mode and fan", () => {
+    const ac = {
+      modes: [
+        { mode: "cool", temps: [16, 17, 18], fans: ["auto", "low"] },
+        { mode: "heat", temps: [20, 21], fans: ["auto"] },
+      ],
+    };
+    const send = show(
+      remote(
+        tuya(
+          "ac",
+          [
+            ["power_on", "Encender"],
+            ["power_off", "Apagar"],
+          ],
+          ac,
+        ),
+        {
+          on: true,
+          hvacMode: "cool",
+          targetTemperature: 17,
+          fanMode: "auto",
+        },
+      ),
+    );
+    expect(screen.getByText("17")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Subir temperatura" }));
+    expect(send).toHaveBeenLastCalledWith([{ type: "temperature", value: 18 }]);
+    fireEvent.click(screen.getByRole("button", { name: /Calor/ }));
+    expect(send).toHaveBeenLastCalledWith([{ type: "hvac_mode", value: "heat" }]);
+    fireEvent.click(screen.getByRole("button", { name: "Baja" }));
+    expect(send).toHaveBeenLastCalledWith([{ type: "fan_mode", value: "low" }]);
+    fireEvent.click(screen.getByRole("button", { name: /Apagar/ }));
+    expect(send).toHaveBeenLastCalledWith([{ type: "power", value: false }]);
+    expect(screen.getByRole("button", { name: /Encender/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Power keys are the power control, not loose extras.
+    expect(screen.queryByText(/Más botones/)).toBeNull();
+  });
+
+  it("Hogar's screens never say 'estimado'; the assistant still does", () => {
+    const d = remote(tuya("tv", [["power_toggle", "Encendido"]]), { on: true, estimated: true });
+    expect(describeState(d, "es", { estimate: false })).not.toMatch(/estimado/);
+    expect(describeState(d, "es")).toMatch(/estimado/);
   });
 });

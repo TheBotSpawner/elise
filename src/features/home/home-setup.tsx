@@ -131,7 +131,7 @@ export function HomeSetup({
         </div>
       </section>
       {/* ADR-119: Smart Life needs no ELISE Desktop: it can be connected from here too. */}
-      <TuyaConnect rooms={snapshot.rooms} />
+      <TuyaConnect />
       {devTools && <DevPairing />}
     </div>
   );
@@ -465,7 +465,6 @@ function Progress({
         <>
           <Done label={s.hubReady} />
           <Heading>{s.discover.title}</Heading>
-          <p className="max-w-xl text-[15px] text-muted">{s.discover.subtitle}</p>
           <DeviceDiscovery
             onDone={markDevicesDone}
             addedCount={snapshot.devices.length}

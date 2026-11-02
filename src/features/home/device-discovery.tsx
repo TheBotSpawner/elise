@@ -13,6 +13,7 @@ import {
   Speaker,
   Tv,
   Wifi,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -28,7 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import type { DiscoveredDevice, DiscoveryField, DiscoveryStep } from "@/core/home/discovery";
-import type { HomeDevice, HomeRoom } from "@/core/home/model";
+import type { HomeDevice } from "@/core/home/model";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -128,11 +129,8 @@ export function DeviceDiscovery({
   found: previous = [],
   irControllers = 0,
   onIrDevice,
-  rooms = [],
   skippable = true,
 }: {
-  /** ADR-119: the home's rooms, to place Smart Life remotes as they're added. */
-  rooms?: readonly HomeRoom[];
   /** ADR-117: infrared controllers in the home: TVs and ACs are added from here too. */
   irControllers?: number;
   onIrDevice?: () => void;
@@ -246,10 +244,12 @@ export function DeviceDiscovery({
 
   const current = scan.results.filter((x) => status[x.flowId]?.kind !== "gone");
   const shown = showAll ? current : current.slice(0, SHOWN);
-  const anyAdded = addedCount > 0 || Object.values(status).some((s) => s.kind === "added");
+  const addedHere = Object.values(status).some((s) => s.kind === "added");
+  const anyAdded = addedCount > 0 || addedHere;
   const scanning = scan.status === "scanning" || scan.status === "idle";
   const footer =
-    anyAdded || skippable ? (
+    // In a dialog its × closes: a footer only once something was added here.
+    skippable || addedHere ? (
       <div className="flex flex-wrap gap-2">
         <Button variant={anyAdded ? "primary" : "ghost"} onClick={onDone}>
           {anyAdded ? d.continue : d.later}
@@ -268,7 +268,7 @@ export function DeviceDiscovery({
           <FoundDevices devices={previous} />
         </section>
         {/* ADR-118: Smart Life goes through Tuya's cloud: it works from the web too. */}
-        <Services rooms={rooms} />
+        <Services />
         {footer}
       </div>
     );
@@ -307,9 +307,6 @@ export function DeviceDiscovery({
                   : d.noneNow}
           </span>
         </p>
-        {(scanning || (scan.status === "completed" && !current.length)) && (
-          <p className="text-[12.5px] text-faint">{scanning ? d.scanHint : d.noneHint}</p>
-        )}
         {shown.length > 0 && (
           <ul className="flex flex-col gap-2">
             {shown.map((device) => {
@@ -328,7 +325,9 @@ export function DeviceDiscovery({
                 >
                   <div className="flex items-center gap-3">
                     <DeviceKindIcon kind={device.kind} added={s.kind === "added"} />
-                    <span className="min-w-0 flex-1 truncate text-[14.5px]">{device.name}</span>
+                    <span className="min-w-0 flex-1 truncate text-[14.5px]" title={device.name}>
+                      {device.name}
+                    </span>
                     {s.kind === "added" ? (
                       <span className="flex items-center gap-1 text-[13px] text-success">
                         <Check className="size-4" aria-hidden />
@@ -339,12 +338,15 @@ export function DeviceDiscovery({
                         <Button
                           size="sm"
                           variant="ghost"
+                          aria-label={d.skip}
+                          title={d.skip}
+                          className="w-8 shrink-0 px-0"
                           onClick={() => {
                             set(device.flowId, { kind: "gone" });
                             void runtime.ignoreDiscovery(device.flowId, device.name);
                           }}
                         >
-                          {d.skip}
+                          <X aria-hidden />
                         </Button>
                         <Button size="sm" onClick={() => void add(device)}>
                           {d.add}
@@ -398,9 +400,9 @@ export function DeviceDiscovery({
             </div>
           )}
         <FoundDevices devices={previous} />
-        {anyAdded && <p className="text-[12.5px] text-faint">{d.appearing}</p>}
+        {addedHere && <p className="text-[12.5px] text-faint">{d.appearing}</p>}
       </section>
-      <Services rooms={rooms} />
+      <Services />
       <ManualBroadlink />
       {footer}
     </div>
@@ -408,14 +410,14 @@ export function DeviceDiscovery({
 }
 
 /** Block 2: connected services (cloud accounts), apart from what this network answered. */
-function Services({ rooms }: { rooms: readonly HomeRoom[] }) {
+function Services() {
   const { t } = useI18n();
   return (
     <section aria-labelledby="discover-services" className="flex flex-col gap-2.5">
       <h3 id="discover-services" className="type-label text-faint">
         {t.smartHome.setup.discover.servicesTitle}
       </h3>
-      <TuyaConnect rooms={rooms} />
+      <TuyaConnect />
     </section>
   );
 }

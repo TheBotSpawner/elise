@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -43,21 +43,25 @@ export function FoundDevices({ devices }: { devices: readonly HomeDevice[] }) {
         <span className="flex-1">{d.previously(devices.length)}</span>
         <ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden />
       </summary>
-      <p className="px-3.5 text-[12.5px] text-faint">{d.previouslyHint}</p>
       <ul className="flex flex-col divide-y divide-border">
         {devices.slice(0, limit).map((x) => (
           <li key={x.id} className="flex items-center gap-3 px-3.5 py-2">
             <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-surface-2 text-muted">
               <DeviceIcon type={x.type} className="size-4" />
             </span>
-            <span className="min-w-0 flex-1 truncate text-[14px]">{x.name}</span>
+            <span className="min-w-0 flex-1 truncate text-[14px]" title={x.name}>
+              {x.name}
+            </span>
             <Button
               size="sm"
               variant="ghost"
+              aria-label={d.ignore}
+              title={d.ignore}
+              className="w-8 shrink-0 px-0"
               disabled={pending}
               onClick={() => update(x.id, { hidden: true })}
             >
-              {d.ignore}
+              <X aria-hidden />
             </Button>
             <Button
               size="sm"

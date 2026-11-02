@@ -2,6 +2,7 @@
 
 import {
   DoorOpen,
+  LayoutGrid,
   HouseWifi,
   Minus,
   Pencil,
@@ -60,6 +61,7 @@ import { DeviceIcon } from "./device-icon";
 import { FoundDevices } from "./found-devices";
 import { HomeSetup, type DesktopDownload } from "./home-setup";
 import { IrSetup } from "./ir-setup";
+import { RemoteControl, remoteKeys } from "./remote-control";
 import { useHomeRuntime } from "./runtime-context";
 
 const CARD = "rounded-2xl border border-border bg-surface";
@@ -399,14 +401,12 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
         open={adding === "devices"}
         onClose={() => setAdding(null)}
         title={h.setup.discover.modalTitle}
-        description={h.setup.discover.subtitle}
       >
         <DeviceDiscovery
           skippable={false}
           onDone={() => setAdding(null)}
           addedCount={snapshot.devices.length}
           found={snapshot.found}
-          rooms={snapshot.rooms}
           irControllers={snapshot.devices.filter((d) => d.type === "ir_controller").length}
           onIrDevice={() => {
             setAdding(null);
@@ -633,7 +633,7 @@ function DeviceTile({
             )}
           >
             {!d.available && <span aria-hidden>● </span>}
-            {[room, unfinished ? h.ir.incomplete : describeState(d, locale)]
+            {[room, unfinished ? h.ir.incomplete : describeState(d, locale, { estimate: false })]
               .filter(Boolean)
               .join(" · ")}
             {stale &&
@@ -763,8 +763,9 @@ function DeviceSheet({
   const ir = cap(d, "ir");
   // ADR-118: a Smart Life remote: Tuya's keys and ranges, nothing to learn or manage here.
   const tuya = cap(d, "tuya_ir");
-  const acModes = tuya?.kind === "ac" ? (tuya.ac?.modes ?? []) : [];
-  const acMode = acModes.find((m) => m.mode === s.hvacMode) ?? acModes[0];
+  // ADR-128: a remote's buttons live in their own panel, laid out like a remote.
+  const [remote, setRemote] = useState(false);
+  const hasKeys = remoteKeys(d).length > 0 || Boolean(tuya?.ac?.modes.length);
   const controls =
     !ir && !tuya && d.capabilities.some((c) => !["power", "app", "ir_blaster"].includes(c.type));
   return (
@@ -786,7 +787,7 @@ function DeviceSheet({
         </span>
         <div className="min-w-0 flex-1">
           <p className={cn("text-[15px]", !live && "text-danger-text")}>
-            {live ? describeState(d, locale) : `● ${h.unavailable}`}
+            {live ? describeState(d, locale, { estimate: false }) : `● ${h.unavailable}`}
           </p>
           {d.stateUpdatedAt && (
             <p className="text-[12.5px] text-faint">
@@ -794,6 +795,17 @@ function DeviceSheet({
             </p>
           )}
         </div>
+        <button
+          type="button"
+          aria-pressed={d.favorite}
+          aria-label={x.favorite}
+          title={x.favorite}
+          disabled={saving}
+          onClick={() => save({ favorite: !d.favorite })}
+          className="grid size-10 shrink-0 place-items-center rounded-full text-faint transition-colors hover:bg-active hover:text-fg disabled:opacity-50 aria-pressed:text-approval"
+        >
+          <Star className={cn("size-5", d.favorite && "fill-current")} aria-hidden />
+        </button>
         {cap(d, "power") && (
           <Switch
             checked={Boolean(s.on)}
@@ -803,116 +815,32 @@ function DeviceSheet({
           />
         )}
       </div>
+      {(ir || tuya) &&
+        (hasKeys ? (
+          <Button variant="secondary" className="-mt-1" onClick={() => setRemote(true)}>
+            <LayoutGrid aria-hidden />
+            {x.openRemote}
+          </Button>
+        ) : (
+          <p className="-mt-1 text-[13.5px] text-muted">{h.ir.noButtons}</p>
+        ))}
+      {ir && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="-mt-3 self-center"
+          onClick={() => onIr({ device: d })}
+        >
+          {h.ir.manage}
+        </Button>
+      )}
+      {remote && (
+        <Dialog open onClose={() => setRemote(false)} title={d.name}>
+          <RemoteControl device={d} disabled={!live || command.pending} send={send} />
+        </Dialog>
+      )}
       {!live && d.type === "media_player" && !ir && (
         <p className="-mt-2 text-[13px] text-muted">{h.unavailableTv}</p>
-      )}
-      {ir && (
-        <section
-          className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4"
-          aria-label={x.controls}
-        >
-          {ir.commands.some((c) => c.verified) ? (
-            <div className="flex flex-wrap gap-2">
-              {ir.commands
-                .filter((c) => c.verified)
-                .map((c) => (
-                  <Button
-                    key={c.key}
-                    size="sm"
-                    variant="secondary"
-                    disabled={!live || command.pending}
-                    onClick={() => send([{ type: "button", value: c.key }])}
-                  >
-                    {c.label}
-                  </Button>
-                ))}
-            </div>
-          ) : (
-            <p className="text-[13.5px] text-muted">{h.ir.noButtons}</p>
-          )}
-          <p className="text-[12.5px] text-faint">{h.ir.estimated}</p>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="self-start"
-            onClick={() => onIr({ device: d })}
-          >
-            {h.ir.manage}
-          </Button>
-        </section>
-      )}
-      {tuya && (
-        <section
-          className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4"
-          aria-label={x.controls}
-        >
-          {acMode && (
-            <>
-              <div className="flex flex-wrap gap-2">
-                {[true, false].map((on) => (
-                  <Button
-                    key={String(on)}
-                    size="sm"
-                    variant="secondary"
-                    disabled={!live || command.pending}
-                    onClick={() => send([{ type: "power", value: on }])}
-                  >
-                    {on ? h.tuya.on : h.tuya.off}
-                  </Button>
-                ))}
-              </div>
-              {acModes.length > 1 && (
-                <div className="flex flex-wrap gap-2">
-                  {acModes.map((m) => (
-                    <Button
-                      key={m.mode}
-                      size="sm"
-                      variant={m.mode === s.hvacMode ? "primary" : "secondary"}
-                      disabled={!live || command.pending}
-                      onClick={() => send([{ type: "hvac_mode", value: m.mode }])}
-                    >
-                      {hvacLabel(m.mode, locale)}
-                    </Button>
-                  ))}
-                </div>
-              )}
-              {acMode.temps.length > 0 && (
-                <Select
-                  aria-label={x.temperature}
-                  value={String(s.targetTemperature ?? "")}
-                  disabled={!live || command.pending}
-                  onChange={(e) => send([{ type: "temperature", value: Number(e.target.value) }])}
-                  className="h-10 self-start"
-                >
-                  <option value="" disabled>
-                    {x.temperature}
-                  </option>
-                  {acMode.temps.map((v) => (
-                    <option key={v} value={v}>
-                      {v} °C
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </>
-          )}
-          {!acMode && (
-            <div className="flex flex-wrap gap-2">
-              {tuya.keys.map((k) => (
-                <Button
-                  key={k.key}
-                  size="sm"
-                  variant="secondary"
-                  disabled={!live || command.pending}
-                  onClick={() => send([{ type: "button", value: k.key }])}
-                >
-                  {k.label}
-                </Button>
-              ))}
-            </div>
-          )}
-          <p className="text-[12.5px] text-faint">{h.ir.estimated}</p>
-        </section>
       )}
       {d.type === "ir_controller" && (
         <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface p-4">
@@ -1136,7 +1064,6 @@ function DeviceSheet({
       </section>
 
       <section className="flex flex-col gap-3.5" aria-label={x.settings}>
-        <h3 className="type-label text-faint">{x.settings}</h3>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="home-device-name">{x.name}</Label>
           <Input
@@ -1152,10 +1079,10 @@ function DeviceSheet({
           <Input
             id="home-device-aliases"
             value={aliases}
+            placeholder={x.aliasesPlaceholder}
             onChange={(e) => setAliases(e.target.value)}
             className="h-11"
           />
-          <p className="text-[12px] text-faint">{x.aliasesHint}</p>
         </div>
         {rooms.length > 0 && (
           <div className="flex flex-col gap-1.5">
@@ -1175,14 +1102,6 @@ function DeviceSheet({
             </Select>
           </div>
         )}
-        <label className="flex items-center justify-between rounded-2xl border border-border bg-surface px-4 py-3 text-[14px]">
-          {x.favorite}
-          <Switch
-            checked={d.favorite}
-            aria-label={x.favorite}
-            onCheckedChange={(v) => save({ favorite: v })}
-          />
-        </label>
         <div
           data-sheet-actions
           className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4"

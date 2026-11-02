@@ -94,3 +94,22 @@ one workspace only) and ADR-090/103 (how Agregar dispositivos presents what the 
 - What the dialog calls "found now" means only "the engine reported it in this search". Home
   Assistant can keep a pending discovery a while after a device leaves the network. That's the
   engine's view at search time, not a reachability probe.
+
+## Addendum (2026-11-02): commercial UI pass
+
+- **No test wording on screen.** The owner's account shows as a normal "Smart Life · Conectado"
+  with a plain "Conectar". The test-link guardrails stay server-side (§1), unchanged. With
+  nothing to connect with, the row shows "Todavía no disponible" and a disabled Conectar.
+- **Smart Life row.** It's named "Smart Life", with the region only when there are several
+  accounts. Sync and disconnect are icon buttons with names and tooltips; disconnecting asks
+  first. Its remotes load as soon as it's connected; room is set later in the device's detail.
+- **Less copy.** No subtitle, no scan or history hints, no "N more devices can't be controlled".
+  "Agregar dispositivo por IP" names the footer.
+- **Device detail.**
+  - Hogar's screens never say "estimado": `describeState(…, { estimate: false })`. Voice and
+    tools still do (ADR-110 honesty is unchanged).
+  - A remote's buttons open in a "Control remoto" panel laid out like a remote:
+    - **TV:** power, volume and channel rockers, navigation icons, extras folded.
+    - **AC:** power, a temperature stepper limited to Tuya's range, mode and fan.
+  - Favorite is a star in the header.
+  - Settings are just Nombre / Alias / Habitación.
