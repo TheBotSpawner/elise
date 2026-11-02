@@ -24,9 +24,12 @@ import {
 } from "@/application/home-service";
 import {
   disconnectTuya,
+  linkTuyaTestAccount,
   startTuyaConnection,
   tuyaAvailability,
   tuyaConnections,
+  tuyaConnectionView,
+  tuyaTestLinkAllowed,
 } from "@/application/tuya-connection-service";
 import { syncTuya, tuyaImport, tuyaOverview } from "@/application/tuya-home-service";
 import { AppError, toPublicError, type PublicError } from "@/core/errors";
@@ -165,7 +168,10 @@ export async function tuyaStatusAction() {
     const availability = tuyaAvailability();
     return {
       availability,
-      connections: availability.state === "off" ? [] : await tuyaConnections(auth),
+      // ADR-128: the owner's test link is offered to its one configured workspace only.
+      testLink: availability.state !== "off" && tuyaTestLinkAllowed(auth.workspaceId),
+      connections:
+        availability.state === "off" ? [] : (await tuyaConnections(auth)).map(tuyaConnectionView),
     };
   });
 }
@@ -185,6 +191,11 @@ export async function connectTuyaAction(form: FormData): Promise<void> {
     redirect(`/my-elise/home?tuya_error=${toPublicError(error).code}`);
   }
   redirect(url);
+}
+
+/** ADR-128: links the owner's test account (configured server-side) to this workspace. */
+export async function linkTuyaTestAction() {
+  return run(async () => linkTuyaTestAccount(await requireAuthContext()));
 }
 
 /** One connection's hubs and the remotes already set up in Smart Life. */

@@ -9,10 +9,12 @@ import { decrypt, encrypt } from "@/infrastructure/crypto/encryption";
 import {
   exchangeTuyaCode,
   forgetTuyaAccount,
+  projectAuth,
   refreshTuyaToken,
   tuyaConfig,
   tuyaEnabled,
   TuyaError,
+  tuyaUserDevices,
   type TuyaAuth,
   type TuyaTokens,
 } from "@/infrastructure/home/tuya";
@@ -68,6 +70,37 @@ export function tuyaAvailability(): TuyaAvailability {
   if (!tuyaConfig()) return { state: "unavailable" };
   const regions = TUYA_REGIONS.filter((r) => oauthUrl(r));
   return regions.length ? { state: "available", regions } : { state: "unavailable" };
+}
+
+/**
+ * ADR-128: the owner's TEST link — the Smart Life account linked in Tuya's console ("Link App
+ * Account"), read with the project's own token. Only the one configured workspace ever sees it;
+ * it is not how customers connect (that's the OAuth above).
+ */
+export function tuyaTestLinkAllowed(workspaceId: string): boolean {
+  const env = serverEnv();
+  return Boolean(tuyaConfig() && env.TUYA_DEV_UID && env.TUYA_DEV_WORKSPACE_ID === workspaceId);
+}
+
+/** "Vincular cuenta de prueba": checked against Tuya first, so a refusal never looks linked. */
+export async function linkTuyaTestAccount(auth: AuthContext): Promise<string> {
+  rateLimit(`tuya-test-link:${auth.userId}`, 5, 60_000);
+  if (!tuyaTestLinkAllowed(auth.workspaceId))
+    throw new AppError("CAPABILITY_UNAVAILABLE", "The Smart Life test account isn't available");
+  const env = serverEnv();
+  const region = isTuyaRegion(env.TUYA_REGION) ? env.TUYA_REGION : "us";
+  const uid = env.TUYA_DEV_UID!;
+  const devices = await tuyaUserDevices(projectAuth(region), uid, true);
+  const id = await saveConnection(createAdminClient(), {
+    workspaceId: auth.workspaceId,
+    userId: auth.userId,
+    region,
+    uid,
+    tokens: null,
+    reconnecting: null,
+  });
+  logger.info("tuya_test_linked", { region, devices: devices.length });
+  return id;
 }
 
 /** ELISE's own hop: the browser that will see Tuya's page carries the flow's cookie. */
@@ -229,6 +262,7 @@ export async function completeTuyaConnection(params: {
     workspaceId: row.workspace_id,
     userId: row.user_id,
     region,
+    uid: tokens.uid,
     tokens,
     reconnecting: row.connection_id,
   });
@@ -244,11 +278,13 @@ async function saveConnection(
     workspaceId: string;
     userId: string;
     region: TuyaRegion;
-    tokens: TuyaTokens;
+    uid: string;
+    /** null: the ADR-128 test link (the project's token, nothing of the person's to keep). */
+    tokens: TuyaTokens | null;
     reconnecting: string | null;
   },
 ): Promise<string> {
-  const external = `${p.region}:${p.tokens.uid}`;
+  const external = `${p.region}:${p.uid}`;
   const { data: existing } = await admin
     .from("provider_connections")
     .select("id, external_account_id")
@@ -268,7 +304,7 @@ async function saveConnection(
     last_error_code: null,
     last_error_at: null,
     disconnected_at: null,
-    auth_metadata: { region: p.region, uid: p.tokens.uid },
+    auth_metadata: { region: p.region, uid: p.uid, ...(p.tokens ? {} : { test: true }) },
   };
   let id = existing?.id ?? null;
   if (id) {
@@ -297,15 +333,16 @@ async function saveConnection(
       throw new AppError("INTERNAL_ERROR", "Could not save the connection", { cause: error });
     id = data.id;
   }
-  await vault(admin).write(
-    { connectionId: id, workspaceId: p.workspaceId },
-    {
-      accessToken: p.tokens.accessToken,
-      accessTokenExpiresAt: p.tokens.expiresAt.toISOString(),
-      refreshToken: p.tokens.refreshToken,
-      scopes: [],
-    },
-  );
+  if (p.tokens)
+    await vault(admin).write(
+      { connectionId: id, workspaceId: p.workspaceId },
+      {
+        accessToken: p.tokens.accessToken,
+        accessTokenExpiresAt: p.tokens.expiresAt.toISOString(),
+        refreshToken: p.tokens.refreshToken,
+        scopes: [],
+      },
+    );
   forgetTuyaAccount(id);
   return id;
 }
@@ -319,9 +356,22 @@ export interface TuyaConnection {
   label: string;
   status: "connected" | "needs_reauthorization" | "error" | "disabled" | "connecting";
   problem: string | null;
+  /** ADR-128: the owner's test link, not a customer's OAuth. */
+  test: boolean;
 }
 
-const metadata = z.object({ region: z.string(), uid: z.string() });
+/** What a browser may see of a connection: an allowlist, never the Tuya uid. */
+export type TuyaConnectionView = Omit<TuyaConnection, "uid">;
+export const tuyaConnectionView = (c: TuyaConnection): TuyaConnectionView => ({
+  id: c.id,
+  region: c.region,
+  label: c.label,
+  status: c.status,
+  problem: c.problem,
+  test: c.test,
+});
+
+const metadata = z.object({ region: z.string(), uid: z.string(), test: z.boolean().optional() });
 
 /** This workspace's Smart Life accounts (never another workspace's: scoped and under RLS). */
 export async function tuyaConnections(auth: AuthContext): Promise<TuyaConnection[]> {
@@ -344,6 +394,7 @@ export async function tuyaConnections(auth: AuthContext): Promise<TuyaConnection
         label: r.account_label ?? "Smart Life",
         status: r.status as TuyaConnection["status"],
         problem: r.last_error_code,
+        test: m.data.test === true,
       },
     ];
   });
@@ -378,8 +429,24 @@ async function markProblem(c: Pick<TuyaConnection, "id">, workspaceId: string, e
  */
 export function tuyaAuthFor(
   workspaceId: string,
-  c: Pick<TuyaConnection, "id" | "region">,
+  c: Pick<TuyaConnection, "id" | "region" | "uid" | "test">,
 ): TuyaAuth & { reportProblem(e: unknown): Promise<void> } {
+  if (c.test) {
+    // ADR-128: the project's token, only while this workspace and account are still the
+    // configured ones (taking them out of the config ends the test link at once).
+    const project = projectAuth(c.region);
+    return {
+      region: c.region,
+      key: c.id,
+      tokenRejected: project.tokenRejected,
+      reportProblem: (e) => markProblem(c, workspaceId, e),
+      async accessToken() {
+        if (!tuyaTestLinkAllowed(workspaceId) || serverEnv().TUYA_DEV_UID !== c.uid)
+          throw new TuyaError("token", null, 0, "test_link");
+        return project.accessToken();
+      },
+    };
+  }
   const admin = createAdminClient();
   const ref = { connectionId: c.id, workspaceId };
   let rejected = false;

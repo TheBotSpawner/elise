@@ -108,6 +108,7 @@ They must never need Tuya's developer console or an ELISE Home hub. ADR-118's
    - With it on but no `TUYA_OAUTH_URL_*`, the entry shows the honest "todavía no disponible"
      state.
    - `TUYA_DEV_UID` / `TUYA_REGION` only serve `scripts/tuya-check.ts`. The app never reads them.
+    **Amended by ADR-128:** with `TUYA_DEV_WORKSPACE_ID`, that one workspace gets a labeled test link.
 
 ## Status of each part
 

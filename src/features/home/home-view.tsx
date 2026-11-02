@@ -398,9 +398,11 @@ function Dashboard({ snapshot, timezone }: { snapshot: HomeSnapshot; timezone: s
       <Dialog
         open={adding === "devices"}
         onClose={() => setAdding(null)}
-        title={h.setup.discover.title}
+        title={h.setup.discover.modalTitle}
+        description={h.setup.discover.subtitle}
       >
         <DeviceDiscovery
+          skippable={false}
           onDone={() => setAdding(null)}
           addedCount={snapshot.devices.length}
           found={snapshot.found}

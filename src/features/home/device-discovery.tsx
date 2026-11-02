@@ -16,7 +16,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createElement, useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
@@ -83,22 +90,46 @@ function fieldLabel(name: string, known: Record<string, string>) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** Re-asked while the screen is open: devices keep being found for a while. */
+/** A search the person sees stays on screen a moment, even when the engine answers at once. */
 const MIN_SCAN_MS = 2200;
-const POLL_MS = 10_000;
+/** The engine didn't answer: the search ends as failed, never "still looking" forever. */
+const SCAN_TIMEOUT_MS = 15_000;
+/** Current results shown before "Ver todos": the list never takes over the dialog. */
+const SHOWN = 5;
 
 /**
- * Hogar's "Dispositivos" step (ADR-090): what the home engine found on the network, and the
- * person choosing what to add — a confirmation or a few fields (a pairing code) each. Only in
- * ELISE Desktop, where the engine runs; on the web it says where to do it.
+ * One search (ADR-128). "Detectados ahora" is only what the engine reports in THIS search; what
+ * it registered some other time is "Encontrados anteriormente" (FoundDevices, folded). A new
+ * search clears only the previous search's results; an answer that arrives after a newer search
+ * started — or after the dialog closed — is dropped.
+ */
+type ScanState =
+  | { status: "idle" | "scanning" | "failed"; results: [] }
+  | { status: "completed"; results: DiscoveredDevice[] };
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("timeout")), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Hogar's "Agregar dispositivos" (ADR-090, ADR-128): this network's devices found now, with what
+ * was seen before folded apart; then connected services (Smart Life). Searching the network
+ * needs ELISE Desktop, where the engine runs; on the web it says so and Smart Life still works.
  */
 export function DeviceDiscovery({
   onDone,
   addedCount,
-  found: onNetwork = [],
+  found: previous = [],
   irControllers = 0,
   onIrDevice,
   rooms = [],
+  skippable = true,
 }: {
   /** ADR-119: the home's rooms, to place Smart Life remotes as they're added. */
   rooms?: readonly HomeRoom[];
@@ -109,53 +140,65 @@ export function DeviceDiscovery({
   onDone: () => void;
   /** Devices already in Hogar (the step can finish once there is one). */
   addedCount: number;
-  /** ADR-103: devices the engine registered by itself, waiting for "Agregar". */
+  /** ADR-103: devices the engine registered some other time, waiting for "Agregar". */
   found?: readonly HomeDevice[];
+  /** Onboarding offers "Omitir por ahora"; in a dialog its × already does that. */
+  skippable?: boolean;
 }) {
   const router = useRouter();
   const { t } = useI18n();
   const d = t.smartHome.setup.discover;
   const runtime = useHomeRuntime();
-  const [found, setFound] = useState<DiscoveredDevice[] | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const [scan, setScan] = useState<ScanState>({ status: "idle", results: [] });
+  const [showAll, setShowAll] = useState(false);
   const [status, setStatus] = useState<Record<string, Status>>({});
+  const generation = useRef(0);
+  const previousCount = useRef(previous.length);
+  useEffect(() => {
+    previousCount.current = previous.length;
+  }, [previous.length]);
   const set = (id: string, s: Status) => setStatus((m) => ({ ...m, [id]: s }));
 
-  /**
-   * One search. A search the person sees (the first, "Buscar de nuevo") stays on screen a moment
-   * even when the engine answers at once, so it reads as searching; background polls stay quiet.
-   */
-  const scan = useCallback(
-    async (shown = true) => {
-      if (!runtime) return;
-      if (shown) setScanning(true);
-      try {
-        const [list] = await Promise.all([
-          runtime.discoveries(),
-          shown ? new Promise((r) => setTimeout(r, MIN_SCAN_MS)) : null,
-        ]);
-        setFound(list);
-      } catch {
-        setFound((f) => f ?? []);
-      } finally {
-        if (shown) setScanning(false);
-      }
-    },
-    [runtime],
-  );
+  const search = useCallback(async () => {
+    if (!runtime) return;
+    const id = ++generation.current;
+    const started = Date.now();
+    setScan({ status: "scanning", results: [] });
+    setShowAll(false);
+    try {
+      const [list] = await Promise.all([
+        withTimeout(runtime.discoveries(), SCAN_TIMEOUT_MS),
+        new Promise((r) => setTimeout(r, MIN_SCAN_MS)),
+      ]);
+      if (id !== generation.current) return;
+      setScan({ status: "completed", results: list });
+      // Local diagnostics only: counts, timing and integrations — no names, ids or addresses.
+      console.info("[home-discovery]", {
+        ms: Date.now() - started,
+        current: list.length,
+        previous: previousCount.current,
+        integrations: [...new Set(list.map((x) => x.kind))],
+      });
+    } catch (e) {
+      if (id !== generation.current) return;
+      setScan({ status: "failed", results: [] });
+      console.info("[home-discovery]", {
+        ms: Date.now() - started,
+        error: e instanceof Error && e.message === "timeout" ? "timeout" : "engine",
+      });
+    }
+  }, [runtime]);
 
   useEffect(() => {
     if (!runtime) return;
-    // First search right after mount (not inside the effect itself), then while it's open.
-    const first = setTimeout(() => void scan(), 0);
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") void scan(false);
-    }, POLL_MS);
+    // Search right after mount (not inside the effect itself); closing drops a late answer.
+    const first = setTimeout(() => void search(), 0);
+    const searches = generation;
     return () => {
       clearTimeout(first);
-      clearInterval(timer);
+      searches.current++;
     };
-  }, [runtime, scan]);
+  }, [runtime, search]);
 
   const after = (id: string, step: DiscoveryStep) => {
     if (step.kind === "added") {
@@ -201,148 +244,179 @@ export function DeviceDiscovery({
     }
   };
 
-  if (!runtime)
-    return (
-      <div className="flex flex-col gap-3">
-        <p className="max-w-xl text-[15px] text-muted">{d.onlyDesktop}</p>
-        {/* ADR-118: Smart Life goes through Tuya's cloud: it works from the web too. */}
-        <TuyaConnect rooms={rooms} />
-        <Button variant="ghost" className="self-start" onClick={onDone}>
-          {d.later}
-        </Button>
-      </div>
-    );
-
-  const visible = (found ?? []).filter((x) => status[x.flowId]?.kind !== "gone");
+  const current = scan.results.filter((x) => status[x.flowId]?.kind !== "gone");
+  const shown = showAll ? current : current.slice(0, SHOWN);
   const anyAdded = addedCount > 0 || Object.values(status).some((s) => s.kind === "added");
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="max-w-xl text-[15px] text-muted">{d.body}</p>
-      <FoundDevices devices={onNetwork} />
-      <div
-        className="flex flex-wrap items-center gap-2.5 text-[13.5px] text-muted"
-        aria-live="polite"
-      >
-        <SearchPulse active={scanning} />
-        <span>
-          {scanning
-            ? d.scanning
-            : visible.length || onNetwork.length
-              ? `${d.found(visible.length + onNetwork.length)} · ${d.stillLooking}`
-              : d.noneShort}
-        </span>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={scanning}
-          onClick={() => void scan()}
-          className="ml-auto"
-        >
-          <RotateCw className={cn(scanning && "animate-spin")} />
-          {found === null ? d.scan : d.scanAgain}
-        </Button>
-      </div>
-      {scanning && !visible.length ? (
-        <Scanning />
-      ) : (
-        found !== null &&
-        !visible.length && (
-          <p className="rounded-2xl border border-dashed border-border-strong px-4 py-3.5 text-[13.5px] text-muted">
-            {d.none}
-          </p>
-        )
-      )}
-      {visible.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {visible.map((device) => {
-            const s = status[device.flowId] ?? { kind: "idle" };
-            return (
-              <li
-                key={device.flowId}
-                className={cn(
-                  "flex flex-col gap-3 rounded-2xl border bg-surface px-3.5 py-3 transition-colors",
-                  s.kind === "form"
-                    ? "border-accent-line"
-                    : s.kind === "added"
-                      ? "border-success/40"
-                      : "border-border",
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <DeviceKindIcon kind={device.kind} added={s.kind === "added"} />
-                  <span className="min-w-0 flex-1 truncate text-[14.5px]">{device.name}</span>
-                  {s.kind === "added" ? (
-                    <span className="flex items-center gap-1 text-[13px] text-success">
-                      <Check className="size-4" aria-hidden />
-                      {d.added}
-                    </span>
-                  ) : s.kind === "idle" || s.kind === "message" ? (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          set(device.flowId, { kind: "gone" });
-                          void runtime.ignoreDiscovery(device.flowId, device.name);
-                        }}
-                      >
-                        {d.skip}
-                      </Button>
-                      <Button size="sm" onClick={() => void add(device)}>
-                        {d.add}
-                      </Button>
-                    </>
-                  ) : s.kind === "busy" ? (
-                    <span className="flex items-center gap-1.5 text-[13px] text-muted">
-                      <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
-                      {d.adding}
-                    </span>
-                  ) : null}
-                </div>
-                {device.note === "locked" && s.kind !== "added" && (
-                  <p className="text-[13px] text-approval-text">{d.locked}</p>
-                )}
-                {device.kind === "broadlink" && s.kind === "added" && (
-                  <p className="text-[13px] text-muted">{d.irAdded}</p>
-                )}
-                {s.kind === "message" && <p className="text-[13px] text-muted">{s.text}</p>}
-                {s.kind === "form" && (
-                  <StepForm
-                    name={device.name}
-                    step={s.step}
-                    onCancel={() => set(device.flowId, { kind: "idle" })}
-                    onSubmit={(answers) => void answer(device.flowId, answers)}
-                  />
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {/* ADR-117: one place to add everything — infrared TVs and ACs through a Broadlink too. */}
-      {onIrDevice &&
-        (irControllers > 0 ||
-          visible.some((x) => x.kind === "broadlink" && status[x.flowId]?.kind === "added")) && (
-          <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-3.5 py-3">
-            <DeviceKindIcon kind="broadlink" added={false} />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-[14.5px]">{d.irTitle}</span>
-              <span className="text-[12.5px] text-muted">{d.irHint}</span>
-            </span>
-            <Button size="sm" onClick={onIrDevice}>
-              {d.add}
-            </Button>
-          </div>
-        )}
-      <TuyaConnect rooms={rooms} />
-      <ManualBroadlink />
-      {anyAdded && <p className="text-[13px] text-faint">{d.appearing}</p>}
+  const scanning = scan.status === "scanning" || scan.status === "idle";
+  const footer =
+    anyAdded || skippable ? (
       <div className="flex flex-wrap gap-2">
         <Button variant={anyAdded ? "primary" : "ghost"} onClick={onDone}>
           {anyAdded ? d.continue : d.later}
         </Button>
       </div>
+    ) : null;
+
+  if (!runtime)
+    return (
+      <div className="flex flex-col gap-5">
+        <section aria-labelledby="discover-network" className="flex flex-col gap-2">
+          <h3 id="discover-network" className="type-label text-faint">
+            {d.networkTitle}
+          </h3>
+          <p className="text-[13.5px] text-muted">{d.onlyDesktop}</p>
+          <FoundDevices devices={previous} />
+        </section>
+        {/* ADR-118: Smart Life goes through Tuya's cloud: it works from the web too. */}
+        <Services rooms={rooms} />
+        {footer}
+      </div>
+    );
+
+  return (
+    <div className="flex flex-col gap-5">
+      <section aria-labelledby="discover-network" className="flex flex-col gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <h3 id="discover-network" className="type-label text-faint">
+            {d.networkTitle}
+          </h3>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={scanning}
+            onClick={() => void search()}
+            className="ml-auto"
+          >
+            <RotateCw className={cn(scanning && "motion-safe:animate-spin")} aria-hidden />
+            {d.scanAgain}
+          </Button>
+        </div>
+        <p
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2.5 text-[13.5px] text-muted"
+        >
+          <SearchPulse active={scanning} />
+          <span>
+            {scanning
+              ? d.scanning
+              : scan.status === "failed"
+                ? d.scanFailed
+                : current.length
+                  ? d.foundNow(current.length)
+                  : d.noneNow}
+          </span>
+        </p>
+        {(scanning || (scan.status === "completed" && !current.length)) && (
+          <p className="text-[12.5px] text-faint">{scanning ? d.scanHint : d.noneHint}</p>
+        )}
+        {shown.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {shown.map((device) => {
+              const s = status[device.flowId] ?? { kind: "idle" };
+              return (
+                <li
+                  key={device.flowId}
+                  className={cn(
+                    "flex flex-col gap-3 rounded-2xl border bg-surface px-3.5 py-2.5 transition-colors",
+                    s.kind === "form"
+                      ? "border-accent-line"
+                      : s.kind === "added"
+                        ? "border-success/40"
+                        : "border-border",
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <DeviceKindIcon kind={device.kind} added={s.kind === "added"} />
+                    <span className="min-w-0 flex-1 truncate text-[14.5px]">{device.name}</span>
+                    {s.kind === "added" ? (
+                      <span className="flex items-center gap-1 text-[13px] text-success">
+                        <Check className="size-4" aria-hidden />
+                        {d.added}
+                      </span>
+                    ) : s.kind === "idle" || s.kind === "message" ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            set(device.flowId, { kind: "gone" });
+                            void runtime.ignoreDiscovery(device.flowId, device.name);
+                          }}
+                        >
+                          {d.skip}
+                        </Button>
+                        <Button size="sm" onClick={() => void add(device)}>
+                          {d.add}
+                        </Button>
+                      </>
+                    ) : s.kind === "busy" ? (
+                      <span className="flex items-center gap-1.5 text-[13px] text-muted">
+                        <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+                        {d.adding}
+                      </span>
+                    ) : null}
+                  </div>
+                  {device.note === "locked" && s.kind !== "added" && (
+                    <p className="text-[13px] text-approval-text">{d.locked}</p>
+                  )}
+                  {device.kind === "broadlink" && s.kind === "added" && (
+                    <p className="text-[13px] text-muted">{d.irAdded}</p>
+                  )}
+                  {s.kind === "message" && <p className="text-[13px] text-muted">{s.text}</p>}
+                  {s.kind === "form" && (
+                    <StepForm
+                      name={device.name}
+                      step={s.step}
+                      onCancel={() => set(device.flowId, { kind: "idle" })}
+                      onSubmit={(answers) => void answer(device.flowId, answers)}
+                    />
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {current.length > shown.length && (
+          <Button size="sm" variant="ghost" className="self-start" onClick={() => setShowAll(true)}>
+            {d.showAll(current.length)}
+          </Button>
+        )}
+        {/* ADR-117: one place to add everything — infrared TVs and ACs through a Broadlink too. */}
+        {onIrDevice &&
+          (irControllers > 0 ||
+            current.some((x) => x.kind === "broadlink" && status[x.flowId]?.kind === "added")) && (
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-3.5 py-2.5">
+              <DeviceKindIcon kind="broadlink" added={false} />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="text-[14.5px]">{d.irTitle}</span>
+                <span className="text-[12.5px] text-muted">{d.irHint}</span>
+              </span>
+              <Button size="sm" onClick={onIrDevice}>
+                {d.add}
+              </Button>
+            </div>
+          )}
+        <FoundDevices devices={previous} />
+        {anyAdded && <p className="text-[12.5px] text-faint">{d.appearing}</p>}
+      </section>
+      <Services rooms={rooms} />
+      <ManualBroadlink />
+      {footer}
     </div>
+  );
+}
+
+/** Block 2: connected services (cloud accounts), apart from what this network answered. */
+function Services({ rooms }: { rooms: readonly HomeRoom[] }) {
+  const { t } = useI18n();
+  return (
+    <section aria-labelledby="discover-services" className="flex flex-col gap-2.5">
+      <h3 id="discover-services" className="type-label text-faint">
+        {t.smartHome.setup.discover.servicesTitle}
+      </h3>
+      <TuyaConnect rooms={rooms} />
+    </section>
   );
 }
 
@@ -530,32 +604,6 @@ function SearchPulse({ active }: { active: boolean }) {
   );
 }
 
-/** The first search: a radar sweeping the network, so waiting never looks stuck. */
-function Scanning() {
-  const { t } = useI18n();
-  const d = t.smartHome.setup.discover;
-  return (
-    <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-surface px-4 py-8 text-center">
-      <span aria-hidden className="relative grid size-24 place-items-center">
-        {[0, 0.6, 1.2].map((delay) => (
-          <span
-            key={delay}
-            className="absolute inset-0 rounded-full border border-accent/40 motion-safe:animate-ping"
-            style={{ animationDuration: "1.8s", animationDelay: `${delay}s` }}
-          />
-        ))}
-        <span className="relative grid size-12 place-items-center rounded-full bg-accent-soft text-accent-text">
-          <Wifi className="size-5" strokeWidth={1.7} />
-        </span>
-      </span>
-      <div className="flex flex-col gap-1">
-        <p className="text-[14.5px]">{d.scanning}</p>
-        <p className="text-[12.5px] text-faint">{d.scanHint}</p>
-      </div>
-    </div>
-  );
-}
-
 /**
  * ADR-110: a Broadlink the engine didn't find by itself (discovery blocked, another subnet):
  * added by its address on the home network. The rest of its setup (unlock, name) is the same
@@ -602,8 +650,10 @@ export function ManualBroadlink() {
     }
   };
   return (
-    <details className="rounded-2xl border border-border bg-surface px-3.5 py-3 text-[14px]">
-      <summary className="cursor-pointer text-muted">{m.title}</summary>
+    <details className="text-[14px]">
+      <summary className="cursor-pointer text-[13px] text-faint hover:text-muted">
+        {m.title}
+      </summary>
       <div className="mt-3 flex flex-col gap-3">
         {status.kind === "added" ? (
           <p className="flex items-center gap-1.5 text-success">

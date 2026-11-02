@@ -76,13 +76,19 @@ const progressItem = z.object({
   context: z
     .object({
       source: z.string().optional(),
+      unique_id: z.string().optional(),
       title_placeholders: z.record(z.string(), z.unknown()).optional(),
     })
     .passthrough()
     .optional(),
 });
 
-/** The engine's pending setups → what was found on the network, once each. */
+/**
+ * The engine's pending setups → what was found on the network, once each. Identity (ADR-128):
+ * the integration plus the device's own unique id (serial, MAC, USN) when the engine has one —
+ * the same device seen by mDNS and SSDP is one row; without one, each setup is its own row. A
+ * shared name never merges two devices (two "Chromecast" are two).
+ */
 export function discoveredDevices(raw: unknown): DiscoveredDevice[] {
   const list = z.array(z.unknown()).safeParse(raw);
   if (!list.success) return [];
@@ -99,7 +105,8 @@ export function discoveredDevices(raw: unknown): DiscoveredDevice[] {
       (v): v is string => typeof v === "string" && v.trim().length > 0,
     );
     const name = (label ?? humanize(p.data.handler)).slice(0, 80);
-    const key = `${p.data.handler}|${name.toLowerCase()}`;
+    const uid = p.data.context?.unique_id;
+    const key = uid ? `${p.data.handler}|${uid}` : p.data.flow_id;
     if (!out.has(key)) out.set(key, { flowId: p.data.flow_id, name, kind: p.data.handler });
   }
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));

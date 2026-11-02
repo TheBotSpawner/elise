@@ -28,6 +28,7 @@ export const {
   applyIrProfileAction,
   tuyaStatusAction,
   connectTuyaAction,
+  linkTuyaTestAction,
   tuyaOverviewAction,
   tuyaImportAction,
   tuyaSyncAction,

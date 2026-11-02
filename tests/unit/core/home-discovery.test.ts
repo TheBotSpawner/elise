@@ -14,12 +14,17 @@ describe("what the engine found on the network", () => {
       {
         flow_id: FLOW,
         handler: "cast",
-        context: { source: "zeroconf", title_placeholders: { name: "Living TV" } },
+        context: {
+          source: "zeroconf",
+          unique_id: "uuid-1",
+          title_placeholders: { name: "Living TV" },
+        },
       },
+      // ADR-128: the same device (same unique id) seen again by another protocol is one row.
       {
         flow_id: "01JABCDEFGHJKMNPQRSTVWXYZ1",
         handler: "cast",
-        context: { source: "zeroconf", title_placeholders: { name: "Living TV" } },
+        context: { source: "ssdp", unique_id: "uuid-1", title_placeholders: { name: "Living TV" } },
       },
       { flow_id: "01JABCDEFGHJKMNPQRSTVWXYZ2", handler: "tplink", context: { source: "dhcp" } },
       { flow_id: "01JABCDEFGHJKMNPQRSTVWXYZ3", handler: "hue", context: { source: "user" } }, // a person's own
@@ -31,6 +36,19 @@ describe("what the engine found on the network", () => {
       { flowId: "01JABCDEFGHJKMNPQRSTVWXYZ2", name: "Tplink", kind: "tplink" },
     ]);
     expect(discoveredDevices({ not: "a list" })).toEqual([]);
+  });
+
+  it("ADR-128: two devices that share a name are never merged", () => {
+    const named = (flow_id: string, unique_id?: string) => ({
+      flow_id,
+      handler: "cast",
+      context: { source: "zeroconf", unique_id, title_placeholders: { name: "FlowBox-Z3" } },
+    });
+    expect(
+      discoveredDevices([named(FLOW, "a"), named("01JABCDEFGHJKMNPQRSTVWXYZ1", "b")]),
+    ).toHaveLength(2);
+    // No unique id: each pending setup is its own device.
+    expect(discoveredDevices([named(FLOW), named("01JABCDEFGHJKMNPQRSTVWXYZ1")])).toHaveLength(2);
   });
 });
 

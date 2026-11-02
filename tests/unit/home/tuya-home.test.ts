@@ -79,6 +79,13 @@ const tuya = vi.hoisted(() => ({
 vi.mock("@/infrastructure/home/tuya", () => ({
   ...tuya,
   TuyaError: FakeTuyaError,
+  // ADR-128: the project's own token (the owner's test link).
+  projectAuth: (region: string) => ({
+    region,
+    key: `project:${region}`,
+    accessToken: async () => "project-token",
+    tokenRejected: () => undefined,
+  }),
   tuyaEnabled: () => state.env.TUYA_ENABLED === "true",
   tuyaConfig: () =>
     state.env.TUYA_ENABLED === "true" && state.env.TUYA_CLIENT_ID
@@ -91,10 +98,13 @@ const { executeHomeCommands, hubSync, redeemPairingCode, createPairingCode, auth
 const {
   completeTuyaConnection,
   disconnectTuya,
+  linkTuyaTestAccount,
   startTuyaConnection,
   tuyaAuthorizationUrl,
   tuyaAvailability,
   tuyaConnections,
+  tuyaConnectionView,
+  tuyaTestLinkAllowed,
 } = await import("@/application/tuya-connection-service");
 const { syncTuya, tuyaImport, tuyaOverview } = await import("@/application/tuya-home-service");
 
@@ -658,5 +668,80 @@ describe("the person's token", () => {
       status: "unavailable",
       error: "tuya_reconnect",
     });
+  });
+});
+
+/**
+ * ADR-128: the owner's test link — the account linked in Tuya's console, read with the project's
+ * token — exists only for the one configured workspace, is checked against Tuya before it's
+ * saved, keeps nothing of a person's in the vault, and ends when the config no longer names it.
+ */
+describe("the owner's test link", () => {
+  const dev = { TUYA_DEV_UID: "uid-a", TUYA_DEV_WORKSPACE_ID: WS_A, TUYA_REGION: "us" };
+  const withDev = async (fn: () => Promise<void>) => {
+    Object.assign(state.env, dev);
+    try {
+      await fn();
+    } finally {
+      for (const k of Object.keys(dev)) delete state.env[k];
+    }
+  };
+
+  it("only the configured workspace sees or can use it", () =>
+    withDev(async () => {
+      expect(tuyaTestLinkAllowed(WS_A)).toBe(true);
+      expect(tuyaTestLinkAllowed(WS_B)).toBe(false);
+      await expect(linkTuyaTestAccount(B())).rejects.toMatchObject({
+        code: "CAPABILITY_UNAVAILABLE",
+      });
+      expect(db.rows("provider_connections")).toHaveLength(0);
+      state.env.TUYA_ENABLED = "false";
+      expect(tuyaTestLinkAllowed(WS_A)).toBe(false);
+    }));
+
+  it("links after Tuya answers; it's marked test, with no secret stored and no uid for a browser", () =>
+    withDev(async () => {
+      const tokens: string[] = [];
+      tuya.tuyaUserDevices.mockImplementation(
+        async (auth: { accessToken(): Promise<string> }, uid: string) => {
+          tokens.push(await auth.accessToken());
+          return DEVICES[uid] ?? [];
+        },
+      );
+      const id = await linkTuyaTestAccount(A());
+      const [c] = await tuyaConnections(A());
+      expect(c).toMatchObject({ id, region: "us", test: true, status: "connected" });
+      expect(state.vault.size).toBe(0);
+      expect(JSON.stringify(tuyaConnectionView(c!))).not.toContain("uid-a");
+      // Its remotes are read with the project's token, through the usual ownership checks.
+      const { hubs } = await tuyaOverview(A(), id);
+      expect(hubs.map((h) => h.id)).toEqual(["ir_hub_a1"]);
+      expect(new Set(tokens)).toEqual(new Set(["project-token"]));
+      // Linking again doesn't duplicate.
+      await linkTuyaTestAccount(A());
+      expect(await tuyaConnections(A())).toHaveLength(1);
+    }));
+
+  it("a refusal from Tuya (IR service not authorized, other data center) links nothing", () =>
+    withDev(async () => {
+      tuya.tuyaUserDevices.mockRejectedValueOnce(new FakeTuyaError("permission"));
+      await expect(linkTuyaTestAccount(A())).rejects.toMatchObject({ problem: "permission" });
+      expect(db.rows("provider_connections")).toHaveLength(0);
+    }));
+
+  it("once the config no longer names this workspace, the link stops working", async () => {
+    let id = "";
+    await withDev(async () => {
+      tuya.tuyaUserDevices.mockImplementation(
+        async (auth: { accessToken(): Promise<string> }, uid: string) => {
+          await auth.accessToken();
+          return DEVICES[uid] ?? [];
+        },
+      );
+      id = await linkTuyaTestAccount(A());
+    });
+    await expect(tuyaOverview(A(), id)).rejects.toMatchObject({ problem: "token" });
+    const [c] = await tuyaConnections(A());
+    expect(c?.status).toBe("needs_reauthorization");
   });
 });

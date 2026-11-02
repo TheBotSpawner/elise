@@ -108,14 +108,16 @@ const serverEnvSchema = z.object({
   TUYA_OAUTH_URL_SG: z.string().url().startsWith("https://").optional(),
   TUYA_OAUTH_URL_CN: z.string().url().startsWith("https://").optional(),
   /**
-   * Local check script only (scripts/tuya-check.ts): a Smart Life account linked to the project
-   * in Tuya's console and its data center. Never used by the app.
+   * ADR-128: a Smart Life account linked to the project in Tuya's console ("Link App Account"),
+   * its data center, and the ONE workspace allowed to use it — a test link for the owner, never
+   * offered to anyone else. Also read by scripts/tuya-check.ts.
    */
   TUYA_REGION: z.enum(["us", "us-e", "eu", "eu-w", "in", "cn", "sg"]).default("us"),
   TUYA_DEV_UID: z
     .string()
     .regex(/^[A-Za-z0-9_-]{4,80}$/)
     .optional(),
+  TUYA_DEV_WORKSPACE_ID: z.uuid().optional(),
   /**
    * Real images (ADR-120). Wikimedia Commons: free, no key, ~1 s — on unless "false".
    * Openverse: free, no key, but 10–17 s per uncached search anonymously — off unless "true".

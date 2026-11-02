@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { DiscoveredDevice } from "@/core/home/discovery";
+import type { HomeDevice } from "@/core/home/model";
+import * as actions from "@/features/home/actions";
 import { DeviceDiscovery } from "@/features/home/device-discovery";
 import { HomeRuntimeProvider, type HomeRuntimeControls } from "@/features/home/runtime-context";
 import { I18nProvider } from "@/lib/i18n/client";
@@ -20,6 +23,7 @@ vi.mock("@/features/home/actions", () => ({
     value: { availability: { state: "off" }, connections: [] },
   })),
   connectTuyaAction: vi.fn(),
+  linkTuyaTestAction: vi.fn(async () => ({ ok: true, value: "c1" })),
   tuyaOverviewAction: vi.fn(),
   tuyaImportAction: vi.fn(),
   tuyaSyncAction: vi.fn(),
@@ -69,27 +73,50 @@ function runtime(over: Partial<HomeRuntimeControls> = {}): HomeRuntimeControls {
   };
 }
 
-const wrap = (value: HomeRuntimeControls | null, onDone = vi.fn()) =>
+const wrap = (
+  value: HomeRuntimeControls | null,
+  onDone = vi.fn(),
+  extra: { found?: HomeDevice[]; skippable?: boolean } = {},
+) =>
   render(
     <I18nProvider locale="es">
       {value ? (
         <HomeRuntimeProvider value={value}>
-          <DeviceDiscovery onDone={onDone} addedCount={0} />
+          <DeviceDiscovery onDone={onDone} addedCount={0} {...extra} />
         </HomeRuntimeProvider>
       ) : (
-        <DeviceDiscovery onDone={onDone} addedCount={0} />
+        <DeviceDiscovery onDone={onDone} addedCount={0} {...extra} />
       )}
     </I18nProvider>,
   );
+
+/** A device the engine registered some other time (not confirmed by this search). */
+const seen = (id: string, name: string) =>
+  ({
+    id,
+    name,
+    aliases: [],
+    roomId: null,
+    type: "media_player",
+    capabilities: [],
+    state: {},
+    available: true,
+    stateUpdatedAt: null,
+    favorite: false,
+  }) as HomeDevice;
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((a) => (resolve = a));
+  return { promise, resolve };
+}
 
 describe("devices step", () => {
   it("adds a confirmed device and one with a pairing code; continues afterwards", async () => {
     const r = runtime();
     const onDone = vi.fn();
     wrap(r, onDone);
-    expect(
-      await screen.findByText(/Encontramos 2 dispositivos/, {}, { timeout: 4000 }),
-    ).toBeTruthy();
+    expect(await screen.findByText(/2 encontrados ahora/, {}, { timeout: 4000 })).toBeTruthy();
     const [hueAdd, tvAdd] = screen.getAllByRole("button", { name: "Agregar" });
     // A confirmation…
     await act(async () => fireEvent.click(tvAdd!));
@@ -121,12 +148,12 @@ describe("devices step", () => {
     const r = runtime();
     const onDone = vi.fn();
     wrap(r, onDone);
-    await screen.findByText(/Encontramos 2 dispositivos/, {}, { timeout: 4000 });
+    await screen.findByText(/2 encontrados ahora/, {}, { timeout: 4000 });
     await act(async () =>
       fireEvent.click(screen.getAllByRole("button", { name: "No, gracias" })[0]!),
     );
     expect(r.ignoreDiscovery).toHaveBeenCalledWith(HUE, "Hue Bridge");
-    expect(screen.getByText(/Encontramos 1 dispositivo/)).toBeTruthy();
+    expect(screen.getByText(/1 encontrado ahora/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Omitir por ahora" }));
     expect(onDone).toHaveBeenCalled();
   });
@@ -169,5 +196,170 @@ describe("devices step", () => {
     );
     expect(r.addBroadlink).toHaveBeenLastCalledWith("192.168.1.40");
     expect(screen.getByLabelText("Nombre")).toBeTruthy();
+  });
+});
+
+/**
+ * ADR-128: "found now" is only this search; what was seen before is folded apart and never
+ * counted as found now; a newer search drops an older one's late answer.
+ */
+describe("this search vs before", () => {
+  it("no current results: says so, with no contradiction, even with devices seen before", async () => {
+    wrap(runtime({ discoveries: vi.fn(async () => []) }), vi.fn(), {
+      found: [seen("d1", "FlowBox-Z3"), seen("d2", "FlowBox-Z3"), seen("d3", "TV Living")],
+    });
+    expect(
+      await screen.findByText("No encontramos dispositivos nuevos", {}, { timeout: 4000 }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/encontrados? ahora/)).toBeNull();
+    expect(screen.queryByText(/seguimos buscando/)).toBeNull();
+    // The history is folded by default, with its own count; two rows with one name stay two.
+    const summary = screen.getByText("Encontrados anteriormente (3)");
+    const details = summary.closest("details")!;
+    expect(details.open).toBe(false);
+    fireEvent.click(summary);
+    expect(details.open).toBe(true);
+    expect(within(details).getAllByText("FlowBox-Z3")).toHaveLength(2);
+    fireEvent.click(summary);
+    expect(details.open).toBe(false);
+  });
+
+  it("current results are counted alone; the history isn't part of the count", async () => {
+    wrap(runtime(), vi.fn(), { found: [seen("d1", "Android TV")] });
+    expect(await screen.findByText("2 encontrados ahora", {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.queryByText("No encontramos dispositivos nuevos")).toBeNull();
+    expect(screen.getByText("Encontrados anteriormente (1)")).toBeTruthy();
+  });
+
+  it("“Volver a buscar” clears only the last search's results; the history stays", async () => {
+    const next = deferred<DiscoveredDevice[]>();
+    const discoveries = vi
+      .fn()
+      .mockResolvedValueOnce([{ flowId: TV, name: "Living TV", kind: "cast" }])
+      .mockReturnValueOnce(next.promise);
+    wrap(runtime({ discoveries }), vi.fn(), { found: [seen("d1", "Viejo")] });
+    expect(await screen.findByText("1 encontrado ahora", {}, { timeout: 4000 })).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Volver a buscar/ })));
+    expect(screen.queryByText("Living TV")).toBeNull();
+    expect(screen.getByText("Buscando en tu red…")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Volver a buscar/ })).toBeDisabled();
+    expect(screen.getByText("Encontrados anteriormente (1)")).toBeTruthy();
+    next.resolve([]);
+    expect(
+      await screen.findByText("No encontramos dispositivos nuevos", {}, { timeout: 4000 }),
+    ).toBeTruthy();
+  });
+
+  it("an answer arriving after the dialog closed is dropped", async () => {
+    const late = deferred<DiscoveredDevice[]>();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const view = wrap(runtime({ discoveries: vi.fn(() => late.promise) }));
+    await act(async () => new Promise((r) => setTimeout(r, 10)));
+    view.unmount();
+    late.resolve([{ flowId: TV, name: "Living TV", kind: "cast" }]);
+    await act(async () => new Promise((r) => setTimeout(r, 2400)));
+    // The stale search never completed (its diagnostics line is the completion's).
+    expect(info).not.toHaveBeenCalled();
+    info.mockRestore();
+  });
+
+  it("diagnostics are counts and integrations only — no names", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    wrap(runtime());
+    await screen.findByText("2 encontrados ahora", {}, { timeout: 4000 });
+    expect(info).toHaveBeenCalledWith(
+      "[home-discovery]",
+      expect.objectContaining({ current: 2, previous: 0, integrations: ["hue", "cast"] }),
+    );
+    expect(JSON.stringify(info.mock.calls)).not.toMatch(/Living TV|Hue Bridge/);
+    info.mockRestore();
+  });
+
+  it("an engine that fails ends the search as failed, never 'still looking'", async () => {
+    wrap(runtime({ discoveries: vi.fn(async () => Promise.reject(new Error("down"))) }));
+    expect(
+      await screen.findByText(
+        "No se pudo buscar en tu red. Probá de nuevo.",
+        {},
+        { timeout: 4000 },
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Volver a buscar/ })).not.toBeDisabled();
+  });
+
+  it("only a few current results show until the person asks for all", async () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      flowId: `01JABCDEFGHJKMNPQRSTVWXY${i}${i}`,
+      name: `Luz ${i}`,
+      kind: "hue",
+    }));
+    wrap(runtime({ discoveries: vi.fn(async () => many) }));
+    expect(await screen.findByText("8 encontrados ahora", {}, { timeout: 4000 })).toBeTruthy();
+    expect(screen.queryByText("Luz 7")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Ver los 8" }));
+    expect(screen.getByText("Luz 7")).toBeTruthy();
+  });
+
+  it("in a dialog: no 'Omitir por ahora' (its × closes); status announced; two labeled blocks", async () => {
+    wrap(runtime(), vi.fn(), { skippable: false });
+    await screen.findByText("2 encontrados ahora", {}, { timeout: 4000 });
+    expect(screen.queryByRole("button", { name: "Omitir por ahora" })).toBeNull();
+    expect(screen.getByRole("status").textContent).toMatch(/2 encontrados ahora/);
+    expect(screen.getByRole("heading", { name: "En esta red" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Servicios conectados" })).toBeTruthy();
+  });
+});
+
+/** ADR-119/128: the Smart Life row shows what the server can really do, nothing more. */
+describe("Smart Life row", () => {
+  const status = vi.mocked(actions.tuyaStatusAction);
+  const value = (v: object) =>
+    ({ ok: true, value: v }) as unknown as Awaited<ReturnType<typeof actions.tuyaStatusAction>>;
+
+  it("no customer OAuth and no test link: a disabled Conectar and what's missing", async () => {
+    status.mockResolvedValueOnce(
+      value({ availability: { state: "unavailable" }, testLink: false, connections: [] }),
+    );
+    wrap(null);
+    const connect = await screen.findByRole("button", { name: "Conectar" });
+    expect(connect).toBeDisabled();
+    expect(screen.getByText("La conexión para clientes todavía no está habilitada.")).toBeTruthy();
+    expect(screen.queryByText(/esperando la habilitación/)).toBeNull();
+    expect(screen.getByText("Más información").closest("details")!.open).toBe(false);
+    expect(screen.queryByRole("button", { name: "Vincular cuenta de prueba" })).toBeNull();
+  });
+
+  it("the owner's workspace gets the test link, labeled as development only", async () => {
+    const linked = {
+      availability: { state: "unavailable" },
+      testLink: true,
+      connections: [
+        {
+          id: "c1",
+          region: "us",
+          label: "Smart Life · US",
+          status: "connected",
+          problem: null,
+          test: true,
+        },
+      ],
+    };
+    status
+      .mockResolvedValueOnce(
+        value({ availability: { state: "unavailable" }, testLink: true, connections: [] }),
+      )
+      .mockResolvedValue(value(linked));
+    wrap(null);
+    const link = await screen.findByRole("button", { name: "Vincular cuenta de prueba" });
+    expect(screen.getByText(/Solo desarrollo/)).toBeTruthy();
+    // Not offered as a customer connection: no enabled Conectar.
+    expect(screen.queryByRole("button", { name: "Conectar" })).toBeNull();
+    await act(async () => fireEvent.click(link));
+    expect(actions.linkTuyaTestAction).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText("Cuenta de prueba")).toBeTruthy());
+    expect(screen.getByText("1 cuenta vinculada")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Vincular cuenta de prueba" })).toBeNull();
+    status.mockReset();
+    status.mockResolvedValue(value({ availability: { state: "off" }, connections: [] }));
   });
 });

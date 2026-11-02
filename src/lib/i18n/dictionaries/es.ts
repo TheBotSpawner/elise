@@ -4624,17 +4624,36 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
       searchingBody: "Los dispositivos de tu casa van a aparecer acá en unos segundos.",
       discover: {
         title: "Agregá los dispositivos de tu casa",
-        body: "ELISE busca en tu red Wi-Fi luces, enchufes, TVs y otros dispositivos compatibles. Elegí cuáles agregar.",
+        // ADR-128
+        modalTitle: "Agregar dispositivos",
+        subtitle: "Buscá dispositivos cercanos o conectá tus servicios.",
+        networkTitle: "En esta red",
+        servicesTitle: "Servicios conectados",
         scan: "Buscar dispositivos",
-        scanAgain: "Buscar de nuevo",
+        scanAgain: "Volver a buscar",
         scanning: "Buscando en tu red…",
         scanHint: "Puede tardar unos segundos. Los dispositivos tienen que estar encendidos.",
-        stillLooking: "seguimos buscando",
+        scanFailed: "No se pudo buscar en tu red. Probá de nuevo.",
+        foundNow: (n: number) => (n === 1 ? "1 encontrado ahora" : `${n} encontrados ahora`),
+        noneNow: "No encontramos dispositivos nuevos",
+        noneHint: "Revisá que estén encendidos y en la misma Wi-Fi que esta computadora.",
+        showAll: (n: number) => `Ver los ${n}`,
+        previously: (n: number) => `Encontrados anteriormente (${n})`,
+        previouslyHint: "ELISE los vio en otra búsqueda: no están confirmados ahora.",
+        showMore: (n: number) => `Mostrar ${n} más`,
         irTitle: "TV, aire o ventilador por infrarrojo",
         irHint: "Con tu Broadlink: elegís la marca y lo probamos.",
         tuya: {
-          title: "Conectar Smart Life / Tuya Smart",
-          hint: "Tus controles de Smart Life (tele, aire…), listos sin volver a configurarlos. No necesita ELISE Desktop.",
+          title: "Smart Life / Tuya Smart",
+          hint: "Importá los controles que ya configuraste en Smart Life.",
+          notYetShort: "La conexión para clientes todavía no está habilitada.",
+          moreInfo: "Más información",
+          linked: (n: number) => (n === 1 ? "1 cuenta vinculada" : `${n} cuentas vinculadas`),
+          testLink: "Vincular cuenta de prueba",
+          testHint:
+            "Solo desarrollo: usa la cuenta de Smart Life vinculada en la consola de Tuya. No es la conexión para clientes.",
+          testBadge: "Cuenta de prueba",
+          relink: "Volver a vincular",
           connectIntro:
             "Vas a autorizar tu propia cuenta en la página oficial de Tuya (con tu usuario o el QR de la app). ELISE nunca ve tu contraseña.",
           another: "¿Otra cuenta de Smart Life?",
@@ -4660,7 +4679,7 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
           showRemotes: "Ver controles",
           sync: "Sincronizar",
           notYet:
-            "Conectar Smart Life todavía no está disponible: ELISE está esperando la habilitación oficial de Tuya. Nunca te vamos a pedir tu contraseña.",
+            "Falta configurar en el proyecto de Tuya la autorización OAuth 2.0 (clave de App Authorization, callback y centro de datos) y comprobar que acepte cuentas de Smart Life. Nunca te vamos a pedir tu contraseña.",
           problems: {
             token: "La autorización venció o fue revocada: reconectá.",
             wrong_region: "Tu cuenta está en otro centro de datos: conectá eligiendo el otro.",
@@ -4708,16 +4727,12 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
           send: "Enviar",
           sending: "Enviando…",
           cancel: "Cancelar",
-          sent: "Enviado. Si el equipo no reaccionó, revisá en Smart Life que el control funcione.",
+          sent: "Tuya aceptó la orden. El infrarrojo no confirma: mirá si el equipo reaccionó (si no, probalo desde Smart Life).",
         },
         locked:
           "Está bloqueado en la app BroadLink: desbloquealo ahí (ajustes del dispositivo → “Bloquear dispositivo”: no) y tocá Agregar de nuevo.",
         irAdded:
           "Controlador infrarrojo listo. Para manejar la tele o el aire con él: Hogar → Agregar → Equipo infrarrojo.",
-        noneShort: "Sin dispositivos nuevos por ahora",
-        none: "Todavía no encontramos dispositivos. Revisá que estén encendidos y en la misma red Wi-Fi que esta computadora, y buscá de nuevo.",
-        found: (n: number) =>
-          n === 1 ? "Encontramos 1 dispositivo" : `Encontramos ${n} dispositivos`,
         add: "Agregar",
         adding: "Agregando…",
         added: "Agregado",
@@ -4734,10 +4749,6 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
         continue: "Continuar",
         later: "Omitir por ahora",
         appearing: "Los dispositivos agregados aparecen en Hogar en unos segundos.",
-        // ADR-103
-        onNetwork: "Dispositivos encontrados",
-        onNetworkHint:
-          "ELISE los vio en alguna de tus redes. Agregalos cuando quieras controlarlos.",
         ignore: "Ignorar",
         showValue: "Mostrar",
         hideValue: "Ocultar",
@@ -4931,7 +4942,7 @@ Se elimina del Historial y ELISE deja de recordarla, igual que siempre que borr�
       onlyDesktop:
         "Agregar un Broadlink y enseñarle botones se hace desde ELISE Desktop, en la compu donde corre tu hogar.",
       manual: {
-        title: "¿No aparece? Agregalo por su IP",
+        title: "Agregar un Broadlink por IP",
         hint: "La IP está en la app de Broadlink o en tu router (por ejemplo 192.168.1.40).",
         host: "IP o nombre en tu red",
         add: "Agregar",

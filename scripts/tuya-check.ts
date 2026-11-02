@@ -20,8 +20,8 @@ import {
   tuyaUserDevices,
 } from "../src/infrastructure/home/tuya";
 
-// The project's own token in the data center of the account linked in Tuya's console (local
-// checks only: the app always uses each person's own OAuth token).
+// The project's own token in the data center of the account linked in Tuya's console — the same
+// access as Hogar's owner-only test link (ADR-128); customers use their own OAuth token.
 const region = isTuyaRegion(process.env.TUYA_REGION) ? process.env.TUYA_REGION : "us";
 const auth = projectAuth(region);
 const LOCAL = "00000000-0000-4000-8000-000000000000";

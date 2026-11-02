@@ -64,6 +64,7 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-125 | Conversación continua que se siente conversación: menos rellenos, escucha durante la búsqueda (interrumpible), calibración de interrupción por mediana, reposo a los 8 s, ELISE explica el modo |
 | ADR-126 | Barra de progreso para objetivos que la conversación recorre paso a paso (ui.progress), solo cuando ELISE la ve útil |
 | ADR-127 | Sin duplicados accidentales (alarma, timer, tarea: pregunta antes), interrumpir requiere voz real y sin bucle de reenvío, la charla no vacía el lienzo, el teclado se cierra tocando afuera |
+| ADR-128 | Smart Life: vínculo de prueba solo para el workspace del dueño (cuenta vinculada en la consola, token del proyecto), estado real para clientes (OAuth no habilitado), uid nunca al navegador; Agregar dispositivos separa «en esta red ahora» de «encontrados anteriormente» (plegado), búsqueda con estados, descarta respuestas viejas, identidad por unique_id |
 
 ## roadmap/
 

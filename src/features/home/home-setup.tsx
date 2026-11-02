@@ -465,6 +465,7 @@ function Progress({
         <>
           <Done label={s.hubReady} />
           <Heading>{s.discover.title}</Heading>
+          <p className="max-w-xl text-[15px] text-muted">{s.discover.subtitle}</p>
           <DeviceDiscovery
             onDone={markDevicesDone}
             addedCount={snapshot.devices.length}

@@ -4587,17 +4587,36 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       searchingBody: "The devices in your home will show up here in a few seconds.",
       discover: {
         title: "Add the devices in your home",
-        body: "ELISE looks on your Wi-Fi network for lights, plugs, TVs and other compatible devices. Choose which to add.",
         scan: "Find devices",
+        // ADR-128
+        modalTitle: "Add devices",
+        subtitle: "Find nearby devices or connect your services.",
+        networkTitle: "On this network",
+        servicesTitle: "Connected services",
         scanAgain: "Search again",
         scanning: "Searching your network…",
         scanHint: "It can take a few seconds. Devices need to be on.",
-        stillLooking: "still looking",
+        scanFailed: "Couldn't search your network. Try again.",
+        foundNow: (n: number) => (n === 1 ? "1 found now" : `${n} found now`),
+        noneNow: "No new devices found",
+        noneHint: "Check they're on and on the same Wi-Fi as this computer.",
+        showAll: (n: number) => `See all ${n}`,
+        previously: (n: number) => `Found before (${n})`,
+        previouslyHint: "ELISE saw them in another search: they aren't confirmed now.",
+        showMore: (n: number) => `Show ${n} more`,
         irTitle: "TV, AC or fan by infrared",
         irHint: "Through your Broadlink: pick the brand and we test it.",
         tuya: {
-          title: "Connect Smart Life / Tuya Smart",
-          hint: "Your Smart Life remotes (TV, AC…), ready without setting them up again. No ELISE Desktop needed.",
+          title: "Smart Life / Tuya Smart",
+          hint: "Import the remotes you already set up in Smart Life.",
+          notYetShort: "Connecting customer accounts isn't enabled yet.",
+          moreInfo: "More info",
+          linked: (n: number) => (n === 1 ? "1 linked account" : `${n} linked accounts`),
+          testLink: "Link test account",
+          testHint:
+            "Development only: uses the Smart Life account linked in Tuya's console. Not the customer connection.",
+          testBadge: "Test account",
+          relink: "Link again",
           connectIntro:
             "You'll authorize your own account on Tuya's official page (your login or the app's QR). ELISE never sees your password.",
           another: "Another Smart Life account?",
@@ -4623,7 +4642,7 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
           showRemotes: "Show remotes",
           sync: "Sync",
           notYet:
-            "Connecting Smart Life isn't available yet: ELISE is waiting for Tuya's official enablement. We'll never ask for your password.",
+            "Tuya's project still needs OAuth 2.0 authorization set up (an App Authorization key, callback and data center) and confirmation that it accepts Smart Life accounts. We'll never ask for your password.",
           problems: {
             token: "The authorization expired or was revoked: reconnect.",
             wrong_region: "Your account is in another data center: connect choosing the other one.",
@@ -4666,15 +4685,12 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
           send: "Send",
           sending: "Sending…",
           cancel: "Cancel",
-          sent: "Sent. If the device didn't react, check the remote works in Smart Life.",
+          sent: "Tuya accepted the command. Infrared doesn't confirm: check the device reacted (if not, try it from Smart Life).",
         },
         locked:
           "It is locked in the BroadLink app: unlock it there (device settings → “Lock device”: off) and tap Add again.",
         irAdded:
           "Infrared controller ready. To run the TV or AC with it: Home → Add → Infrared device.",
-        noneShort: "No new devices yet",
-        none: "No devices found yet. Check they're on and on the same Wi-Fi as this computer, then search again.",
-        found: (n: number) => (n === 1 ? "Found 1 device" : `Found ${n} devices`),
         add: "Add",
         adding: "Adding…",
         added: "Added",
@@ -4690,10 +4706,6 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
         continue: "Continue",
         later: "Skip for now",
         appearing: "Added devices show up in Hogar within seconds.",
-        // ADR-103
-        onNetwork: "Devices found",
-        onNetworkHint:
-          "ELISE saw them on one of your networks. Add them when you want to control them.",
         ignore: "Ignore",
         showValue: "Show",
         hideValue: "Hide",
@@ -4886,7 +4898,7 @@ It leaves History and ELISE stops remembering it, as whenever you delete a conve
       onlyDesktop:
         "Adding a Broadlink and teaching it buttons happens in ELISE Desktop, on the computer that runs your home.",
       manual: {
-        title: "Not showing up? Add it by IP",
+        title: "Add a Broadlink by IP",
         hint: "The IP is in the Broadlink app or your router (for example 192.168.1.40).",
         host: "IP or name on your network",
         add: "Add",

@@ -4,7 +4,10 @@ import { Check, Cloud, Fan, Loader2, RotateCw, Snowflake, Tv } from "lucide-reac
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import type { TuyaAvailability, TuyaConnection } from "@/application/tuya-connection-service";
+import type {
+  TuyaAvailability,
+  TuyaConnectionView as TuyaConnection,
+} from "@/application/tuya-connection-service";
 import type { TuyaHubView, TuyaRemoteView } from "@/application/tuya-home-service";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
@@ -17,6 +20,7 @@ import {
   connectTuyaAction,
   controlDeviceAction,
   disconnectTuyaAction,
+  linkTuyaTestAction,
   tuyaImportAction,
   tuyaOverviewAction,
   tuyaStatusAction,
@@ -31,6 +35,11 @@ const keyOf = (r: Pick<TuyaRemoteView, "infraredId" | "remoteId">) =>
   `${r.infraredId}:${r.remoteId}`;
 
 /**
+ * ADR-119/128: Smart Life / Tuya Smart, as one compact row whose state is what the server can
+ * really do: customers' OAuth when Tuya's authorization links are configured; the owner's
+ * clearly labeled test link in its one workspace; otherwise a disabled entry that says what's
+ * missing. Never a button that pretends.
+ *
  * ADR-119: "Conectar Smart Life / Tuya Smart" for anyone signed in to ELISE. The person picks
  * their account's data center and authorizes on Tuya's official page (their own login or the
  * app's QR — ELISE never sees a password); back here, each of their accounts lists its hubs →
@@ -43,9 +52,12 @@ export function TuyaConnect({ rooms = [] }: { rooms?: readonly HomeRoom[] }) {
   const params = useSearchParams();
   const [status, setStatus] = useState<{
     availability: TuyaAvailability;
+    testLink: boolean;
     connections: TuyaConnection[];
   } | null>(null);
   const [region, setRegion] = useState<TuyaRegion | "">("");
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const r = await tuyaStatusAction();
@@ -64,22 +76,42 @@ export function TuyaConnect({ rooms = [] }: { rooms?: readonly HomeRoom[] }) {
   }, [load]);
 
   if (!status || status.availability.state === "off") return null;
-  const { availability, connections } = status;
+  const { availability, connections, testLink } = status;
+  const linkTest = async () => {
+    setLinking(true);
+    setLinkError(null);
+    const r = await linkTuyaTestAction();
+    setLinking(false);
+    if (!r.ok) setLinkError(errorText(t, r.error));
+    await load();
+  };
   const returned = params.get("tuya");
   const failed = params.get("tuya_error");
   const regions = availability.state === "available" ? availability.regions : [];
   const chosen = region || (regions.length === 1 ? regions[0]! : "");
 
+  const hasTest = connections.some((c) => c.test);
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-border bg-surface px-3.5 py-3">
+    <div className="flex flex-col gap-2.5 rounded-2xl border border-border bg-surface px-3.5 py-3">
       <div className="flex items-center gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-2">
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-2 text-muted">
           <Cloud className="size-4.5" aria-hidden />
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-[14.5px]">{x.title}</span>
-          <span className="text-[12.5px] text-muted">{x.hint}</span>
+          <span className="text-[12.5px] text-muted">
+            {connections.length
+              ? x.linked(connections.length)
+              : availability.state === "available"
+                ? x.hint
+                : x.notYetShort}
+          </span>
         </span>
+        {!connections.length && availability.state === "unavailable" && !testLink && (
+          <Button size="sm" variant="secondary" disabled>
+            {x.connect}
+          </Button>
+        )}
       </div>
 
       {returned === "connected" && <p className="text-[13px] text-success">{x.connected}</p>}
@@ -89,7 +121,27 @@ export function TuyaConnect({ rooms = [] }: { rooms?: readonly HomeRoom[] }) {
         </p>
       )}
 
-      {availability.state === "unavailable" && <p className="text-[13px] text-muted">{x.notYet}</p>}
+      {availability.state === "unavailable" && !connections.length && (
+        <details className="text-[12.5px] text-muted">
+          <summary className="cursor-pointer text-faint">{x.moreInfo}</summary>
+          <p className="mt-1.5">{x.notYet}</p>
+        </details>
+      )}
+
+      {testLink && !hasTest && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-approval/50 px-3 py-2">
+          <p className="min-w-0 flex-1 text-[12.5px] text-approval-text">{x.testHint}</p>
+          <Button size="sm" variant="secondary" disabled={linking} onClick={() => void linkTest()}>
+            {linking && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
+            {x.testLink}
+          </Button>
+        </div>
+      )}
+      {linkError && (
+        <p role="alert" className="text-[13px] text-danger-text">
+          {linkError}
+        </p>
+      )}
 
       {connections.map((c) => (
         <ConnectionCard key={c.id} connection={c} rooms={rooms} onChanged={load} />
@@ -214,7 +266,14 @@ function ConnectionCard({
     <div className="flex flex-col gap-2.5 border-t border-border pt-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="text-[14px] font-medium">{c.label}</span>
+          <span className="flex items-center gap-2 text-[14px] font-medium">
+            {c.label}
+            {c.test && (
+              <span className="rounded-full bg-approval/15 px-2 py-0.5 text-[11px] font-normal text-approval-text">
+                {x.testBadge}
+              </span>
+            )}
+          </span>
           <span className={warn ? "text-[12.5px] text-approval-text" : "text-[12.5px] text-muted"}>
             {needsReconnect
               ? x.problems.token
@@ -223,7 +282,20 @@ function ConnectionCard({
                 : x.connectedState}
           </span>
         </span>
-        {needsReconnect ? (
+        {needsReconnect && c.test ? (
+          <Button
+            size="sm"
+            disabled={busy !== null}
+            onClick={() =>
+              void linkTuyaTestAction().then(async (r) => {
+                if (!r.ok) setError(errorText(t, r.error));
+                await onChanged();
+              })
+            }
+          >
+            {x.relink}
+          </Button>
+        ) : needsReconnect ? (
           <form action={connectTuyaAction}>
             <input type="hidden" name="region" value={c.region} />
             <input type="hidden" name="connectionId" value={c.id} />
