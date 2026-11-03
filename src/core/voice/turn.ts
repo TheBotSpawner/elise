@@ -35,6 +35,13 @@ export const VOICE_TURN = {
   endSilenceMs: 1100,
   /** …and one that sounds unfinished ("y", "pero", "the", a comma). Conservative on purpose. */
   unfinishedSilenceMs: 2400,
+  /**
+   * ADR-131: after this much voice it's someone explaining, not a command: they stop to think, and
+   * the recognizer closes every pause with a period, so "complete" says little. A pause ends such a
+   * phrase only at longSilenceMs (unless it sounds unfinished, which waits longer still).
+   */
+  longSpeechMs: 3_000,
+  longSilenceMs: 1_500,
   /** Nothing said for this long: the utterance ends empty. */
   noSpeechMs: 8_000,
   maxUtteranceMs: VOICE_LIMITS.maxUtteranceMs,
@@ -161,11 +168,13 @@ export class TurnDetector {
     if (!this.heard) return elapsed >= this.cfg.noSpeechMs ? this.finish("no_speech") : null;
     const silence = now - this.lastVoice;
     const needed =
-      this.verdictNow === "complete"
-        ? this.cfg.completeSilenceMs
-        : this.verdictNow === "unfinished"
-          ? this.cfg.unfinishedSilenceMs
-          : this.cfg.endSilenceMs;
+      this.verdictNow === "unfinished"
+        ? this.cfg.unfinishedSilenceMs
+        : this.voicedMs >= this.cfg.longSpeechMs
+          ? this.cfg.longSilenceMs
+          : this.verdictNow === "complete"
+            ? this.cfg.completeSilenceMs
+            : this.cfg.endSilenceMs;
     if (silence >= needed) return this.finish("end");
     if (!this.paused && silence >= this.cfg.snapshotPauseMs) {
       this.paused = true;

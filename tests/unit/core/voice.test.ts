@@ -1503,13 +1503,14 @@ describe("voice turn latency (ADR-036)", () => {
     expect(sent[1]!.text).toBe("No, mejor decime el clima.");
   });
 
-  it("continuous conversation talks less while working: no instant line, one progress line at most", async () => {
+  it("continuous conversation confirms at once, then talks less: one progress line at most", async () => {
     const { controller, player, say, wait } = setup({ prefs: { instantAck: true } });
     await controller.start();
     await say();
-    expect(player.spoken).toEqual([]);
+    expect(player.spoken).toHaveLength(1);
+    expect(acknowledgements("es")).toContain(player.spoken[0]);
     controller.onStream({ type: "tool_started", name: "meeting.prepare" });
-    expect(player.spoken).toEqual(["Preparo la reunión."]);
+    expect(player.spoken).toHaveLength(1);
     player.finishPlaying();
     wait(CONTINUOUS_PROGRESS_AFTER_MS - 500);
     expect(player.spoken).toHaveLength(1);
@@ -2025,6 +2026,19 @@ describe("cut phrases and loose spoken tags", () => {
 });
 
 describe("spoken tag variants", () => {
+  it("a model's control tokens are the spoken tag too, even split across deltas", async () => {
+    const { SpokenSplitter, stripSpokenTags } = await import("@/core/voice/speech-text");
+    const s = new SpokenSplitter();
+    for (const d of ["<", "|spo", "ken|>Sí, se llama ", "tapering.<|", "end|>", "Fuentes<|end|>"])
+      s.push(d);
+    s.flush();
+    expect(s.spoken).toBe("Sí, se llama tapering.");
+    expect(s.display).toBe("Fuentes");
+    expect(stripSpokenTags("<|spoken|>Hola.<|end|><|channel|>")).toBe("Hola.");
+    // Words aren't tokens: only the pipes make it one.
+    expect(stripSpokenTags("a <end> b")).toBe("a <end> b");
+  });
+
   it("<speak>, <speech> and <spoke> are the spoken tag too, even split across deltas", async () => {
     const { SpokenSplitter, stripSpokenTags } = await import("@/core/voice/speech-text");
     const s = new SpokenSplitter();

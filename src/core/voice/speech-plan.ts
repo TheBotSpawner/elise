@@ -265,7 +265,7 @@ export const PROGRESS_AFTER_MS = 3_500;
 export const PROGRESS_MAX_PER_TURN = 3;
 /**
  * Continuous conversation (owner's decision, 2026-10-28): it should feel like talking, not like
- * a spinner — no "Un segundo." on every request, and at most one progress line, later.
+ * a spinner — at most one progress line, later. The instant line stays (ADR-125 addendum).
  */
 export const CONTINUOUS_PROGRESS_AFTER_MS = 6_000;
 export const CONTINUOUS_PROGRESS_MAX = 1;

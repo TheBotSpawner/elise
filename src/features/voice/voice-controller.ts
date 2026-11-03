@@ -836,12 +836,7 @@ export class VoiceController {
         language ?? this.prefs.language,
         prepared?.intent === predicted ? prepared.line : undefined,
       );
-    } else if (
-      this.prefs.speak &&
-      this.prefs.instantAck &&
-      !this.prefs.continuous &&
-      wantsInstantAck(text)
-    ) {
+    } else if (this.prefs.speak && this.prefs.instantAck && wantsInstantAck(text)) {
       // Every other request is still heard at once ("Un segundo."), before any tool: a reply
       // that's faster drops it (stillSayable), a slow one isn't silence (ADR-098).
       this.turn.acked = true;

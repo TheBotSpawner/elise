@@ -32,6 +32,13 @@ For continuous conversation only (the standard mode is unchanged):
 5. **ELISE explains the mode** when asked: the 8 s window, interrupting at any time, and turning it
    on or off by voice or in Ajustes › Voz.
 
+## Addendum (2026-11-03): the instant line is back
+
+The owner asked for it back: without it, nothing says she heard them until the first real sound
+("Ni bien escucha mi mensaje tiene que confirmar"). §1 changes: a request gets its instant line
+("Ya te digo.", "Aguantame un segundito.") in continuous conversation too. The rest of §1 stays: a
+turn that said it gets no second acknowledgement, and at most one progress line, after 6 s.
+
 ## Not decided here
 
 GPT-Live (ADR-026) gives natural turn-taking and interruption (≈0.5 s), but costs about 7–8×

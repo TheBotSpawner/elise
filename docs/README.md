@@ -67,6 +67,7 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-128 | Smart Life: vínculo de prueba solo para el workspace del dueño (cuenta vinculada en la consola, token del proyecto), estado real para clientes (OAuth no habilitado), uid nunca al navegador; Agregar dispositivos separa «en esta red ahora» de «encontrados anteriormente» (plegado), búsqueda con estados, descarta respuestas viejas, identidad por unique_id |
 | ADR-129 | Smart Life para cada usuario: BLOQUEADO por Tuya (OAuth solo para apps OEM; QR solo desde la consola; Device Data Sharing solo UE; la vía de Home Assistant no trae controles IR). ADR-119 queda inactivo; el vínculo de prueba sigue solo para el dueño; consulta a Tuya pendiente |
 | ADR-130 | Palabra de activación: todo candidato se transcribe antes de iniciar nada, también la palabra sola; una transcripción vacía no es un llamado y activa el modo guardado |
+| ADR-131 | Voz: las frases largas tienen tiempo para pensar (1,5 s de pausa después de 3 s de voz, en la sesión y en la captura de "Elise"; la captura sube de 9 s a 20 s). Los pedidos cortos no cambian |
 
 ## roadmap/
 

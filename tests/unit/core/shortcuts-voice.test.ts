@@ -165,6 +165,36 @@ describe("barge-in", () => {
   });
 });
 
+describe("a long phrase gets time to think (ADR-131)", () => {
+  const spoken = (ms: number, verdict: "complete" | null) => {
+    const d = new TurnDetector(VOICE_TURN, { floor: 0.002 });
+    const c = { now: 0 };
+    feed(d, c, ms, 0.1);
+    d.verdict(verdict);
+    return { d, c };
+  };
+
+  it("a pause that closes a short command stays quick", () => {
+    const { d, c } = spoken(1_000, "complete");
+    expect(feed(d, c, VOICE_TURN.completeSilenceMs + 50, 0.002)).toContain("end");
+  });
+
+  it("the same pause doesn't cut someone explaining, even if the recognizer closed it", () => {
+    for (const verdict of ["complete", null] as const) {
+      const { d, c } = spoken(VOICE_TURN.longSpeechMs + 500, verdict);
+      expect(feed(d, c, VOICE_TURN.longSilenceMs - 100, 0.002)).not.toContain("end");
+      expect(feed(d, c, 200, 0.002)).toContain("end");
+    }
+  });
+
+  it("what sounds unfinished still waits longest", () => {
+    const { d, c } = spoken(VOICE_TURN.longSpeechMs + 500, null);
+    d.verdict("unfinished");
+    expect(feed(d, c, VOICE_TURN.longSilenceMs + 200, 0.002)).not.toContain("end");
+    expect(feed(d, c, VOICE_TURN.unfinishedSilenceMs, 0.002)).toContain("end");
+  });
+});
+
 // ── Wake phrase ──────────────────────────────────────────────────────────────
 
 describe("wake verdict (ADR-130): only what was transcribed starts a conversation", () => {

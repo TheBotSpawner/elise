@@ -121,16 +121,22 @@ const CLOSE = "</spoken>";
 /**
  * Markup the model may leak into a voice reply, however it writes it — never shown or said:
  * - the spoken part's tag and its stand-ins: <spoken>, <speak lang="es">, </ Speak >, <speech>,
- *   <spoke>, <aloud>, and the same in brackets ([spoken] … [/spoken]);
+ *   <spoke>, <aloud>, the same in brackets ([spoken] … [/spoken]) and as a model's control
+ *   tokens (<|spoken|> … <|end|>);
+ * - any other control token (<|channel|>, <|im_end|>), only the token;
  * - a tag it invents for the screen part (<display>, <screen>, <on_screen>), only the tag;
  * - SSML (<break time="1s"/>, <emphasis>, <prosody>, <say-as>…), only the tag.
  */
 const SPOKEN_WORD = "(?:spoken|speak|speech|spoke|aloud)";
 const LOOSE_OPEN = new RegExp(
-  String.raw`[<\[]\s*${SPOKEN_WORD}(?:\s+[^<>\[\]]{0,80})?\s*[>\]]`,
+  String.raw`[<\[]\s*\|?\s*${SPOKEN_WORD}(?:\s+[^<>\[\]]{0,80})?\s*\|?\s*[>\]]`,
   "gi",
 );
-const LOOSE_CLOSE = new RegExp(String.raw`[<\[]\s*\/\s*${SPOKEN_WORD}\s*[>\]]`, "gi");
+const LOOSE_CLOSE = new RegExp(
+  String.raw`[<\[]\s*\|?\s*(?:\/\s*${SPOKEN_WORD}|(?<=\|\s*)end)\s*\|?\s*[>\]]`,
+  "gi",
+);
+const CONTROL_TOKEN = /<\|[\w\/-]{1,24}\|>/g;
 const SELF_CLOSING = new RegExp(String.raw`<\s*${SPOKEN_WORD}(?:\s+[^<>]{0,80})?\s*\/\s*>`, "gi");
 const SCREEN_TAG =
   /[<\[]\s*\/?\s*(?:display|screen|on[_-]?screen)(?:\s+[^<>\[\]]{0,80})?\s*\/?\s*[>\]]/gi;
@@ -140,7 +146,7 @@ const SSML_TAG =
  * A tag that may still be arriving at the end of a delta ("<", "< spo", "</ speak ", "[spok",
  * "<break time="): held until the next delta decides it (released at the end either way).
  */
-const PARTIAL_TAG = /[<\[]\s*\/?\s*[a-z:_-]{0,12}(?:\s+[^<>\[\]]{0,80})?$/i;
+const PARTIAL_TAG = /[<\[]\s*\|?\s*\/?\s*[a-z:_-]{0,12}\|?(?:\s+[^<>\[\]]{0,80})?$/i;
 
 /** Every leaked tag removed, the spoken ones normalized to <spoken> / </spoken>. */
 const normalizeTags = (text: string) =>
@@ -149,7 +155,8 @@ const normalizeTags = (text: string) =>
     .replace(SCREEN_TAG, "")
     .replace(SSML_TAG, "")
     .replace(LOOSE_OPEN, OPEN)
-    .replace(LOOSE_CLOSE, CLOSE);
+    .replace(LOOSE_CLOSE, CLOSE)
+    .replace(CONTROL_TOKEN, "");
 
 /** Any leftover tag, however it was written: never shown or said. */
 export const stripSpokenTags = (text: string) =>
@@ -209,8 +216,10 @@ export class SpokenSplitter {
       out.spoken += text;
       this.spoken += text;
     } else {
-      // The display starts at its first real character (no blank lines left by the tag).
-      const piece = this.display ? text : text.replace(/^\s+/, "");
+      // A closing tag with nothing open is never shown. The display starts at its first real
+      // character (no blank lines left by the tag).
+      const shown = text.split(CLOSE).join("");
+      const piece = this.display ? shown : shown.replace(/^\s+/, "");
       out.display += piece;
       this.display += piece;
     }

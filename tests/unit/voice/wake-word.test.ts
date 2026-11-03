@@ -56,8 +56,20 @@ describe("the end of what followed the word", () => {
   it("the word alone: waits a little longer for a pause, then ends with nothing more", () => {
     expect(run(Array(20).fill(0.002))).toEqual({ frames: 11, speechAfter: false });
   });
-  it("never runs forever (a TV in the background)", () => {
-    expect(run(Array(100).fill(0.1)).frames).toBe(70);
+  it("never runs forever (a TV in the background), and a long request still fits", () => {
+    expect(run(Array(200).fill(0.1)).frames).toBe(156);
+  });
+  it("ADR-131: after a long stretch of voice, a 0.9 s pause doesn't end what's being said", () => {
+    const e = new EndOfSpeech();
+    for (let i = 0; i < 30; i++) e.push(0.1);
+    for (let i = 0; i < 11; i++) expect(e.push(0.001)).toBe(false);
+    expect(e.push(0.001)).toBe(true);
+  });
+  it("a short request still ends at once", () => {
+    const e = new EndOfSpeech();
+    for (let i = 0; i < 8; i++) e.push(0.1);
+    for (let i = 0; i < 6; i++) expect(e.push(0.001)).toBe(false);
+    expect(e.push(0.001)).toBe(true);
   });
 });
 
