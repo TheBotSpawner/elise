@@ -36,6 +36,7 @@ const BY_PREFIX: Record<string, ActivityKey> = {
   goals: "goals",
   lists: "lists",
   notes: "notes",
+  time: "time",
 };
 
 /** Human activity label for a tool ("Searching your knowledge"), never its internal name. */

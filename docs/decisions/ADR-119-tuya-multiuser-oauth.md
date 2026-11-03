@@ -1,6 +1,6 @@
 # ADR-119: Smart Life / Tuya for every user (official OAuth 2.0), cloud devices without a hub
 
-**Status:** Accepted (2026-10-23). Supersedes ADR-118's account model (a single development
+**Status:** Accepted (2026-10-23). **§1–2 corrected by ADR-129:** Tuya's OAuth only supports OEM apps; this flow stays built but off. Supersedes ADR-118's account model (a single development
 account bound by configuration). ADR-118's device model, mapping and execution rules still apply.
 
 ## Context

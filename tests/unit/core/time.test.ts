@@ -354,6 +354,37 @@ describe("time.* tools", () => {
     expect(out(r)).toMatchObject({ timezone: "Pacific/Auckland", time: "01:00" });
     expect(display(r)).toMatchObject({ kind: "clock", clock: { timezone: "Pacific/Auckland" } });
   });
+
+  it("a place that isn't a zone's name: the zone comes with it", async () => {
+    const { call } = setup();
+    const r = await call("time.now", { place: "Nueva Zelanda", timezone: "Pacific/Auckland" });
+    expect(r.status).toBe("succeeded");
+    expect(out(r)).toMatchObject({ timezone: "Pacific/Auckland" });
+  });
+
+  it("“las 9 de Nueva Zelanda” on both clocks, the day included", async () => {
+    const { call } = setup();
+    const r = await call("time.now", {
+      place: "Nueva Zelanda",
+      timezone: "Pacific/Auckland",
+      at: "2026-11-04T09:00",
+    });
+    // NZDT is UTC+13, Buenos Aires UTC-3: 16 hours back, the day before.
+    expect(out(r)).toMatchObject({
+      there: { time: "09:00", date: expect.stringContaining("4 de noviembre") },
+      here: { time: "17:00", date: expect.stringContaining("3 de noviembre") },
+    });
+  });
+
+  it("“si acá son las 17” reads the moment on the user's clock", async () => {
+    const { call } = setup();
+    const r = await call("time.now", {
+      timezone: "Pacific/Auckland",
+      at: "2026-11-03T17:00",
+      atIsUserTime: true,
+    });
+    expect(out(r)).toMatchObject({ there: { time: "09:00" }, here: { time: "17:00" } });
+  });
 });
 
 describe("the Timer Surface", () => {

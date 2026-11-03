@@ -63,6 +63,20 @@ export function findWake(text: string, phrase: WakePhrase): WakeMatch {
 }
 
 /**
+ * ADR-130: what the transcription of a capture says about a wake candidate. Nothing else starts a
+ * conversation: a silent or unreadable capture is not a call, whatever the detector heard. Over
+ * her reply the name may come after her own voice (findWake); otherwise it must open (matchWake).
+ */
+export function wakeVerdict(
+  text: string | null,
+  overReply: boolean,
+): { kind: "call"; remainder: string } | { kind: "not_a_call" } | { kind: "unread" } {
+  if (text === null) return { kind: "unread" };
+  const m = overReply ? findWake(text, "elise") : matchWake(text, "elise");
+  return m.matched ? { kind: "call", remainder: m.remainder } : { kind: "not_a_call" };
+}
+
+/**
  * The wake phrase must open the utterance (or be all of it): "Elise", "ok Elise, …",
  * "Hey Elise …". The name in the middle of a sentence ("le dije a Elise que…") never wakes.
  */

@@ -4,7 +4,7 @@ import { voicePhaseOrb } from "@/components/elise/orb/orb-states";
 import type { WakeControl, WakeReport } from "@/core/platform/platform";
 import type { VoicePhase } from "@/core/voice/session";
 import { sessionCommand } from "@/core/voice/session-control";
-import { findWake, matchWake } from "@/core/voice/wake";
+import { wakeVerdict } from "@/core/voice/wake";
 import { asksToShow, WAKE_MODELS, type DetectorState } from "@/core/voice/wake-detector";
 import { musicStore } from "@/features/music/store";
 import {
@@ -281,7 +281,6 @@ export function DesktopWake({ children }: { children: ReactNode }) {
         tone("error");
         return finishHandOff();
       }
-      let remainder = "";
       // Development traces: sizes and flags, never words or audio.
       console.debug("[wake] captured", {
         seconds: +(capture.audio.length / capture.sampleRate).toFixed(1),
@@ -296,23 +295,24 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       // it. A confident one interrupts, like over her voice.
       const letGo = overPreparing && guardedCall;
       if (letGo && !capture.speechAfter) return finishHandOff();
-      if (capture.speechAfter) {
-        const text = await transcribe(wav(capture.audio, capture.sampleRate));
-        if (letGo && text === null) return finishHandOff();
-        if (text !== null) {
-          // Over her reply, the capture may begin with her own voice: the name is found where
-          // it is (ADR-109); otherwise it must open what was said.
-          const m = interrupting ? findWake(text, "elise") : matchWake(text, "elise");
-          console.debug("[wake] transcribed", {
-            matched: m.matched,
-            remainderChars: m.remainder.length,
-          });
-          // The words didn't start with "ELISE" (someone said it mid-sentence, or it wasn't
-          // the word): no conversation starts, and the next candidates need more evidence.
-          if (!m.matched && (text.trim() || letGo)) return reject();
-          remainder = m.remainder;
-        }
+      // ADR-130: every candidate is read, the bare word too. A meeting heard through speakers is
+      // below the "speech" bar, so it looked like a word alone: it skipped this check, opened the
+      // session and lifted the guard.
+      const verdict = wakeVerdict(
+        await transcribe(wav(capture.audio, capture.sampleRate)),
+        interrupting,
+      );
+      console.debug("[wake] transcribed", { verdict: verdict.kind });
+      // Not evidence of a false alarm, but nothing to start on either: a chime already heard
+      // gets its answer.
+      if (verdict.kind === "unread") {
+        if (chimed && controlRef.current.chime) tone("error");
+        return finishHandOff();
       }
+      // The words didn't start with "ELISE" (someone said it mid-sentence, or it wasn't the
+      // word): no conversation starts, and the next candidates need more evidence.
+      if (verdict.kind === "not_a_call") return reject();
+      const { remainder } = verdict;
       // A real call: the guard lifts, and a guarded candidate chimes now.
       detector.outcome("confirmed");
       if (!chimed && controlRef.current.chime) tone("wake");

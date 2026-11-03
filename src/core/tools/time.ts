@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { resolveTimezone } from "../capabilities/settings";
 import { AppError } from "../errors";
+import { isLocalDateTime, zonedDateTimeToUtc } from "../time";
 import {
   addTime,
   AUTO_START,
@@ -355,7 +356,27 @@ const nowInput = z
       .min(1)
       .max(80)
       .optional()
-      .describe('A city or time zone ("Auckland", "Europe/Madrid"); omit for the user\'s own.'),
+      .describe('The place as the user named it ("Nueva Zelanda"); omit for the user\'s own.'),
+    timezone: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe(
+        'With place, always: its IANA zone ("Pacific/Auckland" for Nueva Zelanda, "Europe/Madrid" for Barcelona). A country with several zones: its capital, unless they named a city.',
+      ),
+    at: z
+      .string()
+      .refine(isLocalDateTime)
+      .optional()
+      .describe(
+        'A moment to convert instead of now, "YYYY-MM-DDTHH:mm" on the place\'s clock ("las 9 de mañana en Nueva Zelanda").',
+      ),
+    atIsUserTime: z
+      .boolean()
+      .default(false)
+      .describe('at is on the user\'s own clock ("si acá son las 18, ¿qué hora es en Tokio?").'),
     show: z
       .boolean()
       .default(false)
@@ -370,24 +391,31 @@ export const nowTimeTool: ToolDefinition = {
   capability: "time",
   operation: "now",
   description:
-    '"¿Qué hora es?", "¿qué hora es en Auckland?", "mostrame un reloj": the exact current time (never guess it).',
+    '"¿Qué hora es?", "¿qué hora es en Nueva Zelanda?", "mostrame un reloj": the exact current time (never guess it). "¿Qué hora serían acá las 9 de mañana en Auckland?": with at, that moment on both clocks (never convert it yourself).',
   input: nowInput,
   async describe() {
     return { summary: "Time" };
   },
   async run(raw, env) {
     const n = nowInput.parse(raw);
-    const timezone = n.place ? resolveTimezone(n.place) : env.ctx.timezone;
+    const asked = n.timezone ?? n.place;
+    const timezone = asked ? resolveTimezone(asked) : env.ctx.timezone;
     const hour12 = env.ctx.locale === "en";
     const locale = env.ctx.locale === "es" ? "es-AR" : "en-US";
-    const fmt = (o: Intl.DateTimeFormatOptions) =>
-      new Intl.DateTimeFormat(locale, { timeZone: timezone, ...o }).format(env.ctx.now);
-    return {
-      output: {
+    const instant = n.at
+      ? zonedDateTimeToUtc(n.at, n.atIsUserTime ? env.ctx.timezone : timezone)
+      : env.ctx.now;
+    const read = (zone: string) => {
+      const fmt = (o: Intl.DateTimeFormatOptions) =>
+        new Intl.DateTimeFormat(locale, { timeZone: zone, ...o }).format(instant);
+      return {
         time: fmt({ hour: "numeric", minute: "2-digit", hour12 }),
         date: fmt({ weekday: "long", day: "numeric", month: "long" }),
-        timezone,
-      },
+        timezone: zone,
+      };
+    };
+    return {
+      output: n.at ? { there: read(timezone), here: read(env.ctx.timezone) } : read(timezone),
       ...(n.show
         ? {
             display: {

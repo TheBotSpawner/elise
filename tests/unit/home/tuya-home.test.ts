@@ -744,4 +744,24 @@ describe("the owner's test link", () => {
     const [c] = await tuyaConnections(A());
     expect(c?.status).toBe("needs_reauthorization");
   });
+
+  it("a member who edits their own connection row into a 'test' one gets nothing (RLS lets members update rows)", () =>
+    withDev(async () => {
+      const id = await connect(B(), "code-b");
+      const tokens: string[] = [];
+      tuya.tuyaUserDevices.mockImplementation(
+        async (auth: { accessToken(): Promise<string> }, uid: string) => {
+          tokens.push(await auth.accessToken());
+          return DEVICES[uid] ?? [];
+        },
+      );
+      // What a member of workspace B can do with their own session: point the row at the owner's uid.
+      db.rows("provider_connections").find((r) => r.id === id)!.auth_metadata = {
+        region: "us",
+        uid: "uid-a",
+        test: true,
+      };
+      await expect(tuyaOverview(B(), id)).rejects.toMatchObject({ problem: "token" });
+      expect(tokens).not.toContain("project-token");
+    }));
 });

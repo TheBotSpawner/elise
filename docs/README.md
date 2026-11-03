@@ -65,6 +65,8 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-126 | Barra de progreso para objetivos que la conversación recorre paso a paso (ui.progress), solo cuando ELISE la ve útil |
 | ADR-127 | Sin duplicados accidentales (alarma, timer, tarea: pregunta antes), interrumpir requiere voz real y sin bucle de reenvío, la charla no vacía el lienzo, el teclado se cierra tocando afuera |
 | ADR-128 | Smart Life: vínculo de prueba solo para el workspace del dueño (cuenta vinculada en la consola, token del proyecto), estado real para clientes (OAuth no habilitado), uid nunca al navegador; Agregar dispositivos separa «en esta red ahora» de «encontrados anteriormente» (plegado), búsqueda con estados, descarta respuestas viejas, identidad por unique_id |
+| ADR-129 | Smart Life para cada usuario: BLOQUEADO por Tuya (OAuth solo para apps OEM; QR solo desde la consola; Device Data Sharing solo UE; la vía de Home Assistant no trae controles IR). ADR-119 queda inactivo; el vínculo de prueba sigue solo para el dueño; consulta a Tuya pendiente |
+| ADR-130 | Palabra de activación: todo candidato se transcribe antes de iniciar nada, también la palabra sola; una transcripción vacía no es un llamado y activa el modo guardado |
 
 ## roadmap/
 

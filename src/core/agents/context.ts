@@ -375,7 +375,7 @@ const HOME_GUIDANCE = `Home (the user's own devices, rooms and modes — home.* 
 const TIME_GUIDANCE = `Time (the user's own timers, Pomodoros and stopwatches — time.* tools; never need approval):
 - Act at once, no questions when it's clear: "poneme 20 minutos" → time.start; "pomodoro de 50 y 10" → kind pomodoro, focusMinutes 50, breakMinutes 10; "arrancá un cronómetro" → kind stopwatch. Give a short label when they said what it's for ("para la pasta" → "Pasta"); studying inside a Knowledge Section → the Section's name.
 - Reply with the tool's \`say\` only ("Dale. 25 minutos."). The timer is on screen and keeps running across pages and conversations.
-- "¿Cuánto falta?" → time.list and answer with remainingSpoken, exactly. Never estimate time left or the current hour: "¿qué hora es?" → time.now.
+- "¿Cuánto falta?" → time.list and answer with remainingSpoken, exactly. Never estimate time left or the current hour: "¿qué hora es?" → time.now. A time in another place ("¿qué hora serían acá las 9 de mañana en Nueva Zelanda?") → time.now with place, timezone and at; never do that arithmetic yourself.
 - "Pausalo", "seguí", "sumale cinco", "restale dos", "cancelá el timer" act on the only active timer; with several, name the one the user means ("el de la pasta" → timer "pasta"). If the tool says several match, ask which in one short question.
 - "Mostralo grande" → workspace.focus on that timer's Surface. "Mostrame un reloj" → time.now with show true.
 - Alarms ring at a clock time ("despertame a las 7", "alarma mañana 6:30", "lunes y miércoles a las 8") → time.setAlarm; a duration from now ("en 20 minutos") is a timer → time.start. Pass the time and day words as said; the tool resolves dates in the user's timezone.

@@ -28,7 +28,7 @@ import {
   TurnDetector,
   VOICE_TURN,
 } from "@/core/voice/turn";
-import { matchWake } from "@/core/voice/wake";
+import { matchWake, wakeVerdict } from "@/core/voice/wake";
 import { surfacesFromOutcome } from "@/core/workspace/from-results";
 import { toolForAction } from "@/core/workspace/registry";
 
@@ -166,6 +166,31 @@ describe("barge-in", () => {
 });
 
 // ── Wake phrase ──────────────────────────────────────────────────────────────
+
+describe("wake verdict (ADR-130): only what was transcribed starts a conversation", () => {
+  it("the name alone, or opening a request, is a call", () => {
+    expect(wakeVerdict("Elise", false)).toEqual({ kind: "call", remainder: "" });
+    expect(wakeVerdict("Elise, ¿qué tengo hoy?", false)).toEqual({
+      kind: "call",
+      remainder: "qué tengo hoy?",
+    });
+  });
+
+  it("a meeting's words, or nothing readable, never are", () => {
+    expect(wakeVerdict("el informe de la semana", false).kind).toBe("not_a_call");
+    expect(wakeVerdict("le dije a Elise que venga", false).kind).toBe("not_a_call");
+    expect(wakeVerdict("", false).kind).toBe("not_a_call");
+    expect(wakeVerdict("   ", false).kind).toBe("not_a_call");
+    expect(wakeVerdict(null, false).kind).toBe("unread");
+  });
+
+  it("over her reply the name may come after her own voice", () => {
+    expect(wakeVerdict("de la noche. Elise, ¿va a llover?", true)).toEqual({
+      kind: "call",
+      remainder: "va a llover?",
+    });
+  });
+});
 
 describe("wake phrase matching", () => {
   it("wakes only when the phrase opens the utterance, and keeps what followed", () => {
