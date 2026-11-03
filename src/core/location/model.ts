@@ -41,6 +41,12 @@ export interface Place {
   photo: PlacePhoto | null;
   /** Straight-line metres from the search centre, when there is one. */
   distanceMeters: number | null;
+  /** ADR-133: when it next closes (ISO instant), if it's open. */
+  closesAt?: string | null;
+  /** The provider's own summary of its reviews. */
+  reviewSummary?: string | null;
+  /** A few reviews, as the provider picks them. */
+  reviews?: { rating: number | null; text: string; when: string | null }[];
 }
 
 export type TravelMode = "drive" | "walk" | "bicycle" | "transit";

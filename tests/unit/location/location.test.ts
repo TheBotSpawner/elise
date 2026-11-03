@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildContextPackage } from "@/core/agents/context";
 import { executeToolCall } from "@/core/agents/executor";
+import { ALWAYS_TOOLS, LOCATION_SIGNAL } from "@/core/agents/tool-selection";
 import type { ProviderFactory } from "@/core/agents/tools";
 import {
   coarse,
@@ -115,6 +116,54 @@ describe("location model", () => {
       { lat: 43.252, lng: -126.453 },
     ]);
     expect(coarse(HERE)).toEqual({ lat: -34.601, lng: -58.383 });
+  });
+});
+
+describe("recommending a place (ADR-133)", () => {
+  it("the first places bring what decides: price, hours, closing time, reviews", async () => {
+    const rich = {
+      closesAt: "2026-11-04T02:00:00Z",
+      hours: ["martes: 19:00–23:00"],
+      reviewSummary: "La gente dice que el caldo es sabroso.",
+      reviews: [
+        { rating: 5, text: "Muy rico", when: "Hace una semana" },
+        { rating: 4, text: "Bien", when: "Hace un mes" },
+        { rating: 1, text: "Lento", when: "Hace un año" },
+      ],
+    };
+    const { maps } = fakeMaps({
+      searchPlaces: async () =>
+        ["a", "b", "c", "d"].map((id) => place(`ramen_${id}_0001`, `Ramen ${id}`, rich)),
+    });
+    const { ports, ctx } = setup(maps);
+    const out = await run(
+      ports,
+      { ...ctx, timezone: "America/Argentina/Buenos_Aires" },
+      {
+        name: "location.searchPlaces",
+        args: { query: "ramen" },
+      },
+    );
+    const { places } = (out as unknown as { output: { places: Record<string, unknown>[] } }).output;
+    expect(places[0]).toMatchObject({
+      priceLevel: 2,
+      closesAt: "23:00",
+      hours: rich.hours,
+      reviewSummary: rich.reviewSummary,
+    });
+    expect(places[0]!.reviews).toHaveLength(2);
+    expect(places[3]).not.toHaveProperty("reviews");
+  });
+
+  it("asking where to eat brings Maps, whatever the words", () => {
+    for (const q of [
+      "estaba pensando en ir a comer un ramen al barrio chino",
+      "¿dónde puedo cenar hoy?",
+      "recomendame un bar en Palermo",
+      "where should we have dinner?",
+    ])
+      expect(LOCATION_SIGNAL.test(q), q).toBe(true);
+    expect(ALWAYS_TOOLS.has("location.searchPlaces")).toBe(true);
   });
 });
 
@@ -319,7 +368,18 @@ describe("Google Maps adapter", () => {
             primaryTypeDisplayName: { text: "Café" },
             rating: 4.4,
             userRatingCount: 50000,
-            currentOpeningHours: { openNow: true },
+            priceLevel: "PRICE_LEVEL_MODERATE",
+            currentOpeningHours: { openNow: true, nextCloseTime: "2026-11-04T02:00:00Z" },
+            regularOpeningHours: { weekdayDescriptions: ["martes: 8:00–23:00"] },
+            reviewSummary: { text: { text: "La gente dice que es un clásico." } },
+            reviews: [
+              {
+                rating: 5,
+                text: { text: "Hermoso" },
+                relativePublishTimeDescription: "Hace un mes",
+              },
+              { rating: 3 },
+            ],
             googleMapsUri: "https://maps.google.com/?cid=1",
           },
           { id: "no-location" },
@@ -338,7 +398,16 @@ describe("Google Maps adapter", () => {
       language: "es",
     });
     expect(places).toHaveLength(1);
-    expect(places[0]).toMatchObject({ name: "Café Tortoni", openNow: true, rating: 4.4 });
+    expect(places[0]).toMatchObject({
+      name: "Café Tortoni",
+      openNow: true,
+      rating: 4.4,
+      priceLevel: 2,
+      closesAt: "2026-11-04T02:00:00Z",
+      hours: ["martes: 8:00–23:00"],
+      reviewSummary: "La gente dice que es un clásico.",
+      reviews: [{ rating: 5, text: "Hermoso", when: "Hace un mes" }],
+    });
     expect(places[0]!.distanceMeters).toBeGreaterThan(500);
     const req = requests[0]!;
     const headers = req.init.headers as Record<string, string>;

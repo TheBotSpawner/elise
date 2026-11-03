@@ -68,6 +68,7 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-129 | Smart Life para cada usuario: BLOQUEADO por Tuya (OAuth solo para apps OEM; QR solo desde la consola; Device Data Sharing solo UE; la vía de Home Assistant no trae controles IR). ADR-119 queda inactivo; el vínculo de prueba sigue solo para el dueño; consulta a Tuya pendiente |
 | ADR-130 | Palabra de activación: todo candidato se transcribe antes de iniciar nada, también la palabra sola; una transcripción vacía no es un llamado y activa el modo guardado |
 | ADR-131 | Voz: ELISE escucha hasta 2 s de silencio, en la sesión y en la captura de "Elise", sea cual sea la frase (2,4 s si suena sin terminar); la captura sube de 9 s a 20 s. Las respuestas arrancan hasta 1,3 s más tarde |
+| ADR-133 | Recomendar lugares: "dónde comer" va a Maps, no a la web; una sola búsqueda trae precio, horarios, cierre y reseñas; ELISE suma cómo llegar. Pendiente revisar los términos de Google y el costo |
 | ADR-132 | Búsquedas por parecido: palabras en cualquier orden, plurales, errores y sonido; exacto, luego parcial, luego parecido, y si hay empate ELISE pregunta. Tareas, listas, finanzas, Espacios, Métodos e Historial |
 
 ## roadmap/

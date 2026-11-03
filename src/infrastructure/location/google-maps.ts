@@ -54,7 +54,12 @@ const SEARCH_FIELDS = [
   "places.primaryTypeDisplayName",
   "places.rating",
   "places.userRatingCount",
+  "places.priceLevel",
   "places.currentOpeningHours.openNow",
+  "places.currentOpeningHours.nextCloseTime",
+  "places.regularOpeningHours.weekdayDescriptions",
+  "places.reviewSummary",
+  "places.reviews",
   "places.googleMapsUri",
 ].join(",");
 
@@ -68,7 +73,10 @@ const DETAIL_FIELDS = [
   "userRatingCount",
   "priceLevel",
   "currentOpeningHours.openNow",
+  "currentOpeningHours.nextCloseTime",
   "regularOpeningHours.weekdayDescriptions",
+  "reviewSummary",
+  "reviews",
   "nationalPhoneNumber",
   "websiteUri",
   "googleMapsUri",
@@ -99,7 +107,13 @@ interface GPlace {
   rating?: number;
   userRatingCount?: number;
   priceLevel?: string;
-  currentOpeningHours?: { openNow?: boolean };
+  currentOpeningHours?: { openNow?: boolean; nextCloseTime?: string };
+  reviewSummary?: { text?: { text?: string } };
+  reviews?: {
+    rating?: number;
+    text?: { text?: string };
+    relativePublishTimeDescription?: string;
+  }[];
   regularOpeningHours?: { weekdayDescriptions?: string[] };
   nationalPhoneNumber?: string;
   websiteUri?: string;
@@ -206,6 +220,19 @@ function toPlace(g: GPlace, from: LatLng | null): Place | null {
     mapsUrl: https(g.googleMapsUri),
     photo: null,
     distanceMeters: from ? distanceMeters(from, location) : null,
+    closesAt: g.currentOpeningHours?.nextCloseTime ?? null,
+    reviewSummary: g.reviewSummary?.text?.text ?? null,
+    reviews: (g.reviews ?? []).flatMap((r) =>
+      r.text?.text
+        ? [
+            {
+              rating: r.rating ?? null,
+              text: r.text.text,
+              when: r.relativePublishTimeDescription ?? null,
+            },
+          ]
+        : [],
+    ),
   };
 }
 

@@ -130,6 +130,22 @@ const brief = (p: Place, i: number) => ({
   ...(p.distanceMeters != null ? { metersAway: p.distanceMeters } : {}),
 });
 
+/** ADR-133: what decides whether to go there. Only for the first few: it's what costs tokens. */
+const decisive = (p: Place, timezone: string) => ({
+  ...(p.priceLevel != null ? { priceLevel: p.priceLevel } : {}),
+  ...(p.closesAt ? { closesAt: toLocalDateTime(new Date(p.closesAt), timezone).slice(11) } : {}),
+  ...(p.hours.length ? { hours: p.hours } : {}),
+  ...(p.reviewSummary ? { reviewSummary: clip(p.reviewSummary, 400) } : {}),
+  ...(p.reviews?.length
+    ? {
+        reviews: p.reviews
+          .slice(0, 2)
+          .map((r) => ({ rating: r.rating, text: clip(r.text, 240), when: r.when })),
+      }
+    : {}),
+});
+const DECISIVE_PLACES = 3;
+
 const minutes = (s: number) => Math.max(1, Math.round(s / 60));
 
 // ── Search ───────────────────────────────────────────────────────────────────
@@ -155,7 +171,7 @@ export const searchPlacesTool: ToolDefinition = {
   capability: "location",
   operation: "searchPlaces",
   description:
-    "Find places on a map: businesses, landmarks, venues, or the nearest of something. Shows them on a map. For facts about a place from the web (history, news) use web.search instead.",
+    "Find places on a map: businesses, landmarks, venues, or the nearest of something. Where to eat or go out starts here: it brings rating, price, opening hours and what reviews say. Shows them on a map. For facts about a place from the web (history, news) use web.search instead.",
   input: searchInput,
   async describe() {
     return { summary: "Find places" };
@@ -222,9 +238,12 @@ export const searchPlacesTool: ToolDefinition = {
         found: true,
         ...(near && !center ? { near: "the user's shared location" } : {}),
         ...(center ? { near: center.name } : {}),
-        places: sorted.map(brief),
+        places: sorted.map((p, i) => ({
+          ...brief(p, i),
+          ...(i < DECISIVE_PLACES ? decisive(p, env.ctx.timezone) : {}),
+        })),
         instructions:
-          "The map shows these. Answer briefly (name, distance or rating when useful); don't read addresses aloud unless asked. If the user wanted one specific place and several match, ask which one. Use ref with other location tools.",
+          "The map shows these. Answer briefly (name, distance or rating when useful); don't read addresses aloud unless asked. If the user wanted one specific place and several match, ask which one. Use ref with other location tools. Recommending: pick one or two and say why, with their rating, whether they're open at the time asked (closesAt, hours: today's line), the price and what people say in their Google reviews. hours and closesAt are the provider's: state them, don't call them unconfirmed.",
       },
       display: {
         kind: "map",
@@ -421,6 +440,7 @@ export const getPlaceTool: ToolDefinition = {
         found: true,
         place: {
           ...brief(p, 0),
+          ...decisive(p, env.ctx.timezone),
           hours: p.hours,
           phone: p.phone,
           website: p.website,
