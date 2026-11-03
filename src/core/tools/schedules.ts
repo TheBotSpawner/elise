@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { ToolDefinition, ToolRunEnv } from "../agents/tools";
 import { AppError } from "../errors";
+import { mostSimilar } from "../lexicon";
 import {
   BRIEF_BLOCKS,
   BRIEF_HORIZONS,
@@ -138,7 +139,8 @@ async function findMethodId(env: ToolRunEnv, ref: string) {
   const all = await env.providers.get("methods", env.binding).index();
   const key = nameKey(ref);
   const hits = all.filter((m) => m.id === ref || nameKey(m.name) === key);
-  const found = hits.length ? hits : all.filter((m) => nameKey(m.name).includes(key));
+  const partial = hits.length ? hits : all.filter((m) => nameKey(m.name).includes(key));
+  const found = partial.length ? partial : mostSimilar(all, ref, (m) => m.name);
   if (found.length === 1) return found[0]!;
   throw new AppError(
     found.length ? "VALIDATION_ERROR" : "NOT_FOUND",

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { mostSimilar } from "../lexicon";
 import type { EntrySource } from "./habits";
 import { normalizeEntityTitle } from "../text";
 
@@ -99,7 +100,9 @@ const norm = (s: string) =>
 export function matchItems(list: NativeList, ref: string): ListItem[] {
   const wanted = norm(ref);
   const exact = list.items.filter((i) => i.id === ref || norm(i.content) === wanted);
-  return exact.length ? exact : list.items.filter((i) => norm(i.content).includes(wanted));
+  if (exact.length) return exact;
+  const partial = list.items.filter((i) => norm(i.content).includes(wanted));
+  return partial.length ? partial : mostSimilar(list.items, ref, (i) => i.content);
 }
 
 /** Words that name the container, not the list ("la lista de", "my … list"). */
@@ -153,10 +156,11 @@ export function matchLists<T extends { id: string; name: string }>(lists: T[], r
     });
     if (byWords.length) return byWords;
   }
-  return lists.filter((l) => {
+  const partial = lists.filter((l) => {
     const n = norm(l.name);
     return n.includes(wanted) || (n.length >= 3 && wanted.includes(n));
   });
+  return partial.length ? partial : mostSimilar(lists, ref, (l) => l.name);
 }
 
 /**

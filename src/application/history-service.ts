@@ -11,6 +11,7 @@ import {
   type KnowledgeNode,
 } from "@/core/history/links";
 import type { ThreadRef } from "@/core/interaction";
+import { similarText } from "@/core/lexicon";
 
 import type { AuthContext } from "./auth-context";
 import { listConversations } from "./conversations-service";
@@ -142,7 +143,8 @@ export async function historyRows(
       (r) =>
         recalled.has(r.key) ||
         r.spaceIds.some((id) => tagged.has(id)) ||
-        nameKey(`${r.title} ${r.summary ?? ""}`).includes(key),
+        nameKey(`${r.title} ${r.summary ?? ""}`).includes(key) ||
+        similarText(q, `${r.title} ${r.summary ?? ""}`),
     );
   }
 

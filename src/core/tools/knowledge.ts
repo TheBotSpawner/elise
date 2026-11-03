@@ -13,6 +13,7 @@ import {
   RETRIEVAL,
   selectEvidence,
 } from "../knowledge/retrieval";
+import { mostSimilar } from "../lexicon";
 import { ANSWER_HINT, representationHint, TEMPORAL_HINT } from "../workspace/representation";
 
 /**
@@ -70,11 +71,12 @@ async function resolveScope(
     const names = (s: SpaceInfo) =>
       [s.name, s.path, ...(s.aliases ?? []).filter(usableAlias)].map(matchKey);
     const match = spaces.filter((s) => s.id === opts.space || names(s).includes(wanted));
-    const loose = match.length
+    const partial = match.length
       ? match
       : wanted.length >= 3
         ? spaces.filter((s) => names(s).some((n) => n.includes(wanted)))
         : [];
+    const loose = partial.length ? partial : mostSimilar(spaces, opts.space, (s) => s.path);
     if (!loose.length) {
       throw new AppError(
         "NOT_FOUND",

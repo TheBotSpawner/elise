@@ -1404,15 +1404,17 @@ describe("acknowledging from the words, before the model picks a tool (ADR-034)"
 });
 
 describe("voice turn latency (ADR-036)", () => {
-  it("a complete-sounding phrase ends after a short silence, not the full second", async () => {
+  it("a complete-sounding phrase still waits the full silence (ADR-131)", async () => {
     const { controller, sent, hear } = setup({ transcripts: ["¿Qué tengo mañana?"] });
     await controller.start();
     await hear(VOICE_TURN.calibrateMs, 0.002);
     await hear(800, 0.1);
-    await hear(VOICE_TURN.completeSilenceMs + 100, 0.002);
+    await hear(VOICE_TURN.endSilenceMs - 300, 0.002);
+    await settle();
+    expect(sent).toHaveLength(0);
+    await hear(400, 0.002);
     await settle();
     expect(sent).toHaveLength(1);
-    expect(VOICE_TURN.completeSilenceMs).toBeLessThan(VOICE_TURN.endSilenceMs);
   });
 
   it("the acknowledgement is chosen and its audio fetched at the pause, then played at the end", async () => {

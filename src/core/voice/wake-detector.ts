@@ -348,18 +348,8 @@ export class EndOfSpeech {
   private spoke = false;
   private quiet = 0;
   private frames = 0;
-  private voiced = 0;
-  // Frames of 128 ms. ADR-131: past ~3 s of voice a pause is someone thinking (1.5 s ends it, not
-  // 0.9 s), and a long request fits (20 s, not 9 s): nothing else can recover what's cut here.
-  constructor(
-    private readonly opts = {
-      quietFrames: 7,
-      longVoicedFrames: 24,
-      longQuietFrames: 12,
-      wordOnlyFrames: 11,
-      maxFrames: 156,
-    },
-  ) {}
+  // Frames of 128 ms. ADR-131: 2 s of quiet end what's being said, and a long request fits (20 s).
+  constructor(private readonly opts = { quietFrames: 16, maxFrames: 156 }) {}
   /** Before the word: learn the room. */
   learn(rms: number) {
     this.floor = this.floor * 0.95 + Math.min(rms, 0.05) * 0.05;
@@ -383,12 +373,8 @@ export class EndOfSpeech {
     if (speech) {
       this.spoke = true;
       this.quiet = 0;
-      this.voiced++;
     } else this.quiet++;
-    if (this.frames >= this.opts.maxFrames) return true;
-    if (!this.spoke) return this.quiet >= this.opts.wordOnlyFrames;
-    const long = this.voiced >= this.opts.longVoicedFrames;
-    return this.quiet >= (long ? this.opts.longQuietFrames : this.opts.quietFrames);
+    return this.frames >= this.opts.maxFrames || this.quiet >= this.opts.quietFrames;
   }
   get speechAfter() {
     return this.spoke;
@@ -397,7 +383,6 @@ export class EndOfSpeech {
     this.spoke = false;
     this.quiet = 0;
     this.frames = 0;
-    this.voiced = 0;
   }
 }
 

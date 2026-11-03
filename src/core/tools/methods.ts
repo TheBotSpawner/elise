@@ -4,6 +4,7 @@ import type { ToolDefinition, ToolDisplay, ToolRunEnv } from "../agents/tools";
 import { AppError } from "../errors";
 import { matchKey } from "../history/links";
 import { GENERAL_KNOWLEDGE_NAME } from "../knowledge/model";
+import { mostSimilar } from "../lexicon";
 import {
   composeInstructions,
   METHOD_LIMITS,
@@ -122,6 +123,7 @@ async function findMethod(
     : key.length >= 3
       ? pool.filter((m) => nameKey(m.name).includes(key))
       : [];
+  if (!hits.length) hits = mostSimilar(pool, ref, (m) => m.name);
   if (hits.length > 1) {
     const chain = here(env, spaces);
     const applicable = hits.filter((m) => m.spaceId === null || chain.includes(m.spaceId));

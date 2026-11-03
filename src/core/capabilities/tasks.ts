@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { mostSimilar, similarText } from "../lexicon";
 import { destinationField } from "../providers/destination";
 import type { ProviderKey } from "../providers/types";
 import { repeatSchema } from "../tasks/recurrence";
@@ -354,20 +355,25 @@ export function matchTaskLists<T extends { id: string; name: string }>(
   const wanted = normName(ref);
   const exact = lists.filter((l) => normName(l.name) === wanted);
   if (exact.length) return exact;
-  return lists.filter((l) => normName(l.name).includes(wanted));
+  const partial = lists.filter((l) => normName(l.name).includes(wanted));
+  return partial.length ? partial : mostSimilar(lists, ref, (l) => l.name);
 }
 
-/** Search over what a person would remember: title, description/notes, labels, list, account. */
+/**
+ * Search over what a person would remember: title, description/notes, labels, list, account. As
+ * they remember it: its words, not its exact wording (ADR-132).
+ */
 export function matchesTaskSearch(task: Task, search: string): boolean {
   const q = normName(search);
-  return [
+  const fields = [
     task.title,
     task.description,
     task.notes,
     task.provenance.listName,
     task.provenance.source,
     ...(task.labels ?? []),
-  ].some((v) => v && normName(v).includes(q));
+  ].filter((v): v is string => Boolean(v));
+  return fields.some((v) => normName(v).includes(q)) || similarText(search, fields.join(" "));
 }
 
 export interface TaskWriteMeta {

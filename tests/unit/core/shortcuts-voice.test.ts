@@ -82,8 +82,7 @@ describe("turn detection", () => {
     feed(d, c, VOICE_TURN.calibrateMs, 0.002);
     feed(d, c, 500, 0.1);
     d.verdict("complete");
-    expect(VOICE_TURN.completeSilenceMs).toBeLessThanOrEqual(800);
-    expect(feed(d, c, VOICE_TURN.completeSilenceMs + 50, 0.002)).toEqual(["pause", "end"]);
+    expect(feed(d, c, VOICE_TURN.endSilenceMs + 50, 0.002)).toEqual(["pause", "end"]);
     expect(d.endVerdict).toBe("complete");
   });
 
@@ -165,7 +164,7 @@ describe("barge-in", () => {
   });
 });
 
-describe("a long phrase gets time to think (ADR-131)", () => {
+describe("she listens until 2 s of silence (ADR-131)", () => {
   const spoken = (ms: number, verdict: "complete" | null) => {
     const d = new TurnDetector(VOICE_TURN, { floor: 0.002 });
     const c = { now: 0 };
@@ -174,23 +173,28 @@ describe("a long phrase gets time to think (ADR-131)", () => {
     return { d, c };
   };
 
-  it("a pause that closes a short command stays quick", () => {
+  it("is the owner's rule", () => expect(VOICE_TURN.endSilenceMs).toBeGreaterThanOrEqual(2_000));
+
+  it("no phrase ends sooner: short or long, closed by the recognizer or not", () => {
+    for (const ms of [1_000, 5_000])
+      for (const verdict of ["complete", null] as const) {
+        const { d, c } = spoken(ms, verdict);
+        expect(feed(d, c, 1_900, 0.002)).not.toContain("end");
+        expect(feed(d, c, 200, 0.002)).toContain("end");
+      }
+  });
+
+  it("speaking again starts the 2 s over", () => {
     const { d, c } = spoken(1_000, "complete");
-    expect(feed(d, c, VOICE_TURN.completeSilenceMs + 50, 0.002)).toContain("end");
+    feed(d, c, 1_900, 0.002);
+    feed(d, c, 200, 0.1);
+    expect(feed(d, c, 1_900, 0.002)).not.toContain("end");
   });
 
-  it("the same pause doesn't cut someone explaining, even if the recognizer closed it", () => {
-    for (const verdict of ["complete", null] as const) {
-      const { d, c } = spoken(VOICE_TURN.longSpeechMs + 500, verdict);
-      expect(feed(d, c, VOICE_TURN.longSilenceMs - 100, 0.002)).not.toContain("end");
-      expect(feed(d, c, 200, 0.002)).toContain("end");
-    }
-  });
-
-  it("what sounds unfinished still waits longest", () => {
-    const { d, c } = spoken(VOICE_TURN.longSpeechMs + 500, null);
+  it("what sounds unfinished waits longer", () => {
+    const { d, c } = spoken(1_000, null);
     d.verdict("unfinished");
-    expect(feed(d, c, VOICE_TURN.longSilenceMs + 200, 0.002)).not.toContain("end");
+    expect(feed(d, c, VOICE_TURN.endSilenceMs + 200, 0.002)).not.toContain("end");
     expect(feed(d, c, VOICE_TURN.unfinishedSilenceMs, 0.002)).toContain("end");
   });
 });

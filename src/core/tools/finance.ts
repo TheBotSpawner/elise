@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { mostSimilar } from "../lexicon";
 import { pickOne, sourceOf } from "./native-common";
 import type { ToolDefinition, ToolRunEnv, ToolRunResult } from "../agents/tools";
 import {
@@ -89,10 +90,11 @@ function findByName<T>(items: T[], ref: string, name: (t: T) => string): T[] {
   const wanted = norm(ref);
   const exact = items.filter((i) => norm(name(i)) === wanted);
   if (exact.length) return exact;
-  return items.filter((i) => {
+  const partial = items.filter((i) => {
     const n = norm(name(i));
     return n.includes(wanted) || (n.length >= 3 && wanted.includes(n));
   });
+  return partial.length ? partial : mostSimilar(items, ref, name);
 }
 
 function money(amount: string, currency: string, locale: string) {

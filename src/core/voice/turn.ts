@@ -25,23 +25,14 @@ export const VOICE_TURN = {
   /** Voiced time before a pause can end the turn. */
   minSpeechMs: 250,
   /**
-   * A pause this long starts a provisional transcription of what was said so far (ADR-036:
-   * earlier than before, so its verdict is in by the time a complete phrase may end).
+   * A pause this long starts a provisional transcription of what was said so far (ADR-036), so
+   * the transcript is ready when the turn ends.
    */
   snapshotPauseMs: 450,
-  /** Silence that ends a turn whose provisional transcript sounds complete ("…mañana?")… */
-  completeSilenceMs: 700,
-  /** …one we know nothing about yet (no provisional transcript)… */
-  endSilenceMs: 1100,
+  /** ADR-131: silence that ends a turn, whatever was said (owner's rule: at least 2 s)… */
+  endSilenceMs: 2_000,
   /** …and one that sounds unfinished ("y", "pero", "the", a comma). Conservative on purpose. */
-  unfinishedSilenceMs: 2400,
-  /**
-   * ADR-131: after this much voice it's someone explaining, not a command: they stop to think, and
-   * the recognizer closes every pause with a period, so "complete" says little. A pause ends such a
-   * phrase only at longSilenceMs (unless it sounds unfinished, which waits longer still).
-   */
-  longSpeechMs: 3_000,
-  longSilenceMs: 1_500,
+  unfinishedSilenceMs: 2_400,
   /** Nothing said for this long: the utterance ends empty. */
   noSpeechMs: 8_000,
   maxUtteranceMs: VOICE_LIMITS.maxUtteranceMs,
@@ -68,8 +59,8 @@ export type EndVerdict = "complete" | "unfinished" | null;
 
 /**
  * One utterance's turn detection. `frame()` takes the input RMS every tick and returns at
- * most one signal. `verdict()` (from the provisional transcript) adapts the silence that ends
- * the turn: short for a complete phrase, long for one that sounds cut off.
+ * most one signal. `verdict()` (from the provisional transcript) lengthens the silence that ends
+ * the turn when the phrase sounds cut off.
  */
 export class TurnDetector {
   private start = -1;
@@ -168,13 +159,7 @@ export class TurnDetector {
     if (!this.heard) return elapsed >= this.cfg.noSpeechMs ? this.finish("no_speech") : null;
     const silence = now - this.lastVoice;
     const needed =
-      this.verdictNow === "unfinished"
-        ? this.cfg.unfinishedSilenceMs
-        : this.voicedMs >= this.cfg.longSpeechMs
-          ? this.cfg.longSilenceMs
-          : this.verdictNow === "complete"
-            ? this.cfg.completeSilenceMs
-            : this.cfg.endSilenceMs;
+      this.verdictNow === "unfinished" ? this.cfg.unfinishedSilenceMs : this.cfg.endSilenceMs;
     if (silence >= needed) return this.finish("end");
     if (!this.paused && silence >= this.cfg.snapshotPauseMs) {
       this.paused = true;

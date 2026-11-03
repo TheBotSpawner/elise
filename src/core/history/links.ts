@@ -6,6 +6,7 @@
  */
 import { nameKey } from "../contexts/model";
 import type { ThreadRef } from "../interaction";
+import { similarText } from "../lexicon";
 
 /** A Space (parentId null) or a Section (parentId = its Space). */
 export interface KnowledgeNode {
@@ -291,7 +292,10 @@ export function nodesMatching(query: string, nodes: KnowledgeNode[]): string[] {
   if (q.length < 2) return [];
   return nodes
     .filter(
-      (n) => nameKey(n.name).includes(q) || nameKey(`${n.parentName ?? ""} ${n.name}`).includes(q),
+      (n) =>
+        nameKey(n.name).includes(q) ||
+        nameKey(`${n.parentName ?? ""} ${n.name}`).includes(q) ||
+        similarText(query, `${n.parentName ?? ""} ${n.name}`),
     )
     .flatMap((n) => [n.id, ...nodes.filter((c) => c.parentId === n.id).map((c) => c.id)]);
 }

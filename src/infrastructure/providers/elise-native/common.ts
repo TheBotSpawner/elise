@@ -1,4 +1,5 @@
 import { AppError } from "@/core/errors";
+import { mostSimilar } from "@/core/lexicon";
 
 export function check(error: { message: string; code?: string } | null, what: string) {
   if (!error) return;
@@ -41,7 +42,7 @@ export function byNameOrId<T extends { id: string }>(
     const n = norm(name(i));
     return n.includes(wanted) || (n.length >= 3 && wanted.includes(n));
   });
-  return partial;
+  return partial.length ? partial : mostSimilar(items, ref, name);
 }
 
 export function escapeLike(value: string) {

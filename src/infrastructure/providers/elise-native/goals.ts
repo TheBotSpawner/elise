@@ -19,6 +19,7 @@ import {
 import { habitProgress, weekStart, type EntrySource } from "@/core/capabilities/habits";
 import { AppError } from "@/core/errors";
 import { habitContribution } from "@/core/goals/analytics";
+import { similarText } from "@/core/lexicon";
 import { todayIn } from "@/core/time";
 import type {
   GoalLinkRow,
@@ -28,7 +29,7 @@ import type {
 } from "@/infrastructure/supabase/database.types";
 import type { ServerSupabase } from "@/infrastructure/supabase/server";
 
-import { byNameOrId, check, escapeLike, needsUpdate, notMigrated } from "./common";
+import { byNameOrId, check, needsUpdate, notMigrated } from "./common";
 import { EliseHabitsProvider } from "./habits";
 
 const num = (v: number | null | undefined) => (v === null || v === undefined ? null : Number(v));
@@ -455,10 +456,10 @@ export class EliseGoalsProvider implements GoalsProvider {
       .select("id, title")
       .eq("workspace_id", this.workspaceId)
       .is("archived_at", null)
-      .limit(10);
-    q = byId ? q.eq("id", ref) : q.ilike("title", `%${escapeLike(ref)}%`);
+      .limit(byId ? 1 : 500);
+    if (byId) q = q.eq("id", ref);
     const { data } = await q;
-    return data ?? [];
+    return byId ? (data ?? []) : (data ?? []).filter((t) => similarText(ref, t.title)).slice(0, 10);
   }
 
   // ── Progress history (append-only) ─────────────────────────────────────────

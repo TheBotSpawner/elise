@@ -86,6 +86,57 @@ export function soundSimilarity(a: string, b: string): number {
   return Math.max(sound, text);
 }
 
+// ── Finding what someone remembers, not what they typed (ADR-132) ────────────
+
+/** Words that only tie a phrase together: never what tells one thing from another. */
+const GLUE = new Set(
+  (
+    "a al con de del e el en la las lo los mi mis o para por que se su sus tu tus u un una unas " +
+    "unos y este esta esto ese esa eso an and at for in of on my the to"
+  ).split(" "),
+);
+
+const wordsOf = (s: string) => fold(s).match(/[\p{L}\p{N}]+/gu) ?? [];
+
+/** The same word said another way: plural, a verb's ending, a typo, a mishearing. */
+function sameWord(a: string, b: string): boolean {
+  if (a === b) return true;
+  // "TP 3" is not "TP 4", and a very short word has no room for a mistake.
+  const short = Math.min(a.length, b.length);
+  if (short < 4 || /\d/.test(a + b)) return false;
+  if (Math.abs(a.length - b.length) <= 3 && (a.startsWith(b) || b.startsWith(a))) return true;
+  if (phoneticKey(a) === phoneticKey(b)) return true;
+  return short >= 5 && distance(a, b) <= (short >= 8 ? 2 : 1);
+}
+
+/** 0–1: how many of the words asked for are in the text, in any order. */
+export function textSimilarity(query: string, text: string): number {
+  const all = wordsOf(query);
+  const asked = all.filter((w) => !GLUE.has(w));
+  const wanted = asked.length ? asked : all;
+  if (!wanted.length) return 0;
+  const have = wordsOf(text);
+  return wanted.filter((w) => have.some((h) => sameWord(w, h))).length / wanted.length;
+}
+
+/**
+ * Whether the text is what was asked for: its words, in any order, with others in between. One word
+ * in four may be missing (a long request rarely repeats a title whole).
+ */
+export function similarText(query: string, text: string): boolean {
+  const n = wordsOf(query).filter((w) => !GLUE.has(w)).length || wordsOf(query).length;
+  return n > 0 && textSimilarity(query, text) >= 1 - Math.floor(n / 4) / n;
+}
+
+/** The last step of finding something by name: the ones that resemble it most. Several: ask. */
+export function mostSimilar<T>(items: T[], ref: string, name: (t: T) => string): T[] {
+  const hits = items
+    .filter((i) => similarText(ref, name(i)))
+    .map((item) => ({ item, score: textSimilarity(ref, name(item)) }));
+  const best = Math.max(...hits.map((h) => h.score));
+  return hits.filter((h) => h.score === best).map((h) => h.item);
+}
+
 /** "como tu nombre", "your name": the user is pointing at ELISE's own name. */
 const SELF_NAME = /\b(como tu nombre|tu nombre|como vos|como te llam[aá]s|your name|like you)\b/i;
 

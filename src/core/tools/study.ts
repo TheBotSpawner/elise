@@ -6,6 +6,7 @@ import { AppError } from "../errors";
 import { activateContext, findProfile, threadOf } from "./contexts";
 import { clip, present } from "./orchestration";
 import { scopeSpaces, type KnowledgeHit, type KnowledgeReader } from "../knowledge/model";
+import { mostSimilar } from "../lexicon";
 import { evaluateAnswer, extractConcepts, generateQuestion, quizChoice } from "../study/ai";
 import {
   DEFAULT_PREFERENCES,
@@ -158,7 +159,8 @@ async function resolveScope(
   }
   for (const name of req.documents ?? []) {
     const key = nameKey(name);
-    const docs = m.documents.filter((d) => nameKey(d.title).includes(key));
+    const partial = m.documents.filter((d) => nameKey(d.title).includes(key));
+    const docs = partial.length ? partial : mostSimilar(m.documents, name, (d) => d.title);
     if (docs.length) for (const d of docs) itemIds.add(d.itemId);
     else missing.push(name);
   }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { mostSimilar } from "../lexicon";
 import { clip, displayOf, invoke, present, runStep } from "./orchestration";
 import type { KnowledgeEvidence, ToolDefinition, ToolRunEnv } from "../agents/tools";
 import type { CalendarEvent } from "../capabilities/calendar";
@@ -88,9 +89,10 @@ export async function findProfile(
       pathKey(p) === key ||
       p.aliases.some((a) => nameKey(a) === key),
   );
-  const loose = exact.length
+  const partial = exact.length
     ? exact
     : all.filter((p) => key.length >= 3 && nameKey(p.name).includes(key));
+  const loose = partial.length ? partial : mostSimilar(all, ref, (p) => p.name);
   if (loose.length === 1) return loose[0]!;
   if (loose.length > 1)
     throw new AppError(

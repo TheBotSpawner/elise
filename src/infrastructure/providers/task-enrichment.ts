@@ -11,6 +11,7 @@ import {
   type UpdateTaskInput,
 } from "@/core/capabilities/tasks";
 import { AppError } from "@/core/errors";
+import { textSimilarity } from "@/core/lexicon";
 import { makeExternalRef, parseExternalRef } from "@/core/providers/refs";
 import {
   firstOccurrence,
@@ -399,6 +400,11 @@ export class EnrichedTaskProvider implements TaskProvider {
           (!query.search || matchesTaskSearch(t, query.search)) &&
           (!query.priority || t.priority === query.priority) &&
           (!label || (t.labels ?? []).some((l) => norm(l) === label)),
+      )
+      .sort((a, b) =>
+        query.search
+          ? textSimilarity(query.search, b.title) - textSimilarity(query.search, a.title)
+          : 0,
       )
       .slice(0, query.limit);
   }
