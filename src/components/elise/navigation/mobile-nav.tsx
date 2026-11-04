@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
+import { BrandWordmark } from "@/components/elise/brand";
 import { Dialog } from "@/components/ui/dialog";
 import { Ambient } from "@/features/chat/chat-surface";
 import { NewChatButton, useActiveThread } from "@/features/chat/continuity";
@@ -81,7 +82,7 @@ export function MobileHeader({ user }: { user: NavUser }) {
           aria-label="ELISE"
         >
           {docked && <Orb state={orbState} size={32} levelSource={level} />}
-          <span className="pl-[0.34em] text-xs font-medium tracking-[0.34em]">ELISE</span>
+          <BrandWordmark className="h-[13px]" />
         </Link>
         <div className="flex items-center justify-self-end">
           {!inConversation && <HomeNoticesBell />}

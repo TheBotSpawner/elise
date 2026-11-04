@@ -42,32 +42,24 @@ describe("boot identity", () => {
 });
 
 describe("boot sequence", () => {
-  it("point → wireframe → ring → idle, settled around 1.2 s", () => {
-    expect(bootFrame(0, false)).toEqual({ dot: 0, wire: 0, ring: 0 });
-    expect(bootFrame(250, false)!.dot).toBeGreaterThan(0.5);
-    expect(bootFrame(250, false)!.wire).toBe(0);
-    const mid = bootFrame(700, false)!;
-    expect(mid.wire).toBeGreaterThan(0.6);
-    expect(mid.ring).toBeGreaterThan(0);
-    expect(mid.ring).toBeLessThan(mid.wire);
-    expect(bootFrame(1100, false)).toMatchObject({ dot: 0, wire: 1, ring: 1 });
+  it("runs its full length, then the Orb is simply idle", () => {
+    expect(bootFrame(0, false)).toEqual({ t: 0 });
+    expect(bootFrame(BOOT.durationMs - 1, false)).toEqual({ t: BOOT.durationMs - 1 });
     expect(bootFrame(BOOT.durationMs, false)).toBeNull();
   });
 
-  it("reduced motion: a short fade/resolve, no assembly", () => {
-    const f = bootFrame(100, true)!;
-    expect(f.dot).toBe(0);
-    expect(f.wire).toBe(f.ring);
+  it("is a short fade with reduced motion", () => {
+    expect(bootFrame(100, true)).toEqual({ t: 100 });
     expect(bootFrame(BOOT.reducedMs, true)).toBeNull();
   });
 
-  it("the renderer draws the boot frames on the same canvas, then is just the Orb", () => {
+  it("the renderer draws it on the same canvas: the core first, the rest as it resolves", () => {
     const calls: string[] = [];
     const ctx = new Proxy({} as Record<string, unknown>, {
       get: (t, key) =>
         key in t
           ? t[key as string]
-          : key === "createRadialGradient"
+          : key === "createRadialGradient" || key === "createLinearGradient"
             ? () => (calls.push("gradient"), { addColorStop: () => {} })
             : () => {},
       set: (t, key, v) => ((t[key as string] = v), true),
@@ -77,15 +69,15 @@ describe("boot sequence", () => {
       state: "idle" as const,
       light: false,
       reduced: false,
-      level: -1,
+      level: 0,
       pointer: { x: 0, y: 0 },
     };
     r.frame(ctx, 300, 1, 16, { ...input, boot: bootFrame(200, false) });
-    const withDot = calls.length;
+    const early = calls.length;
     calls.length = 0;
     r.frame(ctx, 300, 1, 32, { ...input, boot: null });
-    // The point's own halo is one extra gradient while it shows.
-    expect(withDot).toBe(calls.length + 1);
+    expect(early).toBeGreaterThan(0);
+    expect(calls.length).toBeGreaterThan(early);
   });
 });
 

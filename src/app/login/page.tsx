@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { BrandWordmark } from "@/components/elise/brand";
 import { Orb } from "@/components/elise/orb/orb";
 import { isSupabaseConfigured } from "@/config/env";
 import { LoginForm } from "@/features/auth/login-form";
@@ -20,11 +21,8 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         <Orb size={200} />
         <div>
           <p className="flex items-center justify-center gap-3">
-            <span
-              aria-hidden
-              className="size-2 rounded-full bg-accent shadow-[0_0_14px_var(--accent)]"
-            />
-            <span className="text-[13px] font-medium tracking-[0.34em]">ELISE</span>
+            <BrandWordmark className="h-[15px]" />
+            <span className="sr-only">ELISE</span>
           </p>
           <h1 className="mt-4 text-[30px] leading-[1.15] font-light tracking-[-0.025em]">
             {t.auth.signInTitle}

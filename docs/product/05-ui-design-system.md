@@ -179,28 +179,22 @@ Debe desarrollar una identidad propia.
 
 # 7. Orb Visual Direction
 
-La dirección inicial será más **orgánica y basada en ondas** que mecánica.
+**Decidido: "Open Core"** ([ADR-136](../decisions/ADR-136-open-core-orb-and-logo.md)). Colores, tiempos y reglas: `NOTA.md` en `design-reference/ELISE-OpenCore.zip`.
 
-Conceptos a explorar:
+- Una esfera de vidrio finísima.
+- Dos arcos opuestos que la abrazan sin cerrarla.
+- Un flujo en S que la cruza: el diálogo.
+- Un núcleo pequeño: la presencia.
 
-- esfera abstracta;
-- ondas concéntricas;
-- deformación suave;
-- partículas discretas;
-- halos;
-- energía;
-- audio-reactivity;
-- response to pointer;
-- response to speech;
-- response to execution state.
+El movimiento dice el estado; el color solo lo confirma. En modo claro el contraste lo da el trazo, nunca el brillo.
 
 Una interacción deseada:
 
-> Cuando el usuario mueve el mouse cerca o sobre el Orb, pequeñas ondas o deformaciones pueden expandirse hacia la posición del cursor.
+> Cuando el usuario mueve el mouse cerca o sobre el Orb, se inclina levemente hacia el cursor.
 
 Durante voz:
 
-> Las ondas pueden expandirse, respirar o responder a la intensidad de la conversación.
+> El núcleo, la S y los arcos responden a la intensidad de la conversación.
 
 El Orb debe sentirse vivo sin convertirse en una distracción permanente.
 
@@ -262,23 +256,13 @@ Cambio reconocible sin usar únicamente color.
 
 # 9. Logo
 
-El logo todavía no está definido.
+**Decidido** ([ADR-136](../decisions/ADR-136-open-core-orb-and-logo.md)): un símbolo plano, dos medias lunas y un núcleo, más el wordmark `ELISE`. Todas las versiones están en `design-reference/ELISE-OpenCore.zip`.
 
-Claude Design deberá explorar varias propuestas.
+- **Versiones:** color para fondos oscuros, color para fondos claros y monocromas.
+- **Mínimos:** símbolo de 16 px, lockup horizontal de 96 px de ancho, wordmark de 64 px de ancho.
+- **No:** estirar el wordmark, cambiar su espaciado ni cerrar los arcos en un anillo.
 
-Requisitos:
-
-- minimalista;
-- innovador;
-- reconocible;
-- compatible con la identidad del Orb;
-- usable como app icon;
-- usable en favicon;
-- usable junto al wordmark `ELISE`;
-- legible en dark y light mode;
-- evitar clichés visuales genéricos de IA.
-
-El logo no tiene que ser literalmente el Orb, pero debería convivir naturalmente con él.
+El logo no es literalmente el Orb: el Orb es de vidrio y con perspectiva, el símbolo es plano. Conviven sin copiarse.
 
 ---
 

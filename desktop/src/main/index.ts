@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, Menu, nativeImage, nativeTheme, Tray } from "electron";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { HOME_RUNTIME_BUSY, progressPercent } from "@/core/home/runtime";
 import { parseDeepLink } from "@/core/platform/links";
@@ -94,6 +94,16 @@ function iconPath() {
   return app.isPackaged
     ? join(process.resourcesPath, "assets", "icon.png")
     : join(__dirname, "../../assets/icon.png");
+}
+
+/** The symbol for the tray: light on a dark bar, dark on a light one (macOS tints it itself). */
+function trayIcon() {
+  const mac = process.platform === "darwin";
+  const name =
+    !mac && nativeTheme.shouldUseDarkColors ? "tray-light-16.png" : "tray-template-16.png";
+  const image = nativeImage.createFromPath(join(dirname(iconPath()), name));
+  if (mac) image.setTemplateImage(true);
+  return image;
 }
 
 /**
@@ -430,7 +440,8 @@ async function main() {
   applyLoginItem();
   initUpdater();
 
-  tray = new Tray(nativeImage.createFromPath(iconPath()).resize({ width: 16, height: 16 }));
+  tray = new Tray(trayIcon());
+  nativeTheme.on("updated", () => tray?.setImage(trayIcon()));
   tray.on("click", () => showWindow());
   refreshTray();
 

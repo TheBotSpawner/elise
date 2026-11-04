@@ -7,12 +7,12 @@ import { cn } from "@/lib/utils";
 
 import { bootFrame, claimBoot } from "./boot";
 import { OrbRenderer } from "./orb-renderer";
-import { toRendererState, type OrbState } from "./orb-states";
+import type { OrbState } from "./orb-states";
 
 /**
  * The ELISE Orb: one <canvas>, one requestAnimationFrame loop, DPR capped at 2.
- * Paused while the document is hidden or the orb is off-screen. Leans toward the pointer.
- * Honours prefers-reduced-motion (no rotation/deformation/tremor; state via colour, rings, halo).
+ * Paused while the document is hidden or the orb is off-screen, and slower at rest (the renderer
+ * says how much). Leans toward the pointer. Honours prefers-reduced-motion.
  * `boot`: this Orb plays the app's startup sequence if the document hasn't yet (boot.ts) — the
  * same canvas and loop, nothing extra to load; `onBoot` runs once, when it starts.
  */
@@ -55,6 +55,7 @@ export function Orb({
     const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let visible = true;
     let raf = 0;
+    let drawn = 0;
     // Claimed at mount: a remount mid-sequence continues it, never replays it.
     const claim = bootRequest.current.boot ? claimBoot(performance.now()) : null;
     let bootStart = claim?.start ?? null;
@@ -78,6 +79,8 @@ export function Orb({
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       if (!visible || document.hidden) return;
+      if (now - drawn < 1000 / renderer.suggestedFps - 2) return;
+      drawn = now;
       const { state: s, size, level: fixed, levelSource: source } = input.current;
       const lv = source ? source.current : fixed;
       const px = size === "fill" ? canvas.clientWidth : size;
@@ -91,7 +94,7 @@ export function Orb({
       const booting = bootStart === null ? null : bootFrame(now - bootStart, reducedQuery.matches);
       if (!booting) bootStart = null;
       renderer.frame(ctx, px, dpr, now, {
-        state: toRendererState(s),
+        state: s,
         light: !document.documentElement.classList.contains("dark"),
         accent: document.documentElement.dataset.accent,
         reduced: reducedQuery.matches,

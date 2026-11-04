@@ -1,10 +1,7 @@
 import type { VoicePhase } from "@/core/voice/session";
 
-import type { RendererState } from "./orb-renderer";
-
 /**
- * ELISE Orb states (docs/product/05 §8, Live Canvas v2). Motion carries the state; colour only
- * confirms it. Product names map 1:1 onto the reference renderer's states.
+ * ELISE Orb states (docs/product/05 §8). Motion carries the state; colour only confirms it.
  */
 export const ORB_STATES = [
   "idle",
@@ -22,25 +19,6 @@ export const ORB_STATES = [
 ] as const;
 
 export type OrbState = (typeof ORB_STATES)[number];
-
-const RENDERER: Record<OrbState, RendererState> = {
-  idle: "idle",
-  listening: "listening",
-  user_speaking: "userSpeaking",
-  thinking: "thinking",
-  searching: "searching",
-  speaking: "speaking",
-  executing: "executing",
-  waiting_approval: "approval",
-  success: "success",
-  attention: "attention",
-  error: "error",
-  sleeping: "sleeping",
-};
-
-export function toRendererState(state: OrbState): RendererState {
-  return RENDERER[state];
-}
 
 /**
  * When several signals are active, the Orb shows the most important one (motion spec):

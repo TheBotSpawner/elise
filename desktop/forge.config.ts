@@ -39,6 +39,7 @@ const config: ForgeConfig = {
     appBundleId: "com.elise.desktop",
     asar: true,
     extraResource: ["assets"],
+    icon: "assets/icon",
     protocols: [{ name: "ELISE", schemes: ["elise"] }],
     ...macSigning,
   },
@@ -49,6 +50,7 @@ const config: ForgeConfig = {
       name: "elise_desktop",
       title: "ELISE",
       setupExe: `ELISE-Setup-${version}.exe`,
+      setupIcon: "assets/icon.ico",
       ...(env.WINDOWS_CERTIFICATE_FILE
         ? {
             certificateFile: env.WINDOWS_CERTIFICATE_FILE,

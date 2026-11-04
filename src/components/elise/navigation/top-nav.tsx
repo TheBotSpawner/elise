@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { BrandSymbol, BrandWordmark } from "@/components/elise/brand";
 import { signOut } from "@/features/auth/actions";
 import { useActiveThread, useHomeNavClick } from "@/features/chat/continuity";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
@@ -74,12 +75,9 @@ export function TopNav({ user, pendingApprovals }: { user: NavUser; pendingAppro
             <Orb state={orbState} size={40} levelSource={level} />
           </motion.div>
         ) : (
-          <span
-            aria-hidden
-            className="size-2 rounded-full bg-accent shadow-[0_0_14px_var(--accent)]"
-          />
+          <BrandSymbol className="size-7" />
         )}
-        <span className="text-[13px] font-medium tracking-[0.34em]">ELISE</span>
+        <BrandWordmark className="h-[14px]" />
       </Link>
 
       <div
