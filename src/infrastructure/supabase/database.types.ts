@@ -2197,6 +2197,24 @@ export type Database = {
     };
     Views: Record<never, never>;
     Functions: {
+      reserve_budget: {
+        Args: {
+          p_key: string;
+          p_user: string | null;
+          p_workspace: string;
+          p_modality: string;
+          p_amount: number;
+          p_enforce: boolean;
+          p_ttl_seconds: number;
+        };
+        Returns: { reservation_id: string; allowed: boolean; reason: string | null }[];
+      };
+      release_budget: { Args: { p_reservation: string }; Returns: undefined };
+      budget_status: {
+        Args: { p_user: string };
+        Returns: { plan_key: string; ends_at: string | null; used_percent: number }[];
+      };
+      usage_cost_report: { Args: { p_since: string }; Returns: Json };
       finance_delete_category: {
         Args: { p_category: string };
         Returns: { uncategorized: number; budgetsArchived: number };

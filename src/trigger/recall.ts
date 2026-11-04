@@ -1,9 +1,9 @@
 import { AbortTaskRunError, schedules, task } from "@trigger.dev/sdk";
 import { z } from "zod";
 
+import { job, withBackgroundSpend } from "@/application/budget-service";
 import { learnFromConversation, learnFromSession } from "@/application/memory-learning";
 import { indexConversation, indexVoiceSession, sweepRecall } from "@/application/recall-service";
-import { withUsageScope } from "@/infrastructure/observability/usage";
 
 /**
  * Thin Trigger.dev entry points for Universal Recall (ADR-012). Indexing is idempotent, so
@@ -27,7 +27,7 @@ export const recallIndexTask = task({
     const parsed = indexPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid recall payload");
     const { workspaceId, conversationId, sessionId } = parsed.data;
-    const indexed = await withUsageScope({ workspaceId, feature: "recall_index" }, () =>
+    const indexed = await withBackgroundSpend(job(workspaceId, "recall_index"), () =>
       conversationId
         ? indexConversation(workspaceId, conversationId)
         : indexVoiceSession(workspaceId, sessionId!),

@@ -26,7 +26,13 @@ import type { RuntimeHost } from "./runtime-host";
 import { armOutputCapture, openExternalSafely } from "./security";
 import { cacheGet, cacheSet, loadState, updateState } from "./store";
 import { checkForUpdates, installUpdate, updateState as currentUpdate } from "./updater";
-import { reportWake, setWakePaused, wakeControl, wakePreferenceChanged } from "./wake";
+import {
+  reportWake,
+  resetAudioService,
+  setWakePaused,
+  wakeControl,
+  wakePreferenceChanged,
+} from "./wake";
 import { setWakeOrbState } from "./wake-orb";
 import { INVOKE } from "../shared/channels";
 
@@ -199,6 +205,7 @@ export function registerIpc(
   handle(INVOKE.wakeControl, () => wakeControl());
   handle(INVOKE.wakePause, (paused: unknown) => setWakePaused(z.boolean().parse(paused)));
   handle(INVOKE.wakeReport, (status: unknown) => reportWake(wakeReportSchema.parse(status)));
+  handle(INVOKE.resetAudio, () => resetAudioService());
   handle(INVOKE.voiceOrb, (state: unknown) =>
     setWakeOrbState(z.enum(VOICE_ORB_STATES).parse(state)),
   );

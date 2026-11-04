@@ -4,6 +4,7 @@ import { AppError } from "@/core/errors";
 import { normalizeDate } from "@/core/web/extract";
 import type { Recency, WebResult, WebSearchProvider, WebSearchQuery } from "@/core/web/model";
 import { cleanUrl, domainOf, normalizeUrl } from "@/core/web/url";
+import { assertSpendCleared } from "@/infrastructure/observability/usage";
 
 /**
  * Search providers (ADR-015), verified against their current APIs (2026-09):
@@ -59,6 +60,7 @@ export class OpenAIWebSearch implements WebSearchProvider {
       q.kind === "news"
         ? `recent news articles from reputable outlets${q.recency ? `, ${RECENCY_TEXT[q.recency]}` : ""}`
         : `the most relevant, authoritative pages (official sites and documentation first)${q.recency ? `, ${RECENCY_TEXT[q.recency]}` : ""}`;
+    assertSpendCleared("web_search");
     const res = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
@@ -156,6 +158,7 @@ export class TavilyWebSearch implements WebSearchProvider {
   ) {}
 
   async search(q: WebSearchQuery, signal?: AbortSignal): Promise<WebResult[]> {
+    assertSpendCleared("web_search");
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
       headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },

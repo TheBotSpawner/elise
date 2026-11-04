@@ -36,6 +36,7 @@ export const INVOKE = {
   wakePause: "elise:wake-pause",
   wakeReport: "elise:wake-report",
   voiceOrb: "elise:voice-orb",
+  resetAudio: "elise:reset-audio",
   showApp: "elise:show-app",
   adjustVolume: "elise:adjust-volume",
   armOutputCapture: "elise:arm-output-capture",

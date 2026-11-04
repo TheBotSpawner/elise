@@ -60,6 +60,7 @@ const bridge: EliseDesktopBridge = {
   setWakePaused: (paused) => invoke(INVOKE.wakePause, paused),
   reportWake: (status) => invoke(INVOKE.wakeReport, status),
   reportVoiceOrb: (state) => invoke(INVOKE.voiceOrb, state),
+  resetAudio: () => invoke(INVOKE.resetAudio),
   alarmSchedule: (items) => invoke(INVOKE.alarmSchedule, items),
   onAlarmFire: (l) => subscribe(EVENTS.alarmFire, l),
   showApp: (path) => invoke(INVOKE.showApp, path ?? null),

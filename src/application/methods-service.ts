@@ -29,6 +29,7 @@ import type {
 
 import { attachmentText } from "./attachments-service";
 import type { AuthContext } from "./auth-context";
+import { withBackgroundSpend } from "./budget-service";
 
 /**
  * Methods store and services (ADR-040). Methods are shared by the workspace, like its Knowledge
@@ -501,8 +502,9 @@ export type MethodDraft = MethodDraftResult;
  * the capability and the steps come out as three distinct fields (core/skills/draft.ts); when
  * the model can't, the text goes to Instructions only and the user is told.
  */
-export async function draftMethod(_auth: AuthContext, text: string): Promise<MethodDraft> {
-  const draft = await structureMethod(getAIProvider(), text);
+export async function draftMethod(auth: AuthContext, text: string): Promise<MethodDraft> {
+  const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "method_draft" };
+  const draft = await withBackgroundSpend(scope, () => structureMethod(getAIProvider(), text));
   if (!draft.structured) logger.warn("method.draft_unstructured", { reason: draft.failure });
   return draft;
 }

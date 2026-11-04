@@ -258,6 +258,8 @@ export interface EliseDesktopBridge {
   reportWake(status: WakeReport): Promise<void>;
   /** What a background conversation is doing, for the corner Orb (ADR-095). Never words. */
   reportVoiceOrb?(state: VoiceOrbState): Promise<void>;
+  /** ADR-137: restart the audio service: a microphone that opens and delivers nothing. */
+  resetAudio?(): Promise<void>;
   /** The next alarms this installation rings, kept by the app (ADR-100): server truth, ≤50. */
   alarmSchedule?(items: DesktopAlarmItem[]): Promise<void>;
   /** A kept alarm is due here. */

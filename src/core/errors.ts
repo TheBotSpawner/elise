@@ -11,6 +11,8 @@ export const ERROR_CODES = [
   "NOT_FOUND",
   "CONFLICT",
   "RATE_LIMITED",
+  /** The account's usage allowance ran out (ADR-138). Not retryable: waiting a moment won't help. */
+  "BUDGET_EXCEEDED",
   "PROVIDER_UNAVAILABLE",
   "CAPABILITY_UNAVAILABLE",
   /**

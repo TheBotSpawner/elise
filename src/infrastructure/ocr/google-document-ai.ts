@@ -6,7 +6,7 @@ import { serverEnv } from "@/config/server-env";
 import { AppError } from "@/core/errors";
 import type { OcrProvider } from "@/core/knowledge/extraction";
 import { logger } from "@/infrastructure/observability/logger";
-import { recordUsage } from "@/infrastructure/observability/usage";
+import { assertSpendCleared, recordUsage } from "@/infrastructure/observability/usage";
 
 /**
  * Google Document AI, Enterprise Document OCR (ADR-035). Online processing: up to 15 pages per
@@ -280,6 +280,7 @@ export class GoogleDocumentAiOcr implements OcrProvider {
     pages: number[] | null;
     languageHints?: string[];
   }): Promise<{ page: number; text: string }[]> {
+    assertSpendCleared("ocr");
     const location = /locations\/([^/]+)/.exec(this.processor)![1]!;
     const started = Date.now();
     const res = await fetch(

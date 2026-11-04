@@ -3,7 +3,7 @@ import "server-only";
 import { AppError } from "@/core/errors";
 import type { VoiceDelivery } from "@/core/voice/delivery";
 import type { SpeechOutputProvider, SynthesisRequest, VoiceLanguage } from "@/core/voice/providers";
-import { recordUsage } from "@/infrastructure/observability/usage";
+import { assertSpendCleared, recordUsage } from "@/infrastructure/observability/usage";
 
 /**
  * ElevenLabs speech output (ADR-030), verified against the current docs (2026-10-02):
@@ -148,6 +148,7 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
     signal?: AbortSignal,
     model: string = this.model,
   ): Promise<ReadableStream<Uint8Array>> {
+    assertSpendCleared("speech");
     const started = Date.now();
     const res = await fetch(
       `${API}/text-to-speech/${encodeURIComponent(voice)}/stream?output_format=${FORMAT}`,
@@ -167,7 +168,7 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
       },
     );
     if (!res.ok || !res.body) throw failure(res.status, await res.text().catch(() => ""));
-    this.report(text, started, Date.now() - started);
+    this.report(text, started, Date.now() - started, model);
     return res.body;
   }
 
@@ -182,6 +183,7 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
     language: VoiceLanguage,
     signal?: AbortSignal,
   ): Promise<ReadableStream<Uint8Array>> {
+    assertSpendCleared("speech");
     const started = Date.now();
     const url = `${TDD}?model_id=${encodeURIComponent(this.model)}&output_format=${FORMAT}&language_code=${language}`;
     const socket = new WebSocket(url);
@@ -264,16 +266,22 @@ export class ElevenLabsSpeechOutput implements SpeechOutputProvider {
     });
   }
 
-  private report(text: string, started: number, firstAudioMs: number | null) {
+  private report(
+    text: string,
+    started: number,
+    firstAudioMs: number | null,
+    model: string = this.model,
+  ) {
     recordUsage({
       operation: "speech",
       provider: this.id,
-      model: this.model,
+      // The model that really spoke: a short line is routed to another one, at its own price.
+      model,
       units: text.length,
       unit: "characters",
       latencyMs: firstAudioMs ?? Date.now() - started,
     });
-    this.onUsage({ model: this.model, characters: text.length, firstAudioMs });
+    this.onUsage({ model, characters: text.length, firstAudioMs });
   }
 }
 

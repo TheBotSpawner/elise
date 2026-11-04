@@ -188,3 +188,10 @@ node desktop/scripts/publish-release.mjs --channel beta
 ```
 
 Para repetir la evaluación: `desktop/scripts/wake-eval/README.md`. Requiere `pip install vosk numpy` y gasta unos centavos de OpenAI TTS la primera vez.
+
+## The corner Orb and a silent microphone (ADR-137)
+
+The corner Orb comes up with the word, not when the sentence ends. Five seconds without an audio frame
+is a dead microphone: it's retried quickly and Chromium's audio service is restarted, at most once a
+minute. To follow a case in `logs/desktop.log`: `desktop_wake_status` with `in_conversation` marks the
+word, and `desktop_audio_reset` marks a restart.

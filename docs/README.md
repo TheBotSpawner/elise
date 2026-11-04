@@ -53,6 +53,7 @@ These documents are the source of truth for product and architecture decisions. 
 | `35-transit-routes.md` | Public transport with lines: Routes API transit details, itineraries, voice and card, live checks (ADR-113) |
 | `36-notion-recurring-widgets.md` | Notion retrieval and "latest published", honest not-found, source management, one-answer widgets, recurring tasks (ADR-114/115) |
 | `37-mercadolibre-official-prices.md` | Mercado Libre official prices by exact listing, OAuth for ELISE's account, SerpApi removed, article cards, newest-first Canvas, voice language (ADR-116) |
+| `38-cost-accounting.md` | Costos por cuenta y límites: datos reales, cobertura por ruta, tarifario, límites propuestos, activación segura (ADR-138) |
 | ADR-117 | Broadlink found by Desktop (local hello; the engine in WSL2 only sees DHCP), published IR profiles (SmartIR) before learning |
 | ADR-118 | Smart Life / Tuya: remotes already set up in Smart Life imported as ready devices, sent through Tuya's cloud (dev-linked account; consumer OAuth blocked), off by default |
 | ADR-119 | Smart Life / Tuya multiusuario: cada persona conecta SU cuenta por el OAuth oficial de Tuya (H5, su centro de datos), tokens cifrados por conexión, dispositivos de nube sin hub (migración 067), aislamiento por workspace |
@@ -68,6 +69,8 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-129 | Smart Life para cada usuario: BLOQUEADO por Tuya (OAuth solo para apps OEM; QR solo desde la consola; Device Data Sharing solo UE; la vía de Home Assistant no trae controles IR). ADR-119 queda inactivo; el vínculo de prueba sigue solo para el dueño; consulta a Tuya pendiente |
 | ADR-130 | Palabra de activación: todo candidato se transcribe antes de iniciar nada, también la palabra sola; una transcripción vacía no es un llamado y activa el modo guardado |
 | ADR-131 | Voz: ELISE escucha hasta 2 s de silencio, en la sesión y en la captura de "Elise", sea cual sea la frase (2,4 s si suena sin terminar); la captura sube de 9 s a 60 s y lo que sigue se suma al pedido. Las respuestas arrancan hasta 1,3 s más tarde |
+| ADR-138 | Costo por cuenta y límites: `usage_events` sigue siendo el único libro, reserva atómica por interacción, tres modos (observe por defecto), planes como datos y apagados |
+| ADR-137 | El Orb de la esquina aparece con la palabra, no al terminar la frase; un micrófono que no entrega audio se detecta en 5 s y reinicia el servicio de audio |
 | ADR-136 | "Open Core": Orb y logo nuevos hechos en Claude Design; renderer Canvas 2D portado a TypeScript, arranque de 2,6 s, íconos de web y Desktop, bandeja según el tema |
 | ADR-135 | Los widgets se adaptan al ancho de su tarjeta y nunca tienen scroll horizontal: cada uno tiene su diseño angosto; los títulos pasan a dos líneas y los números no se cortan |
 | ADR-134 | Cerrar la conversación con una despedida ("Gracias Elise", "Genial, gracias", "Listo Elise"): solo si es la frase entera, seguida de silencio, y nunca como respuesta a una pregunta de ELISE |

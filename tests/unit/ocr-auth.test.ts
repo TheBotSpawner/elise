@@ -4,7 +4,10 @@ vi.mock("server-only", () => ({}));
 vi.mock("@vercel/oidc", () => ({ getVercelOidcToken: vi.fn(async () => "vercel-oidc-jwt") }));
 const env = vi.hoisted(() => ({ value: {} as Record<string, string | undefined> }));
 vi.mock("@/config/server-env", () => ({ serverEnv: () => env.value }));
-vi.mock("@/infrastructure/observability/usage", () => ({ recordUsage: vi.fn() }));
+vi.mock("@/infrastructure/observability/usage", () => ({
+  recordUsage: vi.fn(),
+  assertSpendCleared: vi.fn(),
+}));
 
 const PROCESSOR = "projects/p/locations/us/processors/abc";
 const FEDERATION = {

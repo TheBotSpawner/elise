@@ -68,6 +68,7 @@ import type { Json } from "@/infrastructure/supabase/database.types";
 import { pendingForInteraction, resolveApproval } from "./approvals-service";
 import { loadThreadImages, loadTurnAttachments, markSent } from "./attachments-service";
 import type { AuthContext } from "./auth-context";
+import { clearSpend } from "./budget-service";
 import type {
   AssistantMessageMetadata,
   ChatStreamEvent,
@@ -187,9 +188,19 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
 
   // Setup in dependency phases (ADR-025): independent reads share one round trip. Nothing is
   // written before the rate limit passes; history is read before this turn's message is saved.
-  const [, { bindings }, contexts, shortcuts, nodes, methods, listNames] = await perf.time(
+  const [spend, , { bindings }, contexts, shortcuts, nodes, methods, listNames] = await perf.time(
     "setup.reads",
     Promise.all([
+      // ADR-138: before anything is spent. The key is the server's own: x-request-id comes from
+      // the client, and repeating one must never replay an old approval.
+      perf.time(
+        "budget",
+        clearSpend({
+          workspaceId: auth.workspaceId,
+          userId: auth.userId,
+          feature: modality === "voice" ? "voice_turn" : "chat",
+        }),
+      ),
       perf.time("rate_limit", enforceRateLimit(auth)),
       perf.time("bindings", ports.bindings()),
       perf.time("preload.contexts", loadContexts(auth)),
@@ -659,12 +670,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
       : { tools: allTools, rest: [] };
   perf.mark("context_built");
   // Every model, Web and speech call made by this turn is attributed to it.
-  const usageScope = {
-    workspaceId: auth.workspaceId,
-    userId: auth.userId,
-    feature: modality === "voice" ? "voice_turn" : "chat",
-    aiRunId: runId,
-  };
+  const usageScope = { ...spend.scope, aiRunId: runId };
 
   return {
     thread: thread.ref,
@@ -1326,7 +1332,7 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
             thread: thread.ref.kind,
           });
         }
-      }),
+      }).finally(spend.release),
   };
 }
 

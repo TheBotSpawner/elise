@@ -30,7 +30,27 @@ export interface UsageRow {
   avgLatencyMs: number | null;
 }
 
+/** usage_cost_report (migration 070). Null while the database hasn't got it. */
+export interface CostReport {
+  activeAccounts: number;
+  byProvider: {
+    provider: string;
+    operation: string;
+    status: "actual" | "estimated" | "unknown";
+    calls: number;
+    cost: number;
+  }[];
+  perAccount: { p50: number | null; p95: number | null };
+  perTurn: { p50: number | null; p95: number | null };
+  top: { who: string; cost: number }[];
+  voice: { cost: number; minutes: number };
+  unpriced: number;
+  wouldDeny: Record<string, number>;
+  invoices: { provider: string; month: string; amount_micro: number; credits_micro: number }[];
+}
+
 export interface UsageSummary {
+  report: CostReport | null;
   days: number;
   rows: UsageRow[];
   totals: { calls: number; costUsd: number; workspaces: number };
@@ -49,7 +69,7 @@ export async function usageSummary(auth: AuthContext, days = 30): Promise<UsageS
   if (!isAdmin(auth)) throw new AppError("PERMISSION_DENIED", "Not available");
   const admin = createAdminClient();
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
-  const [{ data: events }, { data: runs }, { data: syncs }] = await Promise.all([
+  const [{ data: events }, { data: runs }, { data: syncs }, { data: report }] = await Promise.all([
     admin
       .from("usage_events")
       .select(
@@ -60,6 +80,7 @@ export async function usageSummary(auth: AuthContext, days = 30): Promise<UsageS
       .limit(MAX_ROWS),
     admin.from("schedule_runs").select("status").gte("scheduled_for", since).limit(MAX_ROWS),
     admin.from("knowledge_sync_runs").select("status").gte("created_at", since).limit(MAX_ROWS),
+    admin.rpc("usage_cost_report", { p_since: since }),
   ]);
 
   const groups = new Map<string, UsageRow & { latencySum: number; latencyN: number }>();
@@ -118,6 +139,7 @@ export async function usageSummary(auth: AuthContext, days = 30): Promise<UsageS
     ).map(([status, n]) => ({ kind, status, count: n }));
 
   return {
+    report: report as unknown as CostReport | null,
     days,
     rows,
     totals: {

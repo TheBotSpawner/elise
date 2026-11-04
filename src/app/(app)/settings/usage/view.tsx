@@ -6,8 +6,8 @@ import { useI18n } from "@/lib/i18n/client";
 
 import type { UsageProps } from "./load";
 
-/** Usage (ADR-068): real counts for this month only — no limits, credits or costs. */
-export function View({ usage }: UsageProps) {
+/** Usage (ADR-068): real counts for this month; with a plan (ADR-138), how near its limit. */
+export function View({ usage, notice }: UsageProps) {
   const { t, locale } = useI18n();
   const u = t.settingsHub.usage;
   const num = new Intl.NumberFormat(locale);
@@ -28,6 +28,9 @@ export function View({ usage }: UsageProps) {
     month: "long",
     timeZone: "UTC",
   }).format(new Date(`${usage.since}T12:00:00Z`));
+  // Stored in UTC; shown in the person's own time.
+  const day = (at: string) =>
+    new Intl.DateTimeFormat(locale, { day: "numeric", month: "long" }).format(new Date(at));
   return (
     <SettingsPage section="usage">
       <section className="flex flex-col gap-2">
@@ -44,7 +47,10 @@ export function View({ usage }: UsageProps) {
           ))}
         </dl>
       </section>
-      <p className="px-1 text-[12.5px] text-faint">{u.noLimits}</p>
+      <p className="px-1 text-[12.5px] text-faint">
+        {notice?.level ? u.limit(notice.level) : !notice && u.noLimits}
+        {notice?.endsAt && ` ${u.endsOn(day(notice.endsAt))}`}
+      </p>
     </SettingsPage>
   );
 }

@@ -26,6 +26,7 @@ import type { FinanceSourceRow, Json } from "@/infrastructure/supabase/database.
 
 import type { AuthContext } from "./auth-context";
 import { workspaceContext } from "./background";
+import { withBackgroundSpend } from "./budget-service";
 import { googleHttpFor } from "./elise";
 import { detectHeaderRow } from "./finance-import";
 
@@ -164,7 +165,10 @@ export async function inspectTab(
       return null;
     }
   })();
-  const suggestion = await suggestMappingWithAI(ai, headers, body.slice(0, 5));
+  const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "finance_mapping" };
+  const suggestion = await withBackgroundSpend(scope, () =>
+    suggestMappingWithAI(ai, headers, body.slice(0, 5)),
+  );
   const formats = detectFormats(rows, suggestion.columns, headerRow);
   return {
     spreadsheetId: info.id,

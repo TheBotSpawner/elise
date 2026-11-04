@@ -20,6 +20,7 @@ import { createAdminClient } from "@/infrastructure/supabase/admin";
 import { SupabaseRecallReader } from "@/infrastructure/supabase/repositories/recall";
 
 import type { AuthContext } from "./auth-context";
+import { job, withBackgroundSpend } from "./budget-service";
 import { learnFromConversation, learnFromSession } from "./memory-learning";
 
 /**
@@ -301,7 +302,9 @@ export async function sweepRecall(opts: { workspaceId?: string | null; limit: nu
   let failed = 0;
   for (const c of due.slice(0, opts.limit)) {
     try {
-      await indexConversation(c.workspace_id, c.id);
+      await withBackgroundSpend(job(c.workspace_id, "recall_index"), () =>
+        indexConversation(c.workspace_id, c.id),
+      );
       processed++;
     } catch (error) {
       failed++;

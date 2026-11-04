@@ -3212,6 +3212,11 @@ export const es: Dictionary = {
       runs: (n: number) => `${n} ${n === 1 ? "ejecución" : "ejecuciones"}`,
       storage: "Storage",
       noLimits: "No hay límites de uso en esta versión.",
+      limit: (level: number) =>
+        level >= 100
+          ? "Llegaste al límite de uso por ahora."
+          : `Usaste más del ${level} % de tu uso disponible.`,
+      endsOn: (date: string) => `Tu prueba termina el ${date}.`,
     },
     billing: {
       body: "ELISE todavía no requiere un plan de pago en esta versión.",
@@ -3331,6 +3336,7 @@ export const es: Dictionary = {
       TIMEOUT: "Tardó demasiado. Probá de nuevo.",
       AI_PROVIDER_ERROR: "La IA de ELISE no responde en este momento. Probá en un rato.",
       AI_NOT_CONFIGURED: "La IA de ELISE todavía no está configurada.",
+      BUDGET_EXCEEDED: "Llegaste al límite de uso por ahora. Tus datos siguen acá, intactos.",
       SERVER_NOT_CONFIGURED: "ELISE todavía no está configurada del todo en el servidor para esto.",
       BACKGROUND_ERROR: "Falló un proceso en segundo plano.",
       UNKNOWN_OUTCOME: "No sabemos si se completó. Revisá antes de reintentar.",

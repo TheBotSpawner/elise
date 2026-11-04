@@ -49,6 +49,12 @@ const GATE_HANGOVER_FRAMES = 10; // ~1.3 s
 const LEVEL_EVERY_FRAMES = 16; // ~2 s
 /** A device change settles for this long before listening restarts. */
 const DEVICE_SETTLE_MS = 1500;
+/**
+ * ADR-137: a microphone that delivers nothing is dead, whatever its track says. Chromium only ends
+ * the track after 15 s of it, and meanwhile ELISE claimed to listen. In seconds, checked once a
+ * second: counting ticks, a computer waking from sleep isn't mistaken for a dead microphone.
+ */
+const NO_AUDIO_TICKS = 5;
 
 let model: VoskWorker | null = null;
 
@@ -128,6 +134,10 @@ export class VoskWakeDetector implements WakeDetector {
   private resumeWith: { m: VoskWorker; opts: StartOptions } | null = null;
   /** The decision for the capture in progress (the coordinator asks for it). */
   lastDecision: Extract<WakeDecision, { accept: true }> | null = null;
+  private noAudioTicks = 0;
+  private noAudioWatch: ReturnType<typeof setInterval> | null = null;
+  /** ADR-137: microphones opened in a row that delivered nothing (0 once audio flows). */
+  stalls = 0;
 
   async start(opts: StartOptions) {
     if (this.state === "held" && this.resumeWith) return this.resume();
@@ -196,6 +206,14 @@ export class VoskWakeDetector implements WakeDetector {
       set("no_microphone");
     });
     this.watchDevices(opts);
+    this.noAudioTicks = 0;
+    this.noAudioWatch = setInterval(() => {
+      if (++this.noAudioTicks < NO_AUDIO_TICKS) return;
+      logSound("wake:device", "no audio");
+      this.stalls++;
+      this.release();
+      set("no_microphone");
+    }, 1000);
     logSound(
       "wake:device",
       `start device=${await redact(settings.deviceId)} rate=${settings.sampleRate ?? "?"} ` +
@@ -229,6 +247,8 @@ export class VoskWakeDetector implements WakeDetector {
 
   /** Native-rate samples in; 128 ms frames at 16 kHz out to the detector. */
   private input(native: Float32Array, opts: StartOptions) {
+    this.noAudioTicks = 0;
+    this.stalls = 0;
     const x = this.resampler!.push(native);
     const all = new Float32Array(this.pending.length + x.length);
     all.set(this.pending);
@@ -315,8 +335,9 @@ export class VoskWakeDetector implements WakeDetector {
     // The music is lowered as the word is heard: what follows is measured against that room.
     if (opts.listenThrough?.()) this.end.scaleFloor(DUCK_FACTOR.normal);
     this.state = "capturing";
-    opts.onState("capturing");
+    // ADR-137: first what the Orb will show, then the report that brings it up.
     opts.onDetected(d);
+    opts.onState("capturing");
   }
 
   /** The coordinator's verdict on the last capture (from its transcription). */
@@ -343,8 +364,9 @@ export class VoskWakeDetector implements WakeDetector {
       this.pre = [];
       this.ring = [];
       this.state = "listening";
-      opts.onState("listening");
       opts.onCaptured(capture);
+      // The hand-off holds the detector: a "listening" in between would drop the Orb mid-sentence.
+      if (this.state === "listening") opts.onState("listening");
       return;
     }
     // Listening: the ring keeps the last moments, in memory only; the recognizer hears speech.
@@ -394,6 +416,8 @@ export class VoskWakeDetector implements WakeDetector {
   }
 
   private release() {
+    if (this.noAudioWatch) clearInterval(this.noAudioWatch);
+    this.noAudioWatch = null;
     void this.reader?.cancel().catch(() => undefined);
     this.reader = null;
     this.stream?.getTracks().forEach((t) => t.stop());

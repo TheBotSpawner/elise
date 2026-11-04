@@ -13,7 +13,7 @@
  */
 
 export const BOOT = {
-  /** Core → sphere → arcs → the S → idle. */
+  /** Pupil → sphere → eyelids → idle. */
   durationMs: 2600,
   /** prefers-reduced-motion: a short fade/resolve instead of the assembly. */
   reducedMs: 350,
@@ -53,7 +53,7 @@ export interface BootFrame {
 
 /**
  * Where the sequence is `elapsed` ms in; null once it's over (the Orb is simply idle). The renderer
- * draws it: the core, then the sphere, the arcs and last the S.
+ * draws it: the pupil, then the sphere and last the eyelids.
  */
 export function bootFrame(elapsed: number, reduced: boolean): BootFrame | null {
   return elapsed >= (reduced ? BOOT.reducedMs : BOOT.durationMs) ? null : { t: elapsed };

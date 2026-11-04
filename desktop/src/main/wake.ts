@@ -1,4 +1,4 @@
-import { BrowserWindow, powerMonitor } from "electron";
+import { app, BrowserWindow, powerMonitor } from "electron";
 import { EventEmitter } from "node:events";
 
 import type { WakeControl, WakeReport } from "@/core/platform/platform";
@@ -55,6 +55,28 @@ export function reportWake(next: WakeReport) {
   status = next;
   log("desktop_wake_status", { status });
   wake.emit("change");
+}
+
+/** At most this often: a microphone that's really gone must not keep restarting the service. */
+const AUDIO_RESET_EVERY_MS = 60_000;
+let audioResetAt = 0;
+
+/**
+ * ADR-137: a microphone that opens and delivers nothing stayed that way until ELISE restarted.
+ * Chromium brings its audio service back by itself the next time it's needed; ELISE's sounds call
+ * resume() before playing, which is what they need afterward.
+ */
+export function resetAudioService() {
+  if (Date.now() - audioResetAt < AUDIO_RESET_EVERY_MS) return;
+  const service = app.getAppMetrics().find((m) => m.serviceName === "audio.mojom.AudioService");
+  if (!service) return;
+  audioResetAt = Date.now();
+  log("desktop_audio_reset");
+  try {
+    process.kill(service.pid);
+  } catch {
+    // Already gone: what was wanted.
+  }
 }
 
 /** Locked screen or sleep: the microphone is released; it comes back on unlock / resume. */

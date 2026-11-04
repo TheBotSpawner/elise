@@ -3178,6 +3178,11 @@ export const en = {
       runs: (n: number) => `${n} ${n === 1 ? "run" : "runs"}`,
       storage: "Storage",
       noLimits: "There are no usage limits in this version.",
+      limit: (level: number) =>
+        level >= 100
+          ? "You've reached your usage limit for now."
+          : `You've used more than ${level}% of your allowance.`,
+      endsOn: (date: string) => `Your trial ends on ${date}.`,
     },
     billing: {
       body: "ELISE doesn't require a paid plan in this version.",
@@ -3296,6 +3301,7 @@ export const en = {
       TIMEOUT: "That took too long. Try again.",
       AI_PROVIDER_ERROR: "ELISE's AI isn't responding right now. Try again shortly.",
       AI_NOT_CONFIGURED: "ELISE's AI isn't configured yet.",
+      BUDGET_EXCEEDED: "You've reached your usage limit for now. Your data is safe and untouched.",
       SERVER_NOT_CONFIGURED: "ELISE isn't fully set up on the server for this yet.",
       BACKGROUND_ERROR: "A background process failed.",
       UNKNOWN_OUTCOME: "We're not sure it went through. Check before retrying.",

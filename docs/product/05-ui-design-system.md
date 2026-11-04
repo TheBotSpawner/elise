@@ -181,20 +181,20 @@ Debe desarrollar una identidad propia.
 
 **Decidido: "Open Core"** ([ADR-136](../decisions/ADR-136-open-core-orb-and-logo.md)). Colores, tiempos y reglas: `NOTA.md` en `design-reference/ELISE-OpenCore.zip`.
 
-- Una esfera de vidrio finísima.
-- Dos arcos opuestos que la abrazan sin cerrarla.
-- Un flujo en S que la cruza: el diálogo.
-- Un núcleo pequeño: la presencia.
+- Una esfera de vidrio finísima que funciona como un ojo.
+- Las dos medias lunas del logo son los párpados: la abrazan sin cerrarla.
+- El núcleo es la pupila, la presencia: mira, se dilata con la voz y se contrae cuando algo pide atención.
+- No parpadea sola ni mira fijo: un ojo que te mira todo el tiempo incomoda.
 
 El movimiento dice el estado; el color solo lo confirma. En modo claro el contraste lo da el trazo, nunca el brillo.
 
 Una interacción deseada:
 
-> Cuando el usuario mueve el mouse cerca o sobre el Orb, se inclina levemente hacia el cursor.
+> Cuando el usuario mueve el mouse cerca o sobre el Orb, la pupila lo sigue apenas.
 
 Durante voz:
 
-> El núcleo, la S y los arcos responden a la intensidad de la conversación.
+> La pupila, la luz del vidrio y los párpados responden a la intensidad de la conversación.
 
 El Orb debe sentirse vivo sin convertirse en una distracción permanente.
 

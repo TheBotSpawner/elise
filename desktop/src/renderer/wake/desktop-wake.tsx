@@ -11,6 +11,7 @@ import {
   DeviceWakeContext,
   deviceMayInterrupt,
   deviceMayListen,
+  onVoiceEnd,
   onVoicePhase,
   publishDeviceCapture,
   requestDeviceWake,
@@ -32,6 +33,9 @@ import { VoskWakeDetector, wav } from "./vosk-detector";
 const MODEL = WAKE_MODELS[0]!;
 /** A microphone that failed (unplugged, denied) is tried again after a while, not in a loop. */
 const RETRY_MS = 30_000;
+/** ADR-137: a microphone that opened and delivered nothing: these many quick tries, then RETRY_MS. */
+const STALL_RETRIES = 3;
+const STALL_RETRY_MS = 2_000;
 /** After a hand-off, the session takes the microphone; if it doesn't, listen again. */
 const HANDOFF_MS = 6_000;
 /** ADR-109: ELISE said her own name this recently — "ELISE" heard now is her voice, not a call. */
@@ -119,7 +123,7 @@ export function useWakeReport(): WakeReport {
   );
 }
 
-function reportFor(
+export function reportFor(
   control: WakeControl,
   phase: VoicePhase,
   detector: DetectorState,
@@ -127,9 +131,10 @@ function reportFor(
 ): WakeReport {
   if (!control.enabled) return "off";
   if (control.paused || control.suspended) return "paused";
-  // From the word on (its words still being transcribed) it is a conversation.
-  if (handingOff || !deviceMayListen(phase)) return "in_conversation";
-  if (detector === "listening" || detector === "capturing") return "listening";
+  // ADR-137: from the word on (the person still talking, then the transcription) it is a
+  // conversation, so the corner Orb is up while they speak.
+  if (handingOff || detector === "capturing" || !deviceMayListen(phase)) return "in_conversation";
+  if (detector === "listening") return "listening";
   if (detector === "no_microphone" || detector === "mic_denied" || detector === "model_failed")
     return detector;
   return "starting";
@@ -193,6 +198,8 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     };
 
     const update = () => report(reportFor(controlRef.current, phase, detector.state, handingOff));
+    const showOrb = (state: "listening" | "thinking") =>
+      void window.eliseDesktop?.reportVoiceOrb?.(state).catch(() => undefined);
     const failed = () =>
       detector.state === "no_microphone" ||
       detector.state === "mic_denied" ||
@@ -222,9 +229,18 @@ export function DesktopWake({ children }: { children: ReactNode }) {
           overReply: () => deviceMayInterrupt(phase),
           onState: (s) => {
             if (s === "no_microphone" || s === "mic_denied" || s === "model_failed") {
-              retryAt = Date.now() + RETRY_MS;
+              // The microphone went mid-capture: a reply paused for it goes on.
+              resumeReply();
+              publishDeviceCapture(null);
+              // ADR-137: opened but silent, the audio service may be stuck. It serves ELISE's own
+              // sounds too: never while they're in use.
+              const stalled = detector.stalls > 0;
+              if (stalled && deviceMayListen(phase) && !musicStore.get().payload?.playing)
+                void window.eliseDesktop?.resetAudio?.().catch(() => undefined);
+              const wait = stalled && detector.stalls <= STALL_RETRIES ? STALL_RETRY_MS : RETRY_MS;
+              retryAt = Date.now() + wait;
               if (retryTimer) clearTimeout(retryTimer);
-              retryTimer = setTimeout(sync, RETRY_MS + 100);
+              retryTimer = setTimeout(sync, wait + 100);
             }
             update();
           },
@@ -244,8 +260,10 @@ export function DesktopWake({ children }: { children: ReactNode }) {
             // with music) stays silent until the transcription confirms it was a call.
             chimed = !decision.guarded;
             if (chimed && controlRef.current.chime) tone("wake");
-            // The page's Orb listens with the person from the word on (ADR-104).
+            // The page's Orb listens with the person from the word on (ADR-104), and so does the
+            // corner one (ADR-137): a guarded word too, it's silent but never invisible.
             publishDeviceCapture("listening");
+            showOrb("listening");
           },
           onCaptured: (capture) => void handOff(capture),
         });
@@ -275,6 +293,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       // The session takes the conversation: stop listening for the word (the mic stays open).
       handingOff = true;
       publishDeviceCapture("thinking");
+      showOrb("thinking");
       detector.hold();
       report("in_conversation");
       if (!navigator.onLine) {
@@ -376,11 +395,19 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       }
       sync();
     });
+    // ADR-137: the corner Orb tapped while the person still talks: nothing of it goes anywhere.
+    const offEnd = onVoiceEnd(() => {
+      if (detector.state !== "capturing") return;
+      ignoring = false;
+      detector.hold();
+      finishHandOff();
+    });
     syncRef.current = sync;
     const tick = setInterval(sync, 1000);
     sync();
     return () => {
       disposed = true;
+      offEnd();
       offPhase();
       clearInterval(tick);
       if (retryTimer) clearTimeout(retryTimer);

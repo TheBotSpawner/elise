@@ -13,9 +13,10 @@ import { LEARNING_BATCH, learnFromInteraction, type LearningPorts } from "@/core
 import { getAIProvider } from "@/infrastructure/ai";
 import { resolveProfiles } from "@/infrastructure/ai/profiles";
 import { logger } from "@/infrastructure/observability/logger";
-import { tokenCost, withUsageScope } from "@/infrastructure/observability/usage";
+import { tokenCost } from "@/infrastructure/observability/usage";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 
+import { withBackgroundSpend } from "./budget-service";
 import { learningState, memoryRepo } from "./memory-service";
 
 /**
@@ -206,8 +207,9 @@ export async function learnFromSession(
     log: (event, fields) => logger.info(event, fields),
   };
 
-  const outcome = await withUsageScope({ workspaceId, userId, feature: "memory_learning" }, () =>
-    learnFromInteraction(ports, opts),
+  const outcome = await withBackgroundSpend(
+    { workspaceId, userId, feature: "memory_learning", source: "job" },
+    () => learnFromInteraction(ports, opts),
   );
   // Metadata only: counts and reasons, never what was said or learned.
   if (outcome.status !== "off" && outcome.status !== "waiting")
@@ -326,8 +328,8 @@ export async function consolidateUser(workspaceId: string, userId: string) {
     },
     log: (event, fields) => logger.info(event, fields),
   };
-  const result = await withUsageScope(
-    { workspaceId, userId, feature: "memory_consolidation" },
+  const result = await withBackgroundSpend(
+    { workspaceId, userId, feature: "memory_consolidation", source: "job" },
     () => consolidateMemory(ports),
   );
   logger.info("memory.consolidated", { workspace_id: workspaceId, ...result });

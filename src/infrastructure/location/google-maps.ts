@@ -22,6 +22,7 @@ import {
   vehicleOf,
   type Waypoint,
 } from "@/core/location/model";
+import { assertSpendCleared } from "@/infrastructure/observability/usage";
 
 /**
  * Google Maps Platform adapter (ADR-023), verified against the current APIs (2026-10):
@@ -421,6 +422,7 @@ export class GoogleMapsLocation implements LocationProvider {
     signal?: AbortSignal,
     units = 1,
   ): Promise<T> {
+    assertSpendCleared("maps");
     const response = await this.http(url, {
       method: init.method ?? "GET",
       headers: {
@@ -656,6 +658,7 @@ export class GoogleMapsLocation implements LocationProvider {
     language: string,
     signal?: AbortSignal,
   ): Promise<Place[]> {
+    assertSpendCleared("maps");
     // The Geocoding web service takes the key as a parameter (server-side only).
     const url = `${GEOCODE}?${params}&language=${language}&key=${encodeURIComponent(this.key)}`;
     const response = await this.http(url, { signal });

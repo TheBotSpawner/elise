@@ -19,6 +19,7 @@ import { rateLimit } from "@/infrastructure/rate-limit";
 import { createAdminClient } from "@/infrastructure/supabase/admin";
 
 import type { AuthContext } from "./auth-context";
+import { clearSpend } from "./budget-service";
 import type { ChatStreamEvent } from "./chat-protocol";
 import { prepareTurn, type TurnEventSink } from "./chat-service";
 import { openThread } from "./interaction-thread";
@@ -51,6 +52,11 @@ export async function createLiveSession(auth: AuthContext, sdp: string) {
       recovery: "configure",
     });
   rateLimit(`voice.live:${auth.userId}`, 12, 60_000, "Too many voice sessions. Wait a moment.");
+  // ADR-138: a session is billed by the minute straight from the browser, unmetered here, so only
+  // its start can be gated: the hold goes back at once.
+  (
+    await clearSpend({ workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice_turn" })
+  ).release();
   const env = serverEnv();
   const started = Date.now();
   const session = await createLiveWebRtcSession({

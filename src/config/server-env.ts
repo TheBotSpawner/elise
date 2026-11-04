@@ -186,6 +186,10 @@ const serverEnvSchema = z.object({
   ELISE_ADMIN_EMAILS: z.string().optional(),
   /** Feature flag overrides (config/flags.ts). */
   ELISE_FLAGS: z.string().optional(),
+  /** ADR-138: observe (default), shadow, enforced, or enforced:ws=<id>;<id>. */
+  ELISE_BUDGET_MODE: z.string().optional(),
+  /** ADR-138: when the gate itself fails while enforcing: deny (default) or degraded. */
+  ELISE_BUDGET_ON_ERROR: z.enum(["deny", "degraded"]).optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

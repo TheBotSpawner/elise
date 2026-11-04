@@ -28,8 +28,26 @@ The owner chose a new identity, made in Claude Design from their references. The
 
 ## Consequences
 
-- The Orb takes 68 % of its canvas, leaving room for the arcs opening and the attention pulse.
+- The Orb takes 72 % of its canvas, leaving room for the eyelids opening and the attention pulse.
 - The tray follows the app's dark/light setting, which on Windows can differ from the taskbar's.
 - The installer's entry in Windows' app list keeps Electron's icon: it needs a public `iconUrl`.
-- No `.icns` yet: a macOS build keeps the default app icon.
 - The widget for the background conversation always draws the dark version, as before.
+
+## Addendum (2026-11-04): icons without a background
+
+The owner didn't want a dark tile around the icons, and Claude Design made a transparent set
+(`design-reference/ELISE-iconos-sin-fondo/transparent`):
+
+- **Favicon:** `favicon.ico`, and `src/app/icon.svg`, which follows the browser's light or dark mode, so it reads on any tab.
+- **Desktop's window, `.exe` and installer:** `app-icon` (`.ico`, `.png`), a mid tone made for both dark and light bars. The set's `.icns` is in `desktop/assets` too, for a macOS build.
+- **iPhone icon:** keeps its tile, because iOS fills transparency with black.
+
+## Addendum (2026-11-04): the Orb becomes an eye
+
+The owner updated the design ("Open Core · Ojo"): the sphere works as an eye. The logo's crescents are
+its eyelids and the core is its pupil, which looks, dilates with the voice and narrows for attention.
+The arcs, the S, the sweep and the satellite are gone. The logo and the tray icons didn't change.
+
+`orb-renderer.ts` matches the design's `elise-orb.js` pixel for pixel (compared in Chromium: every state,
+both themes, three sizes, with boot, reduced motion and pointer). The one omission is its blink code,
+off in every state of the design: its note says the eye doesn't blink.

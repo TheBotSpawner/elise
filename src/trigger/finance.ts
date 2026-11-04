@@ -1,9 +1,9 @@
 import { AbortTaskRunError, schedules, task } from "@trigger.dev/sdk";
 import { z } from "zod";
 
+import { job, withBackgroundSpend } from "@/application/budget-service";
 import { runFinanceImport } from "@/application/finance-import";
 import { dispatchFinanceSyncs, runFinanceSync } from "@/application/finance-sources";
-import { withUsageScope } from "@/infrastructure/observability/usage";
 
 /**
  * Thin Trigger.dev entry points for Finance (docs/architecture/14). Payloads carry ids only;
@@ -21,8 +21,8 @@ export const financeImportTask = task({
   run: async (payload: z.infer<typeof importPayload>) => {
     const parsed = importPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid import payload");
-    const scope = { workspaceId: parsed.data.workspaceId, feature: "finance_import" };
-    return withUsageScope(scope, async () => ({
+    const scope = job(parsed.data.workspaceId, "finance_import");
+    return withBackgroundSpend(scope, async () => ({
       imported: await runFinanceImport(parsed.data.workspaceId, parsed.data.importId),
     }));
   },
@@ -38,7 +38,10 @@ export const financeSyncTask = task({
   run: async (payload: z.infer<typeof syncPayload>) => {
     const parsed = syncPayload.safeParse(payload);
     if (!parsed.success) throw new AbortTaskRunError("Invalid sync payload");
-    return { counts: await runFinanceSync(parsed.data.workspaceId, parsed.data.sourceId) };
+    const { workspaceId, sourceId } = parsed.data;
+    return withBackgroundSpend(job(workspaceId, "finance_sync"), async () => ({
+      counts: await runFinanceSync(workspaceId, sourceId),
+    }));
   },
 });
 

@@ -4,7 +4,7 @@ import OpenAI from "openai";
 
 import { AppError } from "@/core/errors";
 import type { EmbeddingProvider } from "@/core/knowledge/model";
-import { recordUsage } from "@/infrastructure/observability/usage";
+import { assertSpendCleared, recordUsage } from "@/infrastructure/observability/usage";
 
 /** The index stores 1536-dimensional vectors (knowledge_chunks.embedding). */
 export const EMBEDDING_DIMENSIONS = 1536;
@@ -31,6 +31,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       const batch = texts.slice(i, i + BATCH).map((t) => t.slice(0, 24_000) || " ");
       const started = Date.now();
       try {
+        assertSpendCleared("embedding");
         const res = await this.client.embeddings.create({
           model: this.model,
           input: batch,

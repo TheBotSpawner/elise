@@ -12,7 +12,7 @@ import {
   type TranscriptionRequest,
   type VoiceLanguage,
 } from "@/core/voice/providers";
-import { recordUsage } from "@/infrastructure/observability/usage";
+import { assertSpendCleared, recordUsage } from "@/infrastructure/observability/usage";
 
 /**
  * OpenAI speech (verified against the current API, 2026-09):
@@ -62,6 +62,7 @@ export class OpenAISpeechInput implements SpeechInputProvider {
     request: TranscriptionRequest,
     signal?: AbortSignal,
   ): AsyncIterable<TranscriptionEvent> {
+    assertSpendCleared("transcription");
     const form = new FormData();
     const type = request.mimeType.split(";")[0]!;
     form.append(
@@ -161,6 +162,7 @@ export class OpenAISpeechOutput implements SpeechOutputProvider {
     request: SynthesisRequest,
     signal?: AbortSignal,
   ): Promise<ReadableStream<Uint8Array>> {
+    assertSpendCleared("speech");
     const started = Date.now();
     const res = await fetch(`${API}/audio/speech`, {
       method: "POST",

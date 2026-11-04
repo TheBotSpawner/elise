@@ -27,6 +27,7 @@ import type { Json, StructuredSourceRow } from "@/infrastructure/supabase/databa
 
 import type { AuthContext } from "./auth-context";
 import { ownerContext, workspaceContext } from "./background";
+import { withBackgroundSpend } from "./budget-service";
 import { notionStructuredApiFor } from "./elise";
 import { startStructuredBulk, type BulkInput } from "./structured-bulk";
 import { markResourceSurfaces } from "./workspace-service";
@@ -113,7 +114,10 @@ export async function inspectDatabase(
       return null;
     }
   })();
-  const { fields, fromAI } = await suggestMappingWithAI(ai, properties);
+  const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "structured_map" };
+  const { fields, fromAI } = await withBackgroundSpend(scope, () =>
+    suggestMappingWithAI(ai, properties),
+  );
   const rows = await api.query(dataSourceId, { page_size: 5 });
   logger.info("structured.inspected", {
     connection_id: connectionId,

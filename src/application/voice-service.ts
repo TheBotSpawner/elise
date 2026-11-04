@@ -22,6 +22,7 @@ import { rateLimit } from "@/infrastructure/rate-limit";
 import { timezoneCountry } from "@/lib/timezones";
 
 import type { AuthContext } from "./auth-context";
+import { clearSpend } from "./budget-service";
 
 /**
  * Voice I/O (ADR-014). Audio is handled in memory for the length of one request and never
@@ -101,7 +102,11 @@ export async function transcribeUtterance(
   const started = Date.now();
   const encoder = new TextEncoder();
 
-  const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
+  const { scope } = await clearSpend({
+    workspaceId: auth.workspaceId,
+    userId: auth.userId,
+    feature: "voice",
+  });
   return withUsageScope(
     scope,
     () =>
@@ -194,7 +199,11 @@ export async function synthesizeSentence(
       sampleRate: provider.format.sampleRate,
       source: `${provider.id}:${provider.model}:cache`,
     };
-  const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
+  const { scope } = await clearSpend({
+    workspaceId: auth.workspaceId,
+    userId: auth.userId,
+    feature: "voice",
+  });
   const stream = await withUsageScope(scope, () =>
     provider.synthesize(
       {
@@ -241,7 +250,11 @@ export async function warmAcknowledgements(
   for (const line of acknowledgements(language).map((l) => formatForSpeech(l, language))) {
     const key = ackKey(provider, auth.profile.voice.voice, language, line, delivery);
     if (ackAudio.has(key)) continue;
-    const scope = { workspaceId: auth.workspaceId, userId: auth.userId, feature: "voice" };
+    const { scope } = await clearSpend({
+      workspaceId: auth.workspaceId,
+      userId: auth.userId,
+      feature: "voice",
+    });
     const stream = await withUsageScope(scope, () =>
       provider.synthesize(
         {

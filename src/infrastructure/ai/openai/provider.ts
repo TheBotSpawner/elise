@@ -12,7 +12,7 @@ import type {
 import { CitationMarkerFilter } from "@/core/agents/citation-markers";
 import { AppError } from "@/core/errors";
 import { logger } from "@/infrastructure/observability/logger";
-import { recordUsage } from "@/infrastructure/observability/usage";
+import { assertSpendCleared, recordUsage } from "@/infrastructure/observability/usage";
 
 import { effortFor, type AIProfile } from "../profiles";
 
@@ -84,15 +84,9 @@ export class OpenAIProvider implements AIProvider {
               controller.abort();
             }, budget)
           : undefined;
-      const stall = () => {
-        recordUsage({
-          operation: "llm",
-          provider: this.id,
-          model: this.options.profiles[request.tier].model,
-          status: "failed",
-        });
+      // What the abandoned attempt cost is recorded by attempt() itself.
+      const stall = () =>
         logger.warn("ai.stall_retry", { tier: request.tier, withImages, budgetMs: budget });
-      };
       try {
         yield* this.attempt(request, controller.signal, () => {
           produced = true;
@@ -123,10 +117,12 @@ export class OpenAIProvider implements AIProvider {
     signal: AbortSignal,
     onOutput: () => void,
   ): AsyncIterable<AIStreamEvent> {
+    assertSpendCleared("llm");
     const profile = this.options.profiles[request.tier];
     const model = profile.model;
     const effort = effortFor(model, request.reasoning ?? profile.reasoning);
     const started = Date.now();
+    let streamedChars = 0;
     let stream;
     try {
       stream = await this.client.responses.create(
@@ -180,6 +176,7 @@ export class OpenAIProvider implements AIProvider {
             onOutput();
             break;
           case "response.output_text.delta": {
+            streamedChars += event.delta.length;
             const delta = markers.push(event.delta);
             if (delta) yield { type: "text_delta", delta };
             break;
@@ -200,6 +197,7 @@ export class OpenAIProvider implements AIProvider {
             if (rest) yield { type: "text_delta", delta: rest };
             const usage = event.response.usage;
             const cachedTokens = usage?.input_tokens_details?.cached_tokens ?? 0;
+            const cacheWriteTokens = usage?.input_tokens_details?.cache_write_tokens ?? 0;
             const reasoningTokens = usage?.output_tokens_details?.reasoning_tokens ?? 0;
             recordUsage({
               operation: "llm",
@@ -208,8 +206,10 @@ export class OpenAIProvider implements AIProvider {
               inputTokens: usage?.input_tokens ?? null,
               outputTokens: usage?.output_tokens ?? null,
               cachedTokens,
+              cacheWriteTokens,
               reasoningTokens,
               latencyMs: Date.now() - started,
+              providerRequestId: event.response.id,
             });
             yield {
               type: "completed",
@@ -237,6 +237,21 @@ export class OpenAIProvider implements AIProvider {
       }
     } catch (error) {
       throw normalizeError(error);
+    } finally {
+      // Cut before the provider reported usage (a closed tab, a stall, a dropped stream): the
+      // request was sent, so it may be billed. Its size is our estimate, ~4 characters a token.
+      if (!completed)
+        recordUsage({
+          operation: "llm",
+          provider: this.id,
+          model,
+          inputTokens: Math.ceil(
+            (request.instructions.length + JSON.stringify(request.input).length) / 4,
+          ),
+          outputTokens: Math.ceil(streamedChars / 4),
+          latencyMs: Date.now() - started,
+          status: "cancelled",
+        });
     }
     // Aborted (cancelled by the caller, or the stall guard, which retries): nothing to report.
     // Otherwise a stream that stopped before completing must not read as an empty answer.

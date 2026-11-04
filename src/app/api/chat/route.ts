@@ -56,6 +56,7 @@ const STATUS: Partial<Record<AppError["code"], number>> = {
   VALIDATION_ERROR: 400,
   NOT_FOUND: 404,
   RATE_LIMITED: 429,
+  BUDGET_EXCEEDED: 429,
   AI_NOT_CONFIGURED: 503,
 };
 
