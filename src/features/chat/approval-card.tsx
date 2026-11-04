@@ -161,7 +161,7 @@ export function ApprovalCard({
             >
               {t.approvals.notNow}
             </button>
-            <span className="ml-auto hidden font-mono text-[11px] text-faint md:inline">
+            <span className="ml-auto hidden font-mono text-[11px] text-faint @lg:inline">
               {t.approvals.shortcut}
             </span>
           </div>

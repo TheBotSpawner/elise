@@ -171,7 +171,13 @@ function Kpi({
       : spec.goodWhen === "up"
         ? delta > 0
         : delta < 0;
-  const big = size === "small" ? "text-[30px]" : size === "medium" ? "text-[40px]" : "text-[56px]";
+  // Sized by the card: a long figure stays whole in a narrow one.
+  const big =
+    size === "small"
+      ? "text-[clamp(20px,13cqi,30px)]"
+      : size === "medium"
+        ? "text-[clamp(22px,13cqi,40px)]"
+        : "text-[56px]";
   return (
     <div className="flex flex-col gap-1.5">
       <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">

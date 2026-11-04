@@ -254,11 +254,18 @@ function Hours({ p, limit, chart }: { p: WeatherPayload; limit: number; chart: b
   if (!hours.length) return null;
   return (
     <>
-      <ol className="flex gap-1 overflow-x-auto pb-1" aria-label={t.weather.hours}>
+      {/* As many hours as fit, never a scrollbar: a card keeps one row, the full view wraps. */}
+      <ol
+        className={cn(
+          "grid grid-cols-[repeat(auto-fit,minmax(46px,1fr))] gap-x-1 pb-1",
+          !chart && "auto-rows-[0] grid-rows-[auto] overflow-hidden",
+        )}
+        aria-label={t.weather.hours}
+      >
         {hours.map((h) => (
           <li
             key={h.time}
-            className="flex min-w-[46px] flex-col items-center gap-1 py-1 text-center"
+            className="flex flex-col items-center gap-1 py-1 text-center"
             aria-label={`${h.time.slice(11)}: ${t.weather.conditions[h.condition]}, ${deg(h.temperature)}${h.precipitationProbability != null ? `, ${t.weather.rain} ${h.precipitationProbability}%` : ""}`}
           >
             <span className="font-mono text-[11px] text-faint">{h.time.slice(11)}</span>

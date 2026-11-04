@@ -139,7 +139,7 @@ function Carousel({
         )}
       </div>
       {n > 1 && (
-        <ul className="flex gap-1.5 overflow-x-auto pb-0.5">
+        <ul className="flex flex-wrap gap-1.5 pb-0.5">
           {group.images.map((im, k) => (
             <li key={im.id} className="shrink-0">
               <button

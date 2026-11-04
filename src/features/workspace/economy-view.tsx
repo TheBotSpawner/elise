@@ -105,7 +105,7 @@ export function EconomyBody({ p, timezone }: { p: Economy; timezone: string }) {
       )}
       {p.series && p.series.length > 1 && <Spark series={p.series} label={e.chart} />}
       {p.rows.length > 0 && (
-        <table className="w-full text-[13.5px]">
+        <table className="w-full text-[13.5px] @max-xs:text-[12px]">
           {quotes && (
             <thead>
               <tr className="text-[11.5px] text-faint">
@@ -127,7 +127,7 @@ export function EconomyBody({ p, timezone }: { p: Economy; timezone: string }) {
           <tbody className="divide-y divide-border">
             {p.rows.map((r, i) => (
               <tr key={`${r.label}:${r.date ?? i}`} className="align-baseline">
-                <td className="py-1.5 pr-3">
+                <td className="py-1.5 pr-3 [overflow-wrap:anywhere] @max-xs:pr-2">
                   <span className="block">{r.label}</span>
                   {r.date && (
                     <span className="block text-[11.5px] text-faint">{f.when(r.date)}</span>

@@ -495,7 +495,7 @@ function EmailListBody({
           <span className="shrink-0 text-fg2">
             {MAIL_PROVIDER[p.mailbox.providerKey] ?? p.mailbox.providerKey}
           </span>
-          {p.mailbox.address && <span className="truncate">· {p.mailbox.address}</span>}
+          {p.mailbox.address && <span className="truncate text-faint">· {p.mailbox.address}</span>}
           <span className="ml-auto shrink-0 font-mono text-[11px]">
             {t.workspace.email.relevant(p.items.length)}
           </span>
@@ -753,7 +753,7 @@ function KnowledgeResultBody({ p }: { p: SurfacePayloads["knowledge_result"] }) 
                   <span className="truncate text-[12px] text-muted">{sourceLine(s)}</span>
                 </span>
                 {s.passages.length > 0 && (
-                  <span className="hidden shrink-0 rounded-full bg-accent-soft px-2.5 py-0.5 text-[12px] text-accent-text sm:inline">
+                  <span className="hidden shrink-0 rounded-full bg-accent-soft px-2.5 py-0.5 text-[12px] text-accent-text @sm:inline">
                     {k.cited(s.passages.length)}
                   </span>
                 )}
@@ -2425,7 +2425,7 @@ function StudyQuestionBody({
         >
           <ChevronLeft className="size-5" aria-hidden />
         </button>
-        <ol className="flex min-w-0 flex-1 justify-center-safe gap-2 overflow-x-auto px-1 py-1">
+        <ol className="flex min-w-0 flex-1 flex-wrap justify-center gap-2 px-1 py-1">
           {history.map((h) => {
             const mark = markOf(h);
             const here = h.number === entry.number;

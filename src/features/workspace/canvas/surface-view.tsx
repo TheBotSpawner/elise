@@ -185,7 +185,7 @@ export const SurfaceView = memo(function SurfaceView({
         if (!focused && !fromControl(e)) handlers.onFocus(surface);
       }}
       className={cn(
-        "sf group relative flex min-w-0 flex-col gap-3 overflow-hidden",
+        "sf group @container relative flex min-w-0 flex-col gap-3 overflow-hidden",
         focused && size === "focus" && "min-h-[min(640px,calc(100dvh-300px))]",
         size === "small" ? "rounded-[14px]" : "rounded-[18px]",
         !focused && "cursor-pointer",
@@ -217,6 +217,13 @@ export const SurfaceView = memo(function SurfaceView({
         {(isNew || surface.pinned || (surface.state !== "ready" && !attention)) &&
           size !== "small" && (
             <span
+              title={
+                surface.pinned
+                  ? t.canvas.pinned
+                  : isNew
+                    ? t.canvas.new
+                    : t.workspace.states[surface.state]
+              }
               className={cn(
                 "flex shrink-0 items-center gap-1.5 type-eyebrow text-[10px]",
                 surface.state === "error"
@@ -228,11 +235,14 @@ export const SurfaceView = memo(function SurfaceView({
               )}
             >
               <span aria-hidden className="size-[5px] rounded-full bg-current" />
-              {surface.pinned
-                ? t.canvas.pinned
-                : isNew
-                  ? t.canvas.new
-                  : t.workspace.states[surface.state]}
+              {/* A narrow card keeps its name: the state stays as a dot, its words for the reader. */}
+              <span className="sr-only @md:not-sr-only">
+                {surface.pinned
+                  ? t.canvas.pinned
+                  : isNew
+                    ? t.canvas.new
+                    : t.workspace.states[surface.state]}
+              </span>
             </span>
           )}
         {!surface.transient && (

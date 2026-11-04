@@ -699,3 +699,16 @@ html[data-resuming] .elise-home {
     background: var(--accent-soft);
   }
 }
+
+/*
+ * In a widget, what names something wraps to a second line instead of losing its words; only
+ * secondary lines stay on one. Flex rows keep their own layout.
+ */
+.sf .truncate:not(.flex, .inline-flex, .text-muted, .text-faint) {
+  display: -webkit-box;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}

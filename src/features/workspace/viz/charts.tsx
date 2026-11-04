@@ -797,51 +797,66 @@ const DAY_STYLE = {
   rest: "bg-track border-transparent",
 } as const;
 
+/** Wide: name, the week and the count on one line. Narrow: the week takes a line of its own. */
+const STREAK_COLUMNS = "@md:grid-cols-[minmax(110px,1fr)_repeat(7,24px)_84px]";
+
 export function Streak({ spec }: { spec: Spec<"streak"> }) {
   const { t } = useI18n();
   return (
-    <div className="flex flex-col gap-1 overflow-x-auto">
+    <div className="flex flex-col gap-1">
       <div
         aria-hidden
-        className="grid grid-cols-[minmax(110px,1fr)_repeat(7,24px)_84px] gap-x-1.5 pb-1.5 font-mono text-[10px] text-faint"
+        className={cn(
+          "grid grid-cols-7 gap-x-1.5 pb-1.5 font-mono text-[10px] text-faint",
+          STREAK_COLUMNS,
+        )}
       >
-        <span />
+        <span className="hidden @md:block" />
         {spec.days.map((d, i) => (
           <span key={i} className={cn("text-center", i === spec.today && "text-accent-text")}>
             {d}
           </span>
         ))}
-        <span />
+        <span className="hidden @md:block" />
       </div>
       {spec.rows.map((r) => (
         <div
           key={r.label}
           role="group"
           aria-label={`${r.label}: ${r.summary}${r.state ? `, ${r.state}` : ""}`}
-          className="grid min-h-12 grid-cols-[minmax(110px,1fr)_repeat(7,24px)_84px] items-center gap-x-1.5 border-t border-[var(--sf-ambient-line)]"
+          className={cn(
+            "grid items-center gap-x-1.5 gap-y-2 border-t border-[var(--sf-ambient-line)] py-2.5 @md:min-h-12 @md:py-1",
+            STREAK_COLUMNS,
+          )}
         >
-          <span className="flex min-w-0 flex-col">
-            <span className="truncate text-[14px]">{r.label}</span>
-            {r.meta && <span className="truncate text-[12px] text-muted">{r.meta}</span>}
-          </span>
-          {r.days.map((d, i) => (
-            <span
-              key={i}
-              title={t.canvas.viz.days[d]}
-              className={cn(
-                "size-[18px] justify-self-center rounded-full border-[1.5px]",
-                DAY_STYLE[d],
+          <div className="flex items-start justify-between gap-3 @md:contents">
+            <span className="flex min-w-0 flex-col">
+              <span className="line-clamp-2 text-[14px] leading-tight">{r.label}</span>
+              {r.meta && <span className="line-clamp-2 text-[12px] text-muted">{r.meta}</span>}
+            </span>
+            <span className="flex shrink-0 flex-col items-end @md:order-last">
+              <span className="font-mono text-[12.5px]">{r.summary}</span>
+              {r.state && (
+                <span
+                  className={cn("text-[11.5px]", r.behind ? "text-approval-text" : "text-muted")}
+                >
+                  {r.state}
+                </span>
               )}
-            />
-          ))}
-          <span className="flex flex-col items-end">
-            <span className="font-mono text-[12.5px]">{r.summary}</span>
-            {r.state && (
-              <span className={cn("text-[11.5px]", r.behind ? "text-approval-text" : "text-muted")}>
-                {r.state}
-              </span>
-            )}
-          </span>
+            </span>
+          </div>
+          <div className="grid grid-cols-7 gap-x-1.5 @md:contents">
+            {r.days.map((d, i) => (
+              <span
+                key={i}
+                title={t.canvas.viz.days[d]}
+                className={cn(
+                  "size-[18px] justify-self-center rounded-full border-[1.5px]",
+                  DAY_STYLE[d],
+                )}
+              />
+            ))}
+          </div>
         </div>
       ))}
     </div>
@@ -887,8 +902,11 @@ export function DataTable({ spec }: { spec: Spec<"table"> }) {
                 <td
                   key={j}
                   className={cn(
-                    "max-w-0 truncate pr-3 last:pr-0",
-                    spec.columns[j]?.numeric ? "text-right font-mono text-[12.5px]" : "",
+                    "pr-3 last:pr-0",
+                    // A figure is never cut; words wrap around it.
+                    spec.columns[j]?.numeric
+                      ? "text-right font-mono text-[12.5px] whitespace-nowrap"
+                      : "[overflow-wrap:anywhere]",
                     j === 0 || i === spec.highlightRow ? "text-fg" : "text-fg2",
                   )}
                 >

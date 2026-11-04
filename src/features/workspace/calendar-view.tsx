@@ -275,7 +275,7 @@ function Toolbar({
           role="group"
           aria-label={t.calendar.view}
           className={cn(
-            "flex items-center rounded-full border border-border p-0.5",
+            "flex items-center rounded-full border border-border p-0.5 @max-sm:order-last @max-sm:w-full @max-sm:justify-between",
             compact && "order-last w-full justify-between",
           )}
         >
@@ -286,7 +286,7 @@ function Toolbar({
               aria-pressed={view === v}
               onClick={() => onChange({ view: v })}
               className={cn(
-                "h-7 rounded-full px-2.5 text-[12.5px]",
+                "h-7 rounded-full px-2.5 text-[12.5px] @max-sm:flex-1 @max-sm:px-1",
                 compact && "flex-1",
                 view === v ? "bg-active text-fg" : "text-muted hover:text-fg",
               )}
