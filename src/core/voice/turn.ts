@@ -291,9 +291,9 @@ const words = (s: string) =>
  * A transcript that is mostly what ELISE just said is her own voice leaking back, not the
  * user: dropped instead of being answered.
  */
-export function isSelfEcho(transcript: string, spokenRecently: string): boolean {
+export function isSelfEcho(transcript: string, spokenRecently: string, minWords = 2): boolean {
   const said = words(transcript);
-  if (said.length < 2) return false;
+  if (said.length < minWords) return false;
   const spoken = new Set(words(spokenRecently));
   if (!spoken.size) return false;
   const overlap = said.filter((w) => spoken.has(w)).length / said.length;

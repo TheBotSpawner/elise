@@ -26,6 +26,29 @@ describe("sessionCommand (ADR-102)", () => {
   ])("%s → stop", (text) => expect(sessionCommand(text)).toBe("stop"));
 
   it.each([
+    "Gracias, Elise.",
+    "Genial, gracias.",
+    "Terminé, Elise.",
+    "Listo, Elise.",
+    "Dale, genial.",
+    "Buenísimo, Elise.",
+    "Muchas gracias",
+    "Perfecto, gracias Elise",
+    "Thanks, Elise",
+  ])("%s → close (ADR-134)", (text) => expect(sessionCommand(text)).toBe("close"));
+
+  it.each([
+    "Gracias por avisarme lo del turno",
+    "Genial, ahora mostrame mis tareas",
+    "Listo el pollo",
+    "Dale",
+    "Ok",
+    "Bueno",
+    "Listo, y además agregá leche",
+    "Perfecto, ¿y mañana?",
+  ])("%s isn't a goodbye", (text) => expect(sessionCommand(text)).toBeNull());
+
+  it.each([
     "Desactivá la activación por voz",
     "ELISE, desactivá la palabra de activación",
     "No vuelvas a escuchar hasta que te active",

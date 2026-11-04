@@ -11,6 +11,8 @@
 
 export type SessionCommand =
   | "stop"
+  /** ADR-134: "gracias, Elise", "listo", "dale, genial": the person is done. */
+  | "close"
   | "disable_wake"
   | "enable_wake"
   /** "Decime mi resumen del día": open the latest one and play it. */
@@ -96,10 +98,34 @@ const VOLUME_DOWN = [
   /^(?:turn (?:the )?(?:volume|sound|it) down|volume down|quieter)$/,
 ];
 
+/**
+ * ADR-134: a goodbye is the whole utterance, and an utterance only ends after a silence, so these
+ * words in the middle of a sentence ("gracias por avisarme") never count. "Dale" or "ok" alone say
+ * nothing; they need a word that closes.
+ */
+const CLOSING = new Set(
+  (
+    "gracias genial genio buenisimo buenisima perfecto perfecta barbaro barbara joya listo lista " +
+    "excelente termine terminamos terminado thanks thank great perfect done"
+  ).split(" "),
+);
+const CLOSING_AROUND = new Set(
+  "muchas mil dale ok okay bueno ya che eh re you elise elis elisse eliss elize elice".split(" "),
+);
+const closes = (s: string) => {
+  const said = s.split(" ");
+  return (
+    said.length <= 6 &&
+    said.some((w) => CLOSING.has(w)) &&
+    said.every((w) => CLOSING.has(w) || CLOSING_AROUND.has(w))
+  );
+};
+
 /** Folding drops accents, so the patterns above only need their unaccented forms to match. */
 export function sessionCommand(text: string): SessionCommand | null {
   let s = fold(text);
   if (!s || s.length > 80) return null;
+  if (closes(s)) return "close";
   // Repeated: "por favor, ELISE, ..." peels in more than one pass.
   for (let i = 0; i < 3; i++) s = s.replace(AROUND, "").trim();
   if (DISABLE.some((r) => r.test(s))) return "disable_wake";

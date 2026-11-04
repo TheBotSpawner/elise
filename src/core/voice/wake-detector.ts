@@ -348,8 +348,9 @@ export class EndOfSpeech {
   private spoke = false;
   private quiet = 0;
   private frames = 0;
-  // Frames of 128 ms. ADR-131: 2 s of quiet end what's being said, and a long request fits (20 s).
-  constructor(private readonly opts = { quietFrames: 16, maxFrames: 156 }) {}
+  // Frames of 128 ms. ADR-131: 2 s of quiet end what's being said; the limit is the session's own
+  // (60 s, VOICE_LIMITS.maxUtteranceMs): a dictation is never cut for being long.
+  constructor(private readonly opts = { quietFrames: 16, maxFrames: 469 }) {}
   /** Before the word: learn the room. */
   learn(rms: number) {
     this.floor = this.floor * 0.95 + Math.min(rms, 0.05) * 0.05;

@@ -65,7 +65,7 @@ describe("the end of what followed the word", () => {
     expect(run([0.1, ...pause, 0.1, ...pause]).frames).toBe(-1);
   });
   it("never runs forever (a TV in the background), and a long request still fits", () => {
-    expect(run(Array(200).fill(0.1)).frames).toBe(156);
+    expect(run(Array(500).fill(0.1)).frames).toBe(469);
   });
 });
 

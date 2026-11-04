@@ -22,7 +22,9 @@ cut costs the whole request while the wait costs under a second or so.
 1. **One rule: 2 s of silence end a turn**, whatever was said and however long it was. A phrase that
    sounds unfinished keeps its 2.4 s.
 2. **The wake capture follows it:** 2 s of quiet (16 frames of 128 ms), also for the word alone. Its
-   limit goes from 9 s to 20 s.
+   limit is the session's: 60 s. A first 20 s still cut a dictated note.
+3. **A request from the wake capture gets the tail** (ADR-036), like any other: in a continuous
+   conversation, what's said in the next 4 s joins it.
 
 ## Consequences
 
@@ -31,5 +33,8 @@ cut costs the whole request while the wait costs under a second or so.
   Not measured. The instant line (ADR-125 addendum) also comes after the silence.
 - "Silence" is measured by loudness. A voice that fades below the room's bar counts as silence, so
   a very soft ending can still run the clock. Not measured with real voices.
-- A false wake candidate in a meeting can send up to 20 s to the transcription instead of 9 s before
-  it's rejected. Audio isn't stored.
+- A false wake candidate in a meeting can send up to 60 s to the transcription before it's rejected,
+  and detection is off meanwhile. Audio isn't stored.
+- **The instant line came back with an echo** (ADR-125 addendum): one word of it ("segundo") could
+  pass as the person's continuation, since the echo check needed two. Over an acknowledgement, one
+  word now counts.

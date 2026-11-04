@@ -132,6 +132,8 @@ const CORRECT = new RegExp(
     String.raw`\bte equivocaste\b`,
     String.raw`\bcorreg[ií]\w*|\bcorrig\w*`,
     String.raw`\bquise decir\b`,
+    // Cut off: what they add completes what was just written.
+    String.raw`\bno me dejaste terminar\b|\bme cortaste\b|\bte estaba dictando\b`,
     String.raw`\bme refer[ií]a\b`,
     String.raw`^\s*en realidad\b`,
     String.raw`^\s*no[\s,.!]+(no[\s,.!]+)?(era|eran|es|son|fue|fueron|dec[ií]a|dije|ah[ií]|eso|mejor)\b`,

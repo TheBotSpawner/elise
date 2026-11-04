@@ -312,6 +312,8 @@ export class VoiceController {
   private superseded = false;
   private warmed = false;
   private lastSpoken = "";
+  /** Her last reply ended waiting for an answer: a question, or an approval. */
+  private askedBack = false;
   private hidden = false;
   private finishing = false;
   /** The acknowledgement chosen from the provisional transcript, its audio being prepared. */
@@ -478,7 +480,11 @@ export class VoiceController {
     this.act({ type: "speech_start" });
     this.act({ type: "speech_end" });
     this.act({ type: "transcript", text });
-    if (!this.wantsDailySummary(text)) return this.beginTurn(text, this.prefs.language, 0);
+    if (!this.wantsDailySummary(text)) {
+      this.beginTurn(text, this.prefs.language, 0);
+      // ADR-131: what they say next still joins this request, as in any other turn.
+      return this.startTail();
+    }
     const phase = this.state.phase;
     void this.dailySummary(text).then((opened) => {
       if (!opened && this.state.phase === phase) this.beginTurn(text, this.prefs.language, 0);
@@ -705,9 +711,6 @@ export class VoiceController {
     if (this.state.phase !== "finalizing_input") return; // ended meanwhile
     // A continuation that can't be read never loses the request it continued: that goes again.
     if (!result && this.carry) result = { text: "", language: null };
-    // Nothing new was said after all: the cut request goes again, and that one isn't cut again
-    // by the same window (noise doing it repeatedly sent the same request over and over).
-    const resent = Boolean(this.carry) && !result?.text.trim();
     if (!result) {
       if (this.deps.online && !this.deps.online()) return this.network(false);
       // Never invent what the user said: say so and listen again.
@@ -717,11 +720,15 @@ export class VoiceController {
     }
     let text = result.text.trim();
     this.trace("transcript", { chars: text.length, speculative });
-    // Her own voice leaking back after a barge-in is not the user talking.
-    if (text && this.bargeTurn && isSelfEcho(text, this.lastSpoken)) {
+    // Her own voice leaking back after a barge-in is not the user talking. Over her
+    // acknowledgement one word is enough: "segundo" is what's left of "Dame un segundo."
+    if (text && this.bargeTurn && isSelfEcho(text, this.lastSpoken, this.carry ? 1 : 2)) {
       this.trace("discard", { reason: "echo_rejected" });
       text = "";
     }
+    // Nothing new was said after all: the cut request goes again, and that one isn't cut again
+    // by the same window (noise doing it repeatedly sent the same request over and over).
+    const resent = Boolean(this.carry) && !text;
     if (!text) this.trace("discard", { reason: "empty_final", speculative });
     // The previous turn was cut too early and this is its continuation: one request, whole.
     if (this.carry) {
@@ -757,6 +764,8 @@ export class VoiceController {
     const command = sessionCommand(text);
     // The daily summary needs to look it up first (dailySummary).
     if (!command || command === "daily_summary") return false;
+    // ADR-134: "dale, genial" to something she asked is an answer, not a goodbye.
+    if (command === "close" && this.askedBack) return false;
     // On the web there is no window to bring up: the request goes to ELISE as usual.
     if (command === "show" && !this.deps.showApp) return false;
     const volume = command === "volume_up" ? "up" : command === "volume_down" ? "down" : null;
@@ -792,6 +801,7 @@ export class VoiceController {
 
   private beginTurn(text: string, language: VoiceLanguage | null, durationMs: number) {
     this.mark("transcriptFinal");
+    this.askedBack = false;
     this.turn = {
       language,
       chunker: new SentenceChunker(),
@@ -1118,6 +1128,7 @@ export class VoiceController {
     const turn = this.turn;
     if (!turn) return;
     this.trace("tts_playback_ended");
+    this.askedBack = turn.awaitingApproval || turn.spoken.trim().endsWith("?");
     turn.marks.turnComplete = Math.round(this.now - turn.t0);
     turn.marks.progressLines = turn.progressSaid.length;
     // A spoken turn that never made a sound is a failure to report, not a success (ADR-104).
@@ -1174,6 +1185,8 @@ export class VoiceController {
       sinceEnd: Math.round(now - turn.t0),
     });
     this.carry = continues ? turn.text : null;
+    // What she said in the meantime (an acknowledgement) can leak into this utterance too.
+    this.lastSpoken = turn.spoken;
     this.deps.cancel?.();
     this.player?.stop();
     this.superseded = true;
@@ -1186,7 +1199,7 @@ export class VoiceController {
     this.capture++;
     this.voiceVersion++;
     this.detector = new TurnDetector(VOICE_TURN, { floor: this.floor, resumed: true });
-    this.bargeTurn = false;
+    this.bargeTurn = Boolean(turn.spoken.trim());
     this.finishing = false;
     this.t0 = now;
     this.marks = { speechStart: 0 };

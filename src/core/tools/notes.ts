@@ -158,7 +158,7 @@ export const createNoteTool: ToolDefinition = {
   capability: "notes",
   operation: "create",
   description:
-    'Save a note ("save this as a note in Acme"). Write a short title and the content in the user\'s words, as Markdown (headings, **bold**, lists) when structure helps. Set `spaces` with every Knowledge Space they name ("guardala en General y Trabajo") so it becomes searchable there — one note, never one per Space. Confirm where it was saved.',
+    'Save a note ("save this as a note in Acme"). Write a short title and the content in the user\'s words, with shape when it helps, in Markdown: an emoji before the title, ## and ### headings for sections, **bold** for key ideas, a bullet per item of an enumeration ("más ventas, mayor productividad…"), an emoji here and there. Never add or drop ideas; a one-line note stays plain. Set `spaces` with every Knowledge Space they name ("guardala en General y Trabajo") so it becomes searchable there — one note, never one per Space. Confirm where it was saved.',
   input: createNoteInput,
   async describe(raw) {
     return { summary: `Save note “${createNoteInput.parse(raw).title}”` };
@@ -183,7 +183,7 @@ export const updateNoteTool: ToolDefinition = {
   capability: "notes",
   operation: "update",
   description:
-    'Edit a note: new title, full new Markdown content ("poné Conclusiones como encabezado y las decisiones en negrita" → rewrite with ## Conclusiones and **…**), or text to append. Its Spaces are kept; change them with notes.setKnowledgeSpaces.',
+    'Edit a note: new title, full new Markdown content ("poné Conclusiones como encabezado y las decisiones en negrita" → rewrite with ## Conclusiones and **…**), or text to append. Everything in a note can be changed here. "No me dejaste terminar", "faltaba…", "seguí con…" after a note: this tool, now, on that note. If what they said repeats what\'s there, rewrite with content and the same shape, never a copy below it. Its Spaces are kept; change them with notes.setKnowledgeSpaces.',
   input: updateNoteInput,
   async describe(raw) {
     return { summary: `Update note “${updateNoteInput.parse(raw).note}”` };

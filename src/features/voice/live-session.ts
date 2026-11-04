@@ -549,7 +549,9 @@ export class LiveVoiceSession {
     // Volume is answered by the device's wake path and the speech pipeline; a Live session
     // delegates it like any request (ADR-106).
     // The daily summary is delegated like any request (ELISE prepares it).
-    if (!command || command === "volume_up" || command === "volume_down") return false;
+    // Closing phrases (ADR-134) need a finished utterance; here it's read from a partial.
+    if (!command || command === "volume_up" || command === "volume_down" || command === "close")
+      return false;
     if (command === "daily_summary") return false;
     if (command === "disable_wake" || command === "enable_wake")
       void (

@@ -1403,6 +1403,30 @@ describe("acknowledging from the words, before the model picks a tool (ADR-034)"
   });
 });
 
+describe("a goodbye (ADR-134)", () => {
+  it("ends the conversation, with nothing sent", async () => {
+    const { controller, sent, say } = setup({ transcripts: ["Gracias, Elise."] });
+    await controller.start();
+    await say();
+    expect(sent).toHaveLength(0);
+    expect(controller.state.phase).toBe("idle");
+  });
+
+  it("right after she asked something, it's an answer", async () => {
+    const { controller, sent, say, player } = setup({
+      transcripts: ["¿Qué tengo?", "Dale, genial."],
+    });
+    await controller.start();
+    await say();
+    controller.onStream({ type: "text", delta: "¿Querés que abra alguno? " });
+    controller.onStream({ type: "finished" });
+    player.finishPlaying();
+    await settle();
+    await say();
+    expect(sent.map((x) => x.text)).toEqual(["¿Qué tengo?", "Dale, genial."]);
+  });
+});
+
 describe("voice turn latency (ADR-036)", () => {
   it("a complete-sounding phrase still waits the full silence (ADR-131)", async () => {
     const { controller, sent, hear } = setup({ transcripts: ["¿Qué tengo mañana?"] });
@@ -1434,6 +1458,26 @@ describe("voice turn latency (ADR-036)", () => {
     await controller.start();
     await say();
     expect(player.prepared).toEqual([]);
+  });
+
+  it("a word of her own acknowledgement is no continuation: the request goes as it was", async () => {
+    const asked = "Decime qué tengo hoy.";
+    const prefs = { instantAck: true };
+    // Which line she says is deterministic: the same request, seen once to know it.
+    const seen = setup({ transcripts: [asked], prefs });
+    await seen.controller.start();
+    await seen.say();
+    // "Segundo.": what's left of "Dame un segundo." in the mic.
+    const echo = `${seen.player.spoken[0]!.replace(/[.,]/g, "").split(" ").at(-1)}.`;
+    const { controller, sent, hear, say } = setup({ transcripts: [asked, echo], prefs });
+    await controller.start();
+    await say();
+    await hear(VOICE_TURN.barge.calibrateMs, 0.002);
+    await hear(VOICE_TURN.barge.holdMs + 50, 0.3);
+    await hear(600, 0.1);
+    await hear(VOICE_TURN.endSilenceMs + 100, 0.002);
+    await settle();
+    expect(sent.map((x) => x.text)).toEqual([asked, asked]);
   });
 
   it("talking over the acknowledgement right after the turn ended continues that turn", async () => {
