@@ -1,7 +1,7 @@
 # ADR-136: "Open Core", the new Orb and logo
 
-**Status:** Accepted (2026-11-04). Replaces the Live Canvas wireframe Orb (ADR-046's boot timing
-included) and settles `docs/product/05-ui-design-system.md` §6–9.
+**Status:** Accepted (2026-11-04) for the logo and icons. **The Orb part was withdrawn on
+2026-11-05:** see the last addendum. Settles `docs/product/05-ui-design-system.md` §9.
 
 ## Context
 
@@ -51,3 +51,10 @@ The arcs, the S, the sweep and the satellite are gone. The logo and the tray ico
 `orb-renderer.ts` matches the design's `elise-orb.js` pixel for pixel (compared in Chromium: every state,
 both themes, three sizes, with boot, reduced motion and pointer). The one omission is its blink code,
 off in every state of the design: its note says the eye doesn't blink.
+
+## Addendum (2026-11-05): back to the wireframe Orb
+
+The owner saw the eye in use and rejected its animations. The Orb goes back to the Live Canvas wireframe
+(JarvisOrb v2) with its 1.2 s boot (ADR-046), restored as it was before this ADR. Decisions 1 to 5 and
+the eye addendum no longer apply. The logo, the wordmark and the transparent icons stay: only the Orb
+changed. The design's files stay in `design-reference/ELISE-OpenCore.zip`.

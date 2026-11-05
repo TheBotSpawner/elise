@@ -20,6 +20,15 @@ describe("finding what someone remembers (ADR-132)", () => {
     expect(similarText("basura", "Sacar la bazura")).toBe(true);
   });
 
+  it("B and V are the same sound, in short words too", () => {
+    expect(similarText("BTB", "Turno VTV")).toBe(true);
+    expect(similarText("la VTV", "Turno BTB")).toBe(true);
+    expect(similarText("basura", "Sacar la vasura")).toBe(true);
+    expect(matchesTaskSearch(task("Renovar VTV"), "btb")).toBe(true);
+    expect(similarText("BTC", "Turno VTV")).toBe(false);
+    expect(similarText("B2", "Curso V2")).toBe(false);
+  });
+
   it("a long request may miss one word in four, never more", () => {
     const title = "Sacar turno para los estudios medicos";
     expect(similarText("sacar turno estudios cardiologicos urgentes", title)).toBe(false);

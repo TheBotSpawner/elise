@@ -71,7 +71,7 @@ These documents are the source of truth for product and architecture decisions. 
 | ADR-131 | Voz: ELISE escucha hasta 2 s de silencio, en la sesión y en la captura de "Elise", sea cual sea la frase (2,4 s si suena sin terminar); la captura sube de 9 s a 60 s y lo que sigue se suma al pedido. Las respuestas arrancan hasta 1,3 s más tarde |
 | ADR-138 | Costo por cuenta y límites: `usage_events` sigue siendo el único libro, reserva atómica por interacción, tres modos (observe por defecto), planes como datos y apagados |
 | ADR-137 | El Orb de la esquina aparece con la palabra, no al terminar la frase; un micrófono que no entrega audio se detecta en 5 s y reinicia el servicio de audio |
-| ADR-136 | "Open Core": Orb y logo nuevos hechos en Claude Design; renderer Canvas 2D portado a TypeScript, arranque de 2,6 s, íconos de web y Desktop, bandeja según el tema |
+| ADR-136 | "Open Core": logo e íconos nuevos hechos en Claude Design, bandeja según el tema. Su Orb se descartó: volvió el de malla de Live Canvas |
 | ADR-135 | Los widgets se adaptan al ancho de su tarjeta y nunca tienen scroll horizontal: cada uno tiene su diseño angosto; los títulos pasan a dos líneas y los números no se cortan |
 | ADR-134 | Cerrar la conversación con una despedida ("Gracias Elise", "Genial, gracias", "Listo Elise"): solo si es la frase entera, seguida de silencio, y nunca como respuesta a una pregunta de ELISE |
 | ADR-133 | Recomendar lugares: "dónde comer" va a Maps, no a la web; una sola búsqueda trae precio, horarios, cierre y reseñas; ELISE suma cómo llegar. Pendiente revisar los términos de Google y el costo |

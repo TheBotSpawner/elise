@@ -277,6 +277,12 @@ describe("event search", () => {
   const gym = makeEvent(PERSONAL, "Personal", "g1", "Gym", []);
   const ricardo = makeEvent(NORTHWIND, "Northwind", "r1", "Sync", ["ricardo@acme.com"]);
 
+  it("finds the VTV when speech wrote BTB", () => {
+    const vtv = makeEvent(PERSONAL, "Personal", "v1", "Turno VTV", []);
+    expect(matchEvents([gym, vtv], "cita con BTB")).toEqual([vtv]);
+    expect(matchEvents([gym, vtv], "BTC")).toEqual([]);
+  });
+
   it("matches by any meaningful word, accents and typos aside, title matches first", () => {
     expect(matchEvents([gym, ricardo, ctdi], "la meeting con Ricardo de CTDI")).toEqual([
       ctdi,

@@ -120,3 +120,16 @@ describe("the retry ladder", () => {
     expect(mentionsDay("Aula 119/105", "2026-10-19")).toBe(false);
   });
 });
+
+describe("B or V in an email search", () => {
+  it("tries the other letter last, and says so", () => {
+    const steps = searchLadder({ text: "BTB" });
+    expect(steps.map((s) => s.query.text)).toEqual(["BTB", "vTv"]);
+    expect(steps.at(-1)!.relaxed).toEqual(["b_or_v"]);
+    expect(searchLadder({ text: "vtv" }).map((s) => s.query.text)).toEqual(["vtv", "btb"]);
+  });
+
+  it("adds nothing when there's no B or V", () => {
+    expect(searchLadder({ text: "factura" })).toHaveLength(1);
+  });
+});

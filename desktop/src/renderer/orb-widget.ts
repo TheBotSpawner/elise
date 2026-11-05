@@ -1,5 +1,5 @@
 import { OrbRenderer } from "@/components/elise/orb/orb-renderer";
-import type { OrbState } from "@/components/elise/orb/orb-states";
+import { toRendererState, type OrbState } from "@/components/elise/orb/orb-states";
 
 /**
  * The background conversation's orb (ADR-095), in its own tiny window: ELISE's real Orb renderer
@@ -45,7 +45,7 @@ const loop = (now: number) => {
   const backing = Math.round(px * dpr);
   if (canvas.width !== backing) canvas.width = canvas.height = backing;
   renderer.frame(ctx, px, dpr, now, {
-    state,
+    state: toRendererState(state),
     light: false,
     reduced: reduced.matches,
     // No microphone here: the renderer's own motion for listening / speaking.

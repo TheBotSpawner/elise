@@ -33,3 +33,10 @@ task links, contexts, Methods, schedules, study documents, Knowledge Spaces and 
 - Something can now be found that wasn't meant ("carta" / "carga"). A write acts on it when it's the
   only close match, so a wrong word can reach the wrong item when nothing else resembles it.
 - Tasks are compared in memory, over up to 500 per account, as they already were.
+
+## Addendum (2026-11-05): B and V
+
+Speech writes either letter ("BTB" for "VTV"), and the rule that very short words have no room for a
+mistake hid it: B and V are one sound, not a mistake. They now match in every word without digits, in
+local searches and the calendar. Email search is literal at the provider, so a search that finds
+nothing is retried with the other letter (`b_or_v`), after every other retry.

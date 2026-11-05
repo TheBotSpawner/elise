@@ -13,8 +13,8 @@
  */
 
 export const BOOT = {
-  /** Pupil → sphere → eyelids → idle. */
-  durationMs: 2600,
+  /** Point → wireframe → ring → idle. */
+  durationMs: 1200,
   /** prefers-reduced-motion: a short fade/resolve instead of the assembly. */
   reducedMs: 350,
 } as const;
@@ -47,14 +47,35 @@ export function resetBoot() {
 }
 
 export interface BootFrame {
-  /** ms into the sequence. */
-  t: number;
+  /** The first cyan point (0..1 opacity). */
+  dot: number;
+  /** Wireframe lines resolving (0..1): opacity and radius. */
+  wire: number;
+  /** Outer ring and glow coming online (0..1). */
+  ring: number;
 }
 
+const clamp = (x: number) => Math.min(1, Math.max(0, x));
+const between = (t: number, a: number, b: number) => clamp((t - a) / (b - a));
+const easeOut = (x: number) => 1 - (1 - x) ** 3;
+
 /**
- * Where the sequence is `elapsed` ms in; null once it's over (the Orb is simply idle). The renderer
- * draws it: the pupil, then the sphere and last the eyelids.
+ * Where the sequence is `elapsed` ms in; null once it's over (the Orb is simply idle).
+ *   100-300 ms  a small cyan point appears
+ *   300-850 ms  the wireframe resolves around it
+ *   600-1050 ms the outer ring and glow come online
+ *   ~1200 ms    settled
  */
 export function bootFrame(elapsed: number, reduced: boolean): BootFrame | null {
-  return elapsed >= (reduced ? BOOT.reducedMs : BOOT.durationMs) ? null : { t: elapsed };
+  if (reduced) {
+    if (elapsed >= BOOT.reducedMs) return null;
+    const k = easeOut(between(elapsed, 0, BOOT.reducedMs));
+    return { dot: 0, wire: k, ring: k };
+  }
+  if (elapsed >= BOOT.durationMs) return null;
+  return {
+    dot: between(elapsed, 100, 300) * (1 - between(elapsed, 550, 1000)),
+    wire: easeOut(between(elapsed, 300, 850)),
+    ring: easeOut(between(elapsed, 600, 1050)),
+  };
 }

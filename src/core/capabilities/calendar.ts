@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { fold } from "./music-match";
+import { sameBV } from "../lexicon";
 import { destinationField } from "../providers/destination";
 import type { ProviderKey } from "../providers/types";
 import {
@@ -332,7 +333,9 @@ function editDistance(a: string, b: string): number {
 }
 
 /** Same word, a prefix of it ("proce" → "procesamiento") or a small typo ("ricrdo"). */
-function wordMatches(token: string, word: string): boolean {
+function wordMatches(asked: string, written: string): boolean {
+  const token = sameBV(asked);
+  const word = sameBV(written);
   if (word === token || word.startsWith(token)) return true;
   if (token.length >= 4 && word.length >= 4 && token.startsWith(word)) return true;
   if (token.length < 4) return false;

@@ -98,9 +98,15 @@ const GLUE = new Set(
 
 const wordsOf = (s: string) => fold(s).match(/[\p{L}\p{N}]+/gu) ?? [];
 
+/**
+ * B and V are one sound in Spanish, so speech recognition writes either: "BTB" for "VTV". Short
+ * words too: this isn't a mistake that needs room, it's the same word.
+ */
+export const sameBV = (word: string) => (/\d/.test(word) ? word : word.replace(/v/g, "b"));
+
 /** The same word said another way: plural, a verb's ending, a typo, a mishearing. */
 function sameWord(a: string, b: string): boolean {
-  if (a === b) return true;
+  if (a === b || sameBV(a) === sameBV(b)) return true;
   // "TP 3" is not "TP 4", and a very short word has no room for a mistake.
   const short = Math.min(a.length, b.length);
   if (short < 4 || /\d/.test(a + b)) return false;

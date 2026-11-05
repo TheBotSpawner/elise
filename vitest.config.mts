@@ -18,6 +18,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Integration suites build a database from every migration: slow when the whole run competes.
+    hookTimeout: 60_000,
     setupFiles: ["./tests/setup.ts"],
     include: ["tests/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
   },

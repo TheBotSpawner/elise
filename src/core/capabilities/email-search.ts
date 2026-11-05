@@ -20,7 +20,8 @@ export interface SearchShape {
   aboutDay?: string;
 }
 
-export type Relaxation = "about_day_window" | "generic_words" | "wider_dates" | "sender_as_text";
+export type Relaxation =
+  "about_day_window" | "generic_words" | "wider_dates" | "sender_as_text" | "b_or_v";
 
 /** How far before the day it's about a notice may have arrived. */
 export const ABOUT_DAY_LOOKBACK = 14;
@@ -60,6 +61,13 @@ export function searchLadder<T extends SearchShape>(q: T): { query: T; relaxed: 
       { ...current, from: undefined, text: [current.text, current.from].filter(Boolean).join(" ") },
       "sender_as_text",
     );
+  // The provider is literal and speech writes B for V ("BTB" for "VTV"): the other letter, last.
+  // ponytail: all of one letter, so two words needing different ones are still missed.
+  const said = current.text;
+  if (said)
+    for (const other of [said.replace(/b/gi, "v"), said.replace(/v/gi, "b")])
+      if (other !== said)
+        steps.push({ query: { ...current, text: other }, relaxed: [...relaxed, "b_or_v"] });
   return steps;
 }
 
