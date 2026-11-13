@@ -28,6 +28,17 @@ export function wellFormed<T>(value: T): T {
   return value;
 }
 
+const titleKey = (t: string) =>
+  t
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+/** The same title, whatever its case, accents or punctuation: what makes a write a duplicate. */
+export const sameTitle = (a: string, b: string) => titleKey(a) === titleKey(b);
+
 /**
  * A name or title as people expect to see it (a task, a list item, a habit…), from however it
  * arrived — often a voice transcript in lowercase: "huevos" → "Huevos", "comprar huevos para la

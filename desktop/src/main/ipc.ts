@@ -15,6 +15,7 @@ import {
   type PlatformCapability,
   VOICE_ORB_STATES,
   WAKE_ORB_CORNERS,
+  WAKE_OUTCOMES,
 } from "@/core/platform/platform";
 
 import { alarmItemsSchema, scheduleAlarms } from "./alarms";
@@ -46,6 +47,19 @@ export const CAPABILITIES: PlatformCapability[] = [
   "snapshot_cache",
   "wake_word",
 ];
+
+const count = z.number().finite().min(0).max(1e6);
+const wakeOutcomeSchema = z
+  .object({
+    outcome: z.enum(WAKE_OUTCOMES),
+    guarded: z.boolean(),
+    confidence: z.number().min(0).max(1).nullable(),
+    seconds: count,
+    speechAfter: z.boolean(),
+    transcribeMs: count.nullable(),
+    remainderWords: count.int().nullable(),
+  })
+  .strict();
 
 const wakeReportSchema = z.enum([
   "off",
@@ -206,6 +220,10 @@ export function registerIpc(
   handle(INVOKE.wakePause, (paused: unknown) => setWakePaused(z.boolean().parse(paused)));
   handle(INVOKE.wakeReport, (status: unknown) => reportWake(wakeReportSchema.parse(status)));
   handle(INVOKE.resetAudio, () => resetAudioService());
+  // ADR-140: why an "ELISE" went nowhere, in the local log only (kinds and numbers).
+  handle(INVOKE.wakeOutcome, (outcome: unknown) =>
+    log("desktop_wake_outcome", wakeOutcomeSchema.parse(outcome)),
+  );
   handle(INVOKE.voiceOrb, (state: unknown) =>
     setWakeOrbState(z.enum(VOICE_ORB_STATES).parse(state)),
   );

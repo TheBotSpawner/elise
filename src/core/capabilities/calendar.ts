@@ -4,6 +4,7 @@ import { fold } from "./music-match";
 import { sameBV } from "../lexicon";
 import { destinationField } from "../providers/destination";
 import type { ProviderKey } from "../providers/types";
+import { normalizeEntityTitle } from "../text";
 import {
   addDays,
   isIsoDate,
@@ -172,7 +173,7 @@ export const findAvailabilityInput = z
 
 export const createEventInput = z
   .object({
-    title: z.string().trim().min(1).max(300),
+    title: z.string().trim().min(1).max(300).overwrite(normalizeEntityTitle),
     start: z
       .union([localDateTime, date])
       .describe(
@@ -206,7 +207,7 @@ export const createEventInput = z
 export const updateEventInput = z
   .object({
     eventId: ref,
-    title: z.string().trim().min(1).max(300).optional(),
+    title: z.string().trim().min(1).max(300).overwrite(normalizeEntityTitle).optional(),
     start: z.union([localDateTime, date]).optional(),
     end: z.union([localDateTime, date]).optional(),
     attendees: z.array(email).max(50).optional(),

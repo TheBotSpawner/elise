@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { EntrySource } from "./habits";
+import { normalizeEntityTitle } from "../text";
 
 /**
  * Notes (docs/architecture/10 §30-32, ADR-056). The note is the single editable source of
@@ -108,7 +109,7 @@ const spaceList = z.array(space).max(20);
 
 export const createNoteInput = z
   .object({
-    title: z.string().trim().min(1).max(300),
+    title: z.string().trim().min(1).max(300).overwrite(normalizeEntityTitle),
     content: z
       .string()
       .trim()
@@ -125,7 +126,7 @@ export const createNoteInput = z
 export const updateNoteInput = z
   .object({
     note: noteRef,
-    title: z.string().trim().min(1).max(300).optional(),
+    title: z.string().trim().min(1).max(300).overwrite(normalizeEntityTitle).optional(),
     content: z.string().max(100000).optional().describe("The full new content, in Markdown."),
     append: z
       .string()

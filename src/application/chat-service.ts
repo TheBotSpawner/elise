@@ -42,7 +42,7 @@ import { AppError, toPublicError } from "@/core/errors";
 import { knowledgeMap, resolveMentioned } from "@/core/history/links";
 import type { ThreadRef, TurnModality, VoiceTurnMeta } from "@/core/interaction";
 import { generalContextApplies } from "@/core/knowledge/model";
-import { findCanonicalReferences } from "@/core/lexicon";
+import { findCanonicalReferences, isLiteralRequest } from "@/core/lexicon";
 import { coarse, type LatLng } from "@/core/location/model";
 import { TurnPerf } from "@/core/perf";
 import { planFromReply } from "@/core/planning/day-plan";
@@ -454,19 +454,22 @@ export async function prepareTurn(auth: AuthContext, input: ChatTurnInput): Prom
     ...contexts.profiles.map((p) => p.name),
   ];
   const canonical = findCanonicalReferences(input.message, vocabulary);
-  const aliases = [
-    ...new Map(
-      [
-        ...history
-          .filter((m) => m.role === "user")
-          .slice(-10)
-          .flatMap((m) => findCanonicalReferences(m.content, vocabulary)),
-        ...canonical,
-      ]
-        .flatMap((m) => (m.kind === "resolved" ? [m.ref] : []))
-        .map((r) => [r.raw.toLowerCase(), { from: r.raw, to: r.resolved }]),
-    ).values(),
-  ];
+  // "Escribí exactamente…": the user's words stay, also for names resolved earlier (ADR-139).
+  const aliases = isLiteralRequest(input.message)
+    ? []
+    : [
+        ...new Map(
+          [
+            ...history
+              .filter((m) => m.role === "user")
+              .slice(-10)
+              .flatMap((m) => findCanonicalReferences(m.content, vocabulary)),
+            ...canonical,
+          ]
+            .flatMap((m) => (m.kind === "resolved" ? [m.ref] : []))
+            .map((r) => [r.raw.toLowerCase(), { from: r.raw, to: r.resolved }]),
+        ).values(),
+      ];
   for (const m of canonical)
     logger.info(
       m.kind === "ambiguous" ? "canonical_reference.unresolved" : "canonical_reference.resolved",

@@ -139,6 +139,36 @@ export type WakeReport =
   | "mic_denied"
   | "model_failed";
 
+/**
+ * How one detected "ELISE" ended (ADR-140): why a call went nowhere, and how often the word fires
+ * on its own. Kinds and numbers only: never the words, never audio.
+ */
+export const WAKE_OUTCOMES = [
+  "offline", // no connection: nothing could be read
+  "let_go", // a doubtful word over a reply being prepared: the reply went on
+  "ignored", // her own name in her reply
+  "unread", // the transcription failed or timed out
+  "not_a_call", // the words didn't open with "ELISE": a false activation
+  "command", // "ELISE, mostrate", "bajá el volumen"…: handled without a session
+  "session", // the voice session took the request
+  "no_session", // handed over, but no session picked it up in time
+] as const;
+
+export interface WakeOutcome {
+  outcome: (typeof WAKE_OUTCOMES)[number];
+  /** The detector was cautious (recent false alarms, or music). */
+  guarded: boolean;
+  /** Recognizer confidence for the word, when it gave one. */
+  confidence: number | null;
+  /** Seconds of audio captured, and whether there was speech after the word. */
+  seconds: number;
+  speechAfter: boolean;
+  /** How long the transcription took (ms), when there was one. */
+  transcribeMs: number | null;
+  /** Words after "ELISE" (a count, never the words). */
+  remainderWords: number | null;
+}
+
 export interface DesktopSession {
   signedIn: boolean;
   userId: string | null;
@@ -260,6 +290,8 @@ export interface EliseDesktopBridge {
   reportVoiceOrb?(state: VoiceOrbState): Promise<void>;
   /** ADR-137: restart the audio service: a microphone that opens and delivers nothing. */
   resetAudio?(): Promise<void>;
+  /** How one "ELISE" ended, for the local log (ADR-140). Kinds and numbers only, never words. */
+  reportWakeOutcome?(outcome: WakeOutcome): Promise<void>;
   /** The next alarms this installation rings, kept by the app (ADR-100): server truth, ≤50. */
   alarmSchedule?(items: DesktopAlarmItem[]): Promise<void>;
   /** A kept alarm is due here. */

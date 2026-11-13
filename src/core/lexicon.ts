@@ -21,6 +21,11 @@ export const BRAND_TERMS = [
   "Power Automate",
   "UiPath",
   "GPT",
+  "YouTube",
+  "iPhone",
+  "LinkedIn",
+  "GitHub",
+  "TikTok",
 ] as const;
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -148,7 +153,23 @@ const SELF_NAME = /\b(como tu nombre|tu nombre|como vos|como te llam[aá]s|your 
 
 /** "se llama Mielist", "con T al final", "una app externa": the name is meant literally. */
 const LITERAL =
-  /\b(se llama|llamad[oa]|as[ií] se llama|con (una |la )?\p{L} al final|app externa|aplicaci[oó]n externa|otra app|literal(mente)?|as[ií] como (lo )?(dije|escrib[ií])|is called|named|spelled with|external app|another app)\b/iu;
+  /\b(se llama|llamad[oa]|as[ií] se llama|con (una |la )?\p{L} al final|app externa|aplicaci[oó]n externa|otra app|literal(mente)?|exactamente|tal cual|textual(mente)?|as[ií] como (lo )?(dije|escrib[ií])|is called|named|spelled with|external app|another app|word for word|verbatim)\b/iu;
+
+/** The user wants their words kept as said: nothing in this turn is renamed for them. */
+export const isLiteralRequest = (message: string) => LITERAL.test(message);
+
+/**
+ * A domain-shaped name said aloud (ADR-139): "Grabar.ai" as "grabar punto ai" or "grabar .AI".
+ * Only a name the user's world already spells this way: an unknown one is never guessed.
+ */
+function spokenName(term: string): RegExp | null {
+  if (!/^[\p{L}\p{N}-]+(\.[\p{L}\p{N}-]+)+$/u.test(term)) return null;
+  const name = term
+    .split(".")
+    .map(escape)
+    .join(String.raw`[\s,]*(?:punto|dot|\.)[\s,]*`);
+  return new RegExp(`(?<![\\p{L}\\p{N}])${name}(?![\\p{L}\\p{N}])`, "iu");
+}
 
 export interface CanonicalReference {
   raw: string;
@@ -178,7 +199,7 @@ export function findCanonicalReferences(
   message: string,
   vocabulary: readonly string[] = [],
 ): CanonicalMatch[] {
-  if (LITERAL.test(message)) return [];
+  if (isLiteralRequest(message)) return [];
   const terms = [
     ...PRODUCT_TERMS.map((t) => ({ term: t, source: "product_lexicon" as const })),
     ...vocabulary
@@ -190,6 +211,12 @@ export function findCanonicalReferences(
   const selfName = SELF_NAME.test(message);
   const out: CanonicalMatch[] = [];
   const seen = new Set<string>();
+
+  for (const { term, source } of terms) {
+    const raw = spokenName(term)?.exec(message)?.[0];
+    if (raw && raw !== term)
+      out.push({ kind: "resolved", ref: { raw, resolved: term, confidence: 0.95, source } });
+  }
 
   for (let i = 0; i < words.length; i++) {
     for (const size of [2, 1]) {

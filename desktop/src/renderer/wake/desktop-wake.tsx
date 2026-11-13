@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { voicePhaseOrb } from "@/components/elise/orb/orb-states";
-import type { WakeControl, WakeReport } from "@/core/platform/platform";
+import type { WakeControl, WakeOutcome, WakeReport } from "@/core/platform/platform";
 import type { VoicePhase } from "@/core/voice/session";
 import { sessionCommand } from "@/core/voice/session-control";
 import { wakeVerdict } from "@/core/voice/wake";
@@ -174,6 +174,15 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     let disposed = false;
     /** Whether this capture's chime already played (ADR-108). */
     let chimed = false;
+    /** ADR-140: this word's facts so far, logged once when it ends (kinds and numbers only). */
+    let facts: Omit<WakeOutcome, "outcome"> | null = null;
+    const outcome = (o: WakeOutcome["outcome"], more: Partial<WakeOutcome> = {}) => {
+      if (!facts) return;
+      void window.eliseDesktop
+        ?.reportWakeOutcome?.({ ...facts, ...more, outcome: o })
+        .catch(() => undefined);
+      facts = null;
+    };
     /** ADR-109: this capture began over ELISE's reply (paused until it's settled). */
     let interrupting = false;
     /**
@@ -250,6 +259,14 @@ export function DesktopWake({ children }: { children: ReactNode }) {
             interrupting = deviceMayInterrupt(phase);
             overPreparing = interrupting && phase !== "speaking";
             guardedCall = decision.guarded;
+            facts = {
+              guarded: decision.guarded,
+              confidence: decision.confidence,
+              seconds: 0,
+              speechAfter: false,
+              transcribeMs: null,
+              remainderWords: null,
+            };
             if (interrupting && saidOwnName()) {
               logSound("wake:candidate", "own name in her reply, ignored");
               ignoring = true;
@@ -285,9 +302,14 @@ export function DesktopWake({ children }: { children: ReactNode }) {
     async function handOff(
       capture: Parameters<Parameters<VoskWakeDetector["start"]>[0]["onCaptured"]>[0],
     ) {
+      if (facts) {
+        facts.seconds = +(capture.audio.length / capture.sampleRate).toFixed(1);
+        facts.speechAfter = capture.speechAfter;
+      }
       if (ignoring) {
         ignoring = false;
         interrupting = false;
+        outcome("ignored");
         return sync();
       }
       // The session takes the conversation: stop listening for the word (the mic stays open).
@@ -298,6 +320,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       report("in_conversation");
       if (!navigator.onLine) {
         tone("error");
+        outcome("offline");
         return finishHandOff();
       }
       // Development traces: sizes and flags, never words or audio.
@@ -307,31 +330,42 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       });
       const reject = () => {
         detector.outcome("rejected");
+        outcome("not_a_call", { transcribeMs });
         return finishHandOff();
       };
       // Over a reply still being prepared, a doubtful bare "ELISE" (or one that can't be read) is
       // let go: the reply continues. Not evidence of a false alarm, so detection isn't guarded for
       // it. A confident one interrupts, like over her voice.
       const letGo = overPreparing && guardedCall;
-      if (letGo && !capture.speechAfter) return finishHandOff();
+      if (letGo && !capture.speechAfter) {
+        outcome("let_go");
+        return finishHandOff();
+      }
       // ADR-130: every candidate is read, the bare word too. A meeting heard through speakers is
       // below the "speech" bar, so it looked like a word alone: it skipped this check, opened the
       // session and lifted the guard.
+      const asked = performance.now();
       const verdict = wakeVerdict(
         await transcribe(wav(capture.audio, capture.sampleRate)),
         interrupting,
       );
+      const transcribeMs = Math.round(performance.now() - asked);
       console.debug("[wake] transcribed", { verdict: verdict.kind });
       // Not evidence of a false alarm, but nothing to start on either: a chime already heard
       // gets its answer.
       if (verdict.kind === "unread") {
         if (chimed && controlRef.current.chime) tone("error");
+        outcome("unread", { transcribeMs });
         return finishHandOff();
       }
       // The words didn't start with "ELISE" (someone said it mid-sentence, or it wasn't the
       // word): no conversation starts, and the next candidates need more evidence.
       if (verdict.kind === "not_a_call") return reject();
       const { remainder } = verdict;
+      if (facts) {
+        facts.transcribeMs = transcribeMs;
+        facts.remainderWords = remainder.split(/\s+/).filter(Boolean).length;
+      }
       // A real call: the guard lifts, and a guarded candidate chimes now.
       detector.outcome("confirmed");
       if (!chimed && controlRef.current.chime) tone("wake");
@@ -340,6 +374,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       // "desactivá la activación por voz" also turns the setting off (Settings or the tray
       // turn it back on).
       const command = sessionCommand(remainder);
+      if (command && command !== "daily_summary") outcome("command");
       // ADR-104: "ELISE, mostrate" — the window to the front, and nothing else starts (a reply
       // that was paused for it goes on: finishHandOff resumes it).
       if (command === "show") {
@@ -375,7 +410,11 @@ export function DesktopWake({ children }: { children: ReactNode }) {
       requestDeviceWake(remainder);
       // From here the session's own phase drives the Orb.
       publishDeviceCapture(null);
-      handoffTimer = setTimeout(finishHandOff, HANDOFF_MS);
+      handoffTimer = setTimeout(() => {
+        // ADR-140: handed over, and no voice session took it (the call went nowhere).
+        outcome("no_session");
+        finishHandOff();
+      }, HANDOFF_MS);
     }
 
     const offPhase = onVoicePhase((p) => {
@@ -390,6 +429,7 @@ export function DesktopWake({ children }: { children: ReactNode }) {
           .catch(() => undefined);
       // The session took over (or ended): the hand-off is done.
       if (handingOff && !interrupting && !deviceMayListen(p)) {
+        outcome("session");
         handingOff = false;
         if (handoffTimer) clearTimeout(handoffTimer);
       }

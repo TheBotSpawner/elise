@@ -16,6 +16,7 @@ import {
 } from "../capabilities/tasks";
 import { AppError } from "../errors";
 import { parseExternalRef } from "../providers/refs";
+import { sameTitle } from "../text";
 
 /** Compact task view for the model: enough to reason and reference, nothing more. */
 function forModel(task: Task) {
@@ -152,15 +153,6 @@ const createTaskToolInput = createTaskInput.extend({
     .optional()
     .describe("true only after the user confirmed they want a second open task with that title."),
 });
-
-const titleKey = (t: string) =>
-  t
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-const sameTitle = (a: string, b: string) => titleKey(a) === titleKey(b);
 
 export const createTaskTool: ToolDefinition = {
   name: "tasks.create",

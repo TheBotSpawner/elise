@@ -26,6 +26,11 @@ export interface EntityReference {
 const REPAIR: Record<string, { tool: string; ref: (r: EntityReference) => string; undo: string }> =
   {
     task: { tool: "tasks.update", ref: (r) => `taskId "${r.id}"`, undo: "tasks.delete" },
+    calendar_event: {
+      tool: "calendar.updateEvent",
+      ref: (r) => `eventId "${r.id}"`,
+      undo: "calendar.deleteEvent",
+    },
     list_item: {
       tool: "lists.updateItem",
       ref: (r) => `list "${r.parent ?? r.id}", item "${r.displayName ?? ""}"`,
@@ -43,6 +48,11 @@ const REPAIR: Record<string, { tool: string; ref: (r: EntityReference) => string
 
 const NOUNS: Record<string, { es: string; en: string; words: RegExp }> = {
   task: { es: "la tarea", en: "the task", words: /\b(tarea|task|pendiente)\b/i },
+  calendar_event: {
+    es: "el evento",
+    en: "the event",
+    words: /\b(evento|event|reuni[oó]n|meeting|turno|cita)\b/i,
+  },
   list_item: { es: "el ítem", en: "the item", words: /\b([ií]tem|item|lista|list)\b/i },
   habit: { es: "el hábito", en: "the habit", words: /\b(h[aá]bito|habit)\b/i },
   goal: { es: "el objetivo", en: "the goal", words: /\b(objetivo|meta|goal)\b/i },
@@ -65,6 +75,10 @@ export function entityRefs(name: string, outcome: ToolCallOutcome): EntityRefere
   switch (display?.kind) {
     case "task":
       return [{ ...base, type: "task", id: display.task.id, displayName: display.task.title }];
+    case "event":
+      return display.change === "deleted"
+        ? []
+        : [{ ...base, id: display.event.id, displayName: display.event.title }];
     case "native_list": {
       const items = Array.isArray(out.added)
         ? out.added
@@ -134,7 +148,12 @@ const CORRECT = new RegExp(
     String.raw`\bquise decir\b`,
     // Cut off: what they add completes what was just written.
     String.raw`\bno me dejaste terminar\b|\bme cortaste\b|\bte estaba dictando\b`,
-    String.raw`\bme refer[ií]a\b`,
+    String.raw`\bme refer[ií]a\b|\bme refiero\b`,
+    // How it is written (ADR-139): "sacale la coma", "sin coma", "la G mayúscula", "todo junto".
+    String.raw`\b(?:sac|quit|borr)[aá]\w* (?:la |el |esa |ese )?(?:coma|tilde|acento|espacio|guion)\b`,
+    String.raw`\bsin (?:la |esa )?(?:coma|tilde|acento|espacio|guion)\b`,
+    String.raw`\b(?:may|min)[uú]sculas?\b`,
+    String.raw`\btodo junto\b|\bes un nombre\b`,
     String.raw`^\s*en realidad\b`,
     String.raw`^\s*no[\s,.!]+(no[\s,.!]+)?(era|eran|es|son|fue|fueron|dec[ií]a|dije|ah[ií]|eso|mejor)\b`,
     String.raw`^\s*(era|eran)\b`,
@@ -167,6 +186,13 @@ const TENTATIVE = /\b(capaz|quiz[aá]s?|tal vez|no s[eé] si|maybe|perhaps|i won
 /** "además agregá…", "also add": something new, not a correction. */
 const ADDITION = /\b(adem[aá]s|tambi[eé]n agreg|agreg[aá] tambi[eé]n|also add|and also|as well)\b/i;
 
+/**
+ * "Agendá…", "anotá…": a new write, even right after another one. Its "quise decir" or "todo
+ * junto" are about what it creates, never the previous object ("agregale…" is an edit).
+ */
+const NEW_WRITE =
+  /^\s*(?:por favor,?\s+)?(?:agreg[aá]|agregame|anot[aá]|anotame|cre[aá]|creame|agend[aá]|agendame|sum[aá]|sumame|add|create|schedule)(?!\p{L})/iu;
+
 export type RepairIntent = { kind: "correct" | "revert" };
 
 /** "No, leche." right after a write: a short "no" with a replacement. */
@@ -174,7 +200,7 @@ const SHORT_NO =
   /^\s*no[\s,.!]+(?!gracias|est[aá] bien|nada|dale|todav[ií]a|perfecto|ok|thanks|that'?s (fine|ok)|nothing|never ?mind)\p{L}/iu;
 
 export function detectRepair(message: string): RepairIntent | null {
-  if (ADDITION.test(message) || TENTATIVE.test(message)) return null;
+  if (ADDITION.test(message) || TENTATIVE.test(message) || NEW_WRITE.test(message)) return null;
   if (REVERT.test(message)) return { kind: "revert" };
   if (CORRECT.test(message)) return { kind: "correct" };
   if (SHORT_NO.test(message) && message.trim().split(/\s+/).length <= 6) return { kind: "correct" };
@@ -240,11 +266,15 @@ export function repairHint(
   const { ref, previous } = target;
   const r = REPAIR[ref.type]!;
   const what = `${NOUNS[ref.type]?.en ?? ref.type} "${ref.displayName ?? ref.id}" (${r.ref(ref)})`;
-  if (intent.kind === "revert")
-    return previous
-      ? `The user wants to undo your last change to ${what}. Restore its previous value "${previous}" with ${r.tool} now — same object, no question — then say it's back as it was.`
-      : `The user wants to undo creating ${what}. Undoing a creation removes it: use ${r.undo} on that same object (its approval rules apply as usual), then say so briefly.`;
-  return `The user is correcting what you just did to ${what}. Their correction is the go-ahead: fix it now with ${r.tool} on that same object, changing only what they corrected and keeping everything else. Work out from their words which field it is: the name or a word in it ("era Mi ELISE", "Marcos con s"), a number or amount ("mejor 15"), or where it belongs — "cambialo a Personal" when a list, category or Ámbito is called that moves it there, never renames it to "Personal". If you can't tell which field, ask that in one short question. Don't ask whether to fix it, never create a new one, and don't apply or update a Method for this. Reply in one short line with the final value ("Corregido: ahora dice …"); by voice just "Listo, corregido." If the tool fails, say you understood the correction but couldn't update it.`;
+  if (intent.kind === "revert") {
+    if (previous)
+      return `The user wants to undo your last change to ${what}. Restore its previous value "${previous}" with ${r.tool} now — same object, no question — then say it's back as it was.`;
+    // The name didn't change but something else did (a date, a place): undoing it deletes nothing.
+    if (!/\.(create|add)/i.test(ref.sourceAction))
+      return `The user wants to undo your last change to ${what}. Restore what it had before, from this conversation, with ${r.tool}; if you can't tell what it was, ask. Never delete it.`;
+    return `The user wants to undo creating ${what}. Undoing a creation removes it: use ${r.undo} on that same object (its approval rules apply as usual), then say so briefly.`;
+  }
+  return `The user is correcting what you just did to ${what}. Their correction is the go-ahead: fix it now with ${r.tool} on that same object, passing only the field they corrected and keeping everything else. Work out from their words which field it is: the name or a word in it ("era Mi ELISE", "Marcos con s"), a number or amount ("mejor 15"), or where it belongs — "cambialo a Personal" when a list, category or Ámbito is called that moves it there, never renames it to "Personal". If you can't tell which field, ask that in one short question. Don't ask whether to fix it, never create a new one, and don't apply or update a Method for this. Reply in one short line with the final value exactly as the tool returned it ("Corregido: ahora dice …"; by voice "Listo, quedó …"). If the tool fails, say you understood the correction but couldn't update it.`;
 }
 
 /** Turn guidance for names heard one way and meaning a known one (product names, Spaces…). */

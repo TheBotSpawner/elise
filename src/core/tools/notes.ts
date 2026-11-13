@@ -158,7 +158,7 @@ export const createNoteTool: ToolDefinition = {
   capability: "notes",
   operation: "create",
   description:
-    'Save a note ("save this as a note in Acme"). Write a short title and the content in the user\'s words, with shape when it helps, in Markdown: an emoji before the title, ## and ### headings for sections, **bold** for key ideas, a bullet per item of an enumeration ("más ventas, mayor productividad…"), an emoji here and there. Never add or drop ideas; a one-line note stays plain. Set `spaces` with every Knowledge Space they name ("guardala en General y Trabajo") so it becomes searchable there — one note, never one per Space. Confirm where it was saved.',
+    'Save a note ("save this as a note in Acme"). Write a short title and the content in the user\'s words, with shape when it helps, in Markdown: an emoji before the title, ## and ### headings for sections, **bold** for key ideas, a bullet per item of an enumeration ("más ventas, mayor productividad…"), an emoji here and there. Never add or drop ideas; a one-line note stays plain. Dictated to keep ("que diga exactamente…", "textual", "tal cual"): the content is those words as said, with their punctuation and lowercase, no Markdown, no emoji, never summarized. Set `spaces` with every Knowledge Space they name ("guardala en General y Trabajo") so it becomes searchable there — one note, never one per Space. Confirm where it was saved.',
   input: createNoteInput,
   async describe(raw) {
     return { summary: `Save note “${createNoteInput.parse(raw).title}”` };

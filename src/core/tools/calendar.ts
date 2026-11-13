@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import type { ToolDefinition, ToolRunEnv, ToolRunResult } from "../agents/tools";
 import {
   createEventInput,
@@ -20,6 +22,7 @@ import {
 } from "../capabilities/calendar";
 import { AppError } from "../errors";
 import { parseExternalRef } from "../providers/refs";
+import { sameTitle } from "../text";
 import { toLocalDateTime, zonedDateTimeToUtc } from "../time";
 
 function provider(env: ToolRunEnv) {
@@ -389,19 +392,27 @@ function availabilityResult(
   };
 }
 
+/** Creating: the event, plus the confirmation that a second identical one is really wanted. */
+const createEventToolInput = createEventInput.extend({
+  allowDuplicate: z
+    .boolean()
+    .optional()
+    .describe("true only after the user confirmed they want a second event just like that one."),
+});
+
 export const createEventTool: ToolDefinition = {
   name: "calendar.createEvent",
   capability: "calendar",
   operation: "createEvent",
   description:
-    "Create a calendar event. Times are local (YYYY-MM-DDTHH:mm) in the user's timezone; use a date for all-day events. Only add attendees the user explicitly named — inviting people requires the user's approval. Set `destination` or `calendar` only when the user says which account or calendar.",
-  input: createEventInput,
-  route: (input) => routeByRef(createEventInput.parse(input).calendar),
+    "Create a calendar event. The title says what it is, as the user meant it, written cleanly: from a voice transcript apply spelling and dictated punctuation instead of copying them, and leave out request words and what has its own field (the date, the place, the people invited). Times are local (YYYY-MM-DDTHH:mm) in the user's timezone; use a date for all-day events. Only add attendees the user explicitly named — inviting people requires the user's approval. Set `destination` or `calendar` only when the user says which account or calendar.",
+  input: createEventToolInput,
+  route: (input) => routeByRef(createEventToolInput.parse(input).calendar),
   async assess(input) {
-    return createEventInput.parse(input).attendees?.length ? EXTERNAL : null;
+    return createEventToolInput.parse(input).attendees?.length ? EXTERNAL : null;
   },
   async describe(input, env) {
-    const e = createEventInput.parse(input);
+    const e = createEventToolInput.parse(input);
     const times = withRange(() =>
       resolveEventTimes(e.start, e.end, e.durationMinutes, env.ctx.timezone),
     );
@@ -411,10 +422,29 @@ export const createEventTool: ToolDefinition = {
     };
   },
   async run(input, env) {
-    const e = createEventInput.parse(input);
+    const { allowDuplicate, ...e } = createEventToolInput.parse(input);
     const tz = env.ctx.timezone;
     const times = withRange(() => resolveEventTimes(e.start, e.end, e.durationMinutes, tz));
     const cal = provider(env);
+    const span = { start: eventTimeToUtc(times.start, tz), end: eventTimeToUtc(times.end, tz) };
+    // The same event again (a repeated request, a retry): ask, never stack copies (ADR-139).
+    if (!allowDuplicate) {
+      const at = times.start.kind === "date" ? times.start.date : times.start.local.slice(0, 16);
+      const same = (
+        await cal
+          .listEvents({ timeMin: span.start, timeMax: span.end, limit: 50 })
+          .catch(() => [] as CalendarEvent[])
+      ).find((x) => sameTitle(x.title, e.title) && local(x.start, tz).slice(0, 16) === at);
+      if (same)
+        return {
+          output: {
+            created: false,
+            alreadyExists: forModel(same, tz),
+            instructions:
+              "That same event already exists at that time: nothing was created. Say so in one line and ask if they want another one (then call again with allowDuplicate).",
+          },
+        };
+    }
     const event = await cal.createEvent(
       {
         title: e.title,
@@ -428,7 +458,6 @@ export const createEventTool: ToolDefinition = {
       { idempotencyKey: env.actionId ?? null },
     );
     // Conflicts are reported, not blocked: the user decided to book this time.
-    const span = { start: eventTimeToUtc(times.start, tz), end: eventTimeToUtc(times.end, tz) };
     const conflicts =
       times.start.kind === "dateTime"
         ? (await cal.busy({ timeMin: span.start, timeMax: span.end }).catch(() => [])).filter(
@@ -455,7 +484,7 @@ export const updateEventTool: ToolDefinition = {
   capability: "calendar",
   operation: "updateEvent",
   description:
-    "Change an existing event (title, local start/end, location, description, attendees). Find the event id with calendar.listEvents first. Changing an event with other people needs approval.",
+    "Change an existing event (title, local start/end, location, description, attendees). Pass only what changes: everything else stays as it is. For an event just written, use the id from this conversation's notes; otherwise find it with calendar.listEvents first. Changing an event with other people needs approval.",
   input: updateEventInput,
   route: (input) => routeByRef(updateEventInput.parse(input).eventId),
   async assess(input, env) {
