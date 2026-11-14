@@ -1483,8 +1483,14 @@ export class VoiceController {
         continuous: this.prefs.continuous,
       });
     }
-    // A session already listening hears it directly; one replying isn't interrupted.
-    if (this.state.phase !== "sleeping") return;
+    if (this.state.phase !== "sleeping") {
+      // The device heard these words, not this session: one that started listening meanwhile
+      // (a reply ending in continuous conversation) takes them as its turn instead of losing
+      // them after the chime. A bare "ELISE" needs nothing: it already listens.
+      const text = remainder.trim();
+      if (text && isHearing(this.state)) this.sayRemainder(text);
+      return;
+    }
     await this.wakeUp(remainder, false);
   }
 

@@ -1957,6 +1957,21 @@ describe("a device's wake word hands over to the session", () => {
     expect(controller.state.phase).toBe("thinking");
   });
 
+  it("a session that started listening while the device captured takes the words, once", async () => {
+    // "ELISE, …" said as a reply ends in continuous conversation: the chime sounded, the device
+    // has the words, and the session is listening by the time they arrive.
+    const { controller, sent, hear } = setup();
+    await controller.start();
+    await hear(VOICE_TURN.calibrateMs, 0.002);
+    expect(controller.state.phase).toBe("listening");
+    await controller.deviceWake("¿qué tengo mañana?");
+    await settle();
+    expect(sent.map((s) => s.text)).toEqual(["¿qué tengo mañana?"]);
+    // The bare word changes nothing for a session already listening.
+    await controller.deviceWake("");
+    expect(sent).toHaveLength(1);
+  });
+
   it("ending the session drops words still waiting for the room", async () => {
     const { controller, sent, hear } = setup();
     await controller.deviceWake("¿qué tengo mañana?");
