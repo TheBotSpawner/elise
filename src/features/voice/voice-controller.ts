@@ -670,7 +670,13 @@ export class VoiceController {
     if (detector && detector.lastVoiceAt >= 0)
       this.marks.lastVoice ??= Math.max(0, Math.round(detector.lastVoiceAt - this.t0));
     this.marks.endVerdict =
-      detector?.endVerdict === "complete" ? 1 : detector?.endVerdict === "unfinished" ? 2 : 0;
+      detector?.endVerdict === "complete"
+        ? 1
+        : detector?.endVerdict === "unfinished"
+          ? 2
+          : detector?.endVerdict === "open_request"
+            ? 3
+            : 0;
     this.mark("speechEnd");
     this.mark("turnDetected");
     this.act({ type: "speech_end" });

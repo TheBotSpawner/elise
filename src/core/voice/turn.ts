@@ -33,6 +33,11 @@ export const VOICE_TURN = {
   endSilenceMs: 2_000,
   /** …and one that sounds unfinished ("y", "pero", "the", a comma). Conservative on purpose. */
   unfinishedSilenceMs: 2_400,
+  /**
+   * …and one that asked for something without saying what ("agregame por favor", "buscame"):
+   * the person is still thinking of it. Cutting there was the worst interruption (2026-11-15).
+   */
+  openRequestSilenceMs: 4_000,
   /** Nothing said for this long: the utterance ends empty. */
   noSpeechMs: 8_000,
   maxUtteranceMs: VOICE_LIMITS.maxUtteranceMs,
@@ -55,7 +60,7 @@ export const VOICE_TURN = {
 export type TurnSignal = "speech_start" | "pause" | "resumed" | "end" | "no_speech" | null;
 
 /** What the provisional transcript says about the phrase so far (null: nothing yet). */
-export type EndVerdict = "complete" | "unfinished" | null;
+export type EndVerdict = "complete" | "unfinished" | "open_request" | null;
 
 /**
  * One utterance's turn detection. `frame()` takes the input RMS every tick and returns at
@@ -159,7 +164,11 @@ export class TurnDetector {
     if (!this.heard) return elapsed >= this.cfg.noSpeechMs ? this.finish("no_speech") : null;
     const silence = now - this.lastVoice;
     const needed =
-      this.verdictNow === "unfinished" ? this.cfg.unfinishedSilenceMs : this.cfg.endSilenceMs;
+      this.verdictNow === "open_request"
+        ? this.cfg.openRequestSilenceMs
+        : this.verdictNow === "unfinished"
+          ? this.cfg.unfinishedSilenceMs
+          : this.cfg.endSilenceMs;
     if (silence >= needed) return this.finish("end");
     if (!this.paused && silence >= this.cfg.snapshotPauseMs) {
       this.paused = true;
@@ -228,9 +237,21 @@ export function looksComplete(text: string): boolean {
   return !looksUnfinished(bare);
 }
 
+/**
+ * A request that hasn't said what yet: "Agregame, por favor.", "Elise, buscame", "necesito".
+ * Only the verb (with its pronoun) and courtesy words — anything more is the request itself.
+ */
+const OPEN_REQUEST =
+  /^(?:(?:elise|eli|che|bueno|dale|ok|hola)[\s,.]+)*(?:(?:agrega|anota|agenda|recorda|busca|pone|pasa|manda|crea|suma|deci|conta|mostra|abri|escribi)(?:me|le|les|nos|melo|mela)|necesito|quiero|podrias|podes|add|remind me|find|show me|send|create|i need|i want)(?:[\s,.]+(?:por favor|porfa|elise|eli|please))*[\s,.!?]*$/;
+
+export function isOpenRequest(text: string): boolean {
+  return OPEN_REQUEST.test(text.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
+}
+
 /** The provisional transcript's verdict on the phrase so far. */
 export function endVerdict(text: string): EndVerdict {
   const t = text.trim();
+  if (isOpenRequest(t)) return "open_request";
   // A trailing ellipsis is a cut phrase even when the recognizer closes it ("…de Magic de...?").
   if (/(?:\.\.\.|…)[.!?]*$/.test(t)) return "unfinished";
   // Recognizers close even a cut phrase with a period or a question mark ("…que me digas y.",

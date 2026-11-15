@@ -1616,6 +1616,28 @@ describe("voice turn latency (ADR-036)", () => {
 });
 
 describe("turn verdicts and latency stages (ADR-036)", () => {
+  it.each([
+    "Agrégame por favor.",
+    "Elise, buscame",
+    "Anotame, porfa.",
+    "Necesito...",
+    "Add, please.",
+    "Remind me.",
+  ])("%s → asked for something without saying what: waits longer", (said) => {
+    expect(endVerdict(said)).toBe("open_request");
+    expect(VOICE_TURN.openRequestSilenceMs).toBeGreaterThan(VOICE_TURN.unfinishedSilenceMs);
+  });
+
+  it.each([
+    "Agregame por favor el meeting con Rod mañana a las 10.",
+    "Buscame las noticias de hoy.",
+    "Necesito un taxi.",
+    "agenda.",
+    "Suma.",
+  ])("%s → the request is there", (said) => {
+    expect(endVerdict(said)).not.toBe("open_request");
+  });
+
   it("complete, unfinished, or not sure — only a clear sentence ends early", () => {
     expect(endVerdict("¿Qué tengo mañana?")).toBe("complete");
     expect(endVerdict("Buscame las noticias de hoy.")).toBe("complete");

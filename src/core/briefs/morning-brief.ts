@@ -459,6 +459,11 @@ const CAPS = {
   slackText: 240,
 };
 
+/** All-day starts are already a calendar day; parsing them as UTC shifts them back in the Americas. */
+function eventDay(start: string, tz: string): string {
+  return start.length === 10 ? start : toLocalDateTime(new Date(start), tz).slice(0, 10);
+}
+
 /**
  * Today's focus: only contexts with a concrete signal — a meeting today, tasks due or overdue,
  * a reply waiting, an exam within three days. Most profiles, most days, say nothing.
@@ -468,8 +473,7 @@ function briefFocus(data: BriefData, today: string): BriefFocus[] {
   if (!c?.profiles.length) return [];
   const tz = data.timezone;
   const dayEvents = (data.events ?? []).filter(
-    (e) =>
-      e.status !== "cancelled" && toLocalDateTime(new Date(e.start), tz).slice(0, 10) === today,
+    (e) => e.status !== "cancelled" && eventDay(e.start, tz) === today,
   );
   const due = (data.tasks ?? []).filter(
     (t) => isOpenTask(t) && t.dueDate !== null && t.dueDate <= today,
@@ -890,9 +894,7 @@ function forModel(b: MorningBrief) {
     today: b.today && {
       events: b.today.events.map((e) => ({
         title: e.title,
-        ...(b.period && b.period.days > 1
-          ? { day: toLocalDateTime(new Date(e.start), b.timezone).slice(0, 10) }
-          : {}),
+        ...(b.period && b.period.days > 1 ? { day: eventDay(e.start, b.timezone) } : {}),
         ...(e.allDay ? { allDay: true } : { start: time(e.start), end: time(e.end) }),
         ...(e.withOthers ? { people: e.withOthers } : {}),
         source: e.source,

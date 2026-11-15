@@ -200,28 +200,28 @@ function useNow(): number {
 
 function useFormat(timezone: string) {
   const { locale } = useI18n();
-  const day = new Intl.DateTimeFormat(locale, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    timeZone: timezone,
-  });
   const time = new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
     timeZone: timezone,
   });
-  const date = new Intl.DateTimeFormat(locale, {
-    day: "numeric",
-    month: "short",
-    timeZone: timezone,
-  });
+  // A date-only value ("2026-11-30", all-day events) is a calendar day, not an
+  // instant: read it as UTC and format it in UTC, or UTC-3 shows the day before.
+  const dated = (options: Intl.DateTimeFormatOptions) => {
+    const zoned = new Intl.DateTimeFormat(locale, { ...options, timeZone: timezone });
+    const plain = new Intl.DateTimeFormat(locale, { ...options, timeZone: "UTC" });
+    return (iso: string) =>
+      !iso
+        ? ""
+        : iso.length === 10
+          ? plain.format(new Date(`${iso}T00:00:00Z`))
+          : zoned.format(new Date(iso));
+  };
   return {
-    day: (iso: string) => day.format(new Date(iso)),
+    day: dated({ weekday: "short", day: "numeric", month: "short" }),
     time: (iso: string) => time.format(new Date(iso)),
-    date: (iso: string) =>
-      iso ? date.format(new Date(iso.length === 10 ? `${iso}T12:00:00Z` : iso)) : "",
+    date: dated({ day: "numeric", month: "short" }),
   };
 }
 

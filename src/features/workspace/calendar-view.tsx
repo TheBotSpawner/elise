@@ -240,7 +240,8 @@ function Toolbar({
     "grid size-8 place-items-center rounded-full border border-border text-muted hover:border-accent-line hover:text-fg";
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <p className="min-w-0 flex-1 truncate text-[15px] font-medium capitalize first-letter:uppercase">
+      {/* Never squeezed below its own width: the controls wrap to the next line instead. */}
+      <p className="min-w-[min(100%,max-content)] flex-1 truncate text-[15px] font-medium capitalize first-letter:uppercase">
         {title}
       </p>
       {onChange && (
