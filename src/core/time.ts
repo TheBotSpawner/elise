@@ -55,6 +55,20 @@ export function isIsoDate(value: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(value);
 }
 
+/**
+ * When a moment was, said from today in `timezone`: "today", "yesterday", "5 days ago",
+ * "tomorrow". Computed here so a model never says "hoy" about a message from last Monday.
+ */
+export function relativeDay(when: Date, timezone: string, now: Date = new Date()): string {
+  const days = Math.round(
+    (Date.parse(todayIn(timezone, now)) - Date.parse(todayIn(timezone, when))) / 86_400_000,
+  );
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days === -1) return "tomorrow";
+  return days > 0 ? `${days} days ago` : `in ${-days} days`;
+}
+
 export function addDays(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);

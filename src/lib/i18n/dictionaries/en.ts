@@ -3342,6 +3342,7 @@ export const en = {
     label: "Live Canvas",
     back: "Back",
     open: "Open",
+    minimize: "Minimize",
     pin: "Pin",
     unpin: "Unpin",
     pinned: "Pinned",

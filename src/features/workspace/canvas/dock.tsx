@@ -114,7 +114,8 @@ export function Dock({
     setDraft("");
   };
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    // Phones: Enter is a new line, like any messaging app; the send button sends.
+    if (e.key === "Enter" && !mobile && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
     }
@@ -208,6 +209,7 @@ export function Dock({
               onKeyDown={onKeyDown}
               onPaste={onPaste}
               rows={1}
+              enterKeyHint={mobile ? "enter" : "send"}
               maxLength={8000}
               autoComplete="off"
               placeholder={mobile ? t.home.placeholderMobile : t.chat.replyPlaceholder}
@@ -228,34 +230,42 @@ export function Dock({
             aria-live="polite"
             className="flex min-w-0 flex-1 flex-col gap-[3px] py-2 text-left"
           >
-            {caption.who && (
-              <span
-                className={cn(
-                  "font-mono text-[10px] tracking-[0.16em] uppercase",
-                  caption.tone === "approval"
-                    ? "text-approval-text"
-                    : caption.who === "YOU"
-                      ? "text-fg2"
-                      : "text-accent-text",
+            {/* Phones: no live caption — cut to a line and a half it read badly; the transcript
+                and the canvas carry the words. The idle prompt stays. */}
+            {mobile && caption.who ? (
+              <span className="sr-only">{stripSpokenTags(caption.text)}</span>
+            ) : (
+              <>
+                {caption.who && (
+                  <span
+                    className={cn(
+                      "font-mono text-[10px] tracking-[0.16em] uppercase",
+                      caption.tone === "approval"
+                        ? "text-approval-text"
+                        : caption.who === "YOU"
+                          ? "text-fg2"
+                          : "text-accent-text",
+                    )}
+                  >
+                    {caption.who === "YOU" ? t.canvas.you : "ELISE"}
+                  </span>
                 )}
-              >
-                {caption.who === "YOU" ? t.canvas.you : "ELISE"}
-              </span>
+                <span
+                  className={cn(
+                    // A live caption may take two lines; the idle prompt stays on one.
+                    caption.who ? "line-clamp-2 leading-[1.38]" : "truncate leading-[1.38]",
+                    "text-[15px]",
+                    caption.tone === "problem"
+                      ? "text-approval-text"
+                      : caption.who
+                        ? "text-fg"
+                        : "text-faint",
+                  )}
+                >
+                  {stripSpokenTags(caption.text) || (mobile ? t.canvas.askMobile : t.canvas.ask)}
+                </span>
+              </>
             )}
-            <span
-              className={cn(
-                // A live caption may take two lines; the idle prompt stays on one.
-                caption.who ? "line-clamp-2 leading-[1.38]" : "truncate leading-[1.38]",
-                "text-[15px]",
-                caption.tone === "problem"
-                  ? "text-approval-text"
-                  : caption.who
-                    ? "text-fg"
-                    : "text-faint",
-              )}
-            >
-              {stripSpokenTags(caption.text) || (mobile ? t.canvas.askMobile : t.canvas.ask)}
-            </span>
           </button>
         )}
         <span className={cn("flex shrink-0 items-center gap-1", stacked && "ml-auto")}>

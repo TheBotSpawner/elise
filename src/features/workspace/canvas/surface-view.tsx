@@ -13,6 +13,7 @@ import {
   Mail,
   MapPin,
   Maximize2,
+  Minimize2,
   Pin,
   Sparkles,
   X,
@@ -274,6 +275,12 @@ export const SurfaceView = memo(function SurfaceView({
                 onClick={() => handlers.onFocus(surface)}
               >
                 <Maximize2 className="size-3.5" aria-hidden />
+              </IconButton>
+            )}
+            {/* Back to the canvas without closing it (on phones the X was the only way out). */}
+            {focused && (
+              <IconButton label={`${t.canvas.minimize}: ${name}`} onClick={handlers.onUnfocus}>
+                <Minimize2 className="size-3.5" aria-hidden />
               </IconButton>
             )}
             {!attention && (

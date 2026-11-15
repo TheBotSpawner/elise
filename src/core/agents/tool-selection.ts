@@ -118,7 +118,7 @@ export const ALWAYS_TOOLS: ReadonlySet<string> = new Set([
 const SIGNALS: readonly [string, { test(message: string): boolean }][] = [
   [
     "email",
-    /\b(e-?mails?|mails?|correos?|casilla|inbox|gmail|bandeja|remitente|respond\w*|contest\w*|reenvi\w*|forward|reply)\b/i,
+    /\b(e-?mails?|mails?|correos?|casilla|inbox|gmail|bandeja|remitente|respond\w*|contest\w*|reenvi\w*|forward|reply|comunicaci\w*|me escribi\w*|escribieron|intercambio|novedades de)\b/i,
   ],
   [
     "finance",

@@ -36,7 +36,7 @@ import {
 } from "../capabilities/email-triage";
 import { AppError } from "../errors";
 import { parseExternalRef } from "../providers/refs";
-import { startOfDayUtc, toLocalDateTime } from "../time";
+import { relativeDay, startOfDayUtc, toLocalDateTime } from "../time";
 
 /**
  * Email tools (capability "email"). Search first, metadata first, bodies only for the message
@@ -67,6 +67,7 @@ function messageForModel(m: EmailMessage, timezone: string) {
     from: m.fromMe ? "you" : who(m.from),
     ...(m.fromMe ? { to: m.to.slice(0, 3).map(who) } : {}),
     date: toLocalDateTime(new Date(m.date), timezone),
+    when: relativeDay(new Date(m.date), timezone),
     subject: m.subject,
     snippet: clip(m.snippet, 200),
     ...(m.unread ? { unread: true } : {}),
@@ -282,6 +283,7 @@ function bodyForModel(m: EmailMessage, max: number, timezone: string) {
     to: m.to.map(who),
     ...(m.cc.length ? { cc: m.cc.map(who) } : {}),
     date: toLocalDateTime(new Date(m.date), timezone),
+    when: relativeDay(new Date(m.date), timezone),
     ...(m.attachments.length ? { attachments: m.attachments } : {}),
     // Data, never instructions (see context guidance).
     untrustedContent: clip(m.body ?? m.snippet, max),

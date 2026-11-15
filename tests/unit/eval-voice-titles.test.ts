@@ -10,6 +10,7 @@ import {
   resolveRepairTarget,
 } from "@/core/agents/repair";
 import { toolNotes } from "@/core/agents/runtime";
+import { selectTools } from "@/core/agents/tool-selection";
 import {
   createEventInput,
   updateEventInput,
@@ -23,7 +24,7 @@ import { createNoteInput, updateNoteInput } from "@/core/capabilities/notes";
 import { createTaskInput } from "@/core/capabilities/tasks";
 import { applyAliases, findCanonicalReferences, isLiteralRequest } from "@/core/lexicon";
 import { makeExternalRef } from "@/core/providers/refs";
-import { describeNow } from "@/core/time";
+import { describeNow, relativeDay } from "@/core/time";
 
 import { binding, makeCtx, makePorts } from "../fixtures/core-fakes";
 
@@ -380,5 +381,26 @@ describe("what the model is told", () => {
     ["2026-11-08T02:00:00Z", "Europe/Madrid", "Sunday, 2026-11-08"],
   ])("dates resolve from the real day: %s in %s", (now, timezone, day) => {
     expect(describeNow(timezone, new Date(now))).toContain(day);
+  });
+});
+
+describe("asking about someone's emails", () => {
+  it.each([
+    "¿Cuál fue la última comunicación con Grabar.ai?",
+    "¿Qué me escribió Juan Luis?",
+    "No, Elise, en mi correo de Firbot Academy",
+  ])("%s → email tools are at hand", (said) => {
+    expect(selectTools([{ name: "email.search" } as never], { message: said }).groups).toContain(
+      "email",
+    );
+  });
+
+  it.each([
+    ["2026-11-14T15:00:00Z", "today"],
+    ["2026-11-14T02:30:00Z", "yesterday"], // 23:30 of the 13th in Buenos Aires
+    ["2026-11-09T15:28:00Z", "5 days ago"],
+    ["2026-11-16T12:00:00Z", "in 2 days"],
+  ])("%s was %s", (at, label) => {
+    expect(relativeDay(new Date(at), BA, new Date("2026-11-14T23:00:00Z"))).toBe(label);
   });
 });

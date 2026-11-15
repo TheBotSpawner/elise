@@ -3377,6 +3377,7 @@ export const es: Dictionary = {
     label: "Live Canvas",
     back: "Volver",
     open: "Abrir",
+    minimize: "Minimizar",
     pin: "Fijar",
     unpin: "Soltar",
     pinned: "Fijado",
