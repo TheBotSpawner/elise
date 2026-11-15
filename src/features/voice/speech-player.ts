@@ -238,7 +238,7 @@ export class SpeechPlayer {
   private async drain(generation: number) {
     this.working = true;
     await this.streamReady;
-    await this.ctx.resume();
+    await this.wake();
     for (;;) {
       if (generation !== this.generation) return;
       this.prefetch();
@@ -454,7 +454,7 @@ export class SpeechPlayer {
   /** A very short, quiet tone when the wake phrase is heard (no "Yes?" every time). */
   chime() {
     logSound("chime:wake");
-    void this.ctx.resume();
+    void this.wake();
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     const t = this.ctx.currentTime;
@@ -472,18 +472,32 @@ export class SpeechPlayer {
    * checks whether "ELISE" was said to her; resume() continues exactly there.
    */
   pause() {
+    this.held = true;
     void this.ctx.suspend().catch(() => undefined);
     logSound("audio:paused");
   }
 
   resume() {
+    this.held = false;
     void this.ctx.resume().catch(() => undefined);
     logSound("audio:resumed");
   }
 
+  /**
+   * Paused by the device: only resume() lets sound out again. A reply that arrives meanwhile (she
+   * was still searching when "ELISE" was heard) queues silently instead of waking the output and
+   * talking over the person.
+   */
+  private held = false;
+  private wake() {
+    return this.held ? Promise.resolve() : this.ctx.resume();
+  }
+
   /** Stops speaking now (interruption); whatever was generated stays on screen. */
   stop() {
-    // A new generation: chunks of anything requested before are never scheduled.
+    // A new generation: chunks of anything requested before are never scheduled — and nothing
+    // held stays held for the next reply.
+    this.held = false;
     this.generation++;
     this.queue = [];
     this.ahead = null;

@@ -26,6 +26,11 @@ export interface EntityReference {
 const REPAIR: Record<string, { tool: string; ref: (r: EntityReference) => string; undo: string }> =
   {
     task: { tool: "tasks.update", ref: (r) => `taskId "${r.id}"`, undo: "tasks.delete" },
+    day_plan: {
+      tool: "planning.proposeDay",
+      ref: (r) => `date "${r.id}"`,
+      undo: "ui.dismiss",
+    },
     calendar_event: {
       tool: "calendar.updateEvent",
       ref: (r) => `eventId "${r.id}"`,
@@ -48,6 +53,11 @@ const REPAIR: Record<string, { tool: string; ref: (r: EntityReference) => string
 
 const NOUNS: Record<string, { es: string; en: string; words: RegExp }> = {
   task: { es: "la tarea", en: "the task", words: /\b(tarea|task|pendiente)\b/i },
+  day_plan: {
+    es: "el plan del día",
+    en: "the day plan",
+    words: /\b(plan|planificaci[oó]n|bloques?|cronograma)\b/i,
+  },
   calendar_event: {
     es: "el evento",
     en: "the event",
@@ -68,7 +78,18 @@ const clean = (s: string) => s.replace(/["()\n]/g, "'").slice(0, 120);
 
 /** What a successful write left behind that the user may correct next. */
 export function entityRefs(name: string, outcome: ToolCallOutcome): EntityReference[] {
-  if (outcome.status !== "succeeded" || !outcome.target) return [];
+  if (outcome.status !== "succeeded") return [];
+  // A day plan is a proposal with no id of its own: it is "the plan for <date>".
+  if (outcome.display?.kind === "day_plan")
+    return [
+      {
+        type: "day_plan",
+        id: outcome.display.plan.date,
+        displayName: `plan del ${outcome.display.plan.date}`,
+        sourceAction: name,
+      },
+    ];
+  if (!outcome.target) return [];
   const { target, display, output } = outcome;
   const base = { type: target.type, id: target.id, sourceAction: name };
   const out = (output ?? {}) as { added?: unknown; updated?: unknown };
@@ -154,6 +175,9 @@ const CORRECT = new RegExp(
     String.raw`\bsin (?:la |esa )?(?:coma|tilde|acento|espacio|guion)\b`,
     String.raw`\b(?:may|min)[uú]sculas?\b`,
     String.raw`\btodo junto\b|\bes un nombre\b`,
+    // Spelling it out: "L-A-R-R-E-A", "se escribe con…" (never "¿cómo se escribe…?").
+    String.raw`(?<!\p{L})\p{L}(?:[-.]\p{L}){3,}(?!\p{L})`,
+    String.raw`(?<!c[oó]mo )\bse escribe\b`,
     String.raw`^\s*en realidad\b`,
     String.raw`^\s*no[\s,.!]+(no[\s,.!]+)?(era|eran|es|son|fue|fueron|dec[ií]a|dije|ah[ií]|eso|mejor)\b`,
     String.raw`^\s*(era|eran)\b`,
@@ -274,7 +298,11 @@ export function repairHint(
       return `The user wants to undo your last change to ${what}. Restore what it had before, from this conversation, with ${r.tool}; if you can't tell what it was, ask. Never delete it.`;
     return `The user wants to undo creating ${what}. Undoing a creation removes it: use ${r.undo} on that same object (its approval rules apply as usual), then say so briefly.`;
   }
-  return `The user is correcting what you just did to ${what}. Their correction is the go-ahead: fix it now with ${r.tool} on that same object, passing only the field they corrected and keeping everything else. Work out from their words which field it is: the name or a word in it ("era Mi ELISE", "Marcos con s"), a number or amount ("mejor 15"), or where it belongs — "cambialo a Personal" when a list, category or Ámbito is called that moves it there, never renames it to "Personal". If you can't tell which field, ask that in one short question. Don't ask whether to fix it, never create a new one, and don't apply or update a Method for this. Reply in one short line with the final value exactly as the tool returned it ("Corregido: ahora dice …"; by voice "Listo, quedó …"). If the tool fails, say you understood the correction but couldn't update it.`;
+  // If they also ask to keep it ("recordalo", "desde ahora escribilo así"), that comes after the fix.
+  const keep = ` If they also ask you to remember it from now on, do that too — after the fix, never instead of it.`;
+  if (ref.type === "day_plan")
+    return `The user is correcting the day plan you just proposed (${what}). Their correction is the go-ahead: call ${r.tool} now with that same date and the WHOLE day again — the same blocks and times, with only what they corrected changed (a name's spelling goes into every block that has it). Don't ask whether to fix it. Reply in one short line with the corrected value.${keep}`;
+  return `The user is correcting what you just did to ${what}. Their correction is the go-ahead: fix it now with ${r.tool} on that same object, passing only the field they corrected and keeping everything else. Work out from their words which field it is: the name or a word in it ("era Mi ELISE", "Marcos con s"), a number or amount ("mejor 15"), or where it belongs — "cambialo a Personal" when a list, category or Ámbito is called that moves it there, never renames it to "Personal". If you can't tell which field, ask that in one short question. Don't ask whether to fix it, never create a new one, and never update a Method instead of fixing it. Reply in one short line with the final value exactly as the tool returned it ("Corregido: ahora dice …"; by voice "Listo, quedó …"). If the tool fails, say you understood the correction but couldn't update it.${keep}`;
 }
 
 /** Turn guidance for names heard one way and meaning a known one (product names, Spaces…). */

@@ -404,3 +404,35 @@ describe("asking about someone's emails", () => {
     expect(relativeDay(new Date(at), BA, new Date("2026-11-14T23:00:00Z"))).toBe(label);
   });
 });
+
+describe("correcting a day plan", () => {
+  const plan = {
+    status: "succeeded",
+    display: { kind: "day_plan", plan: { date: "2026-11-15", blocks: [], gaps: [] } },
+  };
+  const history = [
+    {
+      role: "assistant",
+      toolNotes: toolNotes([{ name: "planning.proposeDay", outcome: plan }] as never),
+    },
+  ];
+  const said =
+    "desarrollo Centro Larrea, tipo L-A-R-R-E-A. Por favor recordá eso porque mi cliente es Centro Larrea. Desde ahora escribilo así";
+
+  it("the real request: the plan is redone, and remembering comes after", () => {
+    expect(detectRepair(said)).toEqual({ kind: "correct" });
+    const target = resolveRepairTarget(history, said);
+    expect(target).toMatchObject({ kind: "one", ref: { type: "day_plan", id: "2026-11-15" } });
+    const hint = repairHint({ kind: "correct" }, target, "es")!;
+    expect(hint).toContain("planning.proposeDay");
+    expect(hint).toContain("WHOLE day");
+    expect(hint).toMatch(/never instead of it/);
+  });
+
+  it.each(["¿Cómo se escribe Larrea?", "voy a la estación y a lo de Ana"])(
+    "%s → not a correction",
+    (q) => {
+      expect(detectRepair(q)).toBeNull();
+    },
+  );
+});

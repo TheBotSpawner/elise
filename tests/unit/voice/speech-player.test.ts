@@ -41,6 +41,7 @@ class FakeContext {
     };
   }
   async resume() {}
+  async suspend() {}
   async close() {}
 }
 
@@ -92,6 +93,25 @@ describe("speech player", () => {
     // Both requested before the first segment's audio has finished.
     expect(calls.map((c) => c.body.text)).toEqual(["Encontré la reunión.", "Es a las dos."]);
     expect(calls[1]!.body.previous).toBe("Encontré la reunión.");
+  });
+
+  it("paused by the device, a reply that arrives meanwhile stays silent until resume()", async () => {
+    // "ELISE" while she was still searching: the answer arrives during the capture and must not
+    // wake the output and talk over the person.
+    const resume = vi.spyOn(FakeContext.prototype, "resume");
+    const p = new SpeechPlayer();
+    p.pause();
+    p.speak("Tenés razón, lo había planificado.", "es");
+    await flushAsync();
+    expect(resume).not.toHaveBeenCalled();
+    p.resume();
+    expect(resume).toHaveBeenCalledTimes(1);
+    // A cut reply never leaves the next one held.
+    p.pause();
+    p.stop();
+    p.speak("Otra.", "es");
+    await flushAsync();
+    expect(resume).toHaveBeenCalledTimes(2);
   });
 
   it("after a barge-in, late audio from the cut reply is never scheduled", async () => {
