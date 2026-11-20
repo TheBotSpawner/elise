@@ -28,6 +28,8 @@ type ServerMessage =
 export interface VoskRecognizer {
   /** 16-bit range floats, as Kaldi expects (the page sends -1..1 audio). */
   accept(samples: Float32Array, sampleRate: number): void;
+  /** Decode what's left and report it as a result (ADR-141's second look). */
+  finish(): void;
   remove(): void;
 }
 
@@ -55,14 +57,19 @@ export class VoskWorker {
     this.worker.postMessage({ action: "load", modelUrl });
   }
 
-  recognizer(sampleRate: number, grammar: string[], handlers: RecognizerHandlers): VoskRecognizer {
+  /** `grammar` null: the model's whole vocabulary. */
+  recognizer(
+    sampleRate: number,
+    grammar: string[] | null,
+    handlers: RecognizerHandlers,
+  ): VoskRecognizer {
     const id = crypto.randomUUID();
     this.handlers.set(id, handlers);
     this.worker.postMessage({
       action: "create",
       recognizerId: id,
       sampleRate,
-      grammar: JSON.stringify(grammar),
+      ...(grammar ? { grammar: JSON.stringify(grammar) } : {}),
     });
     // Word times: where the wake word started, so nothing said after it is lost.
     this.worker.postMessage({ action: "set", recognizerId: id, key: "words", value: true });
@@ -74,6 +81,7 @@ export class VoskWorker {
           { transfer: [data.buffer] },
         );
       },
+      finish: () => this.worker.postMessage({ action: "retrieveFinalResult", recognizerId: id }),
       remove: () => {
         this.handlers.delete(id);
         this.worker.postMessage({ action: "remove", recognizerId: id });

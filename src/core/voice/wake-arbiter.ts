@@ -206,3 +206,27 @@ export class WakeArbiter {
     this.partialSince = null;
   }
 }
+
+/**
+ * ADR-141: the second look. The wake recognizer only knows the word and its competitors, so any
+ * near sound ("Analice…", "Realice…", "Alice…", "Elixir…") is forced onto "ELISE" — with high
+ * confidence. Before the Orb or the chime, the candidate's audio is decoded again with the model's
+ * whole vocabulary (no grammar), which has no "ELISE": the real name comes out as a doubtful or
+ * name-like guess ("elis", "hélice", "dice"), a near word as itself, confidently. The words are
+ * judged here; nothing is kept.
+ */
+/** Whole-vocabulary spellings measured for a spoken "ELISE" (wake-eval corpus). */
+const SOUNDS_LIKE_THE_NAME = new Set(["elis", "ellis", "ennis", "elíseos", "hélice"]);
+/** Other names it is mistaken for: a different person, whatever the confidence. */
+const OTHER_NAMES = new Set(["alice", "alix", "alex", "alvis", "anís", "alicia", "elena"]);
+/** A first word this sure, and this long, is a real word, not the name. */
+const SURE = 0.8;
+const LONG = 5;
+
+export function secondLook(words: readonly Pick<WakeWord, "word" | "conf">[]): boolean {
+  const first = words[0];
+  if (!first) return true; // Nothing recognizable: no evidence against the call.
+  if (OTHER_NAMES.has(first.word)) return false;
+  if (SOUNDS_LIKE_THE_NAME.has(first.word)) return true;
+  return !(first.conf >= SURE && [...first.word].length >= LONG);
+}

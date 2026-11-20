@@ -283,6 +283,19 @@ export function DesktopWake({ children }: { children: ReactNode }) {
             showOrb("listening");
           },
           onCaptured: (capture) => void handOff(capture),
+          // ADR-141: counted with the other outcomes, so false alarms stay measurable.
+          onDismissed: (d) =>
+            void window.eliseDesktop
+              ?.reportWakeOutcome?.({
+                outcome: "second_look",
+                guarded: d.guarded,
+                confidence: d.confidence,
+                seconds: 0,
+                speechAfter: false,
+                transcribeMs: null,
+                remainderWords: null,
+              })
+              .catch(() => undefined),
         });
       }
       update();

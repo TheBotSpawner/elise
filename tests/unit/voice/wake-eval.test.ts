@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  secondLook,
   WAKE_POLICIES,
   WakeArbiter,
   type WakePolicy,
@@ -33,6 +34,8 @@ interface Trace {
     | { f: number; type: "partial"; text: string }
     | { f: number; type: "final"; text: string; words: WakeWord[] }
   )[];
+  /** ADR-141: the first candidate's audio decoded without grammar, `after` frames past it. */
+  looks?: { f: number; after: number; words: WakeWord[] }[];
 }
 
 const data = JSON.parse(
@@ -49,20 +52,28 @@ interface Run {
   accepts: { at: number; source: "partial" | "final"; guarded: boolean }[];
 }
 
-function replay(trace: Trace, arbiter: WakeArbiter, offset = 0): Run {
+/** ADR-141: frames of audio after the candidate that the second look waits for (null: none). */
+type Look = number | null;
+
+function replay(trace: Trace, arbiter: WakeArbiter, offset = 0, look: Look = null): Run {
   const accepts: Run["accepts"] = [];
+  const seen = look === null ? null : trace.looks?.find((l) => l.after === look);
   for (const e of trace.events) {
     const at = offset + e.f * data.frameMs;
     const d =
       e.type === "partial"
         ? arbiter.signal({ kind: "partial", text: e.text, at })
         : arbiter.signal({ kind: "final", text: e.text, words: e.words, at });
-    if (d?.accept) accepts.push({ at, source: d.source, guarded: d.guarded });
+    if (!d?.accept) continue;
+    // The second look's verdict (and wait) on the trace's first candidate.
+    if (seen && !secondLook(seen.words)) continue;
+    const wait = look === null ? 0 : (look + 1) * data.frameMs;
+    accepts.push({ at: at + wait, source: d.source, guarded: d.guarded });
   }
   return { accepts };
 }
 
-function measure(policy: WakePolicy) {
+function measure(policy: WakePolicy, look: Look = null) {
   const traces = data.traces.filter((t) => t.gate === policy.name);
   const pos = traces.filter((t) => t.kind === "pos");
   const byCondition = new Map<string, { hit: number; n: number }>();
@@ -70,7 +81,7 @@ function measure(policy: WakePolicy) {
   let preserved = 0;
   let hits = 0;
   for (const t of pos) {
-    const r = replay(t, new WakeArbiter(data.tokens, policy));
+    const r = replay(t, new WakeArbiter(data.tokens, policy), 0, look);
     const key = `${t.distance}/${t.background}`;
     const c = byCondition.get(key) ?? { hit: 0, n: 0 };
     c.n++;
@@ -90,8 +101,10 @@ function measure(policy: WakePolicy) {
   let clock = 0;
   let candidates = 0;
   let audible = 0;
+  let falseClips = 0;
   for (const t of neg) {
-    const r = replay(t, arbiter, clock);
+    const r = replay(t, arbiter, clock, look);
+    if (r.accepts.length) falseClips++;
     for (const a of r.accepts) {
       candidates++;
       // v1 chimed on every candidate; v2 chimes when it accepts unguarded.
@@ -114,6 +127,8 @@ function measure(policy: WakePolicy) {
     negativeMinutes: clock / 60_000,
     candidatesPerHour: candidates / hours,
     audiblePerHour: audible / hours,
+    /** Share of the negative utterances that showed the Orb (it shows for every candidate). */
+    falseShare: falseClips / neg.length,
     decodedShare:
       traces.reduce((s, t) => s + t.fedFrames, 0) / traces.reduce((s, t) => s + t.frames, 0),
   };
@@ -122,9 +137,11 @@ function measure(policy: WakePolicy) {
 describe("wake word evaluation (synthetic corpus, real model)", () => {
   const v1 = measure(WAKE_POLICIES.v1);
   const v2 = measure(WAKE_POLICIES.v2);
+  // ADR-141: v2, and the Orb only after the second look (no wait past the candidate).
+  const look = measure(WAKE_POLICIES.v2, 0);
 
   it("prints the before/after report", () => {
-    console.info(JSON.stringify({ v1, v2 }, null, 1));
+    console.info(JSON.stringify({ v1, v2, look }, null, 1));
     expect(data.traces.length).toBeGreaterThan(0);
   });
 
@@ -149,5 +166,16 @@ describe("wake word evaluation (synthetic corpus, real model)", () => {
 
   it("v2 keeps the beginning of the request", () => {
     expect(v2.preserved).toBe(1);
+  });
+
+  it("the second look keeps false activations under 5 % of near-miss phrases", () => {
+    expect(look.falseShare).toBeLessThan(0.05);
+    expect(look.candidatesPerHour).toBeLessThan(v2.candidatesPerHour / 2);
+  });
+
+  it("the second look costs at most 2 points of real calls and 0.2 s", () => {
+    expect(look.recall).toBeGreaterThanOrEqual(v2.recall - 0.02);
+    expect(look.latencyP50).toBeLessThanOrEqual(v2.latencyP50 + 0.2);
+    expect(look.preserved).toBe(1);
   });
 });

@@ -307,6 +307,8 @@ export interface WakeDetector {
     /** A candidate the arbiter accepted (ADR-108): its source, confidence and whether guarded. */
     onDetected: (decision: Extract<WakeDecision, { accept: true }>) => void;
     onCaptured: (capture: WakeCapture) => void;
+    /** ADR-141: a candidate the second look turned down (nothing was shown or played). */
+    onDismissed?: (decision: Extract<WakeDecision, { accept: true }>) => void;
     onState: (state: DetectorState) => void;
     /**
      * ADR-104: ELISE's own music is playing — the room's loudness says nothing about whether

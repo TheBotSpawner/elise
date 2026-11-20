@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { StreamResampler } from "@/core/voice/resample";
-import { WAKE_POLICIES, WakeArbiter, type WakeWord } from "@/core/voice/wake-arbiter";
+import { secondLook, WAKE_POLICIES, WakeArbiter, type WakeWord } from "@/core/voice/wake-arbiter";
 import { wakeGate } from "@/core/voice/wake-detector";
 
 const TOKENS = ["elise", "elis"];
@@ -154,5 +154,24 @@ describe("stream resampler (ADR-108)", () => {
     for (let i = 0; i < whole.length; i++)
       maxDiff = Math.max(maxDiff, Math.abs(whole[i]! - parts[i]!));
     expect(maxDiff).toBeLessThan(1e-5);
+  });
+});
+
+describe("second look (ADR-141)", () => {
+  const w = (word: string, conf: number) => ({ word, conf });
+  it("a near word heard as itself, confidently, is not the name", () => {
+    expect(secondLook([w("analice", 1), w("bien", 1)])).toBe(false);
+    expect(secondLook([w("observaciones", 0.97)])).toBe(false);
+    expect(secondLook([w("elixir", 1)])).toBe(false);
+  });
+  it("another name is another person", () => {
+    expect(secondLook([w("alice", 0.4), w("esta", 0.5)])).toBe(false);
+  });
+  it("the name's own guesses, doubtful words, short words and silence are a call", () => {
+    expect(secondLook([w("hélice", 0.5), w("que", 1)])).toBe(true);
+    expect(secondLook([w("ellis", 0.96)])).toBe(true);
+    expect(secondLook([w("el", 0.9), w("hice", 0.5)])).toBe(true);
+    expect(secondLook([w("realice", 0.6)])).toBe(true);
+    expect(secondLook([])).toBe(true);
   });
 });

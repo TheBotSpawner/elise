@@ -1,6 +1,6 @@
 import { DUCK_FACTOR } from "@/core/voice/delivery";
 import { StreamResampler } from "@/core/voice/resample";
-import { WakeArbiter, type WakeDecision } from "@/core/voice/wake-arbiter";
+import { secondLook, WakeArbiter, type WakeDecision } from "@/core/voice/wake-arbiter";
 import {
   EndOfSpeech,
   wakeGate,
@@ -27,6 +27,8 @@ import { VoskWorker, type VoskRecognizer } from "./vosk-worker-client";
  * - A quieter energy gate lets a voice from across the room reach the recognizer.
  * - The recognizer's hints go through a WakeArbiter: a candidate becomes an activation only if
  *   the word opens what is said and is stable or confident (see wake-arbiter.ts).
+ * - ADR-141: an accepted candidate gets a second look (the whole vocabulary, no grammar) before
+ *   the Orb or the chime: a near word ("Analice…") is dropped silently.
  * - A change of audio device restarts listening on the new default device.
  * - Diagnostics (levels, device, candidates and why they were accepted or not) go to the local
  *   voice diagnostics log — memory only, no words, no audio.
@@ -45,6 +47,10 @@ const MORE_THAN_THE_WORD = 7;
  */
 const GATE_LEAD_FRAMES = 4; // ~0.5 s
 const GATE_HANGOVER_FRAMES = 10; // ~1.3 s
+/** ADR-141: the second look decodes up to this much of the capture's start (~2.2 s, as measured). */
+const LOOK_FRAMES = 17;
+/** ADR-141: past this, the second look is skipped (the candidate counts, as before). */
+const LOOK_TIMEOUT_MS = 1500;
 /** A level summary in the diagnostics log this often while listening. */
 const LEVEL_EVERY_FRAMES = 16; // ~2 s
 /** A device change settles for this long before listening restarts. */
@@ -126,6 +132,12 @@ export class VoskWakeDetector implements WakeDetector {
   private end = new EndOfSpeech();
   private arbiter: WakeArbiter | null = null;
   private candidate = 0;
+  /** ADR-141: the candidate waiting for its second look (and its capture, if already over). */
+  private looking: { id: string; captured: WakeCapture | null } | null = null;
+  private looker: {
+    rec: VoskRecognizer;
+    answer: ((words: Parameters<typeof secondLook>[0]) => void) | null;
+  } | null = null;
   private generation = 0;
   private stats = { frames: 0, sum: 0, peak: 0, clipped: 0, gated: 0 };
   private onDeviceChange: (() => void) | null = null;
@@ -293,7 +305,7 @@ export class VoskWakeDetector implements WakeDetector {
         "wake:candidate",
         `${id} accepted ${d.source}${d.confidence !== null ? ` conf=${d.confidence.toFixed(2)}` : ""}${d.guarded ? " guarded" : ""}`,
       );
-      this.detected(opts, d);
+      this.detected(opts, d, id);
     };
     const music = () => Boolean(opts.listenThrough?.());
     return m.recognizer(RATE, wakeGrammar(opts.model), {
@@ -317,7 +329,7 @@ export class VoskWakeDetector implements WakeDetector {
     });
   }
 
-  private detected(opts: StartOptions, d: Extract<WakeDecision, { accept: true }>) {
+  private detected(opts: StartOptions, d: Extract<WakeDecision, { accept: true }>, id: string) {
     this.lastDecision = d;
     // From a quarter second before the word, or (without its time) from where the utterance
     // began — including the gate's lead — so nothing said with the word is lost.
@@ -335,9 +347,85 @@ export class VoskWakeDetector implements WakeDetector {
     // The music is lowered as the word is heard: what follows is measured against that room.
     if (opts.listenThrough?.()) this.end.scaleFloor(DUCK_FACTOR.normal);
     this.state = "capturing";
-    // ADR-137: first what the Orb will show, then the report that brings it up.
-    opts.onDetected(d);
-    opts.onState("capturing");
+    // ADR-141: the capture goes on, silently, while the word gets a second look; only then
+    // the Orb and the chime.
+    const looking = (this.looking = { id, captured: null as WakeCapture | null });
+    // Over her reply the audio opens with her own voice, not the word: that call is checked by
+    // its transcription, as before (ADR-109).
+    const look = opts.overReply?.()
+      ? Promise.resolve(true)
+      : this.secondLook(concat(this.pre.slice(0, LOOK_FRAMES)));
+    void look.then((call) => {
+      if (this.looking !== looking) return; // Held, stopped or restarted meanwhile.
+      this.looking = null;
+      if (!call) {
+        logSound("wake:candidate", `${id} second look: not the name`);
+        this.post = null;
+        this.pre = [];
+        this.state = "listening";
+        opts.onDismissed?.(d);
+        return;
+      }
+      // ADR-137: first what the Orb will show, then the report that brings it up.
+      opts.onDetected(d);
+      opts.onState("capturing");
+      if (looking.captured) this.captured(looking.captured, opts);
+    });
+  }
+
+  /**
+   * ADR-141: the candidate's audio, decoded again with the whole vocabulary. Fails open (a
+   * call): a busy or broken worker must not make her deaf.
+   */
+  private secondLook(audio: Float32Array): Promise<boolean> {
+    const m = this.resumeWith?.m;
+    if (!m) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      try {
+        // One whole-vocabulary recognizer, created once (that costs more than a look): a final
+        // result resets it for the next one.
+        this.looker ??= {
+          answer: null,
+          rec: m.recognizer(RATE, null, {
+            onPartial: () => undefined,
+            onResult: (_text, words) => this.looker?.answer?.(words),
+          }),
+        };
+        const looker = this.looker;
+        const timer = setTimeout(() => {
+          logSound("wake:candidate", "second look timed out");
+          // A late answer must not reach the next look: a fresh recognizer next time.
+          this.dropLooker();
+          resolve(true);
+        }, LOOK_TIMEOUT_MS);
+        looker.answer = (words) => {
+          clearTimeout(timer);
+          looker.answer = null;
+          resolve(secondLook(words));
+        };
+        looker.rec.accept(audio, RATE);
+        looker.rec.finish();
+      } catch {
+        this.dropLooker();
+        resolve(true);
+      }
+    });
+  }
+
+  private dropLooker() {
+    try {
+      this.looker?.rec.remove();
+    } catch {
+      // Already gone.
+    }
+    this.looker = null;
+  }
+
+  private captured(capture: WakeCapture, opts: StartOptions) {
+    this.state = "listening";
+    opts.onCaptured(capture);
+    // The hand-off holds the detector: a "listening" in between would drop the Orb mid-sentence.
+    if (this.state === "listening") opts.onState("listening");
   }
 
   /** The coordinator's verdict on the last capture (from its transcription). */
@@ -363,10 +451,13 @@ export class VoskWakeDetector implements WakeDetector {
       this.post = null;
       this.pre = [];
       this.ring = [];
-      this.state = "listening";
-      opts.onCaptured(capture);
-      // The hand-off holds the detector: a "listening" in between would drop the Orb mid-sentence.
-      if (this.state === "listening") opts.onState("listening");
+      // Said and done before the second look answered: handed over once it confirms.
+      if (this.looking) {
+        this.looking.captured = capture;
+        this.state = "listening";
+        return;
+      }
+      this.captured(capture, opts);
       return;
     }
     // Listening: the ring keeps the last moments, in memory only; the recognizer hears speech.
@@ -432,6 +523,8 @@ export class VoskWakeDetector implements WakeDetector {
       // Already gone.
     }
     this.rec = null;
+    this.looking = null;
+    this.dropLooker();
     this.gate = 0;
     this.ring = [];
     this.pre = [];
@@ -452,6 +545,7 @@ export class VoskWakeDetector implements WakeDetector {
   hold() {
     if (this.state !== "listening" && this.state !== "capturing") return;
     this.state = "held";
+    this.looking = null;
     this.post = null;
     this.pre = [];
     this.ring = [];

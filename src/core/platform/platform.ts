@@ -149,6 +149,7 @@ export const WAKE_OUTCOMES = [
   "ignored", // her own name in her reply
   "unread", // the transcription failed or timed out
   "not_a_call", // the words didn't open with "ELISE": a false activation
+  "second_look", // ADR-141: a near word, caught on the device before any Orb or sound
   "command", // "ELISE, mostrate", "bajá el volumen"…: handled without a session
   "session", // the voice session took the request
   "no_session", // handed over, but no session picked it up in time

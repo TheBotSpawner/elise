@@ -225,12 +225,39 @@ def run(rec_factory, x: np.ndarray, gate: dict) -> list:
     return events, len(fed), len(frames)
 
 
+def words(r: dict) -> list:
+    return [{k: round(w[k], 3) if k != "word" else w[k] for k in ("word", "conf", "start", "end")}
+            for w in r.get("result", [])]
+
+
+# ADR-141: the second look. A candidate's audio, from up to VERIFY_BACK frames before it to
+# `after` frames past it, decoded with the model's whole vocabulary (no grammar).
+VERIFY_BACK = 16
+VERIFY_AFTER = (0, 2, 4, 6)  # measured: waiting past 0 didn't pay for its latency
+
+
+def second_look(m: Model, x: np.ndarray, events: list, tok: set) -> list:
+    first = next((e for e in events if tok & set(e["text"].split())), None)
+    if not first:
+        return []
+    out = []
+    for after in VERIFY_AFTER:
+        a = max(0, first["f"] - VERIFY_BACK) * FRAME
+        b = min(len(x), (first["f"] + 1 + after) * FRAME)
+        rec = KaldiRecognizer(m, RATE)
+        rec.SetWords(True)
+        rec.AcceptWaveform((np.clip(x[a:b], -1, 1) * 32767).astype(np.int16).tobytes())
+        out.append({"f": first["f"], "after": after, "words": words(json.loads(rec.FinalResult()))})
+    return out
+
+
 def main() -> None:
     SetLogLevel(-1)
     rng = np.random.default_rng(108)
     manifest = json.loads((CLIPS / "manifest.json").read_text(encoding="utf8"))
     m = model()
     g = json.dumps(grammar(), ensure_ascii=False)
+    tok = set(tokens())
 
     def factory():
         r = KaldiRecognizer(m, RATE, g)
@@ -251,6 +278,7 @@ def main() -> None:
             x, onset = scene(x0, d, b, rng, negatives)
             for name, gate in GATES.items():
                 events, fed, total = run(factory, x, gate)
+                looks = second_look(m, x, events, tok) if name == "v2" else []
                 traces.append({
                     "clip": c["file"].removesuffix(".wav"),
                     "kind": c["kind"],
@@ -263,6 +291,7 @@ def main() -> None:
                     "fedFrames": fed,
                     "frames": total,
                     "events": events,
+                    "looks": looks,
                 })
         print(c["file"], flush=True)
     OUT.write_text(json.dumps({"tokens": tokens(), "frameMs": FRAME * 1000 // RATE, "traces": traces},

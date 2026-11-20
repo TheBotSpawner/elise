@@ -126,6 +126,12 @@ La pausa después de "ELISE" ayuda (habilita el resultado final), pero no es obl
 
 **No medido:** CPU real en reposo, Bluetooth, suspensión y reanudación.
 
+**4.4. Segunda mirada local ([ADR-141](../decisions/ADR-141-wake-second-look.md)).**
+- Antes del Orb y del tono, el inicio de la captura se decodifica otra vez sin gramática.
+- Una palabra parecida dicha con claridad («Analice», «Realice», «Elixir», «Alice») se descarta sin que se vea ni suene nada.
+- Medición en las frases trampa: de 9,2 % a 2,3 % de activaciones falsas, con 1,1 puntos menos de detección.
+- En el log local, estas candidatas descartadas quedan como `second_look`.
+
 ## 5. Archivos
 
 **Nuevos:**

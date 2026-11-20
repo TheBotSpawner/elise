@@ -49,6 +49,26 @@ NEGATIVES = [
     ("meeting6", "Eliminá esa diapositiva, está repetida con la anterior."),
     ("meeting7", "Es lisa y llanamente un problema de comunicación entre equipos."),
     ("meeting8", "El ise de la planilla no coincide con lo que mandaron."),
+    # ADR-141: real false alarms opened a sentence with a word that only sounds near the name
+    # ("Observaciones…" in a meeting).
+    ("observaciones", "Observaciones: el documento está casi listo, faltan las firmas."),
+    ("osea", "O sea, lo que digo es que no llegamos con los tiempos."),
+    ("analice", "Analice bien los números antes de mandarlos."),
+    ("realice", "Realice el pago antes del viernes, por favor."),
+    ("excelente", "Excelente, entonces seguimos con el siguiente punto."),
+    ("elecciones", "Elecciones hay el año que viene, así que ojo con el presupuesto."),
+    ("electricista", "El electricista viene el martes a revisar la instalación."),
+    ("alicia", "Alicia, ¿me escuchás? Se cortó el audio."),
+    ("eslindo", "Es lindo el diseño, pero cambiaría los colores."),
+    ("yse", "Y se nos pasó la hora, cerramos acá."),
+    ("ehsi", "Eh, sí, sí, lo vi ayer a la tarde."),
+    ("precisamente", "Precisamente eso quería preguntar."),
+    ("elimine", "Elimine los duplicados de la lista."),
+    ("alice", "Alice está de vacaciones hasta el lunes."),
+    ("felicitaciones", "Felicitaciones por el lanzamiento, salió muy bien."),
+    ("eldice", "Él dice que no le llegó el mail."),
+    ("asise", "Así se hace, muy bien."),
+    ("elisir", "Elixir de limón, así se llama el producto nuevo."),
 ]
 NEG_VOICES = ["alloy", "coral", "echo", "shimmer"]
 

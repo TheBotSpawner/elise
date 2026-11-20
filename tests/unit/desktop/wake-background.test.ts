@@ -4,13 +4,24 @@ import { WAKE_MODELS } from "@/core/voice/wake-detector";
 
 /** ADR-137: the corner Orb comes up with the word, and a silent microphone doesn't pass for one. */
 
+type Word = { word: string; conf: number; start: number; end: number };
 const handlers: { onPartial?: (text: string) => void } = {};
+/** ADR-141: what the second look (no grammar) hears. */
+const look: { words: Word[] } = { words: [{ word: "hélice", conf: 0.5, start: 0, end: 0.5 }] };
 vi.mock("../../../desktop/src/renderer/wake/vosk-worker-client", () => ({
   VoskWorker: class {
     ready = Promise.resolve();
-    recognizer(_rate: number, _grammar: unknown, h: typeof handlers) {
-      Object.assign(handlers, h);
-      return { accept: () => undefined, remove: () => undefined };
+    recognizer(
+      _rate: number,
+      grammar: unknown,
+      h: typeof handlers & { onResult: (text: string, words: Word[]) => void },
+    ) {
+      if (grammar) Object.assign(handlers, h);
+      return {
+        accept: () => undefined,
+        finish: () => queueMicrotask(() => h.onResult("", look.words)),
+        remove: () => undefined,
+      };
     }
     terminate() {}
   },
@@ -77,6 +88,7 @@ async function started(
     model: WAKE_MODELS[0]!,
     onState: (s) => events.push(s),
     onDetected: () => events.push("detected"),
+    onDismissed: () => events.push("dismissed"),
     onCaptured: () => onCaptured(detector),
   });
   await vi.advanceTimersByTimeAsync(0);
@@ -119,12 +131,27 @@ describe("the wake detector in the background (ADR-137)", () => {
     const detector = await started(events, (d) => d.hold());
     events.length = 0;
     handlers.onPartial?.("elise");
+    await vi.advanceTimersByTimeAsync(0);
     expect(events).toEqual(["detected", "capturing"]);
     for (let i = 0; i < 16; i++) frame();
     await vi.advanceTimersByTimeAsync(0);
     // The hand-off held the detector: no "listening" while it transcribes.
     expect(events).toEqual(["detected", "capturing"]);
     expect(detector.state).toBe("held");
+    detector.stop();
+  });
+
+  it("a near word gets a second look and nothing shows (ADR-141)", async () => {
+    microphone();
+    const events: string[] = [];
+    const detector = await started(events, () => events.push("captured"));
+    events.length = 0;
+    look.words = [{ word: "analice", conf: 1, start: 0, end: 0.6 }];
+    handlers.onPartial?.("elise");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(events).toEqual(["dismissed"]);
+    expect(detector.state).toBe("listening");
+    look.words = [{ word: "hélice", conf: 0.5, start: 0, end: 0.5 }];
     detector.stop();
   });
 });
